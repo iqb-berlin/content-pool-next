@@ -58,7 +58,7 @@ export class CommentsService {
   }
 
   /**
-   * Export comments as a structured data array (for XLSX generation).
+   * Export comments as a structured data array (for JSON fallback).
    */
   async exportComments(acpId: string, userId?: string): Promise<any[]> {
     let comments: Comment[];
@@ -75,5 +75,47 @@ export class CommentsService {
       author: c.user?.displayName || c.user?.username || c.credentialUsername || 'Unknown',
       createdAt: c.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Export comments as XLSX buffer using exceljs.
+   */
+  async exportCommentsXlsx(acpId: string, userId?: string): Promise<Buffer> {
+    const data = await this.exportComments(acpId, userId);
+
+    // Dynamic import to avoid issues if exceljs is not installed
+    const ExcelJS = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'IQB ContentPool';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Kommentare');
+
+    // Headers
+    sheet.columns = [
+      { header: 'Zieltyp', key: 'targetType', width: 18 },
+      { header: 'Ziel-ID', key: 'targetId', width: 25 },
+      { header: 'Kommentar', key: 'comment', width: 50 },
+      { header: 'Autor', key: 'author', width: 20 },
+      { header: 'Erstellt', key: 'createdAt', width: 22 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true };
+    headerRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF1A5276' },
+    };
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+
+    // Add data rows
+    for (const row of data) {
+      sheet.addRow(row);
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 }

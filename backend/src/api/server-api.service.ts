@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Acp, AcpFile, AcpAccessConfig, AccessModel } from '../database/entities';
@@ -55,4 +55,37 @@ export class ServerApiService {
       })),
     };
   }
+
+  /**
+   * Receive ACP data from an external application.
+   * Creates or updates an ACP with the provided data.
+   */
+  async receiveAcp(data: {
+    packageId: string;
+    name: string;
+    description?: string;
+    acpIndex: Record<string, any>;
+  }): Promise<Acp> {
+    // Check if ACP with this package ID already exists
+    let acp = await this.acpRepository.findOne({ where: { packageId: data.packageId } });
+
+    if (acp) {
+      // Update existing ACP
+      acp.name = data.name;
+      if (data.description) acp.description = data.description;
+      acp.acpIndex = data.acpIndex;
+    } else {
+      // Create new ACP
+      acp = this.acpRepository.create({
+        packageId: data.packageId,
+        name: data.name,
+        description: data.description || '',
+        acpIndex: data.acpIndex,
+        settings: {},
+      });
+    }
+
+    return this.acpRepository.save(acp);
+  }
 }
+

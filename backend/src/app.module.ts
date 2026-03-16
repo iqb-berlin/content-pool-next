@@ -11,6 +11,7 @@ import { CommentsModule } from './comments/comments.module';
 import { ItemsModule } from './items/items.module';
 import { AdminModule } from './admin/admin.module';
 import { ValidationModule } from './validation/validation.module';
+import { ServerApiModule } from './api/server-api.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ValidationModule } from './validation/validation.module';
     ItemsModule,
     AdminModule,
     ValidationModule,
+    ServerApiModule,
   ],
 })
 export class AppModule {}

@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: contentpool
+      POSTGRES_PASSWORD: contentpool_dev
+      POSTGRES_DB: contentpool
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U contentpool"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USERNAME: contentpool
+      DB_PASSWORD: contentpool_dev
+      DB_DATABASE: contentpool
+      JWT_SECRET: dev-secret-change-in-production
+      JWT_EXPIRATION: 24h
+      FILE_STORAGE_PATH: /app/uploads
+      CORS_ORIGIN: http://localhost:4200
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend/src:/app/src
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  uploads:

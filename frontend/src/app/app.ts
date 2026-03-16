@@ -8,7 +8,12 @@ import { AuthService } from './core/services/auth.service';
   imports: [RouterOutlet, RouterLink],
   template: `
     <header class="app-header">
-      <a routerLink="/" class="logo">IQB ContentPool</a>
+      <div class="header-left">
+        @if (logoUrl) {
+          <a routerLink="/"><img [src]="logoUrl" alt="Logo" class="app-logo" /></a>
+        }
+        <a routerLink="/" class="logo">IQB ContentPool</a>
+      </div>
       <nav>
         @if (auth.isLoggedIn && auth.isAdmin) {
           <a routerLink="/admin/users">Nutzer</a>
@@ -31,9 +36,12 @@ import { AuthService } from './core/services/auth.service';
     :host { display: flex; flex-direction: column; min-height: 100vh; }
     .app-header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 0 24px; height: 56px;
+      padding: 0 24px; height: 64px;
       background: var(--color-primary); color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .app-logo { height: 40px; width: auto; object-fit: contain; }
     .logo { color: white; text-decoration: none; font-size: 1.25rem; font-weight: 600; }
     nav { display: flex; align-items: center; gap: 16px; }
     nav a { color: rgba(255,255,255,0.85); text-decoration: none; font-size: 0.9rem; }
@@ -47,8 +55,21 @@ import { AuthService } from './core/services/auth.service';
     .app-main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; box-sizing: border-box; }
   `]
 })
-export class AppComponent {
-  constructor(public auth: AuthService, private router: Router) {}
+export class AppComponent implements OnInit {
+  logoUrl: string | null = null;
+
+  constructor(
+    public auth: AuthService,
+    private router: Router,
+    private api: ApiService
+  ) {}
+
+  ngOnInit() {
+    this.api.getPublicSettings().subscribe(settings => {
+      this.logoUrl = settings.logoUrl;
+    });
+  }
+
   logout() {
     this.auth.logout();
     this.router.navigate(['/']);

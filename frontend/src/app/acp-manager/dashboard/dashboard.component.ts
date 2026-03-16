@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { JsonPipe } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { Acp } from '../../core/models/api.models';
 
 @Component({
@@ -12,8 +13,13 @@ import { Acp } from '../../core/models/api.models';
   template: `
     @if (acp) {
       <div class="page-header">
-        <h1>{{ acp.name }}</h1>
-        <span class="badge badge-info">{{ acp.packageId }}</span>
+        <div class="header-main">
+          <h1>{{ acp.name }}</h1>
+          <span class="badge badge-info">{{ acp.packageId }}</span>
+          @if (myRole) {
+            <span class="badge badge-success" style="margin-left:8px">{{ myRoleLabel }}</span>
+          }
+        </div>
       </div>
 
       <div class="grid">
@@ -41,7 +47,7 @@ import { Acp } from '../../core/models/api.models';
           <button class="btn btn-outline" (click)="showIndex = !showIndex">
             {{ showIndex ? 'Verbergen' : 'Anzeigen' }}
           </button>
-          <button class="btn btn-outline" (click)="exportIndex()">Exportieren</button>
+          <a [href]="api.getIndexExportUrl(acp.id)" class="btn btn-outline" target="_blank">Exportieren</a>
           <label class="btn btn-accent">
             Importieren
             <input type="file" accept=".json" (change)="importIndex($event)" hidden>
@@ -75,6 +81,7 @@ import { Acp } from '../../core/models/api.models';
   `,
   styles: [`
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .header-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .link-card { text-decoration: none; color: inherit; transition: transform 0.15s, box-shadow 0.15s; cursor: pointer; }
     .link-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); text-decoration: none; }
     .link-card p { color: var(--color-text-secondary); font-size: 0.85rem; margin-top: 4px; }
@@ -90,23 +97,39 @@ export class DashboardComponent implements OnInit {
   showIndex = false;
   selectedUserId = '';
   selectedRole = 'ACP_MANAGER';
+  myRole: string | null = null;
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  get myRoleLabel(): string {
+    switch (this.myRole) {
+      case 'ACP_MANAGER': return 'Manager';
+      case 'READ_ONLY': return 'Gast';
+      default: return 'Zugriff gewährt';
+    }
+  }
+
+  constructor(
+    private route: ActivatedRoute,
+    public api: ApiService,
+    private auth: AuthService
+  ) {}
 
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('acpId')!;
     this.api.getAcp(id).subscribe(acp => this.acp = acp);
-    this.api.getAcpRoles(id).subscribe(roles => this.roles = roles);
-    this.api.getUsers().subscribe(users => { this.allUsers = users; if (users.length) this.selectedUserId = users[0].id; });
+    this.api.getAcpRoles(id).subscribe(roles => {
+      this.roles = roles;
+      const myId = this.auth.currentUser?.id;
+      const myAssignment = roles.find(r => r.userId === myId);
+      this.myRole = myAssignment ? myAssignment.role : null;
+    });
+    this.api.getUsers().subscribe(users => {
+      this.allUsers = users;
+      if (users.length) this.selectedUserId = users[0].id;
+    });
   }
 
   exportIndex() {
-    if (!this.acp) return;
-    const blob = new Blob([JSON.stringify(this.acp.acpIndex, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `acp-index-${this.acp.packageId}.json`; a.click();
-    URL.revokeObjectURL(url);
+    // Replaced by direct link via getIndexExportUrl
   }
 
   importIndex(event: Event) {

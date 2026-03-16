@@ -1,16 +1,20 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 
 @Component({
   selector: 'app-unit-list',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, BreadcrumbComponent],
   template: `
+    <app-breadcrumb [items]="breadcrumbs" />
+
     <div class="page-header">
       <h1>Aufgaben</h1>
-      <a [routerLink]="['/view', acpId]" class="btn btn-outline">← Zurück</a>
+      <span class="unit-count">{{ units.length }} Aufgaben</span>
     </div>
+
     <div class="card">
       <table class="table">
         <thead><tr><th>ID</th><th>Name</th><th></th></tr></thead>
@@ -25,16 +29,25 @@ import { ApiService } from '../../core/services/api.service';
         </tbody>
       </table>
     </div>
-  `
+  `,
+  styles: [`
+    .unit-count { font-size: 0.85rem; color: var(--color-text-secondary); }
+  `]
 })
 export class UnitListComponent implements OnInit {
   acpId = '';
   units: any[] = [];
+  breadcrumbs: BreadcrumbItem[] = [];
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
+    this.breadcrumbs = [
+      { label: 'ContentPool', route: ['/'] },
+      { label: 'ACP', route: ['/view', this.acpId] },
+      { label: 'Aufgaben' },
+    ];
     this.api.getViewUnits(this.acpId).subscribe(u => this.units = u);
   }
 }

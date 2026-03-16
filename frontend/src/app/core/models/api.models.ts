@@ -142,6 +142,8 @@ export interface UnitViewData {
   lang?: string;
   items: any[];
   dependencies: FileDependency[];
+  codingScheme?: string;
+  richText?: string;
 }
 
 export interface FileDependency {

@@ -64,7 +64,20 @@ export class ApiService {
     return this.http.get(`${this.API}/acp/${acpId}/files/${fileId}/validation`);
   }
   getFileDownloadUrl(acpId: string, fileId: string): string {
-    return `${this.API}/acp/${acpId}/files/${fileId}/download`;
+    const token = localStorage.getItem('cp_token');
+    return `${this.API}/acp/${acpId}/files/${fileId}/download${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
+  }
+
+  getIndexExportUrl(id: string): string {
+    const token = localStorage.getItem('cp_token');
+    return `${this.API}/acp/${id}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
+  }
+
+  appendAuthToken(url: string): string {
+    const token = localStorage.getItem('cp_token');
+    if (!token) return url;
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}auth_token=${encodeURIComponent(token)}`;
   }
 
   // Snapshots
@@ -88,6 +101,7 @@ export class ApiService {
   exportComments(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/acp/${acpId}/comments/export`); }
 
   // Public Views
+  getPublicSettings(): Observable<any> { return this.http.get(`${this.API}/view/settings`); }
   getPublicAcps(): Observable<PublicAcp[]> { return this.http.get<PublicAcp[]>(`${this.API}/view/acp`); }
   getAcpStartPage(acpId: string): Observable<any> { return this.http.get(`${this.API}/view/acp/${acpId}`); }
   getViewUnits(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/units`); }

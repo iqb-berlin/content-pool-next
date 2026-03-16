@@ -54,10 +54,14 @@ export class AssignRoleDto {
 }
 
 export class UpdateAccessConfigDto {
-  @ApiProperty({ enum: ['PUBLIC', 'REGISTERED', 'CREDENTIALS_LIST'] })
+  @ApiProperty({ enum: ['PUBLIC', 'CREDENTIALS_LIST'] })
   @IsString()
   @IsNotEmpty()
   accessModel!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  allowRegistered?: boolean;
 
   @ApiPropertyOptional()
   @IsObject()

@@ -196,6 +196,7 @@ export class AcpService {
     let config = await this.accessConfigRepository.findOne({ where: { acpId } });
     if (config) {
       config.accessModel = dto.accessModel as AccessModel;
+      if (dto.allowRegistered !== undefined) config.allowRegistered = dto.allowRegistered;
       if (dto.featureConfig) config.featureConfig = dto.featureConfig;
       if (dto.validFrom) config.validFrom = new Date(dto.validFrom);
       if (dto.validUntil) config.validUntil = new Date(dto.validUntil);
@@ -203,6 +204,7 @@ export class AcpService {
       config = this.accessConfigRepository.create({
         acpId,
         accessModel: dto.accessModel as AccessModel,
+        allowRegistered: dto.allowRegistered || false,
         featureConfig: dto.featureConfig || {},
         validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,

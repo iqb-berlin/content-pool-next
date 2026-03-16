@@ -7,6 +7,12 @@ import { ViewsService } from './views.service';
 export class ViewsController {
   constructor(private readonly viewsService: ViewsService) {}
 
+  @Get('settings')
+  @ApiOperation({ summary: 'Get public app settings (theme, logo, legal pages)' })
+  async getPublicSettings() {
+    return this.viewsService.getPublicSettings();
+  }
+
   @Get('acp')
   @ApiOperation({ summary: 'List publicly accessible ACPs' })
   async getPublicAcps() {

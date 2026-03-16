@@ -26,6 +26,9 @@ export class AcpAccessConfig {
   @Column({ name: 'access_model', type: 'enum', enum: AccessModel })
   accessModel!: AccessModel;
 
+  @Column({ name: 'allow_registered', type: 'boolean', default: false })
+  allowRegistered!: boolean;
+
   @Column({ name: 'feature_config', type: 'jsonb', default: {} })
   featureConfig!: Record<string, unknown>;
 

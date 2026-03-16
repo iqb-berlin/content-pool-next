@@ -48,8 +48,35 @@ import { ApiService } from '../../core/services/api.service';
           </table>
         }
 
-        @if (activeSection === 'Assessment-Teile') {
-          <pre class="json-view">{{ index.assessmentParts | json }}</pre>
+    @if (activeSection === 'Assessment-Teile') {
+          <div class="assessment-parts">
+            @for (part of index.assessmentParts || []; track part.id) {
+              <div class="part-item card">
+                <h4>{{ part.name[0]?.value || part.id }}</h4>
+                <div class="instruments">
+                  @for (inst of part.instruments || []; track inst.id) {
+                    <div class="instrument-box">
+                      <h5>{{ inst.name }}</h5>
+                      <div class="booklets">
+                        @for (book of inst.testcenterBooklet || []; track book.definitionId) {
+                          <div class="booklet-link">
+                            📖 <strong>Booklet:</strong> {{ book.definitionId }}
+                            <div class="modules-list">
+                              @for (modId of book.modules; track modId) {
+                                <a [routerLink]="['/view', acpId, 'sequence', modId]" class="module-tag">
+                                  {{ modId }}
+                                </a>
+                              }
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
         }
 
         @if (activeSection === 'Skalen') {
@@ -65,6 +92,14 @@ import { ApiService } from '../../core/services/api.service';
   styles: [`
     .meta-grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; }
     dt { font-weight: 600; color: var(--color-text-secondary); }
+    .assessment-parts { display: grid; grid-template-columns: 1fr; gap: 16px; margin-top: 12px; }
+    .part-item h4 { margin: 0 0 12px; color: var(--color-primary); }
+    .instrument-box { margin-bottom: 12px; padding: 12px; background: var(--color-bg); border-radius: var(--radius); }
+    .instrument-box h5 { margin: 0 0 8px; font-size: 0.95rem; }
+    .booklet-link { font-size: 0.85rem; margin-bottom: 8px; }
+    .modules-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+    .module-tag { display: inline-block; padding: 2px 8px; background: white; border: 1px solid var(--color-border); border-radius: 4px; font-size: 0.8rem; text-decoration: none; color: var(--color-primary-light); }
+    .module-tag:hover { background: var(--color-primary-light); color: white; border-color: var(--color-primary-light); text-decoration: none; }
     .json-view { background: var(--color-bg); padding: 16px; border-radius: var(--radius); overflow-x: auto; font-size: 0.8rem; max-height: 500px; }
   `]
 })

@@ -1,5 +1,6 @@
 import { Routes } from '@angular/router';
 import { authGuard, adminGuard } from './core/guards/auth.guard';
+import { acpViewGuard } from './core/guards/acp-view.guard';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./views/landing/landing.component').then(m => m.LandingComponent) },
@@ -30,14 +31,20 @@ export const routes: Routes = [
     ]
   },
 
-  // Public view routes
-  { path: 'view/:acpId', loadComponent: () => import('./views/acp-start/acp-start.component').then(m => m.AcpStartComponent) },
-  { path: 'view/:acpId/units', loadComponent: () => import('./views/unit-view/unit-list.component').then(m => m.UnitListComponent) },
-  { path: 'view/:acpId/unit/:unitId', loadComponent: () => import('./views/unit-view/unit-view.component').then(m => m.UnitViewComponent) },
-  { path: 'view/:acpId/sequence/:sequenceId', loadComponent: () => import('./views/task-sequence/task-sequence.component').then(m => m.TaskSequenceComponent) },
-  { path: 'view/:acpId/items', loadComponent: () => import('./views/item-list/item-list.component').then(m => m.ItemListComponent) },
-  { path: 'view/:acpId/item/:itemId', loadComponent: () => import('./views/item-view/item-view.component').then(m => m.ItemViewComponent) },
-  { path: 'view/:acpId/index', loadComponent: () => import('./views/acp-index-view/acp-index-view.component').then(m => m.AcpIndexViewComponent) },
+  // Public view routes (protected by acpViewGuard to handle access models)
+  {
+    path: 'view/:acpId',
+    canActivate: [acpViewGuard],
+    children: [
+      { path: '', loadComponent: () => import('./views/acp-start/acp-start.component').then(m => m.AcpStartComponent) },
+      { path: 'units', loadComponent: () => import('./views/unit-view/unit-list.component').then(m => m.UnitListComponent) },
+      { path: 'unit/:unitId', loadComponent: () => import('./views/unit-view/unit-view.component').then(m => m.UnitViewComponent) },
+      { path: 'sequence/:sequenceId', loadComponent: () => import('./views/task-sequence/task-sequence.component').then(m => m.TaskSequenceComponent) },
+      { path: 'items', loadComponent: () => import('./views/item-list/item-list.component').then(m => m.ItemListComponent) },
+      { path: 'item/:itemId', loadComponent: () => import('./views/item-view/item-view.component').then(m => m.ItemViewComponent) },
+      { path: 'index', loadComponent: () => import('./views/acp-index-view/acp-index-view.component').then(m => m.AcpIndexViewComponent) },
+    ]
+  },
 
   { path: '**', redirectTo: '' }
 ];

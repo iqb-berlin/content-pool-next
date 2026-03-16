@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Acp, AcpAccessConfig, AccessModel, AcpFile } from '../database/entities';
+import { Acp, AcpAccessConfig, AccessModel, AcpFile, AppSettings } from '../database/entities';
 
 @Injectable()
 export class ViewsService {
@@ -12,7 +12,28 @@ export class ViewsService {
     private readonly accessConfigRepository: Repository<AcpAccessConfig>,
     @InjectRepository(AcpFile)
     private readonly fileRepository: Repository<AcpFile>,
+    @InjectRepository(AppSettings)
+    private readonly settingsRepository: Repository<AppSettings>,
   ) {}
+
+  /**
+   * Get public-facing app settings (no auth required).
+   */
+  async getPublicSettings(): Promise<any> {
+    const settings = await this.settingsRepository.findOne({ where: {} });
+    if (!settings) {
+      return { theme: {}, language: 'de', logoUrl: null, landingPageHtml: null, imprintHtml: null, privacyHtml: null, accessibilityHtml: null };
+    }
+    return {
+      theme: settings.theme,
+      language: settings.language,
+      logoUrl: settings.logoUrl,
+      landingPageHtml: settings.landingPageHtml,
+      imprintHtml: settings.imprintHtml,
+      privacyHtml: settings.privacyHtml,
+      accessibilityHtml: settings.accessibilityHtml,
+    };
+  }
 
   /**
    * Get list of publicly accessible ACPs for the landing page.
@@ -28,6 +49,7 @@ export class ViewsService {
     });
 
     const results: any[] = [];
+    const seenIds = new Set<string>();
 
     for (const config of publicConfigs) {
       if (config.acp) {
@@ -37,11 +59,13 @@ export class ViewsService {
           description: config.acp.description,
           accessModel: 'PUBLIC',
         });
+        seenIds.add(config.acp.id);
       }
     }
 
     // Include credential-based ACPs (they are listed on landing page too)
     for (const config of credentialConfigs) {
+      if (seenIds.has(config.acp.id)) continue;
       const now = new Date();
       if (
         config.acp &&
@@ -55,8 +79,13 @@ export class ViewsService {
           accessModel: 'CREDENTIALS_LIST',
           requiresLogin: true,
         });
+        seenIds.add(config.acp.id);
       }
     }
+
+    // If a user is logged in, we should ideally show REGISTERED ACPs too.
+    // However, this endpoint is public. For now, we only show PUBLIC and CREDENTIALS_LIST.
+    // Registered users can access these and see others via their private dashboard.
 
     return results;
   }
@@ -128,9 +157,9 @@ export class ViewsService {
       if (file) {
         fileRefs.push({
           type: dep.type,
-          fileId: file.id,
           originalName: file.originalName,
           downloadUrl: `/api/acp/${acpId}/files/${file.id}/download`,
+          fileId: file.id,
         });
       }
     }
@@ -142,6 +171,8 @@ export class ViewsService {
       lang: unit.lang,
       items: unit.items,
       dependencies: fileRefs,
+      codingScheme: unit.codingScheme,
+      richText: unit.richText,
     };
   }
 

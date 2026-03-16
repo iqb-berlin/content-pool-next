@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ViewsService } from './views.service';
 import { ViewsController } from './views.controller';
-import { Acp, AcpAccessConfig, AcpFile } from '../database/entities';
+import { Acp, AcpAccessConfig, AcpFile, AppSettings } from '../database/entities';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Acp, AcpAccessConfig, AcpFile])],
+  imports: [TypeOrmModule.forFeature([Acp, AcpAccessConfig, AcpFile, AppSettings])],
   controllers: [ViewsController],
   providers: [ViewsService],
   exports: [ViewsService],

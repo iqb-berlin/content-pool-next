@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { MulterModule } from '@nestjs/platform-express';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
+import { UnitParserService } from './unit-parser.service';
 import { AcpFile } from '../database/entities';
 import { AuthModule } from '../auth/auth.module';
 
@@ -15,7 +16,7 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule,
   ],
   controllers: [FilesController],
-  providers: [FilesService],
-  exports: [FilesService],
+  providers: [FilesService, UnitParserService],
+  exports: [FilesService, UnitParserService],
 })
 export class FilesModule {}

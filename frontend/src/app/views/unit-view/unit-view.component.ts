@@ -39,7 +39,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
                 #playerFrame
                 [src]="playerSafeUrl"
                 class="player-iframe"
-                sandbox="allow-scripts allow-same-origin"
+                sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
               </iframe>
             } @else {
@@ -83,7 +83,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
                   @if (unit.lang) { <dt>Sprache</dt><dd>{{ unit.lang }}</dd> }
                   @if (unit.description) { <dt>Beschreibung</dt><dd>{{ unit.description }}</dd> }
                 </dl>
-                @if (unit.items?.length) {
+                @if (unit.items && unit.items.length) {
                   <h4>Items ({{ unit.items.length }})</h4>
                   <div class="items-list">
                     @for (item of unit.items; track item.id) {
@@ -114,7 +114,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               }
             </div>
 
-            @if (unit.dependencies?.length) {
+            @if (unit.dependencies && unit.dependencies.length) {
               <div class="deps-section">
                 <h4>Abhängigkeiten</h4>
                 @for (dep of unit.dependencies; track dep.fileId) {
@@ -229,7 +229,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
 
   constructor(
     private route: ActivatedRoute,
-    private api: ApiService,
+    public api: ApiService,
     private sanitizer: DomSanitizer,
   ) {}
 

@@ -14,6 +14,7 @@ import { Response } from 'express';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { FilesService } from './files.service';
+import { UnitParserService } from './unit-parser.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('ACP Files')
@@ -21,12 +22,36 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class FilesController {
-  constructor(private readonly filesService: FilesService) {}
+  constructor(
+    private readonly filesService: FilesService,
+    private readonly unitParserService: UnitParserService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all files for an ACP' })
   async findAll(@Param('acpId') acpId: string) {
     return this.filesService.findByAcp(acpId);
+  }
+
+  @Get('validate-units')
+  @ApiOperation({ summary: 'Validate completeness of all unit files' })
+  async validateUnits(@Param('acpId') acpId: string) {
+    return this.unitParserService.validateUnitFiles(acpId);
+  }
+
+  @Get('item-list')
+  @ApiOperation({ summary: 'Extract item list with metadata from .vomd files' })
+  async getItemList(@Param('acpId') acpId: string) {
+    return this.unitParserService.getItemListFromFiles(acpId);
+  }
+
+  @Get('unit-view/:unitId')
+  @ApiOperation({ summary: 'Get unit view data from uploaded files (player, definition)' })
+  async getUnitView(
+    @Param('acpId') acpId: string,
+    @Param('unitId') unitId: string,
+  ) {
+    return this.unitParserService.getUnitViewFromFiles(acpId, unitId);
   }
 
   @Get(':fileId')
@@ -68,3 +93,4 @@ export class FilesController {
     return this.filesService.getValidationResult(fileId);
   }
 }
+

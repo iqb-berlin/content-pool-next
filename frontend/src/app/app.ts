@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, Router } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
+import { ApiService } from './core/services/api.service';
 
 @Component({
   selector: 'app-root',

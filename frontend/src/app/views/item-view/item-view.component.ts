@@ -29,7 +29,7 @@ import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.compone
                 #playerFrame
                 [src]="playerSafeUrl"
                 class="player-iframe"
-                sandbox="allow-scripts allow-same-origin"
+                sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
               </iframe>
             } @else {

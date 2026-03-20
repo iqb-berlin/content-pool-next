@@ -1,12 +1,12 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { JsonPipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 
 @Component({
   selector: 'app-acp-index-view',
   standalone: true,
-  imports: [RouterLink, JsonPipe],
+  imports: [RouterLink, CommonModule],
   template: `
     <div class="page-header">
       <h1>ACP-Index</h1>

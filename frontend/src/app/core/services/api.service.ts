@@ -67,6 +67,15 @@ export class ApiService {
     const token = localStorage.getItem('cp_token');
     return `${this.API}/acp/${acpId}/files/${fileId}/download${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
+  validateUnitFiles(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/acp/${acpId}/files/validate-units`);
+  }
+  getFileItemList(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/acp/${acpId}/files/item-list`);
+  }
+  getFileUnitView(acpId: string, unitId: string): Observable<any> {
+    return this.http.get(`${this.API}/acp/${acpId}/files/unit-view/${unitId}`);
+  }
 
   getIndexExportUrl(id: string): string {
     const token = localStorage.getItem('cp_token');

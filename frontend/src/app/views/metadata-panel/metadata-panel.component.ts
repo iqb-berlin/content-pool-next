@@ -1,11 +1,11 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
-import { JsonPipe } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import { UnitViewData } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-metadata-panel',
   standalone: true,
-  imports: [JsonPipe],
+  imports: [CommonModule],
   template: `
     <div class="panel card">
       <h3>Metadaten</h3>
@@ -17,7 +17,7 @@ import { UnitViewData } from '../../core/models/api.models';
           @if (unit.description) { <dt>Beschreibung</dt><dd>{{ unit.description }}</dd> }
         </dl>
 
-        @if (unit.items?.length) {
+        @if (unit.items && unit.items.length) {
           <h4>Items</h4>
           <div class="item-list">
             @for (item of unit.items; track item.id) {
@@ -36,7 +36,7 @@ import { UnitViewData } from '../../core/models/api.models';
           <pre class="json-view">{{ codingScheme | json }}</pre>
         }
 
-        @if (unit.dependencies?.length) {
+        @if (unit.dependencies && unit.dependencies.length) {
           <h4>Abhängigkeiten</h4>
           @for (dep of unit.dependencies; track dep.fileId) {
             <div class="dep-item">

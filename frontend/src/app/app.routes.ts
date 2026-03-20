@@ -41,6 +41,7 @@ export const routes: Routes = [
       { path: 'unit/:unitId', loadComponent: () => import('./views/unit-view/unit-view.component').then(m => m.UnitViewComponent) },
       { path: 'sequence/:sequenceId', loadComponent: () => import('./views/task-sequence/task-sequence.component').then(m => m.TaskSequenceComponent) },
       { path: 'items', loadComponent: () => import('./views/item-list/item-list.component').then(m => m.ItemListComponent) },
+      { path: 'item-explorer', loadComponent: () => import('./views/item-explorer/item-explorer.component').then(m => m.ItemExplorerComponent) },
       { path: 'item/:itemId', loadComponent: () => import('./views/item-view/item-view.component').then(m => m.ItemViewComponent) },
       { path: 'index', loadComponent: () => import('./views/acp-index-view/acp-index-view.component').then(m => m.AcpIndexViewComponent) },
     ]

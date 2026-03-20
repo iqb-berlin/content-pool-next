@@ -77,6 +77,7 @@ export interface AccessConfig {
   id: string;
   acpId: string;
   accessModel: 'PUBLIC' | 'REGISTERED' | 'CREDENTIALS_LIST';
+  allowRegistered?: boolean;
   featureConfig: FeatureConfig;
   validFrom?: string;
   validUntil?: string;

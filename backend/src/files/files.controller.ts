@@ -6,7 +6,6 @@ import {
   Param,
   UseGuards,
   UseInterceptors,
-  UploadedFile,
   UploadedFiles,
   Res,
 } from '@nestjs/common';

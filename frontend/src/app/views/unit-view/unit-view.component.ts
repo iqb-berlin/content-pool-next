@@ -1,6 +1,7 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { FormsModule } from '@angular/forms';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -8,7 +9,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
 @Component({
   selector: 'app-unit-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent],
+  imports: [RouterLink, BreadcrumbComponent, FormsModule],
   template: `
     @if (unit) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -27,18 +28,25 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           @if (showDownloadBtn) {
             <button class="btn btn-outline btn-sm" (click)="downloadUnit()">⬇️ Download</button>
           }
+          <select class="btn btn-outline btn-sm" [(ngModel)]="printMode" (change)="onPrintModeChange()">
+            <option value="off">Print: Aus</option>
+            <option value="on">Print: Ein</option>
+            <option value="on-with-ids">Print: Ein + IDs</option>
+          </select>
         </div>
       </div>
 
       <div class="unit-layout" [class.with-panel]="panelVisible">
         <!-- Player area -->
         <div class="player-area">
-          <div class="player-container card">
+          <div class="player-container card" [class.print-mode]="printMode !== 'off'">
             @if (playerSrcDoc) {
               <iframe
                 #playerFrame
                 [srcdoc]="playerSrcDoc"
                 class="player-iframe"
+                [style.height]="playerHeight"
+                [class.print-mode]="printMode !== 'off'"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
               </iframe>
@@ -52,7 +60,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </div>
 
           <!-- Page navigation -->
-          @if (totalPages > 1) {
+          @if (totalPages > 1 && printMode === 'off') {
             <div class="page-nav">
               <button class="btn btn-outline" [disabled]="currentPage <= 1" (click)="navigateToPage(currentPage - 1)">← Vorherige Seite</button>
               <span class="page-info">Seite {{ currentPage }} / {{ totalPages }}</span>
@@ -143,11 +151,13 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
     .unit-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
     .unit-layout.with-panel { grid-template-columns: 1fr 380px; }
 
-    .player-container { padding: 0; overflow: hidden; }
+    .player-container { padding: 0; overflow: auto; min-height: 600px; }
+    .player-container.print-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; border: none; }
     .player-iframe {
       width: 100%; min-height: 550px; border: none;
       display: block;
     }
+    .player-iframe.print-mode { min-height: 1000px; height: auto; }
 
     .page-nav {
       display: flex; align-items: center; justify-content: center;
@@ -174,7 +184,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
 
     .meta-dl {
       display: grid; grid-template-columns: auto 1fr;
-      gap: 6px 16px; font-size: 0.9rem;
+      gap: 8px 20px; font-size: 0.9rem;
     }
     .meta-dl dt { font-weight: 600; color: var(--color-text-secondary); }
     .meta-dl dd { margin: 0; }
@@ -210,6 +220,8 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   unit: UnitViewData | null = null;
   playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
+  playerHeight = '100%';
+  printMode: 'off' | 'on' | 'on-with-ids' = 'off';
 
   // Page navigation
   currentPage = 1;
@@ -226,6 +238,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   showDownloadBtn = false;
 
   private messageHandler = this.onPlayerMessage.bind(this);
+  private autoResizeInterval: any;
 
   constructor(
     private route: ActivatedRoute,
@@ -282,6 +295,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
+    this.stopAutoResize();
   }
 
   onPlayerLoaded() {
@@ -304,12 +318,28 @@ export class UnitViewComponent implements OnInit, OnDestroy {
             unitState: { dataParts: {} },
             playerConfig: {
               stateReportPolicy: 'none',
-              pagingMode: 'buttons',
+              pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
+              printMode: this.printMode,
               logPolicy: 'disabled',
             },
           });
+          if (this.printMode === 'off') {
+            this.playerHeight = '100%';
+            this.stopAutoResize();
+          } else {
+            this.playerHeight = '2000px';
+            this.startAutoResize();
+          }
         });
     }
+  }
+
+  onPrintModeChange() {
+    const src = this.playerSrcDoc;
+    this.playerSrcDoc = null;
+    setTimeout(() => {
+      this.playerSrcDoc = src;
+    }, 50);
   }
 
   private onPlayerMessage(event: MessageEvent) {
@@ -332,8 +362,10 @@ export class UnitViewComponent implements OnInit, OnDestroy {
         }
         break;
 
-      case 'vopUnitNavigationRequestedNotification':
-        // Player requests navigation — handle if needed
+      case 'vopResizeNotification':
+        if (msg.height !== undefined) {
+          this.playerHeight = `${msg.height}px`;
+        }
         break;
     }
   }
@@ -363,5 +395,30 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   downloadUnit() {
     const url = `/api/acp/${this.acpId}/files?unitId=${this.unitId}&format=zip`;
     window.open(this.api.appendAuthToken(url), '_blank');
+  }
+
+  private startAutoResize() {
+    this.stopAutoResize();
+    this.autoResizeInterval = setInterval(() => {
+      try {
+        const frame = this.playerFrame?.nativeElement;
+        const doc = frame?.contentDocument || frame?.contentWindow?.document;
+        if (doc && doc.body) {
+          const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 600);
+          if (height > 0 && this.playerHeight !== `${height}px`) {
+            this.playerHeight = `${height}px`;
+          }
+        }
+      } catch (e) {
+        // Fallback for cross-origin or other errors
+      }
+    }, 500);
+  }
+
+  private stopAutoResize() {
+    if (this.autoResizeInterval) {
+      clearInterval(this.autoResizeInterval);
+      this.autoResizeInterval = null;
+    }
   }
 }

@@ -4,8 +4,7 @@ import {
   ElementRef,
   ViewChild,
   AfterViewInit,
-  OnDestroy,
-  HostListener,
+  OnDestroy
 } from '@angular/core';
 
 @Component({

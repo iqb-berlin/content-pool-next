@@ -1,8 +1,8 @@
 import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { VoudService } from '../../core/services/voud.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -108,9 +108,9 @@ interface ExplorerItem {
                             }
                           </select>
                         }
-                        <input type="text" 
-                               class="tag-input-inline" 
-                               placeholder="Neu..." 
+                        <input type="text"
+                               class="tag-input-inline"
+                               placeholder="Neu..."
                                (keydown.enter)="addCustomTag(item.uuid, $event)"
                                (blur)="addCustomTag(item.uuid, $event)">
                       </div>
@@ -127,12 +127,14 @@ interface ExplorerItem {
       <div right class="preview-panel">
         @if (selectedItem) {
           <!-- Player -->
-          <div class="player-container card">
+          <div class="player-container card" [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'">
             @if (playerSrcDoc) {
               <iframe
                 #playerFrame
                 [srcdoc]="playerSrcDoc"
                 class="player-iframe"
+                [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
+                [style.height]="playerHeight"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
               </iframe>
@@ -150,7 +152,7 @@ interface ExplorerItem {
           </div>
 
           <!-- Page Navigation (within player) -->
-          @if (totalPages > 1) {
+          @if (totalPages > 1 && pagingMode !== 'view-all' && pagingMode !== 'print-ids') {
             <div class="page-nav">
               <button class="btn btn-outline btn-sm" [disabled]="currentPage <= 1" (click)="navigateToPage(currentPage - 1)">← Vorherige Seite</button>
               <span class="page-info">Seite {{ currentPage }} / {{ totalPages }}</span>
@@ -172,7 +174,8 @@ interface ExplorerItem {
               <option value="separate">Paging: Separate</option>
               <option value="concat-scroll">Paging: Scroll</option>
               <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
-              <option value="view-all">Paging: Alles (Drucken)</option>
+              <option value="view-all">Paging: Alles (Print)</option>
+              <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierschema</button>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'metadata'">📄 Metadaten</button>
@@ -371,10 +374,13 @@ interface ExplorerItem {
       height: 100%; overflow-y: auto;
       padding: 0 16px; display: flex; flex-direction: column;
     }
-    .player-container { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 500px; }
+    .player-container { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 500px; transition: height 0.2s; }
+    /* In view-all mode, we want the container to follow the iframe's height and not CLIP it */
+    .player-container.view-all-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; }
     .player-iframe {
-      width: 100%; flex: 1; border: none; display: block;
+      width: 100%; height: 100%; border: none; display: block;
     }
+    .player-iframe.view-all-mode { min-height: 1000px; height: auto; }
 
     /* Navigations */
     .page-nav, .item-nav {
@@ -486,7 +492,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   playerSrcDoc: any = null;
   currentPage = 1;
   totalPages = 1;
-  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' = 'buttons';
+  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' | 'print-ids' = 'buttons';
+  playerHeight = '100%';
 
   // Overlays
   showOverlay: 'coding' | 'metadata' | null = null;
@@ -501,6 +508,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   itemTags: Record<string, string[]> = {};
 
   private messageHandler = this.onPlayerMessage.bind(this);
+  private autoResizeInterval: any;
 
   constructor(
     private route: ActivatedRoute,
@@ -539,6 +547,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
+    this.stopAutoResize();
   }
 
   // --- Filtering ---
@@ -714,18 +723,32 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             unitState: { dataParts: {} },
             playerConfig: {
               stateReportPolicy: 'none',
-              pagingMode: this.pagingMode,
+              pagingMode: (this.pagingMode === 'view-all' || this.pagingMode === 'print-ids') ? 'concat-scroll' : this.pagingMode,
+              printMode: this.pagingMode === 'view-all' ? 'on' : (this.pagingMode === 'print-ids' ? 'on-with-ids' : 'off'),
               logPolicy: 'disabled',
               startPage: startPage !== undefined ? startPage.toString() : undefined,
               enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
             },
           });
+          // Reset height for fresh load (unless print mode is on)
+          if (this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids') {
+            this.playerHeight = '100%';
+            this.stopAutoResize();
+          } else {
+            // Provide a large enough initial height for print mode
+            this.playerHeight = '2000px';
+            this.startAutoResize();
+          }
         });
     }
   }
 
   onPagingModeChange() {
-    this.onPlayerLoaded();
+    const src = this.playerSrcDoc;
+    this.playerSrcDoc = null;
+    setTimeout(() => {
+      this.playerSrcDoc = src;
+    }, 50);
   }
 
   private onPlayerMessage(event: MessageEvent) {
@@ -745,6 +768,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       case 'vopPageNavigationCommand':
         if (msg.target !== undefined) {
           this.currentPage = msg.target + 1;
+        }
+        break;
+
+      case 'vopResizeNotification':
+        if (msg.height !== undefined) {
+          this.playerHeight = `${msg.height}px`;
         }
         break;
     }
@@ -770,6 +799,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.itemTags[uuid]) this.itemTags[uuid] = [];
     if (!this.itemTags[uuid].includes(tag)) {
       this.itemTags[uuid].push(tag);
+      this.saveTags();
     }
     (event.target as HTMLSelectElement).value = '';
   }
@@ -777,42 +807,68 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   removeItemTag(uuid: string, tag: string) {
     if (this.itemTags[uuid]) {
       this.itemTags[uuid] = this.itemTags[uuid].filter(t => t !== tag);
+      this.saveTags();
     }
   }
 
   addCustomTag(uuid: string, event: any) {
     const input = event.target as HTMLInputElement;
     const tag = input.value.trim();
-    if (tag) {
-      if (!this.itemTags[uuid]) this.itemTags[uuid] = [];
-      if (!this.itemTags[uuid].includes(tag)) {
-        this.itemTags[uuid].push(tag);
-      }
-      input.value = '';
+    if (!tag) return;
+    if (!this.itemTags[uuid]) this.itemTags[uuid] = [];
+    if (!this.itemTags[uuid].includes(tag)) {
+      this.itemTags[uuid].push(tag);
+      this.saveTags();
     }
+    input.value = '';
   }
 
-  // --- Value Extraction Helpers ---
+  private saveTags() {
+    // TODO: Persist tags to backend/vomd
+    console.log('Tags updated:', this.itemTags);
+  }
+
+  // --- Helpers ---
   extractLabel(label: any): string {
-    if (!label) return '';
     if (typeof label === 'string') return label;
-    if (Array.isArray(label)) {
-      const de = label.find((l: any) => l.lang === 'de');
-      return de?.value || label[0]?.value || '';
-    }
-    return '';
+    if (label && label['de']) return label['de'];
+    return JSON.stringify(label);
   }
 
   extractValueText(valueAsText: any): string {
-    if (!valueAsText) return '';
     if (typeof valueAsText === 'string') return valueAsText;
-    if (Array.isArray(valueAsText)) {
-      const de = valueAsText.find((v: any) => v.lang === 'de');
-      return de?.value || valueAsText[0]?.value || '';
-    }
-    if (typeof valueAsText === 'object' && valueAsText.value) {
-      return valueAsText.value;
-    }
+    if (valueAsText && valueAsText['de']) return valueAsText['de'];
+    if (Array.isArray(valueAsText)) return valueAsText.map(v => this.extractValueText(v)).join(', ');
     return '';
+  }
+
+  downloadUnit() {
+    const url = `/api/acp/${this.acpId}/files?unitId=${this.selectedItem?.unitId}&format=zip`;
+    window.open(this.api.appendAuthToken(url), '_blank');
+  }
+
+  private startAutoResize() {
+    this.stopAutoResize();
+    this.autoResizeInterval = setInterval(() => {
+      try {
+        const frame = this.playerFrame?.nativeElement;
+        const doc = frame?.contentDocument || frame?.contentWindow?.document;
+        if (doc && doc.body) {
+          const height = Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 600);
+          if (height > 0 && this.playerHeight !== `${height}px`) {
+            this.playerHeight = `${height}px`;
+          }
+        }
+      } catch (e) {
+        // Cross-origin restriction or other error
+      }
+    }, 500);
+  }
+
+  private stopAutoResize() {
+    if (this.autoResizeInterval) {
+      clearInterval(this.autoResizeInterval);
+      this.autoResizeInterval = null;
+    }
   }
 }

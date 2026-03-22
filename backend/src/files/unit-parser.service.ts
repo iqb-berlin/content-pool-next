@@ -229,7 +229,6 @@ export class UnitParserService {
    */
   async getItemListFromFiles(acpId: string): Promise<ItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
-    const fileNames = allFiles.map(f => f.originalName);
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label

@@ -65,6 +65,24 @@ interface ExplorerItem {
                   <th>Tags</th>
                 }
               </tr>
+              <tr class="filter-row">
+                <th class="sticky-col">
+                  <input class="col-filter-input" [(ngModel)]="columnFilters['itemId']" placeholder="🔍 ID..." (input)="applyFilter()">
+                </th>
+                <th>
+                  <input class="col-filter-input" [(ngModel)]="columnFilters['unitLabel']" placeholder="🔍 Aufgabe..." (input)="applyFilter()">
+                </th>
+                @for (col of columns; track col.id) {
+                  <th>
+                    <input class="col-filter-input" [(ngModel)]="columnFilters[col.id]" [placeholder]="'🔍 ' + col.label + '...'" (input)="applyFilter()">
+                  </th>
+                }
+                @if (enableTags) {
+                  <th>
+                    <input class="col-filter-input" [(ngModel)]="columnFilters['tags']" placeholder="🔍 Tags..." (input)="applyFilter()">
+                  </th>
+                }
+              </tr>
             </thead>
             <tbody>
               @for (item of filteredItems; track item.uuid; let i = $index) {
@@ -311,6 +329,26 @@ interface ExplorerItem {
     }
     tr:not(.active) { cursor: pointer; }
 
+    /* Filter row */
+    .filter-row th {
+      padding: 4px 10px;
+      background: var(--color-bg);
+      border-bottom: 2px solid var(--color-border);
+      position: sticky; top: 37px; /* Below the main header */
+      z-index: 2;
+    }
+    .filter-row th.sticky-col { z-index: 4; }
+    .col-filter-input {
+      width: 100%; padding: 4px 8px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px; font-size: 0.75rem;
+      font-family: inherit;
+    }
+    .col-filter-input:focus {
+      outline: none; border-color: var(--color-primary-light);
+      box-shadow: 0 0 0 2px rgba(41,128,185,0.1);
+    }
+
     /* Tags */
     .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
     .tag-badge { cursor: pointer; font-size: 0.7rem; }
@@ -436,6 +474,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = 'asc';
   breadcrumbs: BreadcrumbItem[] = [];
+  columnFilters: Record<string, string> = {};
 
   // Selection
   selectedItem: ExplorerItem | null = null;
@@ -505,19 +544,41 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // --- Filtering ---
   applyFilter() {
     const term = this.filterText.toLowerCase();
-    if (!term) {
-      this.filteredItems = [...this.items];
-    } else {
-      this.filteredItems = this.items.filter(item => {
-        if (item.itemId.toLowerCase().includes(term)) return true;
-        if (item.unitLabel.toLowerCase().includes(term)) return true;
-        if (item.description.toLowerCase().includes(term)) return true;
-        for (const val of Object.values(item.metadata)) {
-          if (val && val.toLowerCase().includes(term)) return true;
+
+    this.filteredItems = this.items.filter(item => {
+      // 1. Global Filter
+      if (term) {
+        const matchesGlobal = (
+          item.itemId.toLowerCase().includes(term) ||
+          item.unitLabel.toLowerCase().includes(term) ||
+          item.description.toLowerCase().includes(term) ||
+          Object.values(item.metadata).some(val => val && val.toLowerCase().includes(term))
+        );
+        if (!matchesGlobal) return false;
+      }
+
+      // 2. Column Filters
+      for (const [colId, filterValue] of Object.entries(this.columnFilters)) {
+        if (!filterValue) continue;
+        const subTerm = filterValue.toLowerCase();
+
+        if (colId === 'itemId') {
+          if (!item.itemId.toLowerCase().includes(subTerm)) return false;
+        } else if (colId === 'unitLabel') {
+          if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
+        } else if (colId === 'tags') {
+          const tags = this.itemTags[item.uuid] || [];
+          if (!tags.some(t => t.toLowerCase().includes(subTerm))) return false;
+        } else {
+          // Metadata column
+          const val = item.metadata[colId] || '';
+          if (!val.toLowerCase().includes(subTerm)) return false;
         }
-        return false;
-      });
-    }
+      }
+
+      return true;
+    });
+
     this.applySort();
   }
 

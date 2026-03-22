@@ -12,7 +12,7 @@ import {
   selector: 'app-split-pane',
   standalone: true,
   template: `
-    <div class="split-pane" #container>
+    <div class="split-pane" #container [class.dragging]="isDragging">
       <div class="pane pane-left" [style.width.%]="leftPercent">
         <ng-content select="[left]"></ng-content>
       </div>
@@ -22,7 +22,7 @@ import {
         (mousedown)="onDragStart($event)">
         <div class="divider-handle"></div>
       </div>
-      <div class="pane pane-right" [style.width.%]="100 - leftPercent">
+      <div class="pane pane-right">
         <ng-content select="[right]"></ng-content>
       </div>
     </div>
@@ -34,9 +34,18 @@ import {
       height: 100%;
       min-height: 0;
     }
+    .split-pane.dragging {
+      cursor: col-resize;
+      user-select: none;
+    }
+    .split-pane.dragging .pane {
+      pointer-events: none;
+    }
     .pane {
-      overflow: auto;
+      overflow: hidden;
       min-width: 0;
+      display: flex;
+      flex-direction: column;
     }
     .pane-left {
       flex-shrink: 0;

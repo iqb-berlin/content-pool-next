@@ -24,10 +24,10 @@ import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.compone
       <div class="item-layout">
         <div class="player-area">
           <div class="player-container card">
-            @if (playerSafeUrl) {
+            @if (playerSrcDoc) {
               <iframe
                 #playerFrame
-                [src]="playerSafeUrl"
+                [srcdoc]="playerSrcDoc"
                 class="player-iframe"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
@@ -74,7 +74,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   itemId = '';
   unit: UnitViewData | null = null;
   item: any = null;
-  playerSafeUrl: SafeResourceUrl | null = null;
+  playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
   loading = true;
 
@@ -106,9 +106,13 @@ export class ItemViewComponent implements OnInit, OnDestroy {
             downloadUrl: this.api.appendAuthToken(d.downloadUrl)
           }));
 
-          const player = u.dependencies?.find(d => d.type === 'PLAYER' || d.type === 'player');
-          if (player) {
-            this.playerSafeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(player.downloadUrl);
+          const playerDep = u.dependencies?.find(d => d.type === 'PLAYER' || d.type === 'player');
+          if (playerDep) {
+            fetch(playerDep.downloadUrl)
+              .then(res => res.text())
+              .then(html => {
+                this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+              });
           }
           this.loading = false;
         });
@@ -131,6 +135,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       fetch(definitionDep.downloadUrl)
         .then(res => res.text())
         .then(definition => {
+          const startPage = this.getStartPage(definition, this.item?.variableId || '');
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `review-item-${this.itemId}`,
@@ -140,6 +145,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
               stateReportPolicy: 'none',
               pagingMode: 'buttons',
               logPolicy: 'disabled',
+              startPage: startPage || undefined
             },
           });
 
@@ -148,6 +154,35 @@ export class ItemViewComponent implements OnInit, OnDestroy {
           // In some players, we can pass "highlight" parameters.
         });
     }
+  }
+
+  private getStartPage(definition: string, variableId: string): string | undefined {
+    if (!variableId) return undefined;
+    try {
+      const def = JSON.parse(definition);
+      if (!def.pages || !Array.isArray(def.pages)) return undefined;
+
+      const containsVar = (node: any): boolean => {
+        if (!node || typeof node !== 'object') return false;
+        if (node.id === variableId || node.alias === variableId) return true;
+        for (const key of Object.keys(node)) {
+          if (['value', 'visibilityRules'].includes(key)) continue;
+          if (Array.isArray(node[key])) {
+            if (node[key].some(containsVar)) return true;
+          } else if (typeof node[key] === 'object') {
+            if (containsVar(node[key])) return true;
+          }
+        }
+        return false;
+      };
+
+      for (const page of def.pages) {
+        if (containsVar(page)) return page.id;
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
   }
 
   private sendToPlayer(msg: any) {

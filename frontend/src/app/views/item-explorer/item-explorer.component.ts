@@ -80,12 +80,21 @@ interface ExplorerItem {
                       @for (tag of (itemTags[item.uuid] || []); track tag) {
                         <span class="badge badge-info tag-badge" (click)="removeItemTag(item.uuid, tag)">{{ tag }} ✕</span>
                       }
-                      <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
-                        <option value="">+Tag</option>
-                        @for (tag of availableTags; track tag) {
-                          <option [value]="tag">{{ tag }}</option>
+                      <div class="tag-add-container">
+                        @if (availableTags.length > 0) {
+                          <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
+                            <option value="">+Tag</option>
+                            @for (tag of availableTags; track tag) {
+                              <option [value]="tag">{{ tag }}</option>
+                            }
+                          </select>
                         }
-                      </select>
+                        <input type="text" 
+                               class="tag-input-inline" 
+                               placeholder="Neu..." 
+                               (keydown.enter)="addCustomTag(item.uuid, $event)"
+                               (blur)="addCustomTag(item.uuid, $event)">
+                      </div>
                     </td>
                   }
                 </tr>
@@ -100,10 +109,10 @@ interface ExplorerItem {
         @if (selectedItem) {
           <!-- Player -->
           <div class="player-container card">
-            @if (playerSafeUrl) {
+            @if (playerSrcDoc) {
               <iframe
                 #playerFrame
-                [src]="playerSafeUrl"
+                [srcdoc]="playerSrcDoc"
                 class="player-iframe"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
@@ -139,6 +148,12 @@ interface ExplorerItem {
 
           <!-- Action Buttons -->
           <div class="action-buttons">
+            <select class="btn btn-outline btn-sm" [(ngModel)]="pagingMode" (change)="onPagingModeChange()">
+              <option value="buttons">Paging: Buttons</option>
+              <option value="separate">Paging: Separate</option>
+              <option value="concat-scroll">Paging: Scroll</option>
+              <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
+            </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierschema</button>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'metadata'">📄 Metadaten</button>
           </div>
@@ -254,6 +269,8 @@ interface ExplorerItem {
     .explorer-table {
       font-size: 0.85rem;
       margin-bottom: 0;
+      width: 100%;
+      min-width: max-content;
     }
     .explorer-table th {
       position: sticky; top: 0;
@@ -266,6 +283,19 @@ interface ExplorerItem {
       max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      background: var(--color-surface);
+      z-index: 3;
+    }
+    th.sticky-col {
+      background: var(--color-bg);
+      z-index: 4;
+    }
+    tr.active .sticky-col {
+      background: rgba(41,128,185,0.1);
     }
     .meta-cell {
       font-size: 0.8rem;
@@ -286,16 +316,24 @@ interface ExplorerItem {
     .tag-select {
       padding: 2px 4px; border: 1px solid var(--color-border);
       border-radius: 4px; font-size: 0.75rem; background: white;
+      max-width: 80px;
     }
+    .tag-add-container { display: flex; gap: 4px; align-items: center; }
+    .tag-input-inline {
+      width: 60px; padding: 2px 6px; border: 1px solid var(--color-border);
+      border-radius: 4px; font-size: 0.75rem;
+      transition: width 0.2s;
+    }
+    .tag-input-inline:focus { width: 100px; outline: none; border-color: var(--color-primary-light); }
 
     /* Preview panel */
     .preview-panel {
       height: 100%; overflow-y: auto;
-      padding: 0 16px;
+      padding: 0 16px; display: flex; flex-direction: column;
     }
-    .player-container { padding: 0; overflow: hidden; }
+    .player-container { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 500px; }
     .player-iframe {
-      width: 100%; min-height: 500px; border: none; display: block;
+      width: 100%; flex: 1; border: none; display: block;
     }
 
     /* Navigations */
@@ -404,9 +442,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // Player
   unit: any = null;
-  playerSafeUrl: SafeResourceUrl | null = null;
+  playerSrcDoc: any = null;
   currentPage = 1;
   totalPages = 1;
+  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' = 'buttons';
 
   // Overlays
   showOverlay: 'coding' | 'metadata' | null = null;
@@ -527,14 +566,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.sortDir === 'asc' ? '↑' : '↓';
   }
 
+  resetPlayer() {
+    this.playerSrcDoc = null;
+    this.unit = null;
+  }
+
   // --- Item Selection ---
   selectItem(item: ExplorerItem, index: number) {
     if (this.selectedItem?.uuid === item.uuid) return;
 
     this.selectedItem = item;
     this.selectedIndex = index;
-    this.playerSafeUrl = null;
-    this.unit = null;
+    this.resetPlayer();
     this.currentPage = 1;
     this.totalPages = 1;
     this.loadingUnit = true;
@@ -563,7 +606,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           d.type === 'PLAYER' || d.type === 'player'
         );
         if (playerDep) {
-          this.playerSafeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(playerDep.downloadUrl);
+          fetch(playerDep.downloadUrl)
+            .then(res => res.text())
+            .then(html => {
+              this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+            });
         }
       },
       error: () => {
@@ -584,7 +631,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }, 50);
   }
 
-  // --- Player ---
   onPlayerLoaded() {
     if (!this.unit || !this.playerFrame?.nativeElement?.contentWindow) return;
 
@@ -596,6 +642,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       fetch(definitionDep.downloadUrl)
         .then(res => res.text())
         .then(definition => {
+          const startPage = this.getStartPage(definition, this.selectedItem?.variableId || '');
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
@@ -603,12 +650,46 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             unitState: { dataParts: {} },
             playerConfig: {
               stateReportPolicy: 'none',
-              pagingMode: 'buttons',
+              pagingMode: this.pagingMode,
               logPolicy: 'disabled',
+              startPage: startPage || undefined
             },
           });
         });
     }
+  }
+
+  onPagingModeChange() {
+    this.onPlayerLoaded();
+  }
+
+  private getStartPage(definition: string, variableId: string): string | undefined {
+    if (!variableId) return undefined;
+    try {
+      const def = JSON.parse(definition);
+      if (!def.pages || !Array.isArray(def.pages)) return undefined;
+
+      const containsVar = (node: any): boolean => {
+        if (!node || typeof node !== 'object') return false;
+        if (node.id === variableId || node.alias === variableId) return true;
+        for (const key of Object.keys(node)) {
+          if (['value', 'visibilityRules'].includes(key)) continue;
+          if (Array.isArray(node[key])) {
+            if (node[key].some(containsVar)) return true;
+          } else if (typeof node[key] === 'object') {
+            if (containsVar(node[key])) return true;
+          }
+        }
+        return false;
+      };
+
+      for (const page of def.pages) {
+        if (containsVar(page)) return page.id;
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
   }
 
   private onPlayerMessage(event: MessageEvent) {
@@ -660,6 +741,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   removeItemTag(uuid: string, tag: string) {
     if (this.itemTags[uuid]) {
       this.itemTags[uuid] = this.itemTags[uuid].filter(t => t !== tag);
+    }
+  }
+
+  addCustomTag(uuid: string, event: any) {
+    const input = event.target as HTMLInputElement;
+    const tag = input.value.trim();
+    if (tag) {
+      if (!this.itemTags[uuid]) this.itemTags[uuid] = [];
+      if (!this.itemTags[uuid].includes(tag)) {
+        this.itemTags[uuid].push(tag);
+      }
+      input.value = '';
     }
   }
 

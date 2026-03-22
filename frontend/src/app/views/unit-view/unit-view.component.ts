@@ -34,10 +34,10 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         <!-- Player area -->
         <div class="player-area">
           <div class="player-container card">
-            @if (playerSafeUrl) {
+            @if (playerSrcDoc) {
               <iframe
                 #playerFrame
-                [src]="playerSafeUrl"
+                [srcdoc]="playerSrcDoc"
                 class="player-iframe"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
                 (load)="onPlayerLoaded()">
@@ -208,7 +208,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   acpId = '';
   unitId = '';
   unit: UnitViewData | null = null;
-  playerSafeUrl: SafeResourceUrl | null = null;
+  playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
 
   // Page navigation
@@ -271,7 +271,11 @@ export class UnitViewComponent implements OnInit, OnDestroy {
         d.type === 'PLAYER' || d.type === 'player'
       );
       if (playerDep) {
-        this.playerSafeUrl = this.sanitizer.bypassSecurityTrustResourceUrl(playerDep.downloadUrl);
+        fetch(playerDep.downloadUrl)
+          .then(res => res.text())
+          .then(html => {
+            this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+          });
       }
     });
   }

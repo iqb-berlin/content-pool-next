@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
+import { VoudService } from '../../core/services/voud.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
 
@@ -153,6 +154,7 @@ interface ExplorerItem {
               <option value="separate">Paging: Separate</option>
               <option value="concat-scroll">Paging: Scroll</option>
               <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
+              <option value="view-all">Paging: Alles (Drucken)</option>
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierschema</button>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'metadata'">📄 Metadaten</button>
@@ -445,7 +447,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   playerSrcDoc: any = null;
   currentPage = 1;
   totalPages = 1;
-  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' = 'buttons';
+  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' = 'buttons';
 
   // Overlays
   showOverlay: 'coding' | 'metadata' | null = null;
@@ -465,6 +467,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private api: ApiService,
     private sanitizer: DomSanitizer,
+    private voudService: VoudService,
   ) {}
 
   ngOnInit() {
@@ -642,7 +645,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       fetch(definitionDep.downloadUrl)
         .then(res => res.text())
         .then(definition => {
-          const startPage = this.getStartPage(definition, this.selectedItem?.variableId || '');
+          const startPage = this.voudService.getStartPage(definition, this.selectedItem?.variableId || '');
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
@@ -652,7 +655,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
               stateReportPolicy: 'none',
               pagingMode: this.pagingMode,
               logPolicy: 'disabled',
-              startPage: startPage || undefined
+              startPage: startPage !== undefined ? startPage.toString() : undefined,
+              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
             },
           });
         });
@@ -661,35 +665,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   onPagingModeChange() {
     this.onPlayerLoaded();
-  }
-
-  private getStartPage(definition: string, variableId: string): string | undefined {
-    if (!variableId) return undefined;
-    try {
-      const def = JSON.parse(definition);
-      if (!def.pages || !Array.isArray(def.pages)) return undefined;
-
-      const containsVar = (node: any): boolean => {
-        if (!node || typeof node !== 'object') return false;
-        if (node.id === variableId || node.alias === variableId) return true;
-        for (const key of Object.keys(node)) {
-          if (['value', 'visibilityRules'].includes(key)) continue;
-          if (Array.isArray(node[key])) {
-            if (node[key].some(containsVar)) return true;
-          } else if (typeof node[key] === 'object') {
-            if (containsVar(node[key])) return true;
-          }
-        }
-        return false;
-      };
-
-      for (const page of def.pages) {
-        if (containsVar(page)) return page.id;
-      }
-    } catch {
-      // ignore
-    }
-    return undefined;
   }
 
   private onPlayerMessage(event: MessageEvent) {

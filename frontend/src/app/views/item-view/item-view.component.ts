@@ -2,6 +2,7 @@ import { Component, OnInit, ViewChild, ElementRef, OnDestroy } from '@angular/co
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
+import { VoudService } from '../../core/services/voud.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.component';
@@ -82,6 +83,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     private route: ActivatedRoute,
     private api: ApiService,
     private sanitizer: DomSanitizer,
+    private voudService: VoudService,
   ) {}
 
   ngOnInit() {
@@ -135,7 +137,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       fetch(definitionDep.downloadUrl)
         .then(res => res.text())
         .then(definition => {
-          const startPage = this.getStartPage(definition, this.item?.variableId || '');
+          const startPage = this.voudService.getStartPage(definition, this.item?.variableId || '');
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `review-item-${this.itemId}`,
@@ -145,7 +147,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
               stateReportPolicy: 'none',
               pagingMode: 'buttons',
               logPolicy: 'disabled',
-              startPage: startPage || undefined
+              startPage: startPage !== undefined ? startPage.toString() : undefined,
+              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
             },
           });
 
@@ -154,35 +157,6 @@ export class ItemViewComponent implements OnInit, OnDestroy {
           // In some players, we can pass "highlight" parameters.
         });
     }
-  }
-
-  private getStartPage(definition: string, variableId: string): string | undefined {
-    if (!variableId) return undefined;
-    try {
-      const def = JSON.parse(definition);
-      if (!def.pages || !Array.isArray(def.pages)) return undefined;
-
-      const containsVar = (node: any): boolean => {
-        if (!node || typeof node !== 'object') return false;
-        if (node.id === variableId || node.alias === variableId) return true;
-        for (const key of Object.keys(node)) {
-          if (['value', 'visibilityRules'].includes(key)) continue;
-          if (Array.isArray(node[key])) {
-            if (node[key].some(containsVar)) return true;
-          } else if (typeof node[key] === 'object') {
-            if (containsVar(node[key])) return true;
-          }
-        }
-        return false;
-      };
-
-      for (const page of def.pages) {
-        if (containsVar(page)) return page.id;
-      }
-    } catch {
-      // ignore
-    }
-    return undefined;
   }
 
   private sendToPlayer(msg: any) {

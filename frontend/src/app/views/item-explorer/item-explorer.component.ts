@@ -89,7 +89,7 @@ interface ExplorerItem {
                 <tr
                   [class.active]="selectedItem?.uuid === item.uuid"
                   (click)="selectItem(item, i)">
-                  <td class="sticky-col"><code>{{ item.itemId }}</code></td>
+                  <td class="sticky-col"><code><span class="unit-id">{{ item.unitId }}</span><span class="item-id">{{ item.itemId }}</span></code></td>
                   <td>{{ item.unitLabel }}</td>
                   @for (col of columns; track col.id) {
                     <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
@@ -186,6 +186,10 @@ interface ExplorerItem {
             <div class="info-row">
               <span class="info-label">Aufgabe:</span>
               <strong>{{ selectedItem.unitLabel }}</strong> <code>({{ selectedItem.unitId }})</code>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Item-ID:</span>
+              <code><span class="unit-id">{{ selectedItem.unitId }}</span><span class="item-id">{{ selectedItem.itemId }}</span></code>
             </div>
             <div class="info-row">
               <span class="info-label">Variable:</span>
@@ -368,6 +372,10 @@ interface ExplorerItem {
       transition: width 0.2s;
     }
     .tag-input-inline:focus { width: 100px; outline: none; border-color: var(--color-primary-light); }
+
+    /* Combined ID styling */
+    .unit-id { color: var(--color-text-secondary); }
+    .item-id { color: var(--color-text); font-weight: 600; }
 
     /* Preview panel */
     .preview-panel {
@@ -558,7 +566,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       // 1. Global Filter
       if (term) {
         const matchesGlobal = (
-          item.itemId.toLowerCase().includes(term) ||
+          (item.unitId + item.itemId).toLowerCase().includes(term) ||
           item.unitLabel.toLowerCase().includes(term) ||
           item.description.toLowerCase().includes(term) ||
           Object.values(item.metadata).some(val => val && val.toLowerCase().includes(term))
@@ -572,7 +580,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         const subTerm = filterValue.toLowerCase();
 
         if (colId === 'itemId') {
-          if (!item.itemId.toLowerCase().includes(subTerm)) return false;
+          const combined = (item.unitId + item.itemId).toLowerCase();
+          if (!combined.includes(subTerm)) return false;
         } else if (colId === 'unitLabel') {
           if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
         } else if (colId === 'tags') {

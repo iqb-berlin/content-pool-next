@@ -257,7 +257,16 @@ interface ExplorerItem {
     }
   `,
   styles: [`
-    :host { display: block; height: calc(100vh - 140px); }
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: calc(100vh - 140px);
+      overflow: hidden;
+    }
+    app-split-pane {
+      flex: 1;
+      min-height: 0;
+    }
 
     .explorer-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -292,34 +301,70 @@ interface ExplorerItem {
       background: var(--color-surface);
       border-radius: 0 0 var(--radius) var(--radius);
       box-shadow: var(--shadow);
+      /* Fix corner and layout shift */
+      scrollbar-gutter: stable;
+      position: relative;
     }
+    /* Better scrollbar styling to avoid 'messy' intersection */
+    .table-scroll::-webkit-scrollbar {
+      width: 12px;
+      height: 12px;
+    }
+    .table-scroll::-webkit-scrollbar-track {
+      background: #f8f9fa;
+      border-radius: 0 0 var(--radius) var(--radius);
+    }
+    .table-scroll::-webkit-scrollbar-thumb {
+      background: #ced4da;
+      border-radius: 10px;
+      border: 3px solid #f8f9fa;
+    }
+    .table-scroll::-webkit-scrollbar-thumb:hover {
+      background: #adb5bd;
+    }
+    .table-scroll::-webkit-scrollbar-corner {
+      background: #f8f9fa;
+    }
+
     .explorer-table {
       font-size: 0.85rem;
       margin-bottom: 0;
       width: 100%;
       min-width: max-content;
+      border-collapse: collapse; /* Reverting to collapse for better background handling */
+    }
+    .explorer-table th, .explorer-table td {
+      padding: 10px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--color-border);
     }
     .explorer-table th {
       position: sticky; top: 0;
-      background: var(--color-bg);
-      z-index: 2;
+      background-color: var(--color-bg) !important;
+      z-index: 100;
       white-space: nowrap;
+      min-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      /* Using box-shadow instead of border-bottom for better sticky support in collapse mode */
+      box-shadow: inset 0 -2px 0 var(--color-border);
     }
     .explorer-table td {
       white-space: nowrap;
-      max-width: 200px;
+      max-width: 400px;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .sticky-col {
       position: sticky;
       left: 0;
-      background: var(--color-surface);
-      z-index: 3;
+      background-color: var(--color-surface) !important;
+      z-index: 50;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
     }
     th.sticky-col {
-      background: var(--color-bg);
-      z-index: 4;
+      background-color: var(--color-bg) !important;
+      z-index: 200; /* Highest priority */
     }
     tr.active .sticky-col {
       background: rgba(41,128,185,0.1);
@@ -339,12 +384,12 @@ interface ExplorerItem {
     /* Filter row */
     .filter-row th {
       padding: 4px 10px;
-      background: var(--color-bg);
+      background-color: var(--color-bg) !important;
       border-bottom: 2px solid var(--color-border);
-      position: sticky; top: 37px; /* Below the main header */
-      z-index: 2;
+      position: sticky; top: 44px; /* Matches the header height */
+      z-index: 100;
     }
-    .filter-row th.sticky-col { z-index: 4; }
+    .filter-row th.sticky-col { z-index: 200; }
     .col-filter-input {
       width: 100%; padding: 4px 8px;
       border: 1px solid var(--color-border);

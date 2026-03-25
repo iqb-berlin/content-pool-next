@@ -1,16 +1,18 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, Inject } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { VoudService } from '../../core/services/voud.service';
+import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
 
 interface MetadataColumn {
   id: string;
   label: string;
+  visible?: boolean;
 }
 
 interface ExplorerItem {
@@ -23,6 +25,11 @@ interface ExplorerItem {
   metadata: Record<string, string>;
 }
 
+interface MetadataSettings {
+  visible: string[];
+  order: string[];
+}
+
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
@@ -32,7 +39,14 @@ interface ExplorerItem {
 
     <div class="explorer-header">
       <h1>Item-Explorer</h1>
-      <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
+      <div class="header-actions">
+        <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
+        @if (isAcpManager) {
+          <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
+            👁️ Spalten verwalten
+          </button>
+        }
+      </div>
     </div>
 
     <app-split-pane [initialLeftPercent]="45" [minLeftPx]="350" [minRightPx]="400">
@@ -255,6 +269,66 @@ interface ExplorerItem {
         </div>
       </div>
     }
+
+    <!-- OVERLAY: Column Manager -->
+    @if (showColumnManager) {
+      <div class="overlay-backdrop" (click)="showColumnManager = false">
+        <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <h2>Metadaten-Spalten verwalten</h2>
+            <button class="btn btn-sm btn-outline" (click)="showColumnManager = false">✕ Schließen</button>
+          </div>
+          <div class="overlay-content">
+            <p class="help-text">Wählen Sie die Metadaten-Spalten aus, die in der Tabelle angezeigt werden sollen, und legen Sie deren Reihenfolge fest.</p>
+
+            <div class="column-manager-controls">
+              <button class="btn btn-outline btn-sm" (click)="resetToDefault()" [disabled]="!metadataSettings.visible.length">
+                🔄 Standard wiederherstellen
+              </button>
+            </div>
+
+            <div class="column-list">
+              @for (col of allColumns; track col.id) {
+                <div class="column-item">
+                  <div class="column-header">
+                    <input 
+                      type="checkbox" 
+                      [checked]="metadataSettings.visible.includes(col.id)" 
+                      (change)="toggleColumnVisibility(col)"
+                      class="column-checkbox">
+                    <span class="column-label">{{ col.label }}</span>
+                    <span class="column-id">({{ col.id }})</span>
+                  </div>
+                  @if (metadataSettings.visible.includes(col.id)) {
+                    <div class="column-actions">
+                      <button class="btn btn-xs btn-outline" 
+                              (click)="moveColumnUp(col)" 
+                              [disabled]="metadataSettings.order[0] === col.id">
+                        ↑
+                      </button>
+                      <button class="btn btn-xs btn-outline" 
+                              (click)="moveColumnDown(col)" 
+                              [disabled]="metadataSettings.order[metadataSettings.order.length - 1] === col.id">
+                        ↓
+                      </button>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+
+            <div class="column-manager-footer">
+              <button class="btn btn-primary" (click)="saveMetadataSettings()">
+                💾 Speichern
+              </button>
+              <button class="btn btn-outline" (click)="showColumnManager = false">
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     :host {
@@ -273,6 +347,9 @@ interface ExplorerItem {
       margin-bottom: 16px;
     }
     .explorer-header h1 { margin-bottom: 0; }
+    .header-actions {
+      display: flex; align-items: center; gap: 16px;
+    }
     .item-count { font-size: 0.85rem; color: var(--color-text-secondary); }
 
     /* Table panel */
@@ -519,6 +596,44 @@ interface ExplorerItem {
     .meta-dl dt { font-weight: 600; color: var(--color-text-secondary); }
     .meta-dl dd { margin: 0; }
     .help-text { color: var(--color-text-secondary); font-size: 0.9rem; }
+
+    /* Column Manager */
+    .column-manager-dialog {
+      max-width: 600px;
+    }
+    .column-manager-controls {
+      display: flex; justify-content: flex-end; margin-bottom: 16px;
+    }
+    .column-list {
+      display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto;
+    }
+    .column-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; background: var(--color-bg); border-radius: var(--radius);
+      border: 1px solid var(--color-border);
+    }
+    .column-header {
+      display: flex; align-items: center; gap: 12px; flex: 1;
+    }
+    .column-checkbox {
+      width: 16px; height: 16px; cursor: pointer;
+    }
+    .column-label {
+      font-weight: 500; flex: 1;
+    }
+    .column-id {
+      color: var(--color-text-secondary); font-size: 0.8rem; margin-left: 8px;
+    }
+    .column-actions {
+      display: flex; gap: 4px; margin-left: 12px;
+    }
+    .btn-xs {
+      padding: 2px 6px; font-size: 0.7rem; min-width: 24px;
+    }
+    .column-manager-footer {
+      display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
+      padding-top: 16px; border-top: 1px solid var(--color-border);
+    }
   `]
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
@@ -560,6 +675,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
 
+  // Metadata column management
+  isAcpManager = false;
+  showColumnManager = false;
+  allColumns: MetadataColumn[] = [];
+  metadataSettings: MetadataSettings = { visible: [], order: [] };
+
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
 
@@ -568,6 +689,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     private api: ApiService,
     private sanitizer: DomSanitizer,
     private voudService: VoudService,
+    private authService: AuthService,
   ) {}
 
   ngOnInit() {
@@ -580,16 +702,23 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     window.addEventListener('message', this.messageHandler);
 
-    // Load feature config
+    // Check if user is ACP Manager
+    this.checkUserRole();
+
+    // Load feature config and metadata settings
     this.api.getAcpStartPage(this.acpId).subscribe(data => {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
+      
+      // Load metadata column settings
+      this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
     });
 
     // Load item list from .vomd files
     this.api.getFileItemList(this.acpId).subscribe(result => {
-      this.columns = result.columns || [];
+      this.allColumns = result.columns || [];
+      this.columns = this.filterVisibleColumns(this.allColumns);
       this.items = result.items || [];
       this.filteredItems = [...this.items];
       this.unitMetadataCache = result.unitMetadata || {};
@@ -924,5 +1053,130 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       clearInterval(this.autoResizeInterval);
       this.autoResizeInterval = null;
     }
+  }
+
+  // --- Metadata Column Management ---
+  checkUserRole() {
+    // Use AuthService to properly check ACP Manager role
+    this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
+    
+    console.log('Role check result:', {
+      acpId: this.acpId,
+      isAcpManager: this.isAcpManager,
+      currentUser: this.authService.currentUser
+    });
+  }
+
+  filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
+    if (!this.metadataSettings?.visible?.length) {
+      return allColumns; // Show all if no settings
+    }
+    
+    // Filter visible columns and maintain order
+    const visibleMap = new Set(this.metadataSettings.visible);
+    const orderedColumns = [];
+    
+    // First, add columns in the specified order
+    for (const colId of this.metadataSettings.order || []) {
+      const col = allColumns.find(c => c.id === colId);
+      if (col && visibleMap.has(colId)) {
+        orderedColumns.push({ ...col, visible: true });
+      }
+    }
+    
+    // Then add any remaining visible columns not in the order list
+    for (const col of allColumns) {
+      if (visibleMap.has(col.id) && !orderedColumns.some(c => c.id === col.id)) {
+        orderedColumns.push({ ...col, visible: true });
+      }
+    }
+    
+    return orderedColumns;
+  }
+
+  toggleColumnVisibility(column: MetadataColumn) {
+    const colIndex = this.metadataSettings.visible.indexOf(column.id);
+    if (colIndex === -1) {
+      this.metadataSettings.visible.push(column.id);
+      if (!this.metadataSettings.order.includes(column.id)) {
+        this.metadataSettings.order.push(column.id);
+      }
+    } else {
+      this.metadataSettings.visible.splice(colIndex, 1);
+      const orderIndex = this.metadataSettings.order.indexOf(column.id);
+      if (orderIndex !== -1) {
+        this.metadataSettings.order.splice(orderIndex, 1);
+      }
+    }
+    this.columns = this.filterVisibleColumns(this.allColumns);
+  }
+
+  moveColumnUp(column: MetadataColumn) {
+    const index = this.metadataSettings.order.indexOf(column.id);
+    if (index > 0) {
+      [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = 
+        [this.metadataSettings.order[index - 1], this.metadataSettings.order[index]];
+      this.columns = this.filterVisibleColumns(this.allColumns);
+    }
+  }
+
+  moveColumnDown(column: MetadataColumn) {
+    const index = this.metadataSettings.order.indexOf(column.id);
+    if (index >= 0 && index < this.metadataSettings.order.length - 1) {
+      [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = 
+        [this.metadataSettings.order[index + 1], this.metadataSettings.order[index]];
+      this.columns = this.filterVisibleColumns(this.allColumns);
+    }
+  }
+
+  saveMetadataSettings() {
+    console.log('Saving metadata settings:', {
+      acpId: this.acpId,
+      visibleColumns: this.metadataSettings.visible,
+      columnOrder: this.metadataSettings.order,
+      currentUser: this.authService.currentUser
+    });
+
+    this.api.updateMetadataColumns(this.acpId, {
+      visibleColumns: this.metadataSettings.visible,
+      columnOrder: this.metadataSettings.order
+    }).subscribe({
+      next: (response) => {
+        console.log('Save successful!', response);
+        this.showColumnManager = false;
+        // Refresh to get updated settings
+        this.api.getAcpStartPage(this.acpId).subscribe(data => {
+          this.metadataSettings = data?.featureConfig?.metadataColumns || { visible: [], order: [] };
+          console.log('Refreshed settings:', this.metadataSettings);
+        });
+      },
+      error: (error) => {
+        console.error('Save failed with error:', {
+          status: error.status,
+          statusText: error.statusText,
+          message: error.message,
+          errorDetails: error.error,
+          url: error.url
+        });
+        
+        let errorMessage = 'Fehler beim Speichern: ';
+        if (error.status === 403) {
+          errorMessage += 'Zugang verweigert - Sie haben keine Berechtigung für diese Aktion.';
+        } else if (error.status === 401) {
+          errorMessage += 'Nicht autorisiert - Bitte melden Sie sich an.';
+        } else if (error.error?.message) {
+          errorMessage += error.error.message;
+        } else {
+          errorMessage += error.message || JSON.stringify(error);
+        }
+        
+        alert(errorMessage);
+      }
+    });
+  }
+
+  resetToDefault() {
+    this.metadataSettings = { visible: [], order: [] };
+    this.columns = this.filterVisibleColumns(this.allColumns);
   }
 }

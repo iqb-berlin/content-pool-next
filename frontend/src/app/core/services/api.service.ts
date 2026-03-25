@@ -51,6 +51,9 @@ export class ApiService {
   uploadCredentials(id: string, credentials: any[]): Observable<any> {
     return this.http.post(`${this.API}/acp/${id}/access/credentials`, { credentials });
   }
+  updateMetadataColumns(id: string, data: any): Observable<AccessConfig> {
+    return this.http.put<AccessConfig>(`${this.API}/acp/${id}/metadata-columns`, data);
+  }
 
   // Files
   getFiles(acpId: string): Observable<AcpFile[]> { return this.http.get<AcpFile[]>(`${this.API}/acp/${acpId}/files`); }

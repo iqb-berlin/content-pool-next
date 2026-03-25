@@ -11,6 +11,7 @@ import {
   Request,
   Res,
   Header,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -21,6 +22,7 @@ import {
   AssignRoleDto,
   UpdateAccessConfigDto,
   UploadCredentialsDto,
+  UpdateMetadataColumnsDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -31,6 +33,8 @@ import { Roles } from '../auth/roles.decorator';
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class AcpController {
+  private readonly logger = new Logger(AcpController.name);
+  
   constructor(private readonly acpService: AcpService) {}
 
   @Get()
@@ -139,5 +143,26 @@ export class AcpController {
   async uploadCredentials(@Param('id') id: string, @Body() dto: UploadCredentialsDto) {
     const count = await this.acpService.uploadCredentials(id, dto.credentials);
     return { message: `${count} credentials uploaded successfully` };
+  }
+
+  @Put(':id/metadata-columns')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Update metadata column visibility and order (ACP Manager only)' })
+  async updateMetadataColumns(@Param('id') id: string, @Body() dto: UpdateMetadataColumnsDto, @Request() req: any) {
+    this.logger.log(`Updating metadata columns for ACP ${id} by user ${req.user?.sub}`, {
+      userRoles: req.user?.roles,
+      userAcpRoles: req.user?.acpRoles,
+      dto
+    });
+    
+    try {
+      const result = await this.acpService.updateMetadataColumns(id, dto);
+      this.logger.log(`Successfully updated metadata columns for ACP ${id}`);
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to update metadata columns for ACP ${id}: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 }

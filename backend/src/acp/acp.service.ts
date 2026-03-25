@@ -22,6 +22,7 @@ import {
   AssignRoleDto,
   UpdateAccessConfigDto,
   CredentialEntryDto,
+  UpdateMetadataColumnsDto,
 } from './dto/acp.dto';
 
 @Injectable()
@@ -211,6 +212,23 @@ export class AcpService {
       });
     }
 
+    return this.accessConfigRepository.save(config);
+  }
+
+  async updateMetadataColumns(acpId: string, dto: UpdateMetadataColumnsDto): Promise<AcpAccessConfig> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      throw new NotFoundException('Access configuration not found');
+    }
+
+    const currentConfig = config.featureConfig || {};
+
+    currentConfig.metadataColumns = {
+      visible: dto.visibleColumns,
+      order: dto.columnOrder || dto.visibleColumns
+    };
+
+    config.featureConfig = currentConfig;
     return this.accessConfigRepository.save(config);
   }
 

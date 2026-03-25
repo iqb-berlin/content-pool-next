@@ -79,6 +79,19 @@ export class UpdateAccessConfigDto {
   validUntil?: string;
 }
 
+export class UpdateMetadataColumnsDto {
+  @ApiProperty({ type: [String], description: 'List of metadata column IDs to display' })
+  @IsArray()
+  @IsString({ each: true })
+  visibleColumns!: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Order of metadata columns' })
+  @IsArray()
+  @IsOptional()
+  @IsString({ each: true })
+  columnOrder?: string[];
+}
+
 export class CredentialEntryDto {
   @ApiProperty()
   @IsString()

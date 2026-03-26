@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -29,5 +30,37 @@ export class ItemsController {
     @Param('itemId') itemId: string,
   ) {
     return this.itemsService.getItem(acpId, itemId);
+  }
+
+  @Post('upload-empirical-difficulty')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Upload a CSV to match empirical item difficulties' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadEmpiricalDifficulties(
+    @Param('acpId') acpId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer);
+  }
+
+  @Delete('empirical-difficulty')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Clear all empirical difficulties for an ACP' })
+  async clearEmpiricalDifficulties(@Param('acpId') acpId: string) {
+    return this.itemsService.clearEmpiricalDifficulties(acpId);
   }
 }

@@ -51,6 +51,9 @@ export class ApiService {
   uploadCredentials(id: string, credentials: any[]): Observable<any> {
     return this.http.post(`${this.API}/acp/${id}/access/credentials`, { credentials });
   }
+  updateMetadataColumns(id: string, data: any): Observable<AccessConfig> {
+    return this.http.put<AccessConfig>(`${this.API}/acp/${id}/metadata-columns`, data);
+  }
 
   // Files
   getFiles(acpId: string): Observable<AcpFile[]> { return this.http.get<AcpFile[]>(`${this.API}/acp/${acpId}/files`); }
@@ -66,6 +69,15 @@ export class ApiService {
   getFileDownloadUrl(acpId: string, fileId: string): string {
     const token = localStorage.getItem('cp_token');
     return `${this.API}/acp/${acpId}/files/${fileId}/download${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
+  }
+  validateUnitFiles(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/acp/${acpId}/files/validate-units`);
+  }
+  getFileItemList(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/acp/${acpId}/files/item-list`);
+  }
+  getFileUnitView(acpId: string, unitId: string): Observable<any> {
+    return this.http.get(`${this.API}/acp/${acpId}/files/unit-view/${unitId}`);
   }
 
   getIndexExportUrl(id: string): string {
@@ -112,5 +124,16 @@ export class ApiService {
   getViewSequences(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`); }
   getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
     return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);
+  }
+
+  // Items
+  uploadEmpiricalDifficulties(acpId: string, file: File): Observable<{ updated: number, failed: any[], successes: any[] }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<{ updated: number, failed: any[], successes: any[] }>(`${this.API}/acp/${acpId}/items/upload-empirical-difficulty`, formData);
+  }
+
+  clearEmpiricalDifficulties(acpId: string): Observable<void> {
+    return this.http.delete<void>(`${this.API}/acp/${acpId}/items/empirical-difficulty`);
   }
 }

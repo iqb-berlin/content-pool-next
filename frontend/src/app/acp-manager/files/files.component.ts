@@ -9,13 +9,52 @@ import { AcpFile } from '../../core/models/api.models';
   template: `
     <div class="page-header">
       <h1>Dateien</h1>
-      <label class="btn btn-primary">
-        📤 Dateien hochladen
-        <input type="file" multiple (change)="upload($event)" hidden>
-      </label>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" (click)="validateFiles()" [disabled]="validating">
+          {{ validating ? '⏳ Wird geprüft...' : '🔍 Dateien prüfen' }}
+        </button>
+        <label class="btn btn-primary">
+          📤 Dateien hochladen
+          <input type="file" multiple (change)="upload($event)" hidden>
+        </label>
+      </div>
     </div>
 
     @if (uploading) { <div class="alert alert-success">Dateien werden hochgeladen...</div> }
+
+    <!-- Validation Results -->
+    @if (validationResults.length) {
+      <div class="card" style="margin-bottom:16px">
+        <h3 style="margin-bottom:12px">Unit-Dateien Prüfung</h3>
+        @for (result of validationResults; track result.unitId) {
+          <div class="validation-unit" [class.valid]="result.valid" [class.invalid]="!result.valid">
+            <div class="validation-header">
+              <span class="badge" [class.badge-success]="result.valid" [class.badge-danger]="!result.valid">
+                {{ result.valid ? '✓' : '✗' }}
+              </span>
+              <strong>{{ result.unitLabel }}</strong>
+              <code>({{ result.unitId }})</code>
+            </div>
+            @if (!result.valid) {
+              <div class="validation-details">
+                @if (!result.files.definition.found) {
+                  <span class="badge badge-danger">Fehlend: {{ result.files.definition.expected }}</span>
+                }
+                @if (!result.files.codingScheme.found) {
+                  <span class="badge badge-warning">Fehlend: {{ result.files.codingScheme.expected }}</span>
+                }
+                @if (!result.files.metadata.found) {
+                  <span class="badge badge-warning">Fehlend: {{ result.files.metadata.expected }}</span>
+                }
+                @if (!result.files.player.found) {
+                  <span class="badge badge-danger">Fehlend: Player ({{ result.files.player.expected }})</span>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
 
     <div class="card">
       <table class="table">
@@ -55,12 +94,24 @@ import { AcpFile } from '../../core/models/api.models';
         <div class="empty-state"><h3>Keine Dateien vorhanden</h3></div>
       }
     </div>
-  `
+  `,
+  styles: [`
+    .validation-unit {
+      padding: 8px 12px; margin-bottom: 6px;
+      border-radius: var(--radius); border-left: 3px solid transparent;
+    }
+    .validation-unit.valid { border-left-color: var(--color-success); background: rgba(39,174,96,0.05); }
+    .validation-unit.invalid { border-left-color: var(--color-danger); background: rgba(231,76,60,0.05); }
+    .validation-header { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+    .validation-details { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 32px; }
+  `]
 })
 export class FilesComponent implements OnInit {
   acpId = '';
   files: AcpFile[] = [];
   uploading = false;
+  validating = false;
+  validationResults: any[] = [];
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
@@ -87,6 +138,17 @@ export class FilesComponent implements OnInit {
     });
   }
 
+  validateFiles() {
+    this.validating = true;
+    this.api.validateUnitFiles(this.acpId).subscribe({
+      next: (results) => {
+        this.validationResults = results;
+        this.validating = false;
+      },
+      error: () => this.validating = false
+    });
+  }
+
   deleteFile(file: AcpFile) {
     if (confirm(`Datei "${file.originalName}" löschen?`)) {
       this.api.deleteFile(this.acpId, file.id).subscribe(() => this.load());
@@ -103,3 +165,4 @@ export class FilesComponent implements OnInit {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 }
+

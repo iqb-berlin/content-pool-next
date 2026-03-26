@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { RouterOutlet, RouterLink, Router } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
+import { ApiService } from './core/services/api.service';
 
 @Component({
   selector: 'app-root',
@@ -52,7 +53,7 @@ import { AuthService } from './core/services/auth.service';
       color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
     }
     .btn-logout:hover { background: rgba(255,255,255,0.25); }
-    .app-main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+    .app-main { flex: 1; padding: 24px; width: 100%; margin: 0 auto; box-sizing: border-box; }
   `]
 })
 export class AppComponent implements OnInit {

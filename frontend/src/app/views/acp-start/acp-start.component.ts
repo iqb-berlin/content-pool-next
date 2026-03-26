@@ -58,6 +58,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <h3>Item-Liste</h3>
             <p>Alle Items mit Metadaten anzeigen</p>
           </a>
+
+          <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
+            <div class="section-icon">🔭</div>
+            <h3>Item-Explorer</h3>
+            <p>Items interaktiv durchsuchen und anzeigen</p>
+          </a>
         }
 
         <!-- Downloads — only if any download flag is enabled -->

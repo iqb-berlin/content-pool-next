@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as fs from 'fs/promises';
-import { AcpFile } from '../database/entities';
+import { AcpFile, Acp } from '../database/entities';
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -44,6 +44,7 @@ export interface VomdItemData {
   description: string;
   variableId: string;
   metadata: Record<string, string>;
+  empiricalDifficulty?: number;
 }
 
 /** Full item list response */
@@ -61,6 +62,8 @@ export class UnitParserService {
   constructor(
     @InjectRepository(AcpFile)
     private readonly fileRepository: Repository<AcpFile>,
+    @InjectRepository(Acp)
+    private readonly acpRepository: Repository<Acp>,
   ) {}
 
   /**
@@ -229,6 +232,8 @@ export class UnitParserService {
    */
   async getItemListFromFiles(acpId: string): Promise<ItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    const itemProps = acp?.itemProperties || {};
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label
@@ -304,6 +309,11 @@ export class UnitParserService {
             }
           }
 
+          let resolvedItemId = item.id;
+          if (item.useUnitAliasAsPrefix !== false) {
+             resolvedItemId = `${parsed.unitId}_${item.id}`;
+          }
+
           items.push({
             itemId: item.id,
             uuid: item.uuid,
@@ -312,6 +322,7 @@ export class UnitParserService {
             description: item.description || '',
             variableId: item.variableId || item.variableReadOnlyId || '',
             metadata,
+            empiricalDifficulty: itemProps[item.uuid]?.empiricalDifficulty || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
           });
         }
       } catch (e) {

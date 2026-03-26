@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef, Inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
@@ -23,6 +23,7 @@ interface ExplorerItem {
   description: string;
   variableId: string;
   metadata: Record<string, string>;
+  empiricalDifficulty?: number;
 }
 
 interface MetadataSettings {
@@ -42,6 +43,13 @@ interface MetadataSettings {
       <div class="header-actions">
         <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
         @if (isAcpManager) {
+          <input type="file" #csvUploadInput style="display: none" accept=".csv" (change)="onCsvFileSelected($event)">
+          <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
+            📄 Item-Schwierigkeiten (CSV) hochladen
+          </button>
+          <button class="btn btn-outline btn-sm" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);" (click)="clearEmpiricalDifficulties()" title="Alle Itemschwierigkeiten löschen">
+            🗑️ Werte bereinigen
+          </button>
           <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
             👁️ Spalten verwalten
           </button>
@@ -70,6 +78,11 @@ interface MetadataSettings {
                 <th (click)="sortBy('unitLabel')" class="sortable">
                   Aufgabe {{ getSortIndicator('unitLabel') }}
                 </th>
+                @if (hasEmpiricalDifficulty) {
+                  <th (click)="sortBy('empiricalDifficulty')" class="sortable">
+                    Empirische Itemschwierigkeit {{ getSortIndicator('empiricalDifficulty') }}
+                  </th>
+                }
                 @for (col of columns; track col.id) {
                   <th (click)="sortByMeta(col.id)" class="sortable">
                     {{ col.label }} {{ getMetaSortIndicator(col.id) }}
@@ -86,6 +99,11 @@ interface MetadataSettings {
                 <th>
                   <input class="col-filter-input" [(ngModel)]="columnFilters['unitLabel']" placeholder="🔍 Aufgabe..." (input)="applyFilter()">
                 </th>
+                @if (hasEmpiricalDifficulty) {
+                  <th>
+                    <input type="number" class="col-filter-input" [(ngModel)]="columnFilters['empiricalDifficulty']" placeholder="🔍 Wert..." (input)="applyFilter()">
+                  </th>
+                }
                 @for (col of columns; track col.id) {
                   <th>
                     <input class="col-filter-input" [(ngModel)]="columnFilters[col.id]" [placeholder]="'🔍 ' + col.label + '...'" (input)="applyFilter()">
@@ -105,6 +123,9 @@ interface MetadataSettings {
                   (click)="selectItem(item, i)">
                   <td class="sticky-col"><code><span class="unit-id">{{ item.unitId }}</span><span class="item-id">{{ item.itemId }}</span></code></td>
                   <td>{{ item.unitLabel }}</td>
+                  @if (hasEmpiricalDifficulty) {
+                    <td>{{ item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null ? item.empiricalDifficulty : '–' }}</td>
+                  }
                   @for (col of columns; track col.id) {
                     <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
                   }
@@ -265,6 +286,85 @@ interface MetadataSettings {
             } @else {
               <p class="help-text">Keine Metadaten für diese Aufgabe verfügbar.</p>
             }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Upload Report -->
+    @if (showUploadReport) {
+      <div class="overlay-backdrop" (click)="showUploadReport = false">
+        <div class="overlay-dialog" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <h2>Upload Bericht</h2>
+            <button class="btn btn-sm btn-outline" (click)="showUploadReport = false; reloadItems()">✕ Schließen</button>
+          </div>
+          <div class="overlay-content">
+            <p><strong>Zusammenfassung:</strong> {{ uploadResult?.updated }} erfolgreich aktualisiert, {{ uploadResult?.failed?.length || 0 }} fehlgeschlagen.</p>
+
+            @if (uploadResult?.successes?.length) {
+              <div style="margin-top: 16px;">
+                <h3 style="color: #27ae60;">Erfolgreich aktualisiert ({{ uploadResult!.successes.length }})</h3>
+                <div style="margin: 8px 0; max-height: 350px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 4px;">
+                  <table class="table" style="width: 100%; border-collapse: collapse;">
+                    <thead style="position: sticky; top: 0; background: var(--color-surface); z-index: 1;">
+                      <tr>
+                        <th style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Aufgabe</th>
+                        <th style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Item-ID</th>
+                        <th style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Wert (est)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (success of uploadResult!.successes; track $index) {
+                        <tr>
+                          <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"><code>{{ success.unitId }}</code></td>
+                          <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"><code>{{ success.itemId }}</code></td>
+                          <td style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);">{{ success.value }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            }
+
+            @if (uploadResult?.failed?.length) {
+              <div style="margin-top: 16px;">
+                <h3 style="color: #e74c3c;">Fehlgeschlagen ({{ uploadResult!.failed.length }})</h3>
+                <div style="margin: 8px 0; max-height: 250px; overflow-y: auto; background: rgba(231, 76, 60, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.2);">
+                  <ul style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem;">
+                    @for (fail of uploadResult!.failed; track $index) {
+                      <li><code>{{ fail.csvRow }}</code>: {{ fail.reason }}</li>
+                    }
+                  </ul>
+                </div>
+                <p class="help-text" style="font-size: 0.8rem; margin-top: 8px;">Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder Unit-Item Kombi übereinstimmen).</p>
+              </div>
+            } @else if (uploadResult?.successes?.length) {
+              <p style="color: #27ae60; margin-top: 16px; font-weight: bold;">🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!</p>
+            }
+
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Error Dialog -->
+    @if (showErrorDialog) {
+      <div class="overlay-backdrop" (click)="showErrorDialog = false">
+        <div class="overlay-dialog" style="max-width: 500px; border-top: 4px solid #e74c3c;" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
+              <span>⚠️</span> Upload-Fehler
+            </h2>
+            <button class="btn btn-sm btn-outline" (click)="showErrorDialog = false">✕</button>
+          </div>
+          <div class="overlay-content" style="text-align: center; padding: 24px 16px;">
+            <div style="font-size: 3rem; margin-bottom: 16px;">🚫</div>
+            <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text);">{{ errorMessage }}</p>
+            <div style="margin-top: 24px;">
+              <button class="btn btn-primary" (click)="showErrorDialog = false">Verstanden</button>
+            </div>
           </div>
         </div>
       </div>
@@ -643,6 +743,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   columns: MetadataColumn[] = [];
   items: ExplorerItem[] = [];
   filteredItems: ExplorerItem[] = [];
+  hasEmpiricalDifficulty = false;
   filterText = '';
   sortField = 'itemId';
   sortIsMeta = false;
@@ -674,6 +775,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   enableTags = false;
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
+
+  // File Upload
+  showUploadReport = false;
+  uploadResult: { updated: number, failed: any[], successes: any[] } | null = null;
+  isUploading = false;
+  showErrorDialog = false;
+  errorMessage = '';
 
   // Metadata column management
   isAcpManager = false;
@@ -715,15 +823,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
     });
 
+    this.reloadItems();
+  }
+
+  // --- Reload Items ---
+  reloadItems() {
     // Load item list from .vomd files
     this.api.getFileItemList(this.acpId).subscribe(result => {
       this.allColumns = result.columns || [];
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.items = result.items || [];
+      this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
       this.filteredItems = [...this.items];
       this.unitMetadataCache = result.unitMetadata || {};
       this.codingSchemeCache = result.codingSchemes || {};
-      this.applySort();
+      this.applyFilter(); // re-apply current filters and sort
     });
   }
 
@@ -761,6 +875,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         } else if (colId === 'tags') {
           const tags = this.itemTags[item.uuid] || [];
           if (!tags.some(t => t.toLowerCase().includes(subTerm))) return false;
+        } else if (colId === 'empiricalDifficulty') {
+          if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null) return false;
+          if (item.empiricalDifficulty.toString() !== filterValue) return false;
         } else {
           // Metadata column
           const val = item.metadata[colId] || '';
@@ -799,17 +916,69 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   private applySort() {
     this.filteredItems.sort((a, b) => {
-      let aVal: string, bVal: string;
+      let aVal: any = '';
+      let bVal: any = '';
+
       if (this.sortIsMeta) {
-        aVal = (a.metadata[this.sortField] || '').toLowerCase();
-        bVal = (b.metadata[this.sortField] || '').toLowerCase();
+        aVal = a.metadata[this.sortField] || '';
+        bVal = b.metadata[this.sortField] || '';
+      } else if (this.sortField === 'empiricalDifficulty') {
+        aVal = a.empiricalDifficulty ?? -Infinity;
+        bVal = b.empiricalDifficulty ?? -Infinity;
       } else {
-        aVal = ((a as any)[this.sortField] || '').toString().toLowerCase();
-        bVal = ((b as any)[this.sortField] || '').toString().toLowerCase();
+        aVal = (a as any)[this.sortField] || '';
+        bVal = (b as any)[this.sortField] || '';
       }
-      const cmp = aVal.localeCompare(bVal);
+
+      // Handing numbers
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return this.sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      aVal = aVal.toString().toLowerCase();
+      bVal = bVal.toString().toLowerCase();
+      const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
+  }
+
+  // --- CSV Upload Handling ---
+  onCsvFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (!input.files || input.files.length === 0) return;
+    const file = input.files[0];
+
+    this.isUploading = true;
+    this.api.uploadEmpiricalDifficulties(this.acpId, file).subscribe({
+      next: (result) => {
+        this.isUploading = false;
+        this.uploadResult = result;
+        this.showUploadReport = true;
+        // The list will reload when they close the dialog (handled in template)
+      },
+      error: (err) => {
+        console.error(err);
+        this.isUploading = false;
+        this.errorMessage = err.error?.message || 'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
+        this.showErrorDialog = true;
+      }
+    });
+
+    input.value = ''; // reset input
+  }
+
+  clearEmpiricalDifficulties() {
+    if (confirm('Bist du sicher, dass du alle empirischen Itemschwierigkeiten für diesen ACP löschen möchtest? Dies betrifft alle Items.')) {
+      this.api.clearEmpiricalDifficulties(this.acpId).subscribe({
+        next: () => {
+          this.reloadItems();
+        },
+        error: (err) => {
+          console.error(err);
+          alert('Fehler beim Löschen der Itemschwierigkeiten.');
+        }
+      });
+    }
   }
 
   getSortIndicator(field: string): string {

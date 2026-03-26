@@ -125,4 +125,15 @@ export class ApiService {
   getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
     return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);
   }
+
+  // Items
+  uploadEmpiricalDifficulties(acpId: string, file: File): Observable<{ updated: number, failed: any[], successes: any[] }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<{ updated: number, failed: any[], successes: any[] }>(`${this.API}/acp/${acpId}/items/upload-empirical-difficulty`, formData);
+  }
+
+  clearEmpiricalDifficulties(acpId: string): Observable<void> {
+    return this.http.delete<void>(`${this.API}/acp/${acpId}/items/empirical-difficulty`);
+  }
 }

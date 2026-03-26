@@ -29,6 +29,9 @@ export class Acp {
   @Column({ name: 'acp_index', type: 'jsonb', default: {} })
   acpIndex!: Record<string, unknown>;
 
+  @Column({ name: 'item_properties', type: 'jsonb', default: {} })
+  itemProperties!: Record<string, Record<string, any>>;
+
   @Column({ type: 'jsonb', default: {} })
   settings!: Record<string, unknown>;
 

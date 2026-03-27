@@ -282,8 +282,16 @@ interface MetadataSettings {
                   <div class="coding-item">
                     <div class="coding-item-header">
                       <h4>{{ coding.label || coding.id }}</h4>
-                      <code class="variable-id">{{ coding.id }}</code>
+                      <div class="header-tags">
+                        <code class="variable-id">{{ coding.id }}</code>
+                      </div>
                     </div>
+                    @if ($any(coding).manualInstructionText) {
+                      <div class="global-manual-instruction">
+                        <strong>📖 Variable-Instruktion:</strong>
+                        <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)"></div>
+                      </div>
+                    }
                     <div class="codes-list">
                       @for (code of coding.codes; track code.id) {
                         <div class="code-row">
@@ -291,7 +299,16 @@ interface MetadataSettings {
                             <span class="code-id">{{ code.id }}</span>
                             <span class="code-score">({{ code.score }})</span>
                             <span class="code-label">{{ code.label }}</span>
+                            @if (code.hasManualInstruction) {
+                              <span class="manual-icon" title="Manuelle Prüfung erforderlich">📝</span>
+                            }
                           </div>
+                          @if ($any(code).manualInstructionText) {
+                            <div class="code-manual-instruction">
+                              <strong>Instruktion:</strong>
+                              <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(code).manualInstructionText)"></div>
+                            </div>
+                          }
                           @if (code.ruleSetDescriptions.length) {
                             <ul class="rule-list">
                               @for (rule of code.ruleSetDescriptions; track rule) {
@@ -754,6 +771,16 @@ interface MetadataSettings {
       border-bottom: 1px solid var(--color-border);
       padding-bottom: 10px;
     }
+    .header-tags {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .manual-icon {
+      font-size: 0.9rem;
+      cursor: help;
+      margin-left: 4px;
+    }
     .coding-item h4 {
       margin: 0;
       color: var(--color-primary);
@@ -766,6 +793,16 @@ interface MetadataSettings {
       padding: 2px 8px;
       border-radius: 4px;
       color: var(--color-text-secondary);
+    }
+    .global-manual-instruction {
+      background: rgba(243, 156, 18, 0.05);
+      border-left: 4px solid #f39c12;
+      padding: 10px 14px;
+      margin-bottom: 20px;
+      font-size: 0.85rem;
+      border-radius: 4px;
+      color: #7e5109;
+      line-height: 1.4;
     }
     .codes-list {
       display: flex;
@@ -785,6 +822,24 @@ interface MetadataSettings {
     .code-row:hover {
       background: rgba(41,128,185,0.03);
       border-left-color: var(--color-primary-light);
+    }
+    .code-manual-instruction {
+      margin: 2px 0 4px 44px;
+      font-size: 0.8rem;
+      color: #d35400;
+      background: rgba(230, 126, 34, 0.03);
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .html-content {
+      margin-top: 4px;
+    }
+    .html-content ul, .html-content ol {
+      margin: 8px 0;
+      padding-left: 20px;
+    }
+    .html-content p {
+      margin: 4px 0;
     }
     .code-main {
       display: flex;
@@ -1057,7 +1112,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
-    private sanitizer: DomSanitizer,
+    public sanitizer: DomSanitizer,
     private voudService: VoudService,
     private authService: AuthService,
   ) {}
@@ -1277,6 +1332,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         ? this.currentCodingScheme
         : this.currentCodingScheme.variableCodings || [];
       this.currentCodingSchemeAsText = CodingSchemeTextFactory.asText(codings);
+      // Enrich with manual instruction texts from raw JSON
+      this.currentCodingSchemeAsText.forEach(cat => {
+        const rawVariable = codings.find((v: any) => v.id === cat.id);
+        if (rawVariable) {
+          (cat as any).manualInstructionText = rawVariable.manualInstruction;
+          cat.codes.forEach(c => {
+            const rawCode = rawVariable.codes?.find((rc: any) => 
+              (rc.id === null ? 'null' : rc.id.toString(10)) === c.id
+            );
+            if (rawCode) {
+              (c as any).manualInstructionText = rawCode.manualInstruction;
+            }
+          });
+        }
+      });
     } else {
       this.currentCodingSchemeAsText = null;
     }

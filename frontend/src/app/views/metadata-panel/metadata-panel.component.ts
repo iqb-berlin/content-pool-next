@@ -2,6 +2,7 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { UnitViewData } from '../../core/models/api.models';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
+import { DomSanitizer } from '@angular/platform-browser';
 
 @Component({
   selector: 'app-metadata-panel',
@@ -40,12 +41,29 @@ import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
                 <div class="coding-item-header">
                   <strong>{{ coding.label || coding.id }}</strong>
                 </div>
+                @if ($any(coding).manualInstructionText) {
+                  <div class="global-manual-instruction">
+                    <strong>📖 Variable-Instruktion:</strong>
+                    <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)"></div>
+                  </div>
+                }
                 <div class="codes-list">
                   @for (code of coding.codes; track code.id) {
-                    <div class="code-row">
-                      <span class="code-id">{{ code.id }}</span>
-                      <span class="code-score">({{ code.score }})</span>
-                      <span class="code-label">{{ code.label }}</span>
+                    <div class="code-row-container">
+                      <div class="code-row">
+                        <span class="code-id">{{ code.id }}</span>
+                        <span class="code-score">({{ code.score }})</span>
+                        <span class="code-label">{{ code.label }}</span>
+                        @if (code.hasManualInstruction) {
+                          <span class="manual-icon-tiny" title="Manuelle Prüfung erforderlich">📝</span>
+                        }
+                      </div>
+                      @if ($any(code).manualInstructionText) {
+                        <div class="code-manual-instruction">
+                          <strong>Instruktion:</strong>
+                          <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(code).manualInstructionText)"></div>
+                        </div>
+                      }
                     </div>
                   }
                 </div>
@@ -78,9 +96,17 @@ import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
     .json-view { background: var(--color-bg); padding: 12px; border-radius: var(--radius); font-size: 0.75rem; max-height: 200px; overflow: auto; }
     .coding-scheme-view { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
     .coding-item { padding: 12px; background: rgba(0,0,0,0.02); border-radius: 8px; border: 1px solid var(--color-border); }
-    .coding-item-header { margin-bottom: 8px; font-size: 0.85rem; color: var(--color-primary); }
+    .coding-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 0.85rem; color: var(--color-primary); }
+    .global-manual-instruction { font-size: 0.8rem; color: #7e5109; background: rgba(243, 156, 18, 0.05); padding: 4px 8px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid #f39c12; }
+    .html-content { margin-top: 4px; }
+    .html-content ul, .html-content ol { margin: 4px 0; padding-left: 20px; }
+    .html-content p { margin: 2px 0; }
+    .manual-icon-small { font-size: 0.8rem; }
+    .manual-icon-tiny { font-size: 0.7rem; margin-left: 4px; }
     .codes-list { display: flex; flex-direction: column; gap: 6px; }
+    .code-row-container { display: flex; flex-direction: column; }
     .code-row { display: flex; gap: 8px; font-size: 0.8rem; align-items: baseline; }
+    .code-manual-instruction { font-size: 0.75rem; color: #d35400; margin-left: 28px; font-style: italic; }
     .code-id { font-weight: bold; color: var(--color-text-secondary); min-width: 20px; }
     .code-score { color: #27ae60; font-weight: bold; min-width: 25px; }
     .code-label { color: var(--color-text); }
@@ -93,6 +119,8 @@ export class MetadataPanelComponent implements OnChanges {
   codingScheme: any = null;
   codingSchemeAsText: CodingAsText[] | null = null;
  
+  constructor(public sanitizer: DomSanitizer) {}
+ 
   ngOnChanges(changes: SimpleChanges) {
     if ((changes['unit'] || changes['highlightItemId']) && this.unit) {
       // Extract coding scheme from ACP-Index item metadata if available
@@ -103,6 +131,21 @@ export class MetadataPanelComponent implements OnChanges {
           ? this.codingScheme
           : this.codingScheme.variableCodings || [];
         this.codingSchemeAsText = CodingSchemeTextFactory.asText(codings);
+        // Enrich with manual instruction texts from raw JSON
+        this.codingSchemeAsText.forEach(cat => {
+          const rawVariable = codings.find((v: any) => v.id === cat.id);
+          if (rawVariable) {
+            (cat as any).manualInstructionText = rawVariable.manualInstruction;
+            cat.codes.forEach(c => {
+              const rawCode = rawVariable.codes?.find((rc: any) => 
+                (rc.id === null ? 'null' : rc.id.toString(10)) === c.id
+              );
+              if (rawCode) {
+                (c as any).manualInstructionText = rawCode.manualInstruction;
+              }
+            });
+          }
+        });
       } else {
         this.codingSchemeAsText = null;
       }

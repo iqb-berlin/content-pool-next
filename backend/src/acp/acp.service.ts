@@ -23,6 +23,7 @@ import {
   UpdateAccessConfigDto,
   CredentialEntryDto,
   UpdateMetadataColumnsDto,
+  UpdateItemFocusSettingsDto,
 } from './dto/acp.dto';
 
 @Injectable()
@@ -227,6 +228,34 @@ export class AcpService {
       visible: dto.visibleColumns,
       order: dto.columnOrder || dto.visibleColumns
     };
+
+    config.featureConfig = currentConfig;
+    return this.accessConfigRepository.save(config);
+  }
+
+  async updateItemFocusSettings(acpId: string, dto: UpdateItemFocusSettingsDto): Promise<AcpAccessConfig> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      throw new NotFoundException('Access configuration not found');
+    }
+
+    const currentConfig = config.featureConfig || {};
+
+    if (dto.unitId && dto.variableId) {
+      // Per-item override
+      const byItem = (currentConfig.itemFocusSettingsByItem as Record<string, unknown>) || {};
+      const key = `${dto.unitId}__${dto.variableId}`;
+      byItem[key] = dto.settings;
+      currentConfig.itemFocusSettingsByItem = byItem;
+    } else if (dto.unitId) {
+      // Per-unit override
+      const byUnit = (currentConfig.itemFocusSettingsByUnit as Record<string, unknown>) || {};
+      byUnit[dto.unitId] = dto.settings;
+      currentConfig.itemFocusSettingsByUnit = byUnit;
+    } else {
+      // Global default
+      currentConfig.itemFocusSettings = dto.settings;
+    }
 
     config.featureConfig = currentConfig;
     return this.accessConfigRepository.save(config);

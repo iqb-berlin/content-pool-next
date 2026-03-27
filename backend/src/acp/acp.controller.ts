@@ -23,6 +23,7 @@ import {
   UpdateAccessConfigDto,
   UploadCredentialsDto,
   UpdateMetadataColumnsDto,
+  UpdateItemFocusSettingsDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -164,5 +165,13 @@ export class AcpController {
       this.logger.error(`Failed to update metadata columns for ACP ${id}: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  @Patch(':id/item-focus-settings')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Update item focus/highlight settings for ACP (ACP Manager only)' })
+  async updateItemFocusSettings(@Param('id') id: string, @Body() dto: UpdateItemFocusSettingsDto) {
+    return this.acpService.updateItemFocusSettings(id, dto);
   }
 }

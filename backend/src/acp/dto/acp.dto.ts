@@ -92,6 +92,28 @@ export class UpdateMetadataColumnsDto {
   columnOrder?: string[];
 }
 
+export class UpdateItemFocusSettingsDto {
+  @ApiPropertyOptional({ description: 'If set with no variableId: per-unit override; combined with variableId: per-item override; absent: global default' })
+  @IsString()
+  @IsOptional()
+  unitId?: string;
+
+  @ApiPropertyOptional({ description: 'If set along with unitId, store as a per-item override for this variable within the unit' })
+  @IsString()
+  @IsOptional()
+  variableId?: string;
+
+  @ApiProperty({ description: 'Focus settings object' })
+  @IsObject()
+  settings!: {
+    targetElement: 'element' | 'print-section' | 'print-page';
+    highlightEnabled: boolean;
+    highlightColor: string;
+    hideOthers: boolean;
+    scrollToElement: boolean;
+  };
+}
+
 export class CredentialEntryDto {
   @ApiProperty()
   @IsString()

@@ -54,6 +54,9 @@ export class ApiService {
   updateMetadataColumns(id: string, data: any): Observable<AccessConfig> {
     return this.http.put<AccessConfig>(`${this.API}/acp/${id}/metadata-columns`, data);
   }
+  updateItemFocusSettings(id: string, data: { unitId?: string; variableId?: string; settings: any }): Observable<any> {
+    return this.http.patch(`${this.API}/acp/${id}/item-focus-settings`, data);
+  }
 
   // Files
   getFiles(acpId: string): Observable<AcpFile[]> { return this.http.get<AcpFile[]>(`${this.API}/acp/${acpId}/files`); }

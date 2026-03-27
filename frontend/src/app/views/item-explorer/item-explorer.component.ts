@@ -32,6 +32,14 @@ interface MetadataSettings {
   order: string[];
 }
 
+interface ItemFocusSettings {
+  targetElement: 'element' | 'print-section' | 'print-page';
+  highlightEnabled: boolean;
+  highlightColor: string;
+  hideOthers: boolean;
+  scrollToElement: boolean;
+}
+
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
@@ -213,6 +221,15 @@ interface MetadataSettings {
               <option value="view-all">Paging: Alles (Print)</option>
               <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
+            @if (isAcpManager && (pagingMode === 'view-all' || pagingMode === 'print-ids')) {
+              <button
+                class="btn btn-outline btn-sm focus-settings-btn"
+                [class.active]="showFocusSettings"
+                (click)="openFocusSettings()"
+                title="Fokus-Einstellungen">
+                ⚙️ Fokus
+              </button>
+            }
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
             <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
           </div>
@@ -539,6 +556,114 @@ interface MetadataSettings {
         </div>
       </div>
     }
+
+    <!-- OVERLAY: Focus Settings (ACP Manager only) -->
+    @if (showFocusSettings && isAcpManager) {
+      <div class="overlay-backdrop" (click)="showFocusSettings = false">
+        <div class="overlay-dialog focus-settings-dialog" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background: #e67e22">⚙️</span>
+              <div>
+                <h2>Fokus-Einstellungen</h2>
+                <small>Wie soll das ausgewählte Item hervorgehoben werden?</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="showFocusSettings = false">✕</button>
+          </div>
+          <div class="overlay-content">
+            <div class="focus-settings-grid">
+
+              <!-- Target Element -->
+              <div class="focus-setting-row">
+                <label class="focus-setting-label">Ziel-Element</label>
+                <select class="focus-setting-control" [(ngModel)]="focusSettingsDraft.targetElement">
+                  <option value="element">Element (data-element-alias)</option>
+                  <option value="print-section">Abschnitt (aspect-print-section)</option>
+                  <option value="print-page">Seite (aspect-print-page)</option>
+                </select>
+              </div>
+
+              <!-- Highlight -->
+              <div class="focus-setting-row">
+                <label class="focus-setting-label">Hervorheben</label>
+                <div class="focus-setting-control focus-inline">
+                  <label class="toggle-switch">
+                    <input type="checkbox" [(ngModel)]="focusSettingsDraft.highlightEnabled">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  @if (focusSettingsDraft.highlightEnabled) {
+                    <label class="focus-color-label">Farbe:</label>
+                    <input type="color" class="focus-color-input" [(ngModel)]="focusSettingsDraft.highlightColor">
+                  }
+                </div>
+              </div>
+
+              <!-- Hide Others -->
+              <div class="focus-setting-row">
+                <label class="focus-setting-label">Andere ausblenden</label>
+                <div class="focus-setting-control focus-inline">
+                  <label class="toggle-switch">
+                    <input type="checkbox" [(ngModel)]="focusSettingsDraft.hideOthers">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Scroll -->
+              <div class="focus-setting-row">
+                <label class="focus-setting-label">Zu Item scrollen</label>
+                <div class="focus-setting-control focus-inline">
+                  <label class="toggle-switch">
+                    <input type="checkbox" [(ngModel)]="focusSettingsDraft.scrollToElement">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+            </div>
+
+            <div class="focus-settings-scope">
+              <div class="scope-label">Geltungsbereich:</div>
+              <div class="scope-options">
+                <label class="scope-radio">
+                  <input type="radio" [(ngModel)]="focusSettingsScope" value="global">
+                  Alle Units
+                </label>
+                <label class="scope-radio">
+                  <input type="radio" [(ngModel)]="focusSettingsScope" value="unit">
+                  Unit "{{ selectedItem?.unitId }}"
+                </label>
+                @if (selectedItem?.variableId) {
+                  <label class="scope-radio">
+                    <input type="radio" [(ngModel)]="focusSettingsScope" value="item">
+                    Item "{{ selectedItem?.variableId }}"
+                  </label>
+                }
+              </div>
+            </div>
+
+            <div class="focus-settings-footer">
+              @if (focusSettingsScope === 'unit' && selectedItem && hasUnitFocusOverride(selectedItem.unitId)) {
+                <button class="btn btn-outline btn-sm" (click)="resetFocusOverride('unit')">
+                  🔄 Unit-Override löschen
+                </button>
+              } @else if (focusSettingsScope === 'item' && selectedItem && hasItemFocusOverride(selectedItem.unitId, selectedItem.variableId)) {
+                <button class="btn btn-outline btn-sm" (click)="resetFocusOverride('item')">
+                  🔄 Item-Override löschen
+                </button>
+              } @else {
+                <span></span>
+              }
+              <div class="footer-actions">
+                <button class="btn btn-outline" (click)="showFocusSettings = false">Abbrechen</button>
+                <button class="btn btn-primary" (click)="saveFocusSettings()">💾 Speichern</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     :host {
@@ -738,7 +863,63 @@ interface MetadataSettings {
 
     .action-buttons {
       display: flex; gap: 8px; padding: 10px 0;
-      justify-content: center;
+      justify-content: center; flex-wrap: wrap;
+    }
+    .focus-settings-btn {
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+    .focus-settings-btn.active {
+      background: rgba(230, 126, 34, 0.12);
+      border-color: rgba(230, 126, 34, 0.5);
+      color: #e67e22;
+    }
+
+    /* Focus Settings Overlay */
+    .focus-settings-dialog { max-width: 480px; }
+    .focus-settings-grid {
+      display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;
+    }
+    .focus-setting-row {
+      display: grid; grid-template-columns: 160px 1fr; align-items: center; gap: 12px;
+    }
+    .focus-setting-label {
+      font-size: 0.9rem; font-weight: 500; color: var(--color-text-secondary);
+    }
+    .focus-setting-control {
+      padding: 6px 10px; border: 1px solid var(--color-border);
+      border-radius: var(--radius); font-size: 0.9rem; font-family: inherit;
+      background: var(--color-surface);
+    }
+    .focus-inline { display: flex; align-items: center; gap: 12px; background: none; border: none; padding: 0; }
+    .focus-color-label { font-size: 0.85rem; color: var(--color-text-secondary); }
+    .focus-color-input {
+      width: 40px; height: 30px; border: 1px solid var(--color-border);
+      border-radius: 4px; cursor: pointer; padding: 2px;
+    }
+    /* Toggle switch */
+    .toggle-switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+      background: #ccc; border-radius: 24px; transition: 0.3s;
+    }
+    .toggle-slider::before {
+      position: absolute; content: ''; height: 18px; width: 18px;
+      left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.3s;
+    }
+    .toggle-switch input:checked + .toggle-slider { background: #e67e22; }
+    .toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+    /* Scope section */
+    .focus-settings-scope {
+      border-top: 1px solid var(--color-border); padding-top: 16px; margin-bottom: 16px;
+    }
+    .scope-label { font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .scope-options { display: flex; gap: 20px; }
+    .scope-radio { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9rem; }
+    /* Footer */
+    .focus-settings-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      border-top: 1px solid var(--color-border); padding-top: 16px;
     }
 
     .info-card {
@@ -1075,8 +1256,26 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   playerSrcDoc: any = null;
   currentPage = 1;
   totalPages = 1;
-  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' | 'print-ids' = 'buttons';
+  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' | 'print-ids' = 'print-ids';
   playerHeight = '100%';
+
+  // Item focus
+  private targetVariableId: string | null = null;
+  private currentHighlightedVariableId: string | null = null;
+
+  private readonly itemFocusDefaults: ItemFocusSettings = {
+    targetElement: 'element',
+    highlightEnabled: true,
+    highlightColor: '#e67e22',
+    hideOthers: true,
+    scrollToElement: true,
+  };
+  globalItemFocusSettings: ItemFocusSettings = { ...this.itemFocusDefaults };
+  itemFocusSettingsByUnit: Record<string, Partial<ItemFocusSettings>> = {};
+  itemFocusSettingsByItem: Record<string, Partial<ItemFocusSettings>> = {};
+  showFocusSettings = false;
+  focusSettingsDraft: ItemFocusSettings = { ...this.itemFocusDefaults };
+  focusSettingsScope: 'global' | 'unit' | 'item' = 'global';
 
   // Overlays
   showOverlay: 'coding' | null = null;
@@ -1204,9 +1403,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
-      
+
       // Load metadata column settings
       this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
+
+      // Load item focus settings
+      this.globalItemFocusSettings = { ...this.itemFocusDefaults, ...(fc.itemFocusSettings || {}) };
+      this.itemFocusSettingsByUnit = (fc.itemFocusSettingsByUnit as Record<string, Partial<ItemFocusSettings>>) || {};
+      this.itemFocusSettingsByItem = (fc.itemFocusSettingsByItem as Record<string, Partial<ItemFocusSettings>>) || {};
     });
 
     this.reloadItems();
@@ -1388,6 +1592,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.selectedItem = item;
     this.selectedIndex = index;
+    this.targetVariableId = item.variableId || null;
+    this.currentHighlightedVariableId = item.variableId || null;
     this.resetPlayer();
     this.currentPage = 1;
     this.totalPages = 1;
@@ -1517,6 +1723,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!msg || typeof msg !== 'object') return;
 
     switch (msg.type) {
+      case 'vopReadyNotification':
+        if (this.targetVariableId) {
+          this.scrollAndHighlightVariable(this.targetVariableId);
+          this.targetVariableId = null;
+        }
+        break;
+
       case 'vopStateChangedNotification':
         if (msg.playerState?.currentPage !== undefined) {
           this.currentPage = msg.playerState.currentPage + 1;
@@ -1665,6 +1878,205 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       clearInterval(this.autoResizeInterval);
       this.autoResizeInterval = null;
     }
+  }
+
+  // --- Item Focus Settings ---
+  get effectiveFocusSettings(): ItemFocusSettings {
+    if (!this.selectedItem) return { ...this.globalItemFocusSettings };
+    const unitOverride = this.itemFocusSettingsByUnit[this.selectedItem.unitId] || {};
+    const itemKey = this.makeItemKey(this.selectedItem.unitId, this.selectedItem.variableId);
+    const itemOverride = this.itemFocusSettingsByItem[itemKey] || {};
+    // Priority: item > unit > global
+    return { ...this.globalItemFocusSettings, ...unitOverride, ...itemOverride };
+  }
+
+  private makeItemKey(unitId: string, variableId: string): string {
+    return `${unitId}__${variableId}`;
+  }
+
+  hasUnitFocusOverride(unitId: string): boolean {
+    return !!this.itemFocusSettingsByUnit[unitId];
+  }
+
+  hasItemFocusOverride(unitId: string, variableId: string): boolean {
+    return !!this.itemFocusSettingsByItem[this.makeItemKey(unitId, variableId)];
+  }
+
+  openFocusSettings() {
+    this.focusSettingsDraft = { ...this.effectiveFocusSettings };
+    this.focusSettingsScope = 'global';
+    this.showFocusSettings = true;
+  }
+
+  saveFocusSettings() {
+    const unitId = (this.focusSettingsScope === 'unit' || this.focusSettingsScope === 'item')
+      ? this.selectedItem?.unitId
+      : undefined;
+    const variableId = this.focusSettingsScope === 'item'
+      ? this.selectedItem?.variableId
+      : undefined;
+
+    this.api.updateItemFocusSettings(this.acpId, { unitId, variableId, settings: this.focusSettingsDraft }).subscribe({
+      next: () => {
+        if (variableId && unitId) {
+          // Per-item override
+          const key = this.makeItemKey(unitId, variableId);
+          this.itemFocusSettingsByItem = { ...this.itemFocusSettingsByItem, [key]: { ...this.focusSettingsDraft } };
+        } else if (unitId) {
+          // Per-unit override
+          this.itemFocusSettingsByUnit = { ...this.itemFocusSettingsByUnit, [unitId]: { ...this.focusSettingsDraft } };
+        } else {
+          // Global
+          this.globalItemFocusSettings = { ...this.focusSettingsDraft };
+        }
+        this.showFocusSettings = false;
+        if (this.currentHighlightedVariableId) {
+          this.scrollAndHighlightVariable(this.currentHighlightedVariableId, false);
+        }
+      },
+      error: (err) => {
+        console.error('[ItemExplorer] Failed to save focus settings:', err);
+        alert('Fehler beim Speichern der Fokus-Einstellungen.');
+      }
+    });
+  }
+
+  resetFocusOverride(scope: 'unit' | 'item') {
+    if (!this.selectedItem) return;
+    const unitId = this.selectedItem.unitId;
+    const variableId = scope === 'item' ? this.selectedItem.variableId : undefined;
+    // Sending empty settings removes the override
+    this.api.updateItemFocusSettings(this.acpId, { unitId, variableId, settings: {} as any }).subscribe({
+      next: () => {
+        if (scope === 'item' && variableId) {
+          const key = this.makeItemKey(unitId, variableId);
+          const updated = { ...this.itemFocusSettingsByItem };
+          delete updated[key];
+          this.itemFocusSettingsByItem = updated;
+        } else {
+          const updated = { ...this.itemFocusSettingsByUnit };
+          delete updated[unitId];
+          this.itemFocusSettingsByUnit = updated;
+        }
+        this.showFocusSettings = false;
+        if (this.currentHighlightedVariableId) {
+          this.scrollAndHighlightVariable(this.currentHighlightedVariableId, false);
+        }
+      },
+      error: (err) => console.error('[ItemExplorer] Failed to reset focus override:', err)
+    });
+  }
+
+  /**
+   * Scrolls to and highlights the target element based on effectiveFocusSettings.
+   */
+  private scrollAndHighlightVariable(variableId: string, scroll = true) {
+    const settings = this.effectiveFocusSettings;
+    const delay = scroll ? 800 : 0;
+    setTimeout(() => {
+      const frame = this.playerFrame?.nativeElement;
+      if (!frame) return;
+
+      try {
+        const doc: Document | null | undefined =
+          frame.contentDocument || frame.contentWindow?.document;
+        if (!doc) return;
+
+        // Ensure highlight stylesheet is present and up to date
+        const styleId = 'iqb-item-highlight-style';
+        let styleEl = doc.getElementById(styleId) as HTMLStyleElement | null;
+        if (!styleEl) {
+          styleEl = doc.createElement('style') as HTMLStyleElement;
+          styleEl.id = styleId;
+          doc.head?.appendChild(styleEl);
+        }
+
+        const color = settings.highlightColor;
+        // Use box-shadow instead of outline: outline is clipped by overflow:hidden on host elements,
+        // box-shadow is NOT clipped and reliably shows on custom element hosts.
+        styleEl.textContent = `
+          [data-element-alias], aspect-print-section, aspect-print-page {
+            transition: opacity 0.35s ease;
+          }
+          aspect-print-section, aspect-print-page { display: block; }
+          .iqb-item-dimmed {
+            opacity: 0.08 !important;
+            pointer-events: none !important;
+            transition: opacity 0.35s ease !important;
+          }
+          .iqb-item-highlight {
+            box-shadow: 0 0 0 3px ${color}, 0 0 16px ${color}55 !important;
+            border-radius: 4px !important;
+            animation: iqb-item-pulse 1.4s ease 3;
+          }
+          @keyframes iqb-item-pulse {
+            0%, 100% { box-shadow: 0 0 0 3px ${color}, 0 0 16px ${color}55; }
+            50%       { box-shadow: 0 0 0 3px ${color}, 0 0 28px ${color}99; }
+          }
+        `;
+
+        // Clear previous state
+        doc.querySelectorAll('.iqb-item-highlight, .iqb-item-dimmed').forEach(el => {
+          el.classList.remove('iqb-item-highlight', 'iqb-item-dimmed');
+        });
+
+        // Find the leaf element by data-element-alias
+        const leafEl = doc.querySelector(`[data-element-alias="${variableId}"]`);
+        if (!leafEl) {
+          console.warn(`[ItemExplorer] No element found for data-element-alias="${variableId}"`);
+          return;
+        }
+
+        // Resolve the actual target based on settings.
+        // closest() works for standard DOM ancestors; also walk parentElement as fallback
+        // for cases where Angular component hosts aren't traversed by CSS selector.
+        let target: Element = leafEl;
+        if (settings.targetElement === 'print-section') {
+          target = leafEl.closest('aspect-print-section')
+            ?? this.walkToTagName(leafEl, 'aspect-print-section')
+            ?? leafEl;
+        } else if (settings.targetElement === 'print-page') {
+          target = leafEl.closest('aspect-print-page')
+            ?? this.walkToTagName(leafEl, 'aspect-print-page')
+            ?? leafEl;
+        }
+
+        // Dim sibling elements of the same type
+        if (settings.hideOthers) {
+          const dimSelector = settings.targetElement === 'print-page'
+            ? 'aspect-print-page'
+            : settings.targetElement === 'print-section'
+              ? 'aspect-print-section'
+              : '[data-element-alias]';
+          doc.querySelectorAll(dimSelector).forEach(el => {
+            if (el !== target) el.classList.add('iqb-item-dimmed');
+          });
+        }
+
+        // Apply highlight
+        if (settings.highlightEnabled) {
+          target.classList.add('iqb-item-highlight');
+        }
+
+        // Scroll
+        if (scroll && settings.scrollToElement) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } catch (e) {
+        console.warn('[ItemExplorer] Could not access player DOM for highlight:', e);
+      }
+    }, delay);
+  }
+
+  /** Walk parentElement chain until a matching tag name is found or root is reached. */
+  private walkToTagName(el: Element, tagName: string): Element | null {
+    const tag = tagName.toLowerCase();
+    let current: Element | null = el.parentElement;
+    while (current) {
+      if (current.tagName.toLowerCase() === tag) return current;
+      current = current.parentElement;
+    }
+    return null;
   }
 
   // --- Metadata Column Management ---

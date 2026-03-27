@@ -213,8 +213,26 @@ interface MetadataSettings {
               <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierschema</button>
-            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'metadata'">📄 Metadaten</button>
+            <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
           </div>
+
+          <!-- Unit Metadata Summary -->
+          @if (currentUnitMetadata && currentUnitMetadata.length > 0) {
+            <div class="unit-metadata-card card">
+              <div class="card-header">
+                <h4>Unit-Metadaten</h4>
+                <button class="btn btn-xs btn-outline" (click)="showMetadataDrawer = true">Details</button>
+              </div>
+              <div class="meta-summary-grid">
+                @for (entry of getSummaryMetadata(); track entry.id) {
+                  <div class="meta-summary-item">
+                    <span class="meta-summary-label">{{ extractLabel(entry.label) }}</span>
+                    <span class="meta-summary-value">{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
 
           <!-- Info Card -->
           <div class="info-card card">
@@ -267,29 +285,37 @@ interface MetadataSettings {
       </div>
     }
 
-    <!-- OVERLAY: Metadata -->
-    @if (showOverlay === 'metadata') {
-      <div class="overlay-backdrop" (click)="showOverlay = null">
-        <div class="overlay-dialog" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <h2>Metadaten – {{ selectedItem?.unitLabel }}</h2>
-            <button class="btn btn-sm btn-outline" (click)="showOverlay = null">✕ Schließen</button>
+    <!-- DRAWER: Metadata -->
+    <div class="drawer-backdrop" [class.open]="showMetadataDrawer" (click)="showMetadataDrawer = false">
+      <div class="drawer-container" [class.open]="showMetadataDrawer" (click)="$event.stopPropagation()">
+        <div class="drawer-header">
+          <div class="drawer-title">
+            <span class="drawer-icon">📄</span>
+            <div>
+              <h3>Metadaten</h3>
+              <small>{{ selectedItem?.unitLabel }}</small>
+            </div>
           </div>
-          <div class="overlay-content">
-            @if (currentUnitMetadata && currentUnitMetadata.length) {
-              <dl class="meta-dl">
-                @for (entry of currentUnitMetadata; track entry.id) {
-                  <dt>{{ extractLabel(entry.label) }}</dt>
-                  <dd>{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–' }}</dd>
-                }
-              </dl>
-            } @else {
-              <p class="help-text">Keine Metadaten für diese Aufgabe verfügbar.</p>
-            }
-          </div>
+          <button class="btn-close" (click)="showMetadataDrawer = false">✕</button>
+        </div>
+        <div class="drawer-content">
+          @if (currentUnitMetadata && currentUnitMetadata.length) {
+            <div class="meta-grid">
+              @for (entry of currentUnitMetadata; track entry.id) {
+                <div class="meta-item">
+                  <div class="meta-label">{{ extractLabel(entry.label) }}</div>
+                  <div class="meta-value">{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–' }}</div>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="empty-state">
+              <p>Keine Metadaten für diese Aufgabe verfügbar.</p>
+            </div>
+          }
         </div>
       </div>
-    }
+    </div>
 
     <!-- OVERLAY: Upload Report -->
     @if (showUploadReport) {
@@ -375,55 +401,77 @@ interface MetadataSettings {
       <div class="overlay-backdrop" (click)="showColumnManager = false">
         <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
           <div class="overlay-header">
-            <h2>Metadaten-Spalten verwalten</h2>
-            <button class="btn btn-sm btn-outline" (click)="showColumnManager = false">✕ Schließen</button>
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background:var(--color-primary)">👁️</span>
+              <div>
+                <h2>Spalten verwalten</h2>
+                <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="showColumnManager = false">✕</button>
           </div>
           <div class="overlay-content">
-            <p class="help-text">Wählen Sie die Metadaten-Spalten aus, die in der Tabelle angezeigt werden sollen, und legen Sie deren Reihenfolge fest.</p>
-
-            <div class="column-manager-controls">
+            <div class="column-manager-toolbar">
+              <div class="search-container">
+                <input
+                  class="filter-input"
+                  [(ngModel)]="columnFilterText"
+                  placeholder="🔍 Spalten suchen (Label oder ID)...">
+              </div>
               <button class="btn btn-outline btn-sm" (click)="resetToDefault()" [disabled]="!metadataSettings.visible.length">
-                🔄 Standard wiederherstellen
+                🔄 Standard
               </button>
             </div>
 
-            <div class="column-list">
-              @for (col of allColumns; track col.id) {
-                <div class="column-item">
-                  <div class="column-header">
-                    <input 
-                      type="checkbox" 
-                      [checked]="metadataSettings.visible.includes(col.id)" 
-                      (change)="toggleColumnVisibility(col)"
-                      class="column-checkbox">
-                    <span class="column-label">{{ col.label }}</span>
-                    <span class="column-id">({{ col.id }})</span>
+            <div class="column-grid">
+              @for (col of filteredAllColumns; track col.id) {
+                <div class="column-tile"
+                     [class.active]="metadataSettings.visible.includes(col.id)"
+                     (click)="toggleColumnVisibility(col)">
+                  <div class="tile-check">
+                    <input
+                      type="checkbox"
+                      [checked]="metadataSettings.visible.includes(col.id)"
+                      (click)="$event.stopPropagation()"
+                      (change)="toggleColumnVisibility(col)">
+                  </div>
+                  <div class="tile-body">
+                    <span class="tile-label">{{ col.label }}</span>
+                    <span class="tile-id">ID: {{ col.id }}</span>
                   </div>
                   @if (metadataSettings.visible.includes(col.id)) {
-                    <div class="column-actions">
-                      <button class="btn btn-xs btn-outline" 
-                              (click)="moveColumnUp(col)" 
-                              [disabled]="metadataSettings.order[0] === col.id">
+                    <div class="tile-actions" (click)="$event.stopPropagation()">
+                      <button class="btn btn-xs btn-outline"
+                              (click)="moveColumnUp(col)"
+                              [disabled]="metadataSettings.order[0] === col.id"
+                              title="Nach oben">
                         ↑
                       </button>
-                      <button class="btn btn-xs btn-outline" 
-                              (click)="moveColumnDown(col)" 
-                              [disabled]="metadataSettings.order[metadataSettings.order.length - 1] === col.id">
+                      <button class="btn btn-xs btn-outline"
+                              (click)="moveColumnDown(col)"
+                              [disabled]="metadataSettings.order[metadataSettings.order.length - 1] === col.id"
+                              title="Nach unten">
                         ↓
                       </button>
                     </div>
                   }
                 </div>
               }
+              @if (filteredAllColumns.length === 0) {
+                <div class="empty-state">
+                  <p>Keine Spalten gefunden für "{{ columnFilterText }}"</p>
+                </div>
+              }
             </div>
 
             <div class="column-manager-footer">
-              <button class="btn btn-primary" (click)="saveMetadataSettings()">
-                💾 Speichern
-              </button>
-              <button class="btn btn-outline" (click)="showColumnManager = false">
-                Abbrechen
-              </button>
+              <div class="selection-info">
+                {{ metadataSettings.visible.length }} von {{ allColumns.length }} Spalten gewählt
+              </div>
+              <div class="footer-actions">
+                <button class="btn btn-outline" (click)="showColumnManager = false">Abbrechen</button>
+                <button class="btn btn-primary" (click)="saveMetadataSettings()">💾 Speichern</button>
+              </div>
             </div>
           </div>
         </div>
@@ -674,6 +722,105 @@ interface MetadataSettings {
       from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
+    /* Column Manager Premium */
+    .column-manager-dialog {
+      max-width: 650px;
+    }
+    .column-manager-toolbar {
+      display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
+    }
+    .column-manager-toolbar .search-container { flex: 1; }
+    .column-grid {
+      display: flex; flex-direction: column; gap: 8px;
+      max-height: 450px; overflow-y: auto; padding: 4px;
+      scrollbar-gutter: stable;
+    }
+    .column-tile {
+      display: flex; align-items: center; gap: 16px; padding: 12px 16px;
+      background: var(--color-surface); border-radius: 12px;
+      border: 1px solid var(--color-border); cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .column-tile:hover {
+      transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      border-color: var(--color-primary-light);
+    }
+    .column-tile.active {
+      background: rgba(26, 82, 118, 0.03);
+      border-color: rgba(26, 82, 118, 0.3);
+    }
+    .tile-check { display: flex; align-items: center; }
+    .tile-check input { width: 18px; height: 18px; cursor: pointer; }
+    .tile-body { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .tile-label { font-size: 0.95rem; font-weight: 600; color: var(--color-text); }
+    .tile-id { font-size: 0.75rem; color: var(--color-text-secondary); opacity: 0.7; }
+    .tile-actions { display: flex; gap: 4px; }
+    .column-manager-footer {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border);
+    }
+    .selection-info { font-size: 0.85rem; color: var(--color-text-secondary); font-weight: 500; }
+    .footer-actions { display: flex; gap: 12px; }
+
+    /* Metadata Summary Card */
+    .unit-metadata-card {
+      margin-top: 16px; padding: 16px; background: rgba(26, 82, 118, 0.03);
+      border: 1px solid rgba(26, 82, 118, 0.1);
+    }
+    .unit-metadata-card .card-header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+    }
+    .unit-metadata-card h4 { margin: 0; font-size: 0.9rem; color: var(--color-primary); }
+    .meta-summary-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
+    }
+    .meta-summary-item { display: flex; flex-direction: column; gap: 2px; }
+    .meta-summary-label { font-size: 0.75rem; color: var(--color-text-secondary); }
+    .meta-summary-value { font-size: 0.85rem; font-weight: 600; }
+
+    /* Metadata Drawer */
+    .drawer-backdrop {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.3); z-index: 1100;
+      opacity: 0; visibility: hidden; transition: all 0.3s ease;
+      backdrop-filter: blur(4px);
+    }
+    .drawer-backdrop.open { opacity: 1; visibility: visible; }
+    .drawer-container {
+      position: absolute; top: 0; right: -400px; width: 400px; height: 100%;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(20px) saturate(180%);
+      box-shadow: -5px 0 25px rgba(0,0,0,0.1);
+      display: flex; flex-direction: column;
+      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border-left: 1px solid rgba(255,255,255,0.3);
+    }
+    .drawer-container.open { right: 0; }
+    .drawer-header {
+      padding: 24px; border-bottom: 1px solid var(--color-border);
+      display: flex; justify-content: space-between; align-items: flex-start;
+    }
+    .drawer-title { display: flex; gap: 16px; align-items: center; }
+    .drawer-title h3 { margin: 0; font-size: 1.25rem; }
+    .drawer-title small { color: var(--color-text-secondary); display: block; margin-top: 2px; }
+    .drawer-icon {
+      width: 40px; height: 40px; background: var(--color-primary-light);
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 10px; color: white; font-size: 1.2rem;
+    }
+    .btn-close {
+      background: none; border: none; font-size: 1.5rem; cursor: pointer;
+      color: var(--color-text-secondary); transition: color 0.2s;
+    }
+    .btn-close:hover { color: var(--color-danger); }
+    .drawer-content { padding: 24px; overflow-y: auto; flex: 1; }
+    .meta-grid { display: flex; flex-direction: column; gap: 20px; }
+    .meta-item { border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 12px; }
+    .meta-item:last-child { border-bottom: none; }
+    .meta-label { font-size: 0.8rem; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .meta-value { font-size: 1rem; color: var(--color-text); font-weight: 500; }
+
+    /* General Overlays */
     .overlay-header {
       display: flex; justify-content: space-between; align-items: center;
       padding: 16px 24px;
@@ -696,44 +843,6 @@ interface MetadataSettings {
     .meta-dl dt { font-weight: 600; color: var(--color-text-secondary); }
     .meta-dl dd { margin: 0; }
     .help-text { color: var(--color-text-secondary); font-size: 0.9rem; }
-
-    /* Column Manager */
-    .column-manager-dialog {
-      max-width: 600px;
-    }
-    .column-manager-controls {
-      display: flex; justify-content: flex-end; margin-bottom: 16px;
-    }
-    .column-list {
-      display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto;
-    }
-    .column-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 12px; background: var(--color-bg); border-radius: var(--radius);
-      border: 1px solid var(--color-border);
-    }
-    .column-header {
-      display: flex; align-items: center; gap: 12px; flex: 1;
-    }
-    .column-checkbox {
-      width: 16px; height: 16px; cursor: pointer;
-    }
-    .column-label {
-      font-weight: 500; flex: 1;
-    }
-    .column-id {
-      color: var(--color-text-secondary); font-size: 0.8rem; margin-left: 8px;
-    }
-    .column-actions {
-      display: flex; gap: 4px; margin-left: 12px;
-    }
-    .btn-xs {
-      padding: 2px 6px; font-size: 0.7rem; min-width: 24px;
-    }
-    .column-manager-footer {
-      display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;
-      padding-top: 16px; border-top: 1px solid var(--color-border);
-    }
   `]
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
@@ -765,7 +874,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   playerHeight = '100%';
 
   // Overlays
-  showOverlay: 'coding' | 'metadata' | null = null;
+  showOverlay: 'coding' | null = null;
+  showMetadataDrawer = false;
   unitMetadataCache: Record<string, any[]> = {};
   codingSchemeCache: Record<string, any> = {};
   currentUnitMetadata: any[] = [];
@@ -788,6 +898,33 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showColumnManager = false;
   allColumns: MetadataColumn[] = [];
   metadataSettings: MetadataSettings = { visible: [], order: [] };
+  columnFilterText = '';
+
+  get filteredAllColumns() {
+    let list = [...this.allColumns];
+    if (this.columnFilterText) {
+      const term = this.columnFilterText.toLowerCase();
+      list = list.filter(c => 
+        c.label.toLowerCase().includes(term) || 
+        c.id.toLowerCase().includes(term)
+      );
+    }
+    
+    // Sort columns: selected/ordered ones first, then alphabetical
+    return list.sort((a, b) => {
+      const indexA = this.metadataSettings.order.indexOf(a.id);
+      const indexB = this.metadataSettings.order.indexOf(b.id);
+      
+      // Both are in the custom order
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      // Only A is in the order
+      if (indexA !== -1) return -1;
+      // Only B is in the order
+      if (indexB !== -1) return 1;
+      // Neither is in the order: alphabetical
+      return a.label.localeCompare(b.label);
+    });
+  }
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
@@ -1182,16 +1319,50 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Helpers ---
   extractLabel(label: any): string {
+    if (!label) return '';
     if (typeof label === 'string') return label;
-    if (label && label['de']) return label['de'];
-    return JSON.stringify(label);
+    if (Array.isArray(label)) {
+      const de = label.find((l: any) => l.lang === 'de');
+      return de?.value || label[0]?.value || '';
+    }
+    if (label && typeof label === 'object') {
+      return label['de'] || label['value'] || JSON.stringify(label);
+    }
+    return '';
   }
 
   extractValueText(valueAsText: any): string {
+    if (valueAsText === undefined || valueAsText === null) return '';
     if (typeof valueAsText === 'string') return valueAsText;
-    if (valueAsText && valueAsText['de']) return valueAsText['de'];
-    if (Array.isArray(valueAsText)) return valueAsText.map(v => this.extractValueText(v)).join(', ');
+    if (typeof valueAsText === 'number') return valueAsText.toString();
+    if (typeof valueAsText === 'boolean') return valueAsText ? 'Ja' : 'Nein';
+
+    if (Array.isArray(valueAsText)) {
+      const de = valueAsText.find((v: any) => v.lang === 'de');
+      if (de) return de.value;
+      if (valueAsText.every(v => v && typeof v === 'object' && v.value)) {
+        return valueAsText.map(v => v.value).join(', ');
+      }
+      return valueAsText.map(v => this.extractValueText(v)).join(', ');
+    }
+    if (typeof valueAsText === 'object') {
+      return valueAsText['de'] || valueAsText['value'] || '';
+    }
     return '';
+  }
+
+  getSummaryMetadata(): any[] {
+    if (!this.currentUnitMetadata) return [];
+    // Prefer these IDs for summary
+    const priorityIds = ['level', 'subject', 'competence', 'format', 'time', 'duration', 'difficulty'];
+    const summary = this.currentUnitMetadata.filter(m =>
+      priorityIds.some(pid => m.id.toLowerCase().includes(pid))
+    );
+    // If no priority items found, show the first 4 entries
+    if (summary.length === 0 && this.currentUnitMetadata.length > 0) {
+      return this.currentUnitMetadata.slice(0, 4);
+    }
+    return summary.slice(0, 4);
   }
 
   downloadUnit() {

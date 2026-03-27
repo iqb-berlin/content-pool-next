@@ -8,6 +8,7 @@ import { VoudService } from '../../core/services/voud.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
+import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 
 interface MetadataColumn {
   id: string;
@@ -275,8 +276,35 @@ interface MetadataSettings {
             <button class="btn btn-sm btn-outline" (click)="showOverlay = null">✕ Schließen</button>
           </div>
           <div class="overlay-content">
-            @if (currentCodingScheme) {
-              <pre class="json-view">{{ currentCodingScheme | json }}</pre>
+            @if (currentCodingSchemeAsText) {
+              <div class="coding-scheme-view">
+                @for (coding of currentCodingSchemeAsText; track coding.id) {
+                  <div class="coding-item">
+                    <div class="coding-item-header">
+                      <h4>{{ coding.label || coding.id }}</h4>
+                      <code class="variable-id">{{ coding.id }}</code>
+                    </div>
+                    <div class="codes-list">
+                      @for (code of coding.codes; track code.id) {
+                        <div class="code-row">
+                          <div class="code-main">
+                            <span class="code-id">{{ code.id }}</span>
+                            <span class="code-score">({{ code.score }})</span>
+                            <span class="code-label">{{ code.label }}</span>
+                          </div>
+                          @if (code.ruleSetDescriptions.length) {
+                            <ul class="rule-list">
+                              @for (rule of code.ruleSetDescriptions; track rule) {
+                                <li>{{ rule }}</li>
+                              }
+                            </ul>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
             } @else {
               <p class="help-text">Kein Kodierschema für diese Aufgabe verfügbar.</p>
             }
@@ -701,7 +729,103 @@ interface MetadataSettings {
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* Overlay */
+    .overlay-content {
+      padding: 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .coding-scheme-view {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .coding-item {
+      background: rgba(0, 0, 0, 0.02);
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid var(--color-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
+    }
+    .coding-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--color-border);
+      padding-bottom: 10px;
+    }
+    .coding-item h4 {
+      margin: 0;
+      color: var(--color-primary);
+      font-size: 1.1rem;
+      font-weight: 600;
+    }
+    .variable-id {
+      font-size: 0.8rem;
+      background: rgba(0,0,0,0.05);
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: var(--color-text-secondary);
+    }
+    .codes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .code-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 8px;
+      border-radius: 6px;
+      background: white;
+      border-left: 4px solid transparent;
+      transition: all 0.2s;
+    }
+    .code-row:hover {
+      background: rgba(41,128,185,0.03);
+      border-left-color: var(--color-primary-light);
+    }
+    .code-main {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .code-id {
+      font-weight: 700;
+      color: var(--color-text-secondary);
+      min-width: 24px;
+    }
+    .code-score {
+      font-weight: 700;
+      color: #27ae60;
+      min-width: 30px;
+    }
+    .code-label {
+      font-weight: 500;
+      color: var(--color-text);
+    }
+    .rule-list {
+      margin: 4px 0 0 44px;
+      padding-left: 0;
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      list-style-type: none;
+    }
+    .rule-list li {
+      position: relative;
+      padding-left: 14px;
+      margin-bottom: 2px;
+    }
+    .rule-list li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: var(--color-primary-light);
+    }
+
+    /* Combined ID styling */
     .overlay-backdrop {
       position: fixed; top: 0; left: 0; right: 0; bottom: 0;
       background: rgba(0,0,0,0.5); z-index: 1000;
@@ -878,6 +1002,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showMetadataDrawer = false;
   unitMetadataCache: Record<string, any[]> = {};
   codingSchemeCache: Record<string, any> = {};
+  currentCodingSchemeAsText: CodingAsText[] | null = null;
   currentUnitMetadata: any[] = [];
   currentCodingScheme: any = null;
 
@@ -1147,6 +1272,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
     this.currentCodingScheme = this.codingSchemeCache[item.unitId] || null;
+    if (this.currentCodingScheme) {
+      const codings = Array.isArray(this.currentCodingScheme)
+        ? this.currentCodingScheme
+        : this.currentCodingScheme.variableCodings || [];
+      this.currentCodingSchemeAsText = CodingSchemeTextFactory.asText(codings);
+    } else {
+      this.currentCodingSchemeAsText = null;
+    }
 
     // Load unit view data from files (for player + dependencies)
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({

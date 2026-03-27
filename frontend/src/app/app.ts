@@ -42,7 +42,7 @@ import { ApiService } from './core/services/api.service';
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .app-logo { height: 40px; width: auto; object-fit: contain; }
+    .app-logo { height: 44px; width: auto; object-fit: contain; filter: drop-shadow(0 0 2px rgba(0,0,0,0.2)); }
     .logo { color: white; text-decoration: none; font-size: 1.25rem; font-weight: 600; }
     nav { display: flex; align-items: center; gap: 16px; }
     nav a { color: rgba(255,255,255,0.85); text-decoration: none; font-size: 0.9rem; }

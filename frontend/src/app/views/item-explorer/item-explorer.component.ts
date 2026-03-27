@@ -213,7 +213,7 @@ interface MetadataSettings {
               <option value="view-all">Paging: Alles (Print)</option>
               <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
-            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierschema</button>
+            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
             <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
           </div>
 
@@ -272,13 +272,30 @@ interface MetadataSettings {
       <div class="overlay-backdrop" (click)="showOverlay = null">
         <div class="overlay-dialog" (click)="$event.stopPropagation()">
           <div class="overlay-header">
-            <h2>Kodierschema – {{ selectedItem?.unitLabel }}</h2>
+            <h2>Kodierung – {{ selectedItem?.unitLabel }}</h2>
             <button class="btn btn-sm btn-outline" (click)="showOverlay = null">✕ Schließen</button>
           </div>
           <div class="overlay-content">
             @if (currentCodingSchemeAsText) {
+              <div class="coding-toolbar">
+                <div class="search-container">
+                  <input
+                    class="filter-input"
+                    [(ngModel)]="codingSearchText"
+                    placeholder="🔍 Variablen suchen (ID oder Label)...">
+                </div>
+                <div class="sort-actions">
+                  <button class="btn btn-outline btn-sm" (click)="toggleCodingSort('id')" title="Nach ID sortieren">
+                    ID {{ getCodingSortIndicator('id') }}
+                  </button>
+                  <button class="btn btn-outline btn-sm" (click)="toggleCodingSort('label')" title="Nach Label sortieren">
+                    Label {{ getCodingSortIndicator('label') }}
+                  </button>
+                </div>
+              </div>
+
               <div class="coding-scheme-view">
-                @for (coding of currentCodingSchemeAsText; track coding.id) {
+                @for (coding of filteredCodingSchemeAsText; track coding.id) {
                   <div class="coding-item">
                     <div class="coding-item-header">
                       <h4>{{ coding.label || coding.id }}</h4>
@@ -323,7 +340,7 @@ interface MetadataSettings {
                 }
               </div>
             } @else {
-              <p class="help-text">Kein Kodierschema für diese Aufgabe verfügbar.</p>
+              <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
             }
           </div>
         </div>
@@ -909,6 +926,15 @@ interface MetadataSettings {
       display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
     }
     .column-manager-toolbar .search-container { flex: 1; }
+
+    /* Coding Toolbar */
+    .coding-toolbar {
+      display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
+      padding: 0 4px;
+    }
+    .coding-toolbar .search-container { flex: 1; }
+    .sort-actions { display: flex; gap: 8px; }
+
     .column-grid {
       display: flex; flex-direction: column; gap: 8px;
       max-height: 450px; overflow-y: auto; padding: 4px;
@@ -1079,6 +1105,49 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   allColumns: MetadataColumn[] = [];
   metadataSettings: MetadataSettings = { visible: [], order: [] };
   columnFilterText = '';
+
+  // Coding scheme display filtering
+  codingSearchText = '';
+  codingSortField: 'id' | 'label' = 'id';
+  codingSortDir: 'asc' | 'desc' = 'asc';
+
+  get filteredCodingSchemeAsText(): CodingAsText[] {
+    if (!this.currentCodingSchemeAsText) return [];
+    
+    let list = [...this.currentCodingSchemeAsText];
+    
+    // Search
+    if (this.codingSearchText) {
+      const term = this.codingSearchText.toLowerCase();
+      list = list.filter(c => 
+        c.id.toLowerCase().includes(term) || 
+        (c.label && c.label.toLowerCase().includes(term))
+      );
+    }
+    
+    // Sort
+    return list.sort((a, b) => {
+      let aVal = (this.codingSortField === 'id' ? a.id : (a.label || a.id)).toLowerCase();
+      let bVal = (this.codingSortField === 'id' ? b.id : (b.label || b.id)).toLowerCase();
+      
+      const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
+      return this.codingSortDir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  toggleCodingSort(field: 'id' | 'label') {
+    if (this.codingSortField === field) {
+      this.codingSortDir = this.codingSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.codingSortField = field;
+      this.codingSortDir = 'asc';
+    }
+  }
+
+  getCodingSortIndicator(field: 'id' | 'label'): string {
+    if (this.codingSortField !== field) return '';
+    return this.codingSortDir === 'asc' ? '↑' : '↓';
+  }
 
   get filteredAllColumns() {
     let list = [...this.allColumns];

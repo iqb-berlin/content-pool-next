@@ -117,7 +117,7 @@ interface MetadataSettings {
               </tr>
             </thead>
             <tbody>
-              @for (item of filteredItems; track item.uuid; let i = $index) {
+              @for (item of filteredItems; track item.unitId + '_' + item.itemId; let i = $index) {
                 <tr
                   [class.active]="selectedItem?.uuid === item.uuid"
                   (click)="selectItem(item, i)">
@@ -131,7 +131,7 @@ interface MetadataSettings {
                   }
                   @if (enableTags) {
                     <td class="tags-cell" (click)="$event.stopPropagation()">
-                      @for (tag of (itemTags[item.uuid] || []); track tag) {
+                      @for (tag of (itemTags[item.uuid || (item.unitId + '_' + item.itemId)] || []); track tag) {
                         <span class="badge badge-info tag-badge" (click)="removeItemTag(item.uuid, tag)">{{ tag }} ✕</span>
                       }
                       <div class="tag-add-container">

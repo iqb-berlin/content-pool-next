@@ -107,6 +107,18 @@ export class FilesService {
     await this.fileRepository.remove(file);
   }
 
+  async deleteAll(acpId: string): Promise<void> {
+    const files = await this.findByAcp(acpId);
+    for (const file of files) {
+      try {
+        await fs.unlink(file.filePath);
+      } catch {
+        // File may already be deleted from disk
+      }
+    }
+    await this.fileRepository.remove(files);
+  }
+
   async getValidationResult(id: string): Promise<Record<string, unknown> | null> {
     const file = await this.findById(id);
     return (file.validationResult as Record<string, unknown>) || null;

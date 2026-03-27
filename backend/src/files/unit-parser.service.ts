@@ -316,13 +316,13 @@ export class UnitParserService {
 
           items.push({
             itemId: item.id,
-            uuid: item.uuid,
+            uuid: item.uuid || `${parsed.unitId}_${item.id}`,
             unitId: parsed.unitId,
             unitLabel: parsed.unitLabel,
             description: item.description || '',
             variableId: item.variableId || item.variableReadOnlyId || '',
             metadata,
-            empiricalDifficulty: itemProps[item.uuid]?.empiricalDifficulty || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
+            empiricalDifficulty: (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
           });
         }
       } catch (e) {

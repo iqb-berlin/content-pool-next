@@ -32,6 +32,13 @@ export class FilesController {
     return this.filesService.findByAcp(acpId);
   }
 
+  @Delete('all')
+  @ApiOperation({ summary: 'Delete all files for an ACP' })
+  async deleteAll(@Param('acpId') acpId: string) {
+    await this.filesService.deleteAll(acpId);
+    return { message: 'All files deleted successfully' };
+  }
+
   @Get('validate-units')
   @ApiOperation({ summary: 'Validate completeness of all unit files' })
   async validateUnits(@Param('acpId') acpId: string) {
@@ -60,7 +67,7 @@ export class FilesController {
   }
 
   @Post('upload')
-  @UseInterceptors(FilesInterceptor('files', 50))
+  @UseInterceptors(FilesInterceptor('files', 100))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload files to ACP' })
   async upload(

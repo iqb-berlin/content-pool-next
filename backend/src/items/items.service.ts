@@ -20,7 +20,7 @@ export class ItemsService {
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
     private readonly unitParserService: UnitParserService,
-  ) {}
+  ) { }
 
   /**
    * Extract all items from ACP-Index.
@@ -121,7 +121,7 @@ export class ItemsService {
     const successes = [];
     const matchedUuids = new Map<string, number>(); // uuid -> row index
     let updatedCount = 0;
-    
+
     // Copy existing prop configurations
     const props = acp.itemProperties || {};
     let isUpdated = false;
@@ -130,49 +130,49 @@ export class ItemsService {
     const normalize = (str: string) => (str || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
     for (let i = 1; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!line) continue;
-        
-        const row = line.split(';');
-        const itemValRaw = row[itemIdx]?.replace(/^"|"$/g, '') || '';
-        const estValRaw = row[estIdx]?.replace(/^"|"$/g, '') || '';
-        
-        const estValNum = parseFloat(estValRaw.replace(',', '.'));
+      const line = lines[i].trim();
+      if (!line) continue;
 
-        if (!itemValRaw || isNaN(estValNum)) continue;
+      const row = line.split(';');
+      const itemValRaw = row[itemIdx]?.replace(/^"|"$/g, '') || '';
+      const estValRaw = row[estIdx]?.replace(/^"|"$/g, '') || '';
 
-        const normalizedCsvItem = normalize(itemValRaw);
+      const estValNum = parseFloat(estValRaw.replace(',', '.'));
 
-        const match = items.find(existingItem => {
-            const combinedName1 = normalize(existingItem.unitId) + normalize(existingItem.itemId);
-            const combinedName2 = normalize(existingItem.unitLabel) + normalize(existingItem.itemId);
-            const normalizedId = normalize(existingItem.itemId);
-            return normalizedId === normalizedCsvItem || combinedName1 === normalizedCsvItem || combinedName2 === normalizedCsvItem;
-        });
+      if (!itemValRaw || isNaN(estValNum)) continue;
 
-        if (match) {
-            if (matchedUuids.has(match.uuid)) {
-                throw new BadRequestException(
-                    `Konflikt: Das Item "${match.itemId}" (Aufgabe: ${match.unitId}) kommt mehrfach in der CSV vor (Zeile ${matchedUuids.get(match.uuid)! + 1} und Zeile ${i + 1}). Bitte bereinigen Sie die Datei.`
-                );
-            }
-            matchedUuids.set(match.uuid, i);
+      const normalizedCsvItem = normalize(itemValRaw);
 
-            props[match.uuid] = {
-                ...props[match.uuid],
-                empiricalDifficulty: estValNum
-            };
-            successes.push({ itemId: match.itemId, unitId: match.unitId, value: estValNum });
-            updatedCount++;
-            isUpdated = true;
-        } else {
-            failed.push({ csvRow: itemValRaw, reason: 'Kein passendes Item gefunden' });
+      const match = items.find(existingItem => {
+        const combinedName1 = normalize(existingItem.unitId) + normalize(existingItem.itemId);
+        const combinedName2 = normalize(existingItem.unitLabel) + normalize(existingItem.itemId);
+        const normalizedId = normalize(existingItem.itemId);
+        return normalizedId === normalizedCsvItem || combinedName1 === normalizedCsvItem || combinedName2 === normalizedCsvItem;
+      });
+
+      if (match) {
+        if (matchedUuids.has(match.uuid)) {
+          throw new BadRequestException(
+            `Konflikt: Das Item "${match.itemId}" (Aufgabe: ${match.unitId}) kommt mehrfach in der CSV vor (Zeile ${matchedUuids.get(match.uuid)! + 1} und Zeile ${i + 1}). Bitte bereinigen Sie die Datei.`
+          );
         }
+        matchedUuids.set(match.uuid, i);
+
+        props[match.uuid] = {
+          ...props[match.uuid],
+          empiricalDifficulty: estValNum
+        };
+        successes.push({ itemId: match.itemId, unitId: match.unitId, value: estValNum });
+        updatedCount++;
+        isUpdated = true;
+      } else {
+        failed.push({ csvRow: itemValRaw, reason: 'Kein passendes Item gefunden' });
+      }
     }
 
     if (isUpdated) {
-        acp.itemProperties = props;
-        await this.acpRepository.save(acp);
+      acp.itemProperties = props;
+      await this.acpRepository.save(acp);
     }
 
     return { updated: updatedCount, failed, successes };
@@ -189,15 +189,15 @@ export class ItemsService {
     let isUpdated = false;
 
     for (const key of Object.keys(props)) {
-        if (props[key].empiricalDifficulty !== undefined) {
-            delete props[key].empiricalDifficulty;
-            isUpdated = true;
-        }
+      if (props[key].empiricalDifficulty !== undefined) {
+        delete props[key].empiricalDifficulty;
+        isUpdated = true;
+      }
     }
 
     if (isUpdated) {
-        acp.itemProperties = props;
-        await this.acpRepository.save(acp);
+      acp.itemProperties = props;
+      await this.acpRepository.save(acp);
     }
 
     return { success: true };

@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AcpFile } from '../../core/models/api.models';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-files',
@@ -17,10 +18,17 @@ import { AcpFile } from '../../core/models/api.models';
           📤 Dateien hochladen
           <input type="file" multiple (change)="upload($event)" hidden>
         </label>
+        @if (files.length) {
+          <button class="btn btn-danger" (click)="deleteAllFiles()">🗑 Alle löschen</button>
+        }
       </div>
     </div>
 
-    @if (uploading) { <div class="alert alert-success">Dateien werden hochgeladen...</div> }
+    @if (uploading) { 
+      <div class="alert alert-success">
+        Dateien werden hochgeladen ({{ uploadProgress }})...
+      </div> 
+    }
 
     <!-- Validation Results -->
     @if (validationResults.length) {
@@ -110,6 +118,7 @@ export class FilesComponent implements OnInit {
   acpId = '';
   files: AcpFile[] = [];
   uploading = false;
+  uploadProgress = '';
   validating = false;
   validationResults: any[] = [];
 
@@ -124,18 +133,34 @@ export class FilesComponent implements OnInit {
     this.api.getFiles(this.acpId).subscribe(f => this.files = f);
   }
 
-  upload(event: Event) {
+  async upload(event: Event) {
     const input = event.target as HTMLInputElement;
     if (!input.files?.length) return;
-    const fd = new FormData();
-    for (let i = 0; i < input.files.length; i++) {
-      fd.append('files', input.files[i]);
-    }
+    
+    const filesArray = Array.from(input.files);
     this.uploading = true;
-    this.api.uploadFiles(this.acpId, fd).subscribe({
-      next: () => { this.uploading = false; this.load(); },
-      error: () => this.uploading = false
-    });
+    const chunkSize = 50;
+    
+    try {
+      for (let i = 0; i < filesArray.length; i += chunkSize) {
+        const chunk = filesArray.slice(i, i + chunkSize);
+        this.uploadProgress = `${Math.min(i + chunkSize, filesArray.length)} von ${filesArray.length}`;
+        
+        const fd = new FormData();
+        for (const file of chunk) {
+          fd.append('files', file);
+        }
+        
+        await firstValueFrom(this.api.uploadFiles(this.acpId, fd));
+      }
+      this.load();
+    } catch (err) {
+      console.error('Upload Error:', err);
+    } finally {
+      this.uploading = false;
+      this.uploadProgress = '';
+      input.value = ''; // Reset the input to allow selecting the same files again if needed
+    }
   }
 
   validateFiles() {
@@ -152,6 +177,15 @@ export class FilesComponent implements OnInit {
   deleteFile(file: AcpFile) {
     if (confirm(`Datei "${file.originalName}" löschen?`)) {
       this.api.deleteFile(this.acpId, file.id).subscribe(() => this.load());
+    }
+  }
+
+  deleteAllFiles() {
+    if (confirm('Möchten Sie wirklich alle Dateien unwiderruflich löschen?')) {
+      this.api.deleteAllFiles(this.acpId).subscribe(() => {
+        this.load();
+        this.validationResults = [];
+      });
     }
   }
 

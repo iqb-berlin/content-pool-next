@@ -63,6 +63,9 @@ export class ApiService {
   deleteFile(acpId: string, fileId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/files/${fileId}`);
   }
+  deleteAllFiles(acpId: string): Observable<void> {
+    return this.http.delete<void>(`${this.API}/acp/${acpId}/files/all`);
+  }
   getFileValidation(acpId: string, fileId: string): Observable<any> {
     return this.http.get(`${this.API}/acp/${acpId}/files/${fileId}/validation`);
   }

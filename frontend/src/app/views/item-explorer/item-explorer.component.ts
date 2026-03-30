@@ -215,6 +215,11 @@ interface MetadataSettings {
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
             <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
+            @if (isAcpManager) {
+              <button class="btn btn-outline btn-sm" (click)="saveCurrentResponseState()" title="Aktuellen Zustand speichern">💾 Zustand speichern</button>
+              <button class="btn btn-outline btn-sm" (click)="resetResponseState()" title="Zustand zurücksetzen" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);">🗑️ Zustand löschen</button>
+              <button class="btn btn-outline btn-sm" (click)="showRawDataOverlay = true" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
+            }
           </div>
 
           <!-- Unit Metadata Summary -->
@@ -535,6 +540,44 @@ interface MetadataSettings {
                 <button class="btn btn-primary" (click)="saveMetadataSettings()">💾 Speichern</button>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Raw Response State Data -->
+    @if (showRawDataOverlay) {
+      <div class="overlay-backdrop" (click)="showRawDataOverlay = false">
+        <div class="overlay-dialog" style="max-width: 900px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background:var(--color-primary)">📊</span>
+              <div>
+                <h2>Gespeicherte Zustände</h2>
+                <small>Alle gespeicherten Response States</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="showRawDataOverlay = false">✕</button>
+          </div>
+          <div class="overlay-content">
+            @if (allResponseStates.length === 0) {
+              <div class="empty-state">
+                <p>Keine gespeicherten Zustände vorhanden.</p>
+              </div>
+            } @else {
+              <div class="state-list">
+                @for (state of allResponseStates; track state.id) {
+                  <div class="state-item">
+                    <div class="state-header">
+                      <code>{{ state.itemId }}</code>
+                      <span class="unit-badge">{{ state.unitId }}</span>
+                      <span class="date">{{ state.updatedAt | date:'short' }}</span>
+                    </div>
+                    <pre class="json-view">{{ state.responseData | json }}</pre>
+                  </div>
+                }
+              </div>
+            }
           </div>
         </div>
       </div>
@@ -1041,6 +1084,33 @@ interface MetadataSettings {
       overflow: auto; max-height: 60vh;
       white-space: pre-wrap; word-break: break-word;
     }
+    .state-list {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .state-item {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .state-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .unit-badge {
+      background: var(--color-primary-light);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+    .state-header .date {
+      color: var(--color-text-secondary);
+      font-size: 0.8rem;
+      margin-left: auto;
+    }
     .meta-dl {
       display: grid; grid-template-columns: auto 1fr;
       gap: 8px 20px; font-size: 0.9rem;
@@ -1110,6 +1180,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   codingSearchText = '';
   codingSortField: 'id' | 'label' = 'id';
   codingSortDir: 'asc' | 'desc' = 'asc';
+
+  // Response State
+  currentResponseData: Record<string, any> | null = null;
+  hasResponseState = false;
+  isFallbackState = false;
+  showRawDataOverlay = false;
+  allResponseStates: any[] = [];
 
   get filteredCodingSchemeAsText(): CodingAsText[] {
     if (!this.currentCodingSchemeAsText) return [];
@@ -1392,6 +1469,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.currentPage = 1;
     this.totalPages = 1;
     this.loadingUnit = true;
+    
+    // Reset response state flags
+    this.hasResponseState = false;
+    this.isFallbackState = false;
+    this.currentResponseData = null;
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -1419,6 +1501,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     } else {
       this.currentCodingSchemeAsText = null;
     }
+
+    // Load response state for this item (with fallback to previous item in same unit)
+    this.loadResponseStateForItem(item, index);
 
     // Load unit view data from files (for player + dependencies)
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
@@ -1453,6 +1538,108 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
+  // --- Response State ---
+  private loadResponseStateForItem(item: ExplorerItem, index: number) {
+    // First try to get direct state for this item
+    this.api.getResponseState(this.acpId, item.itemId).subscribe({
+      next: (result: any) => {
+        if (result && result.responseData && Object.keys(result.responseData).length > 0) {
+          this.currentResponseData = result.responseData;
+          this.hasResponseState = true;
+          this.isFallbackState = false;
+        } else {
+          // No direct state, try fallback to previous item in same unit
+          this.tryFallbackState(item, index);
+        }
+      },
+      error: () => {
+        // On error, try fallback
+        this.tryFallbackState(item, index);
+      }
+    });
+  }
+
+  private tryFallbackState(currentItem: ExplorerItem, currentIndex: number) {
+    // Iterate backwards through filteredItems to find previous item in same unit with state
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      const prevItem = this.filteredItems[i];
+      if (prevItem.unitId === currentItem.unitId) {
+        // Found previous item in same unit, check if it has state
+        this.api.getResponseState(this.acpId, prevItem.itemId).subscribe({
+          next: (result: any) => {
+            if (result && result.responseData && Object.keys(result.responseData).length > 0) {
+              this.currentResponseData = result.responseData;
+              this.hasResponseState = true;
+              this.isFallbackState = true;
+            }
+          },
+          error: () => {
+            // No fallback state available, continue without state
+          }
+        });
+        return; // Only check the first previous item in the same unit
+      }
+    }
+  }
+
+  saveCurrentResponseState() {
+    if (!this.selectedItem || !this.currentResponseData) {
+      alert('Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.');
+      return;
+    }
+
+    this.api.saveResponseState(
+      this.acpId,
+      this.selectedItem.itemId,
+      this.selectedItem.unitId,
+      this.currentResponseData
+    ).subscribe({
+      next: () => {
+        this.hasResponseState = true;
+        this.isFallbackState = false;
+        alert('Zustand erfolgreich gespeichert!');
+      },
+      error: (err) => {
+        console.error('Error saving response state:', err);
+        alert('Fehler beim Speichern des Zustands.');
+      }
+    });
+  }
+
+  resetResponseState() {
+    if (!this.selectedItem) return;
+
+    if (!confirm('Sind Sie sicher, dass Sie den gespeicherten Zustand für dieses Item löschen möchten?')) {
+      return;
+    }
+
+    this.api.deleteResponseState(this.acpId, this.selectedItem.itemId).subscribe({
+      next: () => {
+        this.hasResponseState = false;
+        this.isFallbackState = false;
+        this.currentResponseData = null;
+        alert('Zustand erfolgreich gelöscht!');
+      },
+      error: (err) => {
+        console.error('Error deleting response state:', err);
+        alert('Fehler beim Löschen des Zustands.');
+      }
+    });
+  }
+
+  loadAllResponseStates() {
+    this.api.getAllResponseStates(this.acpId).subscribe({
+      next: (states) => {
+        this.allResponseStates = states;
+        this.showRawDataOverlay = true;
+      },
+      error: (err) => {
+        console.error('Error loading response states:', err);
+        alert('Fehler beim Laden der gespeicherten Zustände.');
+      }
+    });
+  }
+
   navigateItem(delta: number) {
     const newIndex = this.selectedIndex + delta;
     if (newIndex < 0 || newIndex >= this.filteredItems.length) return;
@@ -1477,11 +1664,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         .then(res => res.text())
         .then(definition => {
           const startPage = this.voudService.getStartPage(definition, this.selectedItem?.variableId || '');
+          
+          // Prepare unitState with saved response data
+          const unitState: any = { dataParts: {} };
+          if (this.hasResponseState && this.currentResponseData) {
+            unitState.dataParts = this.currentResponseData;
+          }
+          
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
             unitDefinition: definition,
-            unitState: { dataParts: {} },
+            unitState: unitState,
             playerConfig: {
               stateReportPolicy: 'none',
               pagingMode: (this.pagingMode === 'view-all' || this.pagingMode === 'print-ids') ? 'concat-scroll' : this.pagingMode,
@@ -1523,6 +1717,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         }
         if (msg.playerState?.validPages !== undefined) {
           this.totalPages = msg.playerState.validPages.length || this.totalPages;
+        }
+        // Capture response data from unitState.dataParts
+        if (msg.unitState?.dataParts) {
+          this.currentResponseData = msg.unitState.dataParts;
         }
         break;
 

@@ -139,4 +139,21 @@ export class ApiService {
   clearEmpiricalDifficulties(acpId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/items/empirical-difficulty`);
   }
+
+  // Response State
+  saveResponseState(acpId: string, itemId: string, unitId: string, responseData: Record<string, any>): Observable<any> {
+    return this.http.post(`${this.API}/acp/${acpId}/items/${itemId}/response-state`, { unitId, responseData });
+  }
+
+  getResponseState(acpId: string, itemId: string): Observable<any> {
+    return this.http.get(`${this.API}/acp/${acpId}/items/${itemId}/response-state`);
+  }
+
+  deleteResponseState(acpId: string, itemId: string): Observable<any> {
+    return this.http.delete(`${this.API}/acp/${acpId}/items/${itemId}/response-state`);
+  }
+
+  getAllResponseStates(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/acp/${acpId}/items/response-state/all`);
+  }
 }

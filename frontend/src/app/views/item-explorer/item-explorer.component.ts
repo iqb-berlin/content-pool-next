@@ -187,15 +187,6 @@ interface MetadataSettings {
             }
           </div>
 
-          <!-- Page Navigation (within player) -->
-          @if (totalPages > 1 && pagingMode !== 'view-all' && pagingMode !== 'print-ids') {
-            <div class="page-nav">
-              <button class="btn btn-outline btn-sm" [disabled]="currentPage <= 1" (click)="navigateToPage(currentPage - 1)">← Vorherige Seite</button>
-              <span class="page-info">Seite {{ currentPage }} / {{ totalPages }}</span>
-              <button class="btn btn-outline btn-sm" [disabled]="currentPage >= totalPages" (click)="navigateToPage(currentPage + 1)">Nächste Seite →</button>
-            </div>
-          }
-
           <!-- Item Navigation -->
           <div class="item-nav">
             <button class="btn btn-outline" [disabled]="selectedIndex <= 0" (click)="navigateItem(-1)">← Vorheriges Item</button>
@@ -215,25 +206,12 @@ interface MetadataSettings {
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
             <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
+            @if (isAcpManager) {
+              <button class="btn btn-outline btn-sm" (click)="saveCurrentResponseState()" title="Aktuellen Zustand speichern">💾 Zustand speichern</button>
+              <button class="btn btn-outline btn-sm" (click)="resetResponseState()" title="Zustand zurücksetzen" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);">🗑️ Zustand löschen</button>
+              <button class="btn btn-outline btn-sm" (click)="loadAllResponseStates()" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
+            }
           </div>
-
-          <!-- Unit Metadata Summary -->
-          @if (currentUnitMetadata && currentUnitMetadata.length > 0) {
-            <div class="unit-metadata-card card">
-              <div class="card-header">
-                <h4>Unit-Metadaten</h4>
-                <button class="btn btn-xs btn-outline" (click)="showMetadataDrawer = true">Details</button>
-              </div>
-              <div class="meta-summary-grid">
-                @for (entry of getSummaryMetadata(); track entry.id) {
-                  <div class="meta-summary-item">
-                    <span class="meta-summary-label">{{ extractLabel(entry.label) }}</span>
-                    <span class="meta-summary-value">{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) }}</span>
-                  </div>
-                }
-              </div>
-            </div>
-          }
 
           <!-- Info Card -->
           <div class="info-card card">
@@ -539,6 +517,131 @@ interface MetadataSettings {
         </div>
       </div>
     }
+
+    <!-- OVERLAY: Save Response State Confirmation -->
+    @if (showSaveConfirmDialog) {
+      <div class="overlay-backdrop" (click)="!confirmDialogState && (showSaveConfirmDialog = false)">
+        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header" [style.border-top]="confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'">
+            @if (confirmDialogState === 'saving') {
+              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                <span class="spinner-inline"></span> Speichern...
+              </h2>
+            } @else {
+              <h2 style="color: #27ae60; display: flex; align-items: center; gap: 8px;">
+                <span>💾</span> Zustand speichern
+              </h2>
+            }
+            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">✕</button>
+          </div>
+          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+            @if (confirmDialogError) {
+              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+            } @else {
+              <div style="font-size: 3rem; margin-bottom: 16px;">💾</div>
+              <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                Möchten Sie den aktuellen Zustand speichern?
+              </p>
+              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+              </p>
+            }
+            <div style="display: flex; gap: 12px; justify-content: center;">
+              <button class="btn btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">
+                Abbrechen
+              </button>
+              <button class="btn btn-primary" [disabled]="confirmDialogState === 'saving'" (click)="confirmSaveResponseState()">
+                💾 Speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Delete Response State Confirmation -->
+    @if (showDeleteConfirmDialog) {
+      <div class="overlay-backdrop" (click)="!confirmDialogState && (showDeleteConfirmDialog = false)">
+        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header" [style.border-top]="confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'">
+            @if (confirmDialogState === 'deleting') {
+              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                <span class="spinner-inline"></span> Löschen...
+              </h2>
+            } @else {
+              <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
+                <span>🗑️</span> Zustand löschen
+              </h2>
+            }
+            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">✕</button>
+          </div>
+          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+            @if (confirmDialogError) {
+              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+            } @else {
+              <div style="font-size: 3rem; margin-bottom: 16px;">🗑️</div>
+              <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                Möchten Sie den gespeicherten Zustand löschen?
+              </p>
+              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+              </p>
+              <p style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;">
+                ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
+              </p>
+            }
+            <div style="display: flex; gap: 12px; justify-content: center;">
+              <button class="btn btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">
+                Abbrechen
+              </button>
+              <button class="btn btn-danger" [disabled]="confirmDialogState === 'deleting'" (click)="confirmDeleteResponseState()" style="background: #e74c3c; color: white; border-color: #e74c3c;">
+                🗑️ Löschen
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Raw Response State Data -->
+    @if (showRawDataOverlay) {
+      <div class="overlay-backdrop" (click)="showRawDataOverlay = false">
+        <div class="overlay-dialog" style="max-width: 900px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background:var(--color-primary)">📊</span>
+              <div>
+                <h2>Gespeicherte Zustände</h2>
+                <small>Alle gespeicherten Response States</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="showRawDataOverlay = false">✕</button>
+          </div>
+          <div class="overlay-content">
+            @if (allResponseStates.length === 0) {
+              <div class="empty-state">
+                <p>Keine gespeicherten Zustände vorhanden.</p>
+              </div>
+            } @else {
+              <div class="state-list">
+                @for (state of allResponseStates; track state.id) {
+                  <div class="state-item">
+                    <div class="state-header">
+                      <code>{{ state.itemId }}</code>
+                      <span class="unit-badge">{{ state.unitId }}</span>
+                      <span class="date">{{ state.updatedAt | date:'short' }}</span>
+                    </div>
+                    <pre class="json-view">{{ state.responseData | json }}</pre>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     :host {
@@ -723,17 +826,15 @@ interface MetadataSettings {
     .player-iframe.view-all-mode { min-height: 1000px; height: auto; }
 
     /* Navigations */
-    .page-nav, .item-nav {
+    .item-nav {
       display: flex; align-items: center; justify-content: center;
       gap: 12px; padding: 10px 0;
-    }
-    .page-info, .item-nav-info {
-      font-size: 0.85rem; font-weight: 500;
-      color: var(--color-text-secondary);
-    }
-    .item-nav {
       border-top: 1px solid var(--color-border);
       border-bottom: 1px solid var(--color-border);
+    }
+    .item-nav-info {
+      font-size: 0.85rem; font-weight: 500;
+      color: var(--color-text-secondary);
     }
 
     .action-buttons {
@@ -760,6 +861,14 @@ interface MetadataSettings {
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin-bottom: 12px;
+    }
+    .spinner-inline {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--color-border);
+      border-top-color: var(--color-primary-light);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1041,6 +1150,33 @@ interface MetadataSettings {
       overflow: auto; max-height: 60vh;
       white-space: pre-wrap; word-break: break-word;
     }
+    .state-list {
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .state-item {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .state-header {
+      display: flex; align-items: center; gap: 12px;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .unit-badge {
+      background: var(--color-primary-light);
+      color: white;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+    .state-header .date {
+      color: var(--color-text-secondary);
+      font-size: 0.8rem;
+      margin-left: auto;
+    }
     .meta-dl {
       display: grid; grid-template-columns: auto 1fr;
       gap: 8px 20px; font-size: 0.9rem;
@@ -1110,6 +1246,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   codingSearchText = '';
   codingSortField: 'id' | 'label' = 'id';
   codingSortDir: 'asc' | 'desc' = 'asc';
+
+  // Response State
+  currentResponseData: Record<string, any> | null = null;
+  hasResponseState = false;
+  isFallbackState = false;
+  showRawDataOverlay = false;
+  allResponseStates: any[] = [];
+
+  // Response State Confirmation Dialogs
+  showSaveConfirmDialog = false;
+  showDeleteConfirmDialog = false;
+  confirmDialogState: 'idle' | 'saving' | 'deleting' = 'idle';
+  confirmDialogError = '';
 
   get filteredCodingSchemeAsText(): CodingAsText[] {
     if (!this.currentCodingSchemeAsText) return [];
@@ -1392,6 +1541,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.currentPage = 1;
     this.totalPages = 1;
     this.loadingUnit = true;
+    
+    // Reset response state flags
+    this.hasResponseState = false;
+    this.isFallbackState = false;
+    this.currentResponseData = null;
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -1419,6 +1573,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     } else {
       this.currentCodingSchemeAsText = null;
     }
+
+    // Load response state for this item (with fallback to previous item in same unit)
+    this.loadResponseStateForItem(item, index);
 
     // Load unit view data from files (for player + dependencies)
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
@@ -1453,6 +1610,108 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
+  // --- Response State ---
+  private loadResponseStateForItem(item: ExplorerItem, index: number) {
+    // Build item list from filteredItems for fallback lookup
+    const itemList = this.filteredItems.map(i => ({ itemId: i.itemId, unitId: i.unitId }));
+
+    this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList).subscribe({
+      next: (result) => {
+        if (result.state && result.state.responseData && Object.keys(result.state.responseData).length > 0) {
+          this.currentResponseData = result.state.responseData;
+          this.hasResponseState = true;
+          this.isFallbackState = result.isFallback;
+        } else {
+          // No state available (direct or fallback)
+          this.currentResponseData = null;
+          this.hasResponseState = false;
+          this.isFallbackState = false;
+        }
+      },
+      error: () => {
+        // On error, continue without state
+        this.currentResponseData = null;
+        this.hasResponseState = false;
+        this.isFallbackState = false;
+      }
+    });
+  }
+
+  saveCurrentResponseState() {
+    if (!this.selectedItem || !this.currentResponseData) {
+      this.confirmDialogError = 'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
+    this.confirmDialogError = '';
+    this.showSaveConfirmDialog = true;
+  }
+
+  confirmSaveResponseState() {
+    if (!this.selectedItem || !this.currentResponseData) return;
+
+    this.confirmDialogState = 'saving';
+
+    this.api.saveResponseState(
+      this.acpId,
+      this.selectedItem.itemId,
+      this.selectedItem.unitId,
+      this.currentResponseData
+    ).subscribe({
+      next: () => {
+        this.hasResponseState = true;
+        this.isFallbackState = false;
+        this.confirmDialogState = 'idle';
+        this.showSaveConfirmDialog = false;
+      },
+      error: (err) => {
+        console.error('Error saving response state:', err);
+        this.confirmDialogState = 'idle';
+        this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
+      }
+    });
+  }
+
+  resetResponseState() {
+    if (!this.selectedItem) return;
+    this.confirmDialogError = '';
+    this.showDeleteConfirmDialog = true;
+  }
+
+  confirmDeleteResponseState() {
+    if (!this.selectedItem) return;
+
+    this.confirmDialogState = 'deleting';
+
+    this.api.deleteResponseState(this.acpId, this.selectedItem.itemId).subscribe({
+      next: () => {
+        this.hasResponseState = false;
+        this.isFallbackState = false;
+        this.currentResponseData = null;
+        this.confirmDialogState = 'idle';
+        this.showDeleteConfirmDialog = false;
+      },
+      error: (err) => {
+        console.error('Error deleting response state:', err);
+        this.confirmDialogState = 'idle';
+        this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
+      }
+    });
+  }
+
+  loadAllResponseStates() {
+    this.api.getAllResponseStates(this.acpId).subscribe({
+      next: (states) => {
+        this.allResponseStates = states;
+        this.showRawDataOverlay = true;
+      },
+      error: (err) => {
+        console.error('Error loading response states:', err);
+        alert('Fehler beim Laden der gespeicherten Zustände.');
+      }
+    });
+  }
+
   navigateItem(delta: number) {
     const newIndex = this.selectedIndex + delta;
     if (newIndex < 0 || newIndex >= this.filteredItems.length) return;
@@ -1477,11 +1736,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         .then(res => res.text())
         .then(definition => {
           const startPage = this.voudService.getStartPage(definition, this.selectedItem?.variableId || '');
+          
+          // Prepare unitState with saved response data
+          const unitState: any = { dataParts: {} };
+          if (this.hasResponseState && this.currentResponseData) {
+            unitState.dataParts = this.currentResponseData;
+          }
+          
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
             unitDefinition: definition,
-            unitState: { dataParts: {} },
+            unitState: unitState,
             playerConfig: {
               stateReportPolicy: 'none',
               pagingMode: (this.pagingMode === 'view-all' || this.pagingMode === 'print-ids') ? 'concat-scroll' : this.pagingMode,
@@ -1524,6 +1790,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         if (msg.playerState?.validPages !== undefined) {
           this.totalPages = msg.playerState.validPages.length || this.totalPages;
         }
+        // Capture response data from unitState.dataParts
+        if (msg.unitState?.dataParts) {
+          this.currentResponseData = msg.unitState.dataParts;
+        }
         break;
 
       case 'vopPageNavigationCommand':
@@ -1538,15 +1808,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         }
         break;
     }
-  }
-
-  navigateToPage(page: number) {
-    if (page < 1 || page > this.totalPages) return;
-    this.currentPage = page;
-    this.sendToPlayer({
-      type: 'vopPageNavigationCommand',
-      target: page - 1,
-    });
   }
 
   private sendToPlayer(msg: any) {

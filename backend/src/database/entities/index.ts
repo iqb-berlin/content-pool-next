@@ -8,3 +8,4 @@ export { AcpAccessConfig, AccessModel } from './acp-access-config.entity';
 export { AcpCredential } from './acp-credential.entity';
 export { Comment, CommentTargetType } from './comment.entity';
 export { AppSettings } from './app-settings.entity';
+export { ItemResponseState } from './item-response-state.entity';

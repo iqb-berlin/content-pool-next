@@ -209,7 +209,7 @@ interface MetadataSettings {
             @if (isAcpManager) {
               <button class="btn btn-outline btn-sm" (click)="saveCurrentResponseState()" title="Aktuellen Zustand speichern">💾 Zustand speichern</button>
               <button class="btn btn-outline btn-sm" (click)="resetResponseState()" title="Zustand zurücksetzen" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);">🗑️ Zustand löschen</button>
-              <button class="btn btn-outline btn-sm" (click)="showRawDataOverlay = true" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
+              <button class="btn btn-outline btn-sm" (click)="loadAllResponseStates()" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
             }
           </div>
 
@@ -536,6 +536,93 @@ interface MetadataSettings {
       </div>
     }
 
+    <!-- OVERLAY: Save Response State Confirmation -->
+    @if (showSaveConfirmDialog) {
+      <div class="overlay-backdrop" (click)="!confirmDialogState && (showSaveConfirmDialog = false)">
+        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header" [style.border-top]="confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'">
+            @if (confirmDialogState === 'saving') {
+              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                <span class="spinner-inline"></span> Speichern...
+              </h2>
+            } @else {
+              <h2 style="color: #27ae60; display: flex; align-items: center; gap: 8px;">
+                <span>💾</span> Zustand speichern
+              </h2>
+            }
+            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">✕</button>
+          </div>
+          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+            @if (confirmDialogError) {
+              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+            } @else {
+              <div style="font-size: 3rem; margin-bottom: 16px;">💾</div>
+              <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                Möchten Sie den aktuellen Zustand speichern?
+              </p>
+              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+              </p>
+            }
+            <div style="display: flex; gap: 12px; justify-content: center;">
+              <button class="btn btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">
+                Abbrechen
+              </button>
+              <button class="btn btn-primary" [disabled]="confirmDialogState === 'saving'" (click)="confirmSaveResponseState()">
+                💾 Speichern
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Delete Response State Confirmation -->
+    @if (showDeleteConfirmDialog) {
+      <div class="overlay-backdrop" (click)="!confirmDialogState && (showDeleteConfirmDialog = false)">
+        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header" [style.border-top]="confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'">
+            @if (confirmDialogState === 'deleting') {
+              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                <span class="spinner-inline"></span> Löschen...
+              </h2>
+            } @else {
+              <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
+                <span>🗑️</span> Zustand löschen
+              </h2>
+            }
+            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">✕</button>
+          </div>
+          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+            @if (confirmDialogError) {
+              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+            } @else {
+              <div style="font-size: 3rem; margin-bottom: 16px;">🗑️</div>
+              <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                Möchten Sie den gespeicherten Zustand löschen?
+              </p>
+              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+              </p>
+              <p style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;">
+                ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
+              </p>
+            }
+            <div style="display: flex; gap: 12px; justify-content: center;">
+              <button class="btn btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">
+                Abbrechen
+              </button>
+              <button class="btn btn-danger" [disabled]="confirmDialogState === 'deleting'" (click)="confirmDeleteResponseState()" style="background: #e74c3c; color: white; border-color: #e74c3c;">
+                🗑️ Löschen
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+
     <!-- OVERLAY: Raw Response State Data -->
     @if (showRawDataOverlay) {
       <div class="overlay-backdrop" (click)="showRawDataOverlay = false">
@@ -792,6 +879,14 @@ interface MetadataSettings {
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       margin-bottom: 12px;
+    }
+    .spinner-inline {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--color-border);
+      border-top-color: var(--color-primary-light);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1177,6 +1272,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
 
+  // Response State Confirmation Dialogs
+  showSaveConfirmDialog = false;
+  showDeleteConfirmDialog = false;
+  confirmDialogState: 'idle' | 'saving' | 'deleting' = 'idle';
+  confirmDialogError = '';
+
   get filteredCodingSchemeAsText(): CodingAsText[] {
     if (!this.currentCodingSchemeAsText) return [];
     
@@ -1556,9 +1657,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   saveCurrentResponseState() {
     if (!this.selectedItem || !this.currentResponseData) {
-      alert('Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.');
+      this.confirmDialogError = 'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
+      this.showSaveConfirmDialog = true;
       return;
     }
+    this.confirmDialogError = '';
+    this.showSaveConfirmDialog = true;
+  }
+
+  confirmSaveResponseState() {
+    if (!this.selectedItem || !this.currentResponseData) return;
+
+    this.confirmDialogState = 'saving';
 
     this.api.saveResponseState(
       this.acpId,
@@ -1569,32 +1679,40 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       next: () => {
         this.hasResponseState = true;
         this.isFallbackState = false;
-        alert('Zustand erfolgreich gespeichert!');
+        this.confirmDialogState = 'idle';
+        this.showSaveConfirmDialog = false;
       },
       error: (err) => {
         console.error('Error saving response state:', err);
-        alert('Fehler beim Speichern des Zustands.');
+        this.confirmDialogState = 'idle';
+        this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
       }
     });
   }
 
   resetResponseState() {
     if (!this.selectedItem) return;
+    this.confirmDialogError = '';
+    this.showDeleteConfirmDialog = true;
+  }
 
-    if (!confirm('Sind Sie sicher, dass Sie den gespeicherten Zustand für dieses Item löschen möchten?')) {
-      return;
-    }
+  confirmDeleteResponseState() {
+    if (!this.selectedItem) return;
+
+    this.confirmDialogState = 'deleting';
 
     this.api.deleteResponseState(this.acpId, this.selectedItem.itemId).subscribe({
       next: () => {
         this.hasResponseState = false;
         this.isFallbackState = false;
         this.currentResponseData = null;
-        alert('Zustand erfolgreich gelöscht!');
+        this.confirmDialogState = 'idle';
+        this.showDeleteConfirmDialog = false;
       },
       error: (err) => {
         console.error('Error deleting response state:', err);
-        alert('Fehler beim Löschen des Zustands.');
+        this.confirmDialogState = 'idle';
+        this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
       }
     });
   }

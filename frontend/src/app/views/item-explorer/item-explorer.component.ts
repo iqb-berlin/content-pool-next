@@ -187,15 +187,6 @@ interface MetadataSettings {
             }
           </div>
 
-          <!-- Page Navigation (within player) -->
-          @if (totalPages > 1 && pagingMode !== 'view-all' && pagingMode !== 'print-ids') {
-            <div class="page-nav">
-              <button class="btn btn-outline btn-sm" [disabled]="currentPage <= 1" (click)="navigateToPage(currentPage - 1)">← Vorherige Seite</button>
-              <span class="page-info">Seite {{ currentPage }} / {{ totalPages }}</span>
-              <button class="btn btn-outline btn-sm" [disabled]="currentPage >= totalPages" (click)="navigateToPage(currentPage + 1)">Nächste Seite →</button>
-            </div>
-          }
-
           <!-- Item Navigation -->
           <div class="item-nav">
             <button class="btn btn-outline" [disabled]="selectedIndex <= 0" (click)="navigateItem(-1)">← Vorheriges Item</button>
@@ -766,17 +757,15 @@ interface MetadataSettings {
     .player-iframe.view-all-mode { min-height: 1000px; height: auto; }
 
     /* Navigations */
-    .page-nav, .item-nav {
+    .item-nav {
       display: flex; align-items: center; justify-content: center;
       gap: 12px; padding: 10px 0;
-    }
-    .page-info, .item-nav-info {
-      font-size: 0.85rem; font-weight: 500;
-      color: var(--color-text-secondary);
-    }
-    .item-nav {
       border-top: 1px solid var(--color-border);
       border-bottom: 1px solid var(--color-border);
+    }
+    .item-nav-info {
+      font-size: 0.85rem; font-weight: 500;
+      color: var(--color-text-secondary);
     }
 
     .action-buttons {
@@ -1719,15 +1708,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         }
         break;
     }
-  }
-
-  navigateToPage(page: number) {
-    if (page < 1 || page > this.totalPages) return;
-    this.currentPage = page;
-    this.sendToPlayer({
-      type: 'vopPageNavigationCommand',
-      target: page - 1,
-    });
   }
 
   private sendToPlayer(msg: any) {

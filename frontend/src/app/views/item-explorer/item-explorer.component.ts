@@ -1540,46 +1540,29 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Response State ---
   private loadResponseStateForItem(item: ExplorerItem, index: number) {
-    // First try to get direct state for this item
-    this.api.getResponseState(this.acpId, item.itemId).subscribe({
-      next: (result: any) => {
-        if (result && result.responseData && Object.keys(result.responseData).length > 0) {
-          this.currentResponseData = result.responseData;
+    // Build item list from filteredItems for fallback lookup
+    const itemList = this.filteredItems.map(i => ({ itemId: i.itemId, unitId: i.unitId }));
+
+    this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList).subscribe({
+      next: (result) => {
+        if (result.state && result.state.responseData && Object.keys(result.state.responseData).length > 0) {
+          this.currentResponseData = result.state.responseData;
           this.hasResponseState = true;
-          this.isFallbackState = false;
+          this.isFallbackState = result.isFallback;
         } else {
-          // No direct state, try fallback to previous item in same unit
-          this.tryFallbackState(item, index);
+          // No state available (direct or fallback)
+          this.currentResponseData = null;
+          this.hasResponseState = false;
+          this.isFallbackState = false;
         }
       },
       error: () => {
-        // On error, try fallback
-        this.tryFallbackState(item, index);
+        // On error, continue without state
+        this.currentResponseData = null;
+        this.hasResponseState = false;
+        this.isFallbackState = false;
       }
     });
-  }
-
-  private tryFallbackState(currentItem: ExplorerItem, currentIndex: number) {
-    // Iterate backwards through filteredItems to find previous item in same unit with state
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      const prevItem = this.filteredItems[i];
-      if (prevItem.unitId === currentItem.unitId) {
-        // Found previous item in same unit, check if it has state
-        this.api.getResponseState(this.acpId, prevItem.itemId).subscribe({
-          next: (result: any) => {
-            if (result && result.responseData && Object.keys(result.responseData).length > 0) {
-              this.currentResponseData = result.responseData;
-              this.hasResponseState = true;
-              this.isFallbackState = true;
-            }
-          },
-          error: () => {
-            // No fallback state available, continue without state
-          }
-        });
-        return; // Only check the first previous item in the same unit
-      }
-    }
   }
 
   saveCurrentResponseState() {

@@ -153,6 +153,18 @@ export class ApiService {
     return this.http.delete(`${this.API}/acp/${acpId}/items/${itemId}/response-state`);
   }
 
+  getResponseStateWithFallback(
+    acpId: string,
+    itemId: string,
+    unitId: string,
+    itemList: { itemId: string; unitId: string }[]
+  ): Observable<{ state: any; isFallback: boolean; fallbackItemId?: string }> {
+    return this.http.post<{ state: any; isFallback: boolean; fallbackItemId?: string }>(
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state/with-fallback`,
+      { unitId, itemList }
+    );
+  }
+
   getAllResponseStates(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/acp/${acpId}/items/response-state/all`);
   }

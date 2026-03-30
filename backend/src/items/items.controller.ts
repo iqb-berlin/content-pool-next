@@ -108,6 +108,23 @@ export class ItemsController {
     return state || { state: null };
   }
 
+  @Post(':itemId/response-state/with-fallback')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get response state for an item with fallback to previous items in same unit' })
+  async getResponseStateWithFallback(
+    @Param('acpId') acpId: string,
+    @Param('itemId') itemId: string,
+    @Body() body: { unitId: string; itemList: { itemId: string; unitId: string }[] },
+  ) {
+    return this.stateService.getResponseStateWithFallback(
+      acpId,
+      itemId,
+      body.unitId,
+      body.itemList,
+    );
+  }
+
   @Delete(':itemId/response-state')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

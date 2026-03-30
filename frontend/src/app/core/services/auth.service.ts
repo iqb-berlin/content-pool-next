@@ -1,19 +1,31 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
-import { LoginResponse, CredentialLoginResponse, UserProfile, OidcConfig } from '../models/api.models';
+import { LoginResponse, CredentialLoginResponse, UserProfile, OidcConfig, AuthContext } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly API = '/api/auth';
   private tokenKey = 'cp_token';
+  private readonly OIDC_REDIRECT_KEY = 'oidc_redirect_url';
+  private readonly ID_TOKEN_KEY = 'cp_oidc_id_token';
+  private readonly AUTH_TYPE_KEY = 'cp_auth_type';
+  private logoutChannel: BroadcastChannel | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
 
   currentUser$ = this.currentUserSubject.asObservable();
 
   constructor(private http: HttpClient) {
+    this.initBroadcastChannel();
     if (this.getToken()) {
       this.loadProfile();
+    }
+  }
+
+  private initBroadcastChannel(): void {
+    if (typeof BroadcastChannel !== 'undefined') {
+      this.logoutChannel = new BroadcastChannel('cp_logout');
+      this.logoutChannel.onmessage = () => this.performLogout(false);
     }
   }
 
@@ -35,6 +47,11 @@ export class AuthService {
 
   getOidcConfig(): Observable<OidcConfig> {
     return this.http.get<OidcConfig>(`${this.API}/oidc-config`);
+  }
+
+  getAuthContext(type: 'admin' | 'acp' | null = null): Observable<AuthContext> {
+    const params = type ? `?type=${type}` : '';
+    return this.http.get<AuthContext>(`${this.API}/context${params}`);
   }
 
   initiateOidcLogin(redirectUrl?: string): void {
@@ -63,6 +80,8 @@ export class AuthService {
     return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken }).pipe(
       tap(res => {
         localStorage.setItem(this.tokenKey, res.accessToken);
+        localStorage.setItem(this.ID_TOKEN_KEY, idToken);
+        localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
         this.loadProfile();
       })
     );
@@ -91,9 +110,48 @@ export class AuthService {
     );
   }
 
-  logout(): void {
+  logout(broadcast = true): void {
+    const idToken = localStorage.getItem(this.ID_TOKEN_KEY);
+    const authType = localStorage.getItem(this.AUTH_TYPE_KEY);
+    const wasOidc = authType === 'oidc';
+    
+    this.http.post(`${this.API}/logout`, {}).subscribe({
+      error: () => {},
+    });
+    
+    if (wasOidc) {
+      this.redirectToKeycloakLogout(idToken);
+    }
+    
+    this.performLogout(broadcast);
+  }
+
+
+  private redirectToKeycloakLogout(idToken: string | null): void {
+    this.getOidcConfig().subscribe(config => {
+      if (!config.enabled || !config.issuerUrl || !config.clientId) return;
+      
+      const logoutUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/logout`);
+      logoutUrl.searchParams.set('post_logout_redirect_uri', window.location.origin + '/login');
+      logoutUrl.searchParams.set('client_id', config.clientId);
+      if (idToken) {
+        logoutUrl.searchParams.set('id_token_hint', idToken);
+      }
+      
+      window.location.href = logoutUrl.toString();
+    });
+  }
+
+  private performLogout(broadcast = true): void {
     localStorage.removeItem(this.tokenKey);
+    localStorage.removeItem(this.ID_TOKEN_KEY);
+    localStorage.removeItem(this.AUTH_TYPE_KEY);
+    sessionStorage.removeItem(this.OIDC_REDIRECT_KEY);
     this.currentUserSubject.next(null);
+
+    if (broadcast && this.logoutChannel) {
+      this.logoutChannel.postMessage('logout');
+    }
   }
 
   loadProfile(): void {

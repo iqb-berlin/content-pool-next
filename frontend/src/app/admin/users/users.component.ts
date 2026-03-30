@@ -16,7 +16,7 @@ import { User } from '../../core/models/api.models';
     @if (showCreate) {
       <div class="card">
         <h3>Neuen Nutzer anlegen</h3>
-        <form (ngSubmit)="createUser()">
+        <form>
           <div class="form-group">
             <label>Benutzername</label>
             <input [(ngModel)]="newUser.username" name="username" required>
@@ -37,17 +37,40 @@ import { User } from '../../core/models/api.models';
       </div>
     }
 
-    @if (error) { <div class="alert alert-error">{{ error }}</div> }
+    @if (showOidcLink) {
+      <div class="card">
+        <h3>OIDC Account verknüpfen für {{ selectedUser?.username }}</h3>
+        <form>
+          <div class="form-group">
+            <label>OIDC Sub (Keycloak User ID)</label>
+            <input [(ngModel)]="oidcSub" name="oidcSub" placeholder="z.B. 200b726c-c834-4a0b-97b8-d44f3102c7e5"
+                   required>
+            <small class="form-text text-muted">
+              Die OIDC Sub finden Sie in Keycloak unter: Users → [User] → ID field
+            </small>
+          </div>
+          <div class="toolbar">
+            <button type="submit" class="btn btn-primary">Verknüpfen</button>
+            <button type="button" class="btn btn-outline" (click)="showOidcLink = false">Abbrechen</button>
+          </div>
+        </form>
+      </div>
+    }
+
+    @if (error) {
+      <div class="alert alert-error">{{ error }}</div>
+    }
 
     <div class="card">
       <table class="table">
         <thead>
-          <tr>
-            <th>Benutzername</th>
-            <th>Anzeigename</th>
-            <th>Admin</th>
-            <th>Aktionen</th>
-          </tr>
+        <tr>
+          <th>Benutzername</th>
+          <th>Anzeigename</th>
+          <th>Admin</th>
+          <th>OIDC</th>
+          <th>Aktionen</th>
+        </tr>
         </thead>
         <tbody>
           @for (user of users; track user.id) {
@@ -60,10 +83,21 @@ import { User } from '../../core/models/api.models';
                 </span>
               </td>
               <td>
+                @if (user.oidcSub) {
+                  <span class="badge badge-success" title="{{ user.oidcSub }}">✓ Verknüpft</span>
+                } @else {
+                  <span class="badge badge-warning">✗ Nicht verknüpft</span>
+                }
+              </td>
+              <td>
                 <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
                   {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
                 </button>
-                <button class="btn btn-sm btn-danger" (click)="deleteUser(user)" style="margin-left:8px">Löschen</button>
+                <button class="btn btn-sm btn-outline" (click)="showLinkForm(user)" style="margin-left:8px">
+                  {{ user.oidcSub ? 'OIDC ändern' : 'OIDC verknüpfen' }}
+                </button>
+                <button class="btn btn-sm btn-danger" (click)="deleteUser(user)" style="margin-left:8px">Löschen
+                </button>
               </td>
             </tr>
           }
@@ -78,8 +112,11 @@ import { User } from '../../core/models/api.models';
 export class UsersComponent implements OnInit {
   users: User[] = [];
   showCreate = false;
+  showOidcLink = false;
   error = '';
   newUser = { username: '', password: '', displayName: '' };
+  selectedUser: User | null = null;
+  oidcSub = '';
 
   constructor(private api: ApiService) {}
 
@@ -107,5 +144,26 @@ export class UsersComponent implements OnInit {
     if (confirm(`Nutzer "${user.username}" wirklich löschen?`)) {
       this.api.deleteUser(user.id).subscribe({ next: () => this.load() });
     }
+  }
+
+  showLinkForm(user: User) {
+    this.selectedUser = user;
+    this.oidcSub = user.oidcSub || '';
+    this.showOidcLink = true;
+    this.showCreate = false;
+  }
+
+  linkOidc() {
+    if (!this.selectedUser) return;
+
+    this.api.linkOidcAccount(this.selectedUser.id, this.oidcSub).subscribe({
+      next: () => {
+        this.showOidcLink = false;
+        this.selectedUser = null;
+        this.oidcSub = '';
+        this.load();
+      },
+      error: err => this.error = err.error?.message || 'Fehler beim Verknüpfen'
+    });
   }
 }

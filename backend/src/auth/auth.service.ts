@@ -40,6 +40,12 @@ export class AuthService {
 
   async login(username: string, password: string) {
     const user = await this.validateUser(username, password);
+    
+    // Admin users must use OIDC
+    if (user.isAppAdmin) {
+      throw new UnauthorizedException('Admin users must login via OIDC');
+    }
+    
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
@@ -170,6 +176,17 @@ export class AuthService {
         username: user.username,
         oidcSub: user.oidcSub,
       },
+    };
+  }
+
+  async logout(userId: string) {
+    // Audit logging - in production, this could write to a database
+    console.log(`[AUDIT] User ${userId} logged out at ${new Date().toISOString()}`);
+
+    return {
+      message: 'Logout recorded',
+      userId,
+      timestamp: new Date().toISOString(),
     };
   }
 }

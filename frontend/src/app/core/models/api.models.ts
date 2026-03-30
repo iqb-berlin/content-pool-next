@@ -3,6 +3,7 @@ export interface User {
   username: string;
   displayName?: string;
   isAppAdmin: boolean;
+  oidcSub?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -166,4 +167,10 @@ export interface OidcConfig {
   clientId: string | null;
   redirectUri: string;
   scope: string;
+}
+
+export interface AuthContext {
+  allowedMethods: ('oidc' | 'credentials')[];
+  oidcEnabled: boolean;
+  message: string;
 }

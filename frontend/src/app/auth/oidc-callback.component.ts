@@ -49,8 +49,9 @@ export class OidcCallbackComponent implements OnInit {
         }
       }
 
-      // Also check for error parameters from Keycloak
+      // Check for authorization code (Authorization Code Flow)
       const searchParams = new URLSearchParams(window.location.search);
+      const authCode = searchParams.get('code');
       const error = searchParams.get('error');
       const errorDescription = searchParams.get('error_description');
 
@@ -58,6 +59,15 @@ export class OidcCallbackComponent implements OnInit {
         console.error('Keycloak returned error:', error, errorDescription);
         this.router.navigate(['/login'], {
           queryParams: { error: `OIDC Fehler: ${errorDescription || error}` }
+        });
+        return;
+      }
+
+      if (authCode) {
+        console.log('Found authorization code - this requires backend token exchange (not implemented)');
+        console.log('Please configure Keycloak with Implicit Flow (response_type=id_token token)');
+        this.router.navigate(['/login'], {
+          queryParams: { error: 'Authorization Code Flow wird nicht unterstützt. Bitte Implicit Flow in Keycloak aktivieren.' }
         });
         return;
       }
@@ -74,7 +84,7 @@ export class OidcCallbackComponent implements OnInit {
       }
 
       // If we get here, something went wrong
-      console.error('OIDC callback failed: No id_token found in URL');
+      console.error('OIDC callback failed: No id_token or code found in URL');
       this.router.navigate(['/login'], {
         queryParams: { error: 'OIDC Authentifizierung fehlgeschlagen: Kein Token erhalten' }
       });

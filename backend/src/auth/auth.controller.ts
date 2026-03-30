@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request, UnauthorizedException } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, UnauthorizedException, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { OidcValidationService } from './services/oidc-validation.service';
@@ -24,6 +24,39 @@ export class AuthController {
       clientId: process.env.OIDC_CLIENT_ID || null,
       redirectUri: process.env.OIDC_REDIRECT_URI || 'http://localhost:4200/auth/callback',
       scope: process.env.OIDC_SCOPE || 'openid profile email',
+    };
+  }
+
+  @Get('context')
+  @ApiOperation({ summary: 'Get available authentication methods for context' })
+  async getAuthContext(@Query('type') type: string) {
+    const oidcEnabled = this.oidcValidationService.isOidcEnabled();
+    
+    // Admin context: only OIDC allowed
+    if (type === 'admin') {
+      return {
+        allowedMethods: oidcEnabled ? ['oidc'] : [],
+        oidcEnabled,
+        message: oidcEnabled 
+          ? 'Admin login requires OIDC authentication' 
+          : 'OIDC is not configured',
+      };
+    }
+    
+    // ACP credential context: only credentials allowed
+    if (type === 'acp') {
+      return {
+        allowedMethods: ['credentials'],
+        oidcEnabled: false,
+        message: 'Please login with ACP credentials',
+      };
+    }
+    
+    // Default: return both if OIDC enabled
+    return {
+      allowedMethods: oidcEnabled ? ['oidc', 'credentials'] : ['credentials'],
+      oidcEnabled,
+      message: 'Please select authentication method',
     };
   }
 
@@ -63,6 +96,14 @@ export class AuthController {
       credentialLoginDto.username,
       credentialLoginDto.password,
     );
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Logout user (audit logging)' })
+  async logout(@Request() req: any) {
+    return this.authService.logout(req.user.sub);
   }
 
   @Get('profile')

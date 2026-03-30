@@ -17,6 +17,9 @@ export class ApiService {
   setAppAdmin(id: string, isAppAdmin: boolean): Observable<User> {
     return this.http.patch<User>(`${this.API}/users/${id}/app-admin`, { isAppAdmin });
   }
+  linkOidcAccount(userId: string, oidcSub: string): Observable<any> {
+    return this.http.post(`${this.API}/auth/link-oidc`, { userId, oidcSub });
+  }
 
   // Settings
   getSettings(): Observable<AppSettings> { return this.http.get<AppSettings>(`${this.API}/admin/settings`); }

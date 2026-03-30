@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { of } from 'rxjs';
 import { ApiService } from './api.service';
-import { Acp, User, AppSettings, AcpFile, AcpSnapshot, Comment, PublicAcp } from '../models/api.models';
+import { Acp, User, AppSettings, AcpFile } from '../models/api.models';
 
 describe('ApiService', () => {
   let service: ApiService;

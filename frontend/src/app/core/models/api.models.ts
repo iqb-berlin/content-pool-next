@@ -159,3 +159,11 @@ export interface TaskSequence {
   name: any;
   units: { id: string; name: string }[];
 }
+
+export interface OidcConfig {
+  enabled: boolean;
+  issuerUrl: string | null;
+  clientId: string | null;
+  redirectUri: string;
+  scope: string;
+}

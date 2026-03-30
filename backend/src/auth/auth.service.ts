@@ -9,7 +9,8 @@ export interface JwtPayload {
   sub: string;
   username: string;
   isAppAdmin: boolean;
-  type: 'user' | 'credential';
+  type: 'user' | 'credential' | 'oidc';
+  authType?: 'local' | 'oidc';
   acpId?: string;
 }
 
@@ -122,6 +123,53 @@ export class AuthService {
         acpName: role.acp?.name,
         role: role.role,
       })),
+    };
+  }
+
+  async generateTokenForOidcUser(userInfo: any) {
+    const payload: JwtPayload = {
+      sub: userInfo.sub,
+      username: userInfo.username,
+      isAppAdmin: userInfo.isAppAdmin,
+      type: 'oidc',
+      authType: 'oidc',
+    };
+
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: {
+        id: userInfo.sub,
+        username: userInfo.username,
+        displayName: userInfo.displayName,
+        isAppAdmin: userInfo.isAppAdmin,
+      },
+    };
+  }
+
+  async linkOidcAccount(userId: string, oidcSub: string) {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Check if OIDC sub is already linked to another user
+    const existingUser = await this.userRepository.findOne({ where: { oidcSub } });
+    if (existingUser && existingUser.id !== userId) {
+      throw new UnauthorizedException('OIDC account already linked to another user');
+    }
+
+    // Update user with OIDC sub
+    user.oidcSub = oidcSub;
+    await this.userRepository.save(user);
+
+    return {
+      message: 'OIDC account linked successfully',
+      user: {
+        id: user.id,
+        username: user.username,
+        oidcSub: user.oidcSub,
+      },
     };
   }
 }

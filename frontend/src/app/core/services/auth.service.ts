@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, tap } from 'rxjs';
-import { LoginResponse, CredentialLoginResponse, UserProfile } from '../models/api.models';
+import { LoginResponse, CredentialLoginResponse, UserProfile, OidcConfig } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -31,6 +31,47 @@ export class AuthService {
 
   getToken(): string | null {
     return localStorage.getItem(this.tokenKey);
+  }
+
+  getOidcConfig(): Observable<OidcConfig> {
+    return this.http.get<OidcConfig>(`${this.API}/oidc-config`);
+  }
+
+  initiateOidcLogin(redirectUrl?: string): void {
+    if (redirectUrl) {
+      sessionStorage.setItem('oidc_redirect_url', redirectUrl);
+    }
+    
+    this.getOidcConfig().subscribe(config => {
+      if (!config.enabled || !config.issuerUrl || !config.clientId) {
+        console.error('OIDC not configured');
+        return;
+      }
+
+      const authUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/auth`);
+      authUrl.searchParams.set('client_id', config.clientId);
+      authUrl.searchParams.set('redirect_uri', config.redirectUri);
+      authUrl.searchParams.set('response_type', 'id_token token');
+      authUrl.searchParams.set('scope', config.scope);
+      authUrl.searchParams.set('nonce', this.generateNonce());
+      
+      window.location.href = authUrl.toString();
+    });
+  }
+
+  handleOidcCallback(idToken: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken }).pipe(
+      tap(res => {
+        localStorage.setItem(this.tokenKey, res.accessToken);
+        this.loadProfile();
+      })
+    );
+  }
+
+  private generateNonce(): string {
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
   }
 
   login(username: string, password: string): Observable<LoginResponse> {

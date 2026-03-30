@@ -1,0 +1,88 @@
+import { Component, OnInit } from '@angular/core';
+import { Router } from '@angular/router';
+import { AuthService } from '../core/services/auth.service';
+
+@Component({
+  selector: 'app-oidc-callback',
+  standalone: true,
+  template: `<div class="callback-container">
+    <p>Verarbeitung der Anmeldung...</p>
+  </div>`,
+  styles: [`
+    .callback-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 60vh;
+    }
+  `]
+})
+export class OidcCallbackComponent implements OnInit {
+  constructor(
+    private auth: AuthService,
+    private router: Router
+  ) {}
+
+  async ngOnInit() {
+    try {
+      // Debug: Log the full URL to understand what Keycloak sent
+      console.log('OIDC Callback URL:', window.location.href);
+      console.log('Hash:', window.location.hash);
+      console.log('Search:', window.location.search);
+
+      let idToken: string | null = null;
+
+      // Try to extract token from URL fragment first (implicit flow)
+      const hash = window.location.hash;
+      if (hash && hash.includes('id_token=')) {
+        const params = new URLSearchParams(hash.substring(1));
+        idToken = params.get('id_token');
+        console.log('Found id_token in hash/fragment');
+      }
+
+      // If not found, try query parameters (some Keycloak configs use this)
+      if (!idToken) {
+        const searchParams = new URLSearchParams(window.location.search);
+        idToken = searchParams.get('id_token');
+        if (idToken) {
+          console.log('Found id_token in query parameters');
+        }
+      }
+
+      // Also check for error parameters from Keycloak
+      const searchParams = new URLSearchParams(window.location.search);
+      const error = searchParams.get('error');
+      const errorDescription = searchParams.get('error_description');
+
+      if (error) {
+        console.error('Keycloak returned error:', error, errorDescription);
+        this.router.navigate(['/login'], {
+          queryParams: { error: `OIDC Fehler: ${errorDescription || error}` }
+        });
+        return;
+      }
+
+      if (idToken) {
+        console.log('Processing OIDC login with id_token...');
+        await this.auth.handleOidcCallback(idToken).toPromise();
+
+        // Check for stored redirect URL
+        const redirectUrl = sessionStorage.getItem('oidc_redirect_url') || '/';
+        sessionStorage.removeItem('oidc_redirect_url');
+        this.router.navigate([redirectUrl]);
+        return;
+      }
+
+      // If we get here, something went wrong
+      console.error('OIDC callback failed: No id_token found in URL');
+      this.router.navigate(['/login'], {
+        queryParams: { error: 'OIDC Authentifizierung fehlgeschlagen: Kein Token erhalten' }
+      });
+    } catch (error) {
+      console.error('OIDC callback error:', error);
+      this.router.navigate(['/login'], {
+        queryParams: { error: 'OIDC Authentifizierung fehlgeschlagen' }
+      });
+    }
+  }
+}

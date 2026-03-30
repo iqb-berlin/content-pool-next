@@ -5,6 +5,7 @@ import { acpViewGuard } from './core/guards/acp-view.guard';
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./views/landing/landing.component').then(m => m.LandingComponent) },
   { path: 'login', loadComponent: () => import('./auth/login.component').then(m => m.LoginComponent) },
+  { path: 'auth/callback', loadComponent: () => import('./auth/oidc-callback.component').then(m => m.OidcCallbackComponent) },
   { path: 'credential-login/:acpId', loadComponent: () => import('./auth/credential-login.component').then(m => m.CredentialLoginComponent) },
 
   // Admin routes

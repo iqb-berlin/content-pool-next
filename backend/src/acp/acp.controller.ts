@@ -25,12 +25,13 @@ import {
   UpdateMetadataColumnsDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('ACP Management')
 @Controller('acp')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OidcAuthGuard)
 @ApiBearerAuth()
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);

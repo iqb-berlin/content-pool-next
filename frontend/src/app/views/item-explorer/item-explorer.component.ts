@@ -213,24 +213,6 @@ interface MetadataSettings {
             }
           </div>
 
-          <!-- Unit Metadata Summary -->
-          @if (currentUnitMetadata && currentUnitMetadata.length > 0) {
-            <div class="unit-metadata-card card">
-              <div class="card-header">
-                <h4>Unit-Metadaten</h4>
-                <button class="btn btn-xs btn-outline" (click)="showMetadataDrawer = true">Details</button>
-              </div>
-              <div class="meta-summary-grid">
-                @for (entry of getSummaryMetadata(); track entry.id) {
-                  <div class="meta-summary-item">
-                    <span class="meta-summary-label">{{ extractLabel(entry.label) }}</span>
-                    <span class="meta-summary-value">{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) }}</span>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-
           <!-- Info Card -->
           <div class="info-card card">
             <div class="info-row">

@@ -393,6 +393,7 @@ export class AccessConfigComponent implements OnInit {
   allowRegistered = false;
   validFrom = '';
   validUntil = '';
+  private readonly DATETIME_LOCAL_FORMAT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
   credentialCount = 0;
   dateError = '';
   featureConfig: Record<string, any> = {};
@@ -454,6 +455,50 @@ export class AccessConfigComponent implements OnInit {
     this.loadCredentials();
   }
 
+  private toDateTimeLocalString(isoDateString: string | undefined): string {
+    if (!isoDateString) return '';
+    // Parse the UTC date from backend and convert to local datetime-local format
+    const utcDate = new Date(isoDateString);
+    if (isNaN(utcDate.getTime())) return '';
+    console.log('Loading date from backend:', { isoDateString, utcDate: utcDate.toString() });
+    
+    // Convert UTC to local time components
+    const year = utcDate.getFullYear();
+    const month = String(utcDate.getMonth() + 1).padStart(2, '0');
+    const day = String(utcDate.getDate()).padStart(2, '0');
+    const hours = String(utcDate.getHours()).padStart(2, '0');
+    const minutes = String(utcDate.getMinutes()).padStart(2, '0');
+    
+    const result = `${year}-${month}-${day}T${hours}:${minutes}`;
+    console.log('Converted to local:', { result });
+    return result;
+  }
+
+  private getNowDateTimeLocal(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  private dateTimeLocalToIso(dateTimeLocal: string): string {
+    // Parse datetime-local format (YYYY-MM-DDTHH:mm) as local time and convert to UTC
+    const [datePart, timePart] = dateTimeLocal.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes] = timePart.split(':').map(Number);
+    
+    // Create date in local time (months are 0-indexed in JS)
+    const localDate = new Date(year, month - 1, day, hours, minutes);
+    
+    // Convert to UTC ISO string
+    const result = localDate.toISOString();
+    console.log('Saving date:', { input: dateTimeLocal, localDate: localDate.toString(), result });
+    return result;
+  }
+
   loadConfig() {
     this.api.getAccessConfig(this.acpId).subscribe({
       next: config => {
@@ -461,8 +506,8 @@ export class AccessConfigComponent implements OnInit {
           this.accessModel = config.accessModel;
           this.allowRegistered = config.allowRegistered || false;
           this.featureConfig = config.featureConfig || {};
-          this.validFrom = config.validFrom || '';
-          this.validUntil = config.validUntil || '';
+          this.validFrom = this.toDateTimeLocalString(config.validFrom);
+          this.validUntil = this.toDateTimeLocalString(config.validUntil);
           this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
           this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
         }
@@ -484,6 +529,10 @@ export class AccessConfigComponent implements OnInit {
   onAccessModelChange() {
     // Enforce mutual exclusion: PUBLIC and CREDENTIALS_LIST cannot coexist
     this.dateError = '';
+    // Auto-fill validFrom with current time when switching to CREDENTIALS_LIST
+    if (this.accessModel === 'CREDENTIALS_LIST' && !this.validFrom) {
+      this.validFrom = this.getNowDateTimeLocal();
+    }
   }
 
   validateDates(): boolean {
@@ -495,8 +544,10 @@ export class AccessConfigComponent implements OnInit {
     const from = new Date(this.validFrom);
     const until = new Date(this.validUntil);
     const now = new Date();
-    if (from < now) {
-      this.dateError = 'Startdatum muss in der Zukunft liegen.';
+    // Allow starting from now (not strictly future)
+    const nowMinusOneMinute = new Date(now.getTime() - 60000);
+    if (from < nowMinusOneMinute) {
+      this.dateError = 'Startdatum darf nicht in der Vergangenheit liegen.';
       return false;
     }
     const maxEnd = new Date(from);
@@ -520,8 +571,8 @@ export class AccessConfigComponent implements OnInit {
       allowRegistered: this.allowRegistered
     };
     if (this.accessModel === 'CREDENTIALS_LIST') {
-      data.validFrom = this.validFrom;
-      data.validUntil = this.validUntil;
+      data.validFrom = this.dateTimeLocalToIso(this.validFrom);
+      data.validUntil = this.dateTimeLocalToIso(this.validUntil);
     }
     this.api.updateAccessConfig(this.acpId, data).subscribe({
       next: () => {

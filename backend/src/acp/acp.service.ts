@@ -187,6 +187,8 @@ export class AcpService {
   async updateAccessConfig(acpId: string, dto: UpdateAccessConfigDto): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
+    console.log('UpdateAccessConfig received:', { validFrom: dto.validFrom, validUntil: dto.validUntil });
+
     // Validate time limit for CREDENTIALS_LIST
     if (dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil) {
       const validUntil = new Date(dto.validUntil);
@@ -215,7 +217,9 @@ export class AcpService {
       });
     }
 
-    return this.accessConfigRepository.save(config);
+    const saved = await this.accessConfigRepository.save(config);
+    console.log('UpdateAccessConfig saved:', { validFrom: saved.validFrom?.toISOString(), validUntil: saved.validUntil?.toISOString() });
+    return saved;
   }
 
   async updateMetadataColumns(acpId: string, dto: UpdateMetadataColumnsDto): Promise<AcpAccessConfig> {

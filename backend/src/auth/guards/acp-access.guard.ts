@@ -56,6 +56,7 @@ export class AcpAccessGuard implements CanActivate {
     }
 
     // Credential-based access
+    console.log('Checking credential access:', { userType: user.type, userAcpId: user.acpId, requestedAcpId: acpId, match: user.acpId === acpId });
     if (user.type === 'credential' && user.acpId === acpId) {
       request.acpAccessLevel = 'CREDENTIAL';
       return true;

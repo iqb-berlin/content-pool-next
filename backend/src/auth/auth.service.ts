@@ -75,6 +75,13 @@ export class AuthService {
 
     // Check time validity
     const now = new Date();
+    console.log('Login check:', {
+      now: now.toISOString(),
+      validFrom: accessConfig.validFrom?.toISOString(),
+      validUntil: accessConfig.validUntil?.toISOString(),
+      nowLessThanValidFrom: accessConfig.validFrom ? now < accessConfig.validFrom : null,
+      nowGreaterThanValidUntil: accessConfig.validUntil ? now > accessConfig.validUntil : null,
+    });
     if (accessConfig.validFrom && now < accessConfig.validFrom) {
       throw new UnauthorizedException('Access period has not started yet');
     }

@@ -13,6 +13,7 @@ import {
   Res,
   Header,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -108,6 +109,8 @@ export class AcpController {
 
   // Role management
   @Get(':id/roles')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'List role assignments for ACP' })
   async getRoles(@Param('id') id: string) {
     return this.acpService.getRoles(id);
@@ -115,17 +118,29 @@ export class AcpController {
 
   @Post(':id/roles')
   @UseGuards(RolesGuard)
-  @Roles('APP_ADMIN')
-  @ApiOperation({ summary: 'Assign user role for ACP (Admin only)' })
-  async assignRole(@Param('id') id: string, @Body() dto: AssignRoleDto) {
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Assign user role for ACP (ACP Manager can assign READ_ONLY only)' })
+  async assignRole(@Param('id') id: string, @Body() dto: AssignRoleDto, @Request() req: any) {
+    // If user is not App Admin, they can only assign READ_ONLY role
+    if (!req.user?.isAppAdmin && dto.role === 'ACP_MANAGER') {
+      throw new ForbiddenException('Only Application Admins can assign ACP_MANAGER role');
+    }
     return this.acpService.assignRole(id, dto);
   }
 
   @Delete(':id/roles/:userId')
   @UseGuards(RolesGuard)
-  @Roles('APP_ADMIN')
-  @ApiOperation({ summary: 'Remove user role for ACP (Admin only)' })
-  async removeRole(@Param('id') id: string, @Param('userId') userId: string) {
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Remove user role for ACP (ACP Manager can remove READ_ONLY only)' })
+  async removeRole(@Param('id') id: string, @Param('userId') userId: string, @Request() req: any) {
+    // If user is not App Admin, check if they're removing an ACP_MANAGER role (which is forbidden)
+    if (!req.user?.isAppAdmin) {
+      const roles = await this.acpService.getRoles(id);
+      const roleToRemove = roles.find(r => r.userId === userId);
+      if (roleToRemove?.role === 'ACP_MANAGER') {
+        throw new ForbiddenException('Only Application Admins can remove ACP_MANAGER role');
+      }
+    }
     return this.acpService.removeRole(id, userId);
   }
 

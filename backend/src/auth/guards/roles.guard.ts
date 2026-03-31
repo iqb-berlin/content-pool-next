@@ -30,8 +30,8 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Not authenticated');
     }
 
-    // Check if user is App Admin
-    if (requiredRoles.includes('APP_ADMIN') && user.isAppAdmin) {
+    // Check if user is App Admin - App Admins have access to everything
+    if (user.isAppAdmin) {
       this.logger.log('Access granted: User is App Admin');
       return true;
     }

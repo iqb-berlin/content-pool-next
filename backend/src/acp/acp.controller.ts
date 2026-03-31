@@ -66,7 +66,9 @@ export class AcpController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update ACP name/description' })
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Update ACP name/description (ACP Manager or Admin only)' })
   async update(@Param('id') id: string, @Body() dto: UpdateAcpDto) {
     return this.acpService.update(id, dto);
   }

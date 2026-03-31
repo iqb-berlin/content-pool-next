@@ -14,13 +14,24 @@ import { Acp } from '../../core/models/api.models';
     @if (acp) {
       <div class="page-header">
         <div class="header-main">
-          <h1>{{ acp.name }}</h1>
+          @if (editingName) {
+            <input [(ngModel)]="editName" (keyup.enter)="saveName()" (keyup.escape)="cancelEditName()" class="input-lg">
+            <button class="btn btn-primary btn-sm" (click)="saveName()">Speichern</button>
+            <button class="btn btn-outline btn-sm" (click)="cancelEditName()">Abbrechen</button>
+          } @else {
+            <h1>{{ acp.name }}</h1>
+            @if (myRole === 'ACP_MANAGER') {
+              <button class="btn btn-sm btn-link" (click)="startEditName()" title="Umbenennen">✏️</button>
+            }
+          }
           <span class="badge badge-info">{{ acp.packageId }}</span>
           @if (myRole) {
             <span class="badge badge-success" style="margin-left:8px">{{ myRoleLabel }}</span>
           }
         </div>
       </div>
+
+      @if (error) { <div class="alert alert-error">{{ error }}</div> }
 
       <div class="grid">
         <a [routerLink]="['/manage', acp.id, 'files']" class="card link-card">
@@ -98,6 +109,9 @@ export class DashboardComponent implements OnInit {
   selectedUserId = '';
   selectedRole = 'ACP_MANAGER';
   myRole: string | null = null;
+  editingName = false;
+  editName = '';
+  error = '';
 
   get myRoleLabel(): string {
     switch (this.myRole) {
@@ -157,5 +171,24 @@ export class DashboardComponent implements OnInit {
     if (!this.acp) return;
     this.api.removeAcpRole(this.acp.id, userId)
       .subscribe(() => this.api.getAcpRoles(this.acp!.id).subscribe(r => this.roles = r));
+  }
+
+  startEditName() {
+    if (!this.acp) return;
+    this.editName = this.acp.name;
+    this.editingName = true;
+  }
+
+  cancelEditName() {
+    this.editingName = false;
+    this.editName = '';
+  }
+
+  saveName() {
+    if (!this.acp || !this.editName.trim()) return;
+    this.api.updateAcp(this.acp.id, { name: this.editName.trim() }).subscribe({
+      next: acp => { this.acp = acp; this.editingName = false; },
+      error: err => this.error = err.error?.message || 'Fehler beim Speichern'
+    });
   }
 }

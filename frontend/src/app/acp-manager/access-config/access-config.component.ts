@@ -60,23 +60,104 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
           @if (dateError) {
             <div class="alert alert-error">{{ dateError }}</div>
           }
-          <div style="margin-top: 12px">
-            <label class="btn btn-accent">
-              CSV hochladen
-              <input type="file" accept=".csv" (change)="uploadCSV($event)" hidden>
-            </label>
-            <span class="help-text" style="margin-left:12px">CSV: Benutzername, Kennwort pro Zeile</span>
+
+          <!-- Manual add form -->
+          <div class="manual-add-form" style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);">
+            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">Einzelnes Zugangsdatum hinzufügen</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Benutzername</label>
+                <input type="text" [(ngModel)]="newUsername" placeholder="Benutzername" maxlength="50">
+              </div>
+              <div class="form-group">
+                <label>Kennwort</label>
+                <input type="text" [(ngModel)]="newPassword" placeholder="Kennwort" minlength="4">
+              </div>
+            </div>
+            @if (addError) {
+              <div class="alert alert-error" style="margin-top: 8px;">{{ addError }}</div>
+            }
+            <button class="btn btn-accent" style="margin-top: 8px;" (click)="addCredential()" [disabled]="!newUsername.trim() || !newPassword.trim() || newPassword.length < 4">
+              Hinzufügen
+            </button>
           </div>
+
+          <!-- CSV Upload with mode selection -->
+          <div style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);">
+            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">CSV-Import</h4>
+            <div class="form-group" style="margin-bottom: 12px;">
+              <label>Import-Modus</label>
+              <select [(ngModel)]="csvMode" style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: var(--radius);">
+                <option value="replace">Liste ersetzen (bestehende löschen)</option>
+                <option value="append">Nur neue hinzufügen (Duplikate überspringen)</option>
+                <option value="upsert">Aktualisieren (bestehende Passwörter ändern, neue hinzufügen)</option>
+              </select>
+              <span class="help-text" style="margin-top: 4px;">
+                {{ csvMode === 'replace' ? 'Alle bestehenden Zugangsdaten werden gelöscht und durch die CSV ersetzt.' :
+                   csvMode === 'append' ? 'Nur neue Benutzernamen werden hinzugefügt. Bereits existierende werden übersprungen.' :
+                   'Bereits existierende Benutzernamen werden mit neuen Passwörtern aktualisiert. Neue werden hinzugefügt.' }}
+              </span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <label class="btn btn-accent">
+                CSV hochladen
+                <input type="file" accept=".csv" (change)="previewCSV($event)" hidden>
+              </label>
+              <span class="help-text">Format: Benutzername, Kennwort pro Zeile</span>
+            </div>
+          </div>
+
+          <!-- CSV Preview Modal -->
+          @if (csvPreview) {
+            <div class="csv-preview" style="margin-top: 16px; padding: 16px; background: var(--color-bg); border-radius: var(--radius); border: 1px solid var(--color-border);">
+              <h4 style="margin: 0 0 12px 0;">Vorschau: {{ csvPreview.filename }}</h4>
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; font-size: 0.9rem;">
+                <div class="preview-stat" style="text-align: center; padding: 8px; background: white; border-radius: var(--radius);">
+                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-primary);">{{ csvPreview.total }}</div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Gesamt in CSV</div>
+                </div>
+                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(46, 204, 113, 0.1); border-radius: var(--radius);">
+                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-success);">{{ csvPreview.toAdd }}</div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Neu hinzufügen</div>
+                </div>
+                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(241, 196, 15, 0.1); border-radius: var(--radius);">
+                  <div style="font-size: 1.5rem; font-weight: 600; color: #f39c12;">{{ csvPreview.toUpdate }}</div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Aktualisieren</div>
+                </div>
+                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(149, 165, 166, 0.1); border-radius: var(--radius);">
+                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-text-secondary);">{{ csvPreview.toSkip }}</div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Überspringen</div>
+                </div>
+              </div>
+              @if (csvPreview.duplicates.length > 0) {
+                <div class="alert alert-warning" style="margin-bottom: 12px;">
+                  <strong>Warnung:</strong> {{ csvPreview.duplicates.length }} Duplikate im CSV gefunden: {{ csvPreview.duplicates.join(', ') }}
+                </div>
+              }
+              @if (csvPreview.conflicts.length > 0) {
+                <div class="alert alert-warning" style="margin-bottom: 12px;">
+                  <strong>Bereits existierend:</strong> {{ csvPreview.conflicts.join(', ') }}
+                </div>
+              }
+              <div style="display: flex; gap: 12px;">
+                <button class="btn btn-primary" (click)="confirmCSVUpload()">Importieren</button>
+                <button class="btn btn-outline" (click)="cancelCSVPreview()">Abbrechen</button>
+              </div>
+            </div>
+          }
+
           @if (credentialCount > 0 || credentials.length > 0) {
             <div class="alert alert-success" style="margin-top:12px">{{ credentialCount || credentials.length }} Zugangsdaten vorhanden.</div>
           }
+
+          <!-- Credentials list with edit -->
           @if (credentials.length > 0) {
             <div class="credentials-list" style="margin-top:16px">
               <table class="credentials-table">
                 <thead>
                   <tr>
                     <th>Benutzername</th>
-                    <th style="width: 80px">Aktion</th>
+                    <th style="width: 120px">Aktion</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -84,6 +165,7 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
                     <tr>
                       <td>{{ cred.username }}</td>
                       <td>
+                        <button class="btn btn-outline btn-sm" (click)="openEditDialog(cred)" style="margin-right: 4px;">Bearbeiten</button>
                         <button class="btn btn-outline btn-sm" (click)="deleteCredential(cred.id)">Löschen</button>
                       </td>
                     </tr>
@@ -203,7 +285,43 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
       @if (featuresSaved) {
         <span class="save-indicator">✓ Gespeichert</span>
       }
+    <!-- Edit Dialog -->
+  @if (editingCredential) {
+    <div class="dialog-overlay" (click)="closeEditDialog()">
+      <div class="dialog-content card" (click)="$event.stopPropagation()">
+        <div class="dialog-header">
+          <h3>Zugangsdatum bearbeiten</h3>
+          <button class="btn btn-outline btn-sm" (click)="closeEditDialog()">✕</button>
+        </div>
+        <div class="dialog-body">
+          <div class="form-group">
+            <label>Benutzername</label>
+            <input type="text" [(ngModel)]="editUsername" maxlength="50">
+          </div>
+          <div class="form-group" style="margin-top: 12px;">
+            <label>
+              <input type="checkbox" [(ngModel)]="editChangePassword"> Kennwort ändern
+            </label>
+          </div>
+          @if (editChangePassword) {
+            <div class="form-group" style="margin-top: 8px;">
+              <label>Neues Kennwort (min. 4 Zeichen)</label>
+              <input type="text" [(ngModel)]="editPassword" minlength="4" placeholder="Neues Kennwort">
+            </div>
+          }
+          @if (editError) {
+            <div class="alert alert-error" style="margin-top: 12px;">{{ editError }}</div>
+          }
+        </div>
+        <div class="dialog-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
+          <button class="btn btn-outline" (click)="closeEditDialog()">Abbrechen</button>
+          <button class="btn btn-primary" (click)="saveEdit()" [disabled]="editChangePassword && editPassword.length < 4">Speichern</button>
+        </div>
+      </div>
     </div>
+  }
+
+  </div>
   `,
   styles: [`
     .help-text { color: var(--color-text-secondary); font-size: 0.85rem; display: block; margin-bottom: 8px; }
@@ -246,6 +364,27 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
     .credentials-table th, .credentials-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
     .credentials-table th { font-weight: 600; color: var(--color-text-secondary); font-size: 0.85rem; }
     .credentials-table tr:hover { background: rgba(0,0,0,0.02); }
+    .dialog-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 24px;
+    }
+    .dialog-content {
+      max-width: 400px;
+      width: 100%;
+    }
+    .dialog-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .dialog-header h3 { margin: 0; }
   `]
 })
 export class AccessConfigComponent implements OnInit {
@@ -263,6 +402,23 @@ export class AccessConfigComponent implements OnInit {
   accessSaved = false;
   featuresSaved = false;
   credentials: Credential[] = [];
+
+  // Manual add form
+  newUsername = '';
+  newPassword = '';
+  addError = '';
+
+  // CSV upload
+  csvMode: 'replace' | 'append' | 'upsert' = 'replace';
+  csvPreview: { filename: string; total: number; toAdd: number; toUpdate: number; toSkip: number; duplicates: string[]; conflicts: string[]; credentials: any[] } | null = null;
+  pendingCSVUpload: any[] = [];
+
+  // Edit dialog
+  editingCredential: Credential | null = null;
+  editUsername = '';
+  editChangePassword = false;
+  editPassword = '';
+  editError = '';
 
   downloadFlags = [
     { key: 'allowIndexDownload', label: 'ACP-Index Download erlauben' },
@@ -411,24 +567,205 @@ export class AccessConfigComponent implements OnInit {
     this.availableTags.splice(index, 1);
   }
 
-  uploadCSV(event: Event) {
+  // Manual credential management
+  addCredential() {
+    this.addError = '';
+    const username = this.newUsername.trim();
+    const password = this.newPassword.trim();
+
+    if (!username || !password) {
+      this.addError = 'Benutzername und Kennwort sind erforderlich.';
+      return;
+    }
+    if (password.length < 4) {
+      this.addError = 'Kennwort muss mindestens 4 Zeichen haben.';
+      return;
+    }
+    if (this.credentials.some(c => c.username === username)) {
+      this.addError = 'Benutzername existiert bereits.';
+      return;
+    }
+
+    this.api.createCredential(this.acpId, username, password).subscribe({
+      next: (cred) => {
+        this.credentials.push(cred);
+        this.newUsername = '';
+        this.newPassword = '';
+        this.credentialCount = this.credentials.length;
+      },
+      error: (err) => {
+        this.addError = err.error?.message || 'Fehler beim Hinzufügen.';
+      }
+    });
+  }
+
+  // CSV Upload with preview
+  previewCSV(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
+
     const reader = new FileReader();
     reader.onload = () => {
       const lines = (reader.result as string).split('\n').filter(l => l.trim());
-      const credentials = lines.map(line => {
+      const parsed = lines.map(line => {
         const [username, password] = line.split(',').map(s => s.trim());
         return { username, password };
       }).filter(c => c.username && c.password);
-      this.api.uploadCredentials(this.acpId, credentials).subscribe({
-        next: (res: any) => {
-          this.credentialCount = res.message ? credentials.length : 0;
-          this.loadCredentials();
+
+      // Check for duplicates within CSV
+      const seenInCSV = new Set<string>();
+      const duplicates: string[] = [];
+      for (const cred of parsed) {
+        if (seenInCSV.has(cred.username)) {
+          if (!duplicates.includes(cred.username)) {
+            duplicates.push(cred.username);
+          }
+        } else {
+          seenInCSV.add(cred.username);
         }
-      });
+      }
+
+      // Calculate what will happen based on mode
+      let toAdd = 0;
+      let toUpdate = 0;
+      let toSkip = 0;
+      const conflicts: string[] = [];
+
+      for (const cred of parsed) {
+        if (duplicates.includes(cred.username)) continue;
+
+        const existing = this.credentials.find(c => c.username === cred.username);
+
+        if (this.csvMode === 'replace') {
+          toAdd++;
+        } else if (this.csvMode === 'append') {
+          if (existing) {
+            toSkip++;
+            conflicts.push(cred.username);
+          } else {
+            toAdd++;
+          }
+        } else if (this.csvMode === 'upsert') {
+          if (existing) {
+            toUpdate++;
+            conflicts.push(cred.username);
+          } else {
+            toAdd++;
+          }
+        }
+      }
+
+      this.csvPreview = {
+        filename: file.name,
+        total: parsed.length,
+        toAdd,
+        toUpdate,
+        toSkip,
+        duplicates,
+        conflicts: [...new Set(conflicts)],
+        credentials: parsed
+      };
+      this.pendingCSVUpload = parsed;
     };
     reader.readAsText(file);
+    // Reset file input
+    (event.target as HTMLInputElement).value = '';
+  }
+
+  cancelCSVPreview() {
+    this.csvPreview = null;
+    this.pendingCSVUpload = [];
+  }
+
+  confirmCSVUpload() {
+    if (!this.csvPreview || this.pendingCSVUpload.length === 0) return;
+
+    const validCreds = this.pendingCSVUpload.filter(c => !this.csvPreview!.duplicates.includes(c.username));
+
+    this.api.uploadCredentials(this.acpId, validCreds, this.csvMode).subscribe({
+      next: (res: any) => {
+        this.csvPreview = null;
+        this.pendingCSVUpload = [];
+        this.credentialCount = res.added + this.credentials.length - (this.csvMode === 'replace' ? this.credentials.length : 0);
+        this.loadCredentials();
+
+        // Show success message
+        const msg = `Importiert: ${res.added} hinzugefügt${res.updated > 0 ? ', ' + res.updated + ' aktualisiert' : ''}${res.skipped > 0 ? ', ' + res.skipped + ' übersprungen' : ''}`;
+        alert(msg);
+      },
+      error: (err) => {
+        alert('Fehler beim Import: ' + (err.error?.message || 'Unbekannter Fehler'));
+      }
+    });
+  }
+
+  // Edit dialog
+  openEditDialog(cred: Credential) {
+    this.editingCredential = cred;
+    this.editUsername = cred.username;
+    this.editChangePassword = false;
+    this.editPassword = '';
+    this.editError = '';
+  }
+
+  closeEditDialog() {
+    this.editingCredential = null;
+    this.editUsername = '';
+    this.editChangePassword = false;
+    this.editPassword = '';
+    this.editError = '';
+  }
+
+  saveEdit() {
+    if (!this.editingCredential) return;
+
+    this.editError = '';
+    const username = this.editUsername.trim();
+
+    if (!username) {
+      this.editError = 'Benutzername ist erforderlich.';
+      return;
+    }
+
+    // Check for duplicate username (if changed)
+    if (username !== this.editingCredential.username) {
+      if (this.credentials.some(c => c.username === username && c.id !== this.editingCredential!.id)) {
+        this.editError = 'Benutzername existiert bereits.';
+        return;
+      }
+    }
+
+    const data: { username?: string; password?: string } = {};
+    if (username !== this.editingCredential.username) {
+      data.username = username;
+    }
+    if (this.editChangePassword && this.editPassword.length >= 4) {
+      data.password = this.editPassword;
+    }
+
+    if (Object.keys(data).length === 0) {
+      this.closeEditDialog();
+      return;
+    }
+
+    this.api.updateCredential(this.acpId, this.editingCredential.id, data).subscribe({
+      next: (updated) => {
+        const idx = this.credentials.findIndex(c => c.id === updated.id);
+        if (idx >= 0) {
+          this.credentials[idx] = updated;
+        }
+        this.closeEditDialog();
+      },
+      error: (err) => {
+        this.editError = err.error?.message || 'Fehler beim Speichern.';
+      }
+    });
+  }
+
+  // Legacy method - kept for backwards compatibility but not used
+  uploadCSV(event: Event) {
+    // This method is replaced by previewCSV + confirmCSVUpload flow
+    this.previewCSV(event);
   }
 
   deleteCredential(credentialId: string) {

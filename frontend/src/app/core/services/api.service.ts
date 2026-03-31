@@ -51,11 +51,17 @@ export class ApiService {
   updateAccessConfig(id: string, data: any): Observable<AccessConfig> {
     return this.http.put<AccessConfig>(`${this.API}/acp/${id}/access`, data);
   }
-  uploadCredentials(id: string, credentials: any[]): Observable<any> {
-    return this.http.post(`${this.API}/acp/${id}/access/credentials`, { credentials });
+  uploadCredentials(id: string, credentials: any[], mode: 'replace' | 'append' | 'upsert' = 'replace'): Observable<any> {
+    return this.http.post(`${this.API}/acp/${id}/access/credentials?mode=${mode}`, { credentials });
   }
   getCredentials(id: string): Observable<Credential[]> {
     return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
+  }
+  createCredential(acpId: string, username: string, password: string): Observable<Credential> {
+    return this.http.post<Credential>(`${this.API}/acp/${acpId}/access/credentials/single`, { username, password });
+  }
+  updateCredential(acpId: string, credentialId: string, data: { username?: string; password?: string }): Observable<Credential> {
+    return this.http.patch<Credential>(`${this.API}/acp/${acpId}/access/credentials/${credentialId}`, data);
   }
   deleteCredential(acpId: string, credentialId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/access/credentials/${credentialId}`);

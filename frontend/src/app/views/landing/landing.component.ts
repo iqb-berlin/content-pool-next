@@ -32,8 +32,8 @@ import { PublicAcp } from '../../core/models/api.models';
           @for (acp of acps; track acp.id) {
             <div class="card acp-card">
               <div class="acp-card-header">
-                <span class="badge" [class.badge-success]="acp.accessModel === 'PUBLIC'" [class.badge-info]="acp.accessModel !== 'PUBLIC'">
-                  {{ acp.accessModel === 'PUBLIC' ? 'Öffentlich' : 'Zugangsdaten erforderlich' }}
+                <span class="badge" [class.badge-success]="acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST'" [class.badge-info]="acp.accessModel !== 'PUBLIC' && acp.accessModel !== 'CREDENTIALS_LIST'">
+                  {{ acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST' ? 'Öffentlich' : 'Zugangsdaten erforderlich' }}
                 </span>
               </div>
               <h3>{{ acp.name }}</h3>

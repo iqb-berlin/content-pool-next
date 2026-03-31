@@ -312,7 +312,18 @@ describe('ApiService', () => {
         expect(true).toBe(true);
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials', { credentials });
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials?mode=replace', { credentials });
+    });
+
+    it('should upload credentials with append mode', () => {
+      const credentials = [{ username: 'user1', password: 'pass' }];
+      httpClientMock.post.mockReturnValue(of({}));
+
+      service.uploadCredentials('acp1', credentials, 'append').subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials?mode=append', { credentials });
     });
 
     it('should update metadata columns', () => {

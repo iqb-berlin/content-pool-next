@@ -7,6 +7,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   Res,
@@ -23,6 +24,8 @@ import {
   UpdateAccessConfigDto,
   UploadCredentialsDto,
   UpdateMetadataColumnsDto,
+  CreateCredentialDto,
+  UpdateCredentialDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
@@ -141,9 +144,16 @@ export class AcpController {
 
   @Post(':id/access/credentials')
   @ApiOperation({ summary: 'Upload credentials list for ACP' })
-  async uploadCredentials(@Param('id') id: string, @Body() dto: UploadCredentialsDto) {
-    const count = await this.acpService.uploadCredentials(id, dto.credentials);
-    return { message: `${count} credentials uploaded successfully` };
+  async uploadCredentials(
+    @Param('id') id: string,
+    @Query('mode') mode: 'replace' | 'append' | 'upsert' = 'replace',
+    @Body() dto: UploadCredentialsDto,
+  ) {
+    const result = await this.acpService.uploadCredentials(id, dto.credentials, mode);
+    return {
+      message: `Credentials processed: ${result.added} added, ${result.updated} updated, ${result.skipped} skipped`,
+      ...result,
+    };
   }
 
   @Get(':id/access/credentials')
@@ -157,6 +167,22 @@ export class AcpController {
   async deleteCredential(@Param('id') id: string, @Param('credentialId') credentialId: string) {
     await this.acpService.deleteCredential(id, credentialId);
     return { message: 'Credential deleted successfully' };
+  }
+
+  @Post(':id/access/credentials/single')
+  @ApiOperation({ summary: 'Create a single credential for ACP' })
+  async createCredential(@Param('id') id: string, @Body() dto: CreateCredentialDto) {
+    return this.acpService.createCredential(id, dto);
+  }
+
+  @Patch(':id/access/credentials/:credentialId')
+  @ApiOperation({ summary: 'Update a credential' })
+  async updateCredential(
+    @Param('id') id: string,
+    @Param('credentialId') credentialId: string,
+    @Body() dto: UpdateCredentialDto,
+  ) {
+    return this.acpService.updateCredential(id, credentialId, dto);
   }
 
   @Put(':id/metadata-columns')

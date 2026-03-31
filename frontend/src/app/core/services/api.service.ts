@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Acp, AccessConfig, AcpSnapshot, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence } from '../models/api.models';
+import { Acp, AccessConfig, AcpSnapshot, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence, Credential } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -53,6 +53,12 @@ export class ApiService {
   }
   uploadCredentials(id: string, credentials: any[]): Observable<any> {
     return this.http.post(`${this.API}/acp/${id}/access/credentials`, { credentials });
+  }
+  getCredentials(id: string): Observable<Credential[]> {
+    return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
+  }
+  deleteCredential(acpId: string, credentialId: string): Observable<void> {
+    return this.http.delete<void>(`${this.API}/acp/${acpId}/access/credentials/${credentialId}`);
   }
   updateMetadataColumns(id: string, data: any): Observable<AccessConfig> {
     return this.http.put<AccessConfig>(`${this.API}/acp/${id}/metadata-columns`, data);

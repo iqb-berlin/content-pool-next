@@ -50,8 +50,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const result = {
       sub: payload.sub,
       username: payload.username,
-      isAppAdmin: payload.isAppAdmin,
+      isAppAdmin: user.isAppAdmin,
       type: payload.type,
+      authType: payload.authType,
       acpId: payload.acpId,
       acpRoles: user.acpRoles.map(role => ({
         acpId: role.acpId,

@@ -118,3 +118,11 @@ export class CreateSnapshotDto {
   @IsOptional()
   changelog?: string;
 }
+
+export class CredentialResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  username!: string;
+}

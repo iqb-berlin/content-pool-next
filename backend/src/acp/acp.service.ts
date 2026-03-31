@@ -23,6 +23,7 @@ import {
   UpdateAccessConfigDto,
   CredentialEntryDto,
   UpdateMetadataColumnsDto,
+  CredentialResponseDto,
 } from './dto/acp.dto';
 
 @Injectable()
@@ -255,5 +256,31 @@ export class AcpService {
 
     await this.credentialRepository.save(entities);
     return entities.length;
+  }
+
+  async getCredentials(acpId: string): Promise<CredentialResponseDto[]> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      return [];
+    }
+    const credentials = await this.credentialRepository.find({
+      where: { accessConfigId: config.id },
+      select: ['id', 'username'],
+    });
+    return credentials.map(c => ({ id: c.id, username: c.username }));
+  }
+
+  async deleteCredential(acpId: string, credentialId: string): Promise<void> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      throw new NotFoundException('Access configuration not found');
+    }
+    const credential = await this.credentialRepository.findOne({
+      where: { id: credentialId, accessConfigId: config.id },
+    });
+    if (!credential) {
+      throw new NotFoundException('Credential not found');
+    }
+    await this.credentialRepository.remove(credential);
   }
 }

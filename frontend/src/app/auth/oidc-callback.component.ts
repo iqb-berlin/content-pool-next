@@ -31,13 +31,15 @@ export class OidcCallbackComponent implements OnInit {
       console.log('Search:', window.location.search);
 
       let idToken: string | null = null;
+      let accessToken: string | null = null;
 
-      // Try to extract token from URL fragment first (implicit flow)
+      // Try to extract tokens from URL fragment first (implicit flow)
       const hash = window.location.hash;
       if (hash && hash.includes('id_token=')) {
         const params = new URLSearchParams(hash.substring(1));
         idToken = params.get('id_token');
-        console.log('Found id_token in hash/fragment');
+        accessToken = params.get('access_token');
+        console.log('Found id_token and access_token in hash/fragment');
       }
 
       // If not found, try query parameters (some Keycloak configs use this)
@@ -72,9 +74,29 @@ export class OidcCallbackComponent implements OnInit {
         return;
       }
 
-      if (idToken) {
-        console.log('Processing OIDC login with id_token...');
-        await this.auth.handleOidcCallback(idToken).toPromise();
+      if (idToken && accessToken) {
+        console.log('Processing OIDC login with access_token (contains roles)...');
+        
+        // DEBUG: Decode and log access token payload to verify roles
+        try {
+          const payloadBase64 = accessToken.split('.')[1];
+          const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
+          const payload = JSON.parse(payloadJson);
+          console.log('=== ACCESS TOKEN DEBUG ===');
+          console.log('Token payload:', payload);
+          console.log('realm_access:', payload.realm_access);
+          console.log('resource_access:', payload.resource_access);
+          console.log('Roles in token:', {
+            realmRoles: payload.realm_access?.roles || [],
+            clientRoles: payload.resource_access || {}
+          });
+          console.log('========================');
+        } catch (e) {
+          console.error('Failed to decode token for debug:', e);
+        }
+        
+        // Send access_token to backend (contains roles), id_token for logout
+        await this.auth.handleOidcCallback(accessToken, idToken).toPromise();
 
         // Check for stored redirect URL
         const redirectUrl = sessionStorage.getItem('oidc_redirect_url') || '/';

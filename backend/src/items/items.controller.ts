@@ -4,6 +4,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
 import { ItemResponseStateService } from './item-response-state.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 
 @ApiTags('Items')
 @Controller('acp/:acpId/items')
@@ -14,6 +15,7 @@ export class ItemsController {
   ) {}
 
   @Get()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List all items in an ACP (with optional filter/sort)' })
   @ApiQuery({ name: 'filter', required: false })
   @ApiQuery({ name: 'sortBy', required: false })
@@ -28,6 +30,7 @@ export class ItemsController {
   }
 
   @Get(':itemId')
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get a single item by ID' })
   async getItem(
     @Param('acpId') acpId: string,
@@ -97,8 +100,7 @@ export class ItemsController {
   }
 
   @Get(':itemId/response-state')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get response state for an item' })
   async getResponseState(
     @Param('acpId') acpId: string,
@@ -109,8 +111,7 @@ export class ItemsController {
   }
 
   @Post(':itemId/response-state/with-fallback')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get response state for an item with fallback to previous items in same unit' })
   async getResponseStateWithFallback(
     @Param('acpId') acpId: string,

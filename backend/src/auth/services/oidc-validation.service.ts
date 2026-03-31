@@ -41,19 +41,38 @@ export class OidcValidationService {
 
     try {
       const JWKS = createRemoteJWKSet(new URL(this.jwksUrl));
+      // For Access Tokens, audience is 'account', not the client_id
+      // We validate issuer and check azp (authorized party) instead
       const { payload } = await jwtVerify(idToken, JWKS, {
         issuer: issuerUrl!,
-        audience: clientId!,
+        // Do not validate audience for access tokens (aud is 'account')
       });
+
+      // Verify the token was issued for our client (check azp for access tokens)
+      const authorizedParty = payload.azp as string;
+      if (authorizedParty !== clientId) {
+        throw new UnauthorizedException(`Invalid token: azp ${authorizedParty} does not match expected client ${clientId}`);
+      }
 
       console.log('OIDC Validation - Token verified. Payload sub:', payload.sub);
       console.log('OIDC Validation - Token issuer:', payload.iss);
       console.log('OIDC Validation - Token audience:', payload.aud);
+      console.log('OIDC Validation - Token azp:', authorizedParty);
 
       const sub = payload.sub;
       const email = payload.email as string | undefined;
       const name = payload.name as string | undefined;
       const preferredUsername = payload.preferred_username as string | undefined;
+      
+      // Extract Keycloak roles from token
+      const realmRoles = (payload.realm_access as any)?.roles || [];
+      const resourceAccess = payload.resource_access as any;
+      const clientRoles = clientId && resourceAccess?.[clientId]?.roles ? resourceAccess[clientId].roles : [];
+      const isKeycloakAdmin = realmRoles.includes('admin') || clientRoles.includes('admin');
+      
+      console.log('OIDC Validation - Realm roles:', realmRoles);
+      console.log('OIDC Validation - Client roles:', clientRoles);
+      console.log('OIDC Validation - Is Keycloak admin:', isKeycloakAdmin);
       
       if (!sub) {
         throw new UnauthorizedException('Invalid OIDC token: missing sub claim');
@@ -88,11 +107,18 @@ export class OidcValidationService {
           displayName: name || preferredUsername || username,
           oidcSub: sub,
           passwordHash: '', // No password needed for OIDC users
-          isAppAdmin: false,
+          isAppAdmin: isKeycloakAdmin,
         });
         
         await this.userRepository.save(user);
         console.log('OIDC Validation - Created new user:', user.id, user.username);
+      } else {
+        // Update admin status if Keycloak roles have changed
+        if (user.isAppAdmin !== isKeycloakAdmin) {
+          user.isAppAdmin = isKeycloakAdmin;
+          await this.userRepository.save(user);
+          console.log('OIDC Validation - Updated user admin status:', user.id, 'isAppAdmin:', isKeycloakAdmin);
+        }
       }
 
       return {

@@ -30,6 +30,6 @@ import { User, AcpCredential, AcpAccessConfig, AcpUserRole } from '../database/e
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcValidationService, OidcAuthGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcAuthGuard, OidcValidationService, JwtModule],
+  exports: [AuthService, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcAuthGuard, OidcValidationService, JwtModule, TypeOrmModule],
 })
 export class AuthModule {}

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { OidcValidationService } from './services/oidc-validation.service';
 import { LoginDto, CredentialLoginDto, OidcCallbackDto } from './dto/login.dto';
+import { SyncOidcRolesDto } from './dto/sync-oidc-roles.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './roles.decorator';
@@ -111,6 +112,27 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   async getProfile(@Request() req: any) {
+    return this.authService.getProfile(req.user.sub);
+  }
+
+  @Post('sync-oidc-roles')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Sync OIDC roles with application roles for current user' })
+  async syncOidcRoles(@Request() req: any, @Body() syncDto: SyncOidcRolesDto) {
+    if (!this.oidcValidationService.isOidcEnabled()) {
+      throw new UnauthorizedException('OIDC is not configured');
+    }
+
+    // Validate the ID token and get updated user info
+    const userInfo = await this.oidcValidationService.validateIdToken(syncDto.idToken);
+    
+    // Check that the token belongs to the current user
+    if (userInfo.sub !== req.user.sub) {
+      throw new UnauthorizedException('Token does not match current user');
+    }
+
+    // Return the updated profile
     return this.authService.getProfile(req.user.sub);
   }
 }

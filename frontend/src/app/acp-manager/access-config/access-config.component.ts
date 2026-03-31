@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { AccessConfig, FeatureConfig } from '../../core/models/api.models';
+import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-access-config',
@@ -67,8 +67,30 @@ import { AccessConfig, FeatureConfig } from '../../core/models/api.models';
             </label>
             <span class="help-text" style="margin-left:12px">CSV: Benutzername, Kennwort pro Zeile</span>
           </div>
-          @if (credentialCount > 0) {
-            <div class="alert alert-success" style="margin-top:12px">{{ credentialCount }} Zugangsdaten hochgeladen.</div>
+          @if (credentialCount > 0 || credentials.length > 0) {
+            <div class="alert alert-success" style="margin-top:12px">{{ credentialCount || credentials.length }} Zugangsdaten vorhanden.</div>
+          }
+          @if (credentials.length > 0) {
+            <div class="credentials-list" style="margin-top:16px">
+              <table class="credentials-table">
+                <thead>
+                  <tr>
+                    <th>Benutzername</th>
+                    <th style="width: 80px">Aktion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (cred of credentials; track cred.id) {
+                    <tr>
+                      <td>{{ cred.username }}</td>
+                      <td>
+                        <button class="btn btn-outline btn-sm" (click)="deleteCredential(cred.id)">Löschen</button>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
           }
         </div>
       }
@@ -220,6 +242,10 @@ import { AccessConfig, FeatureConfig } from '../../core/models/api.models';
     .tag-input { width: 120px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 0.85rem; }
 
     .save-indicator { margin-left: 12px; color: var(--color-success); font-size: 0.85rem; font-weight: 500; }
+    .credentials-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    .credentials-table th, .credentials-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
+    .credentials-table th { font-weight: 600; color: var(--color-text-secondary); font-size: 0.85rem; }
+    .credentials-table tr:hover { background: rgba(0,0,0,0.02); }
   `]
 })
 export class AccessConfigComponent implements OnInit {
@@ -236,6 +262,7 @@ export class AccessConfigComponent implements OnInit {
   newTag = '';
   accessSaved = false;
   featuresSaved = false;
+  credentials: Credential[] = [];
 
   downloadFlags = [
     { key: 'allowIndexDownload', label: 'ACP-Index Download erlauben' },
@@ -267,6 +294,11 @@ export class AccessConfigComponent implements OnInit {
 
   ngOnInit() {
     this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
+    this.loadConfig();
+    this.loadCredentials();
+  }
+
+  loadConfig() {
     this.api.getAccessConfig(this.acpId).subscribe({
       next: config => {
         if (config) {
@@ -278,6 +310,17 @@ export class AccessConfigComponent implements OnInit {
           this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
           this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
         }
+      }
+    });
+  }
+
+  loadCredentials() {
+    this.api.getCredentials(this.acpId).subscribe({
+      next: (creds) => {
+        this.credentials = creds;
+      },
+      error: () => {
+        this.credentials = [];
       }
     });
   }
@@ -295,6 +338,11 @@ export class AccessConfigComponent implements OnInit {
     }
     const from = new Date(this.validFrom);
     const until = new Date(this.validUntil);
+    const now = new Date();
+    if (from < now) {
+      this.dateError = 'Startdatum muss in der Zukunft liegen.';
+      return false;
+    }
     const maxEnd = new Date(from);
     maxEnd.setMonth(maxEnd.getMonth() + 3);
     if (until > maxEnd) {
@@ -374,9 +422,24 @@ export class AccessConfigComponent implements OnInit {
         return { username, password };
       }).filter(c => c.username && c.password);
       this.api.uploadCredentials(this.acpId, credentials).subscribe({
-        next: (res: any) => this.credentialCount = res.message ? credentials.length : 0
+        next: (res: any) => {
+          this.credentialCount = res.message ? credentials.length : 0;
+          this.loadCredentials();
+        }
       });
     };
     reader.readAsText(file);
+  }
+
+  deleteCredential(credentialId: string) {
+    if (!confirm('Soll dieses Zugangsdatum wirklich gelöscht werden?')) return;
+    this.api.deleteCredential(this.acpId, credentialId).subscribe({
+      next: () => {
+        this.credentials = this.credentials.filter(c => c.id !== credentialId);
+      },
+      error: () => {
+        alert('Fehler beim Löschen des Zugangsdatums');
+      }
+    });
   }
 }

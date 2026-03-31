@@ -9,6 +9,7 @@ export class AuthService {
   private tokenKey = 'cp_token';
   private readonly OIDC_REDIRECT_KEY = 'oidc_redirect_url';
   private readonly ID_TOKEN_KEY = 'cp_oidc_id_token';
+  private readonly ACCESS_TOKEN_KEY = 'cp_oidc_access_token';
   private readonly AUTH_TYPE_KEY = 'cp_auth_type';
   private logoutChannel: BroadcastChannel | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
@@ -76,11 +77,14 @@ export class AuthService {
     });
   }
 
-  handleOidcCallback(idToken: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken }).pipe(
+  handleOidcCallback(accessToken: string, idToken?: string): Observable<LoginResponse> {
+    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken: accessToken }).pipe(
       tap(res => {
         localStorage.setItem(this.tokenKey, res.accessToken);
-        localStorage.setItem(this.ID_TOKEN_KEY, idToken);
+        localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
+        if (idToken) {
+          localStorage.setItem(this.ID_TOKEN_KEY, idToken);
+        }
         localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
         this.loadProfile();
       })
@@ -145,6 +149,7 @@ export class AuthService {
   private performLogout(broadcast = true): void {
     localStorage.removeItem(this.tokenKey);
     localStorage.removeItem(this.ID_TOKEN_KEY);
+    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
     localStorage.removeItem(this.AUTH_TYPE_KEY);
     sessionStorage.removeItem(this.OIDC_REDIRECT_KEY);
     this.currentUserSubject.next(null);
@@ -155,10 +160,25 @@ export class AuthService {
   }
 
   loadProfile(): void {
-    this.http.get<UserProfile>(`${this.API}/profile`).subscribe({
-      next: profile => this.currentUserSubject.next(profile),
-      error: () => this.logout()
-    });
+    const authType = localStorage.getItem(this.AUTH_TYPE_KEY);
+    const accessToken = localStorage.getItem(this.ACCESS_TOKEN_KEY);
+    
+    // For OIDC users, sync roles first to ensure admin status is up-to-date
+    if (authType === 'oidc' && accessToken) {
+      this.syncOidcRoles(accessToken).subscribe({
+        next: profile => this.currentUserSubject.next(profile),
+        error: () => this.logout()
+      });
+    } else {
+      this.http.get<UserProfile>(`${this.API}/profile`).subscribe({
+        next: profile => this.currentUserSubject.next(profile),
+        error: () => this.logout()
+      });
+    }
+  }
+
+  syncOidcRoles(accessToken: string): Observable<UserProfile> {
+    return this.http.post<UserProfile>(`${this.API}/sync-oidc-roles`, { idToken: accessToken });
   }
 
   hasAcpRole(acpId: string, role: string): boolean {

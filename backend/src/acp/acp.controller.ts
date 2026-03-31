@@ -146,6 +146,19 @@ export class AcpController {
     return { message: `${count} credentials uploaded successfully` };
   }
 
+  @Get(':id/access/credentials')
+  @ApiOperation({ summary: 'Get credentials list for ACP' })
+  async getCredentials(@Param('id') id: string) {
+    return this.acpService.getCredentials(id);
+  }
+
+  @Delete(':id/access/credentials/:credentialId')
+  @ApiOperation({ summary: 'Delete a credential from ACP' })
+  async deleteCredential(@Param('id') id: string, @Param('credentialId') credentialId: string) {
+    await this.acpService.deleteCredential(id, credentialId);
+    return { message: 'Credential deleted successfully' };
+  }
+
   @Put(':id/metadata-columns')
   @UseGuards(RolesGuard)
   @Roles('ACP_MANAGER')

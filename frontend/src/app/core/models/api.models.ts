@@ -84,6 +84,11 @@ export interface AccessConfig {
   validUntil?: string;
 }
 
+export interface Credential {
+  id: string;
+  username: string;
+}
+
 export interface FeatureConfig {
   allowIndexDownload?: boolean;
   allowUnitDownload?: boolean;

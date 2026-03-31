@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { BehaviorSubject, Observable, tap, map } from 'rxjs';
 import { LoginResponse, CredentialLoginResponse, UserProfile, OidcConfig, AuthContext } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -178,7 +178,13 @@ export class AuthService {
   }
 
   syncOidcRoles(accessToken: string): Observable<UserProfile> {
-    return this.http.post<UserProfile>(`${this.API}/sync-oidc-roles`, { idToken: accessToken });
+    return this.http.post<LoginResponse>(`${this.API}/sync-oidc-roles`, { idToken: accessToken }).pipe(
+      tap(res => {
+        // Store the new token with updated admin status
+        localStorage.setItem(this.tokenKey, res.accessToken);
+      }),
+      map(res => res.user as UserProfile)
+    );
   }
 
   hasAcpRole(acpId: string, role: string): boolean {

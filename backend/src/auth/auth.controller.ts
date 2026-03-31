@@ -118,13 +118,13 @@ export class AuthController {
   @Post('sync-oidc-roles')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Sync OIDC roles with application roles for current user' })
+  @ApiOperation({ summary: 'Sync OIDC roles with application roles for current user and get new token' })
   async syncOidcRoles(@Request() req: any, @Body() syncDto: SyncOidcRolesDto) {
     if (!this.oidcValidationService.isOidcEnabled()) {
       throw new UnauthorizedException('OIDC is not configured');
     }
 
-    // Validate the ID token and get updated user info
+    // Validate the ID token and get updated user info (this updates isAppAdmin in DB)
     const userInfo = await this.oidcValidationService.validateIdToken(syncDto.idToken);
     
     // Check that the token belongs to the current user
@@ -132,7 +132,7 @@ export class AuthController {
       throw new UnauthorizedException('Token does not match current user');
     }
 
-    // Return the updated profile
-    return this.authService.getProfile(req.user.sub);
+    // Generate a NEW JWT token with the updated admin status
+    return this.authService.generateTokenForOidcUser(userInfo);
   }
 }

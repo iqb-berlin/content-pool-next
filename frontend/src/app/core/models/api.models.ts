@@ -3,6 +3,7 @@ export interface User {
   username: string;
   displayName?: string;
   isAppAdmin: boolean;
+  oidcSub?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -83,6 +84,11 @@ export interface AccessConfig {
   validUntil?: string;
 }
 
+export interface Credential {
+  id: string;
+  username: string;
+}
+
 export interface FeatureConfig {
   allowIndexDownload?: boolean;
   allowUnitDownload?: boolean;
@@ -158,4 +164,18 @@ export interface TaskSequence {
   id: string;
   name: any;
   units: { id: string; name: string }[];
+}
+
+export interface OidcConfig {
+  enabled: boolean;
+  issuerUrl: string | null;
+  clientId: string | null;
+  redirectUri: string;
+  scope: string;
+}
+
+export interface AuthContext {
+  allowedMethods: ('oidc' | 'credentials')[];
+  oidcEnabled: boolean;
+  message: string;
 }

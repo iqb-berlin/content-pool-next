@@ -31,6 +31,11 @@ services:
       JWT_EXPIRATION: 24h
       FILE_STORAGE_PATH: /app/uploads
       CORS_ORIGIN: http://localhost:4200
+      # OIDC Configuration (optional for dev)
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:4200/auth/callback}
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
     ports:
       - "3000:3000"
     volumes:

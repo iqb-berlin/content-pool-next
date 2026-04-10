@@ -4,12 +4,12 @@ import { MulterModule } from '@nestjs/platform-express';
 import { FilesService } from './files.service';
 import { FilesController } from './files.controller';
 import { UnitParserService } from './unit-parser.service';
-import { AcpFile, Acp } from '../database/entities';
+import { AcpFile, Acp, AcpUserRole, AcpAccessConfig } from '../database/entities';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AcpFile, Acp]),
+    TypeOrmModule.forFeature([AcpFile, Acp, AcpUserRole, AcpAccessConfig]),
     MulterModule.register({
       limits: { fileSize: 100 * 1024 * 1024 }, // 100MB
     }),

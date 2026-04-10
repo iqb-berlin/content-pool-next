@@ -31,6 +31,11 @@ services:
       JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
       FILE_STORAGE_PATH: /app/uploads
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      # OIDC Configuration (optional)
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
     volumes:
       - uploads:/app/uploads
     depends_on:

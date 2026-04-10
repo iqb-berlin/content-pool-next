@@ -23,6 +23,9 @@ import {
   UpdateAccessConfigDto,
   CredentialEntryDto,
   UpdateMetadataColumnsDto,
+  CredentialResponseDto,
+  CreateCredentialDto,
+  UpdateCredentialDto,
 } from './dto/acp.dto';
 
 @Injectable()
@@ -184,6 +187,8 @@ export class AcpService {
   async updateAccessConfig(acpId: string, dto: UpdateAccessConfigDto): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
+    console.log('UpdateAccessConfig received:', { validFrom: dto.validFrom, validUntil: dto.validUntil });
+
     // Validate time limit for CREDENTIALS_LIST
     if (dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil) {
       const validUntil = new Date(dto.validUntil);
@@ -212,7 +217,9 @@ export class AcpService {
       });
     }
 
-    return this.accessConfigRepository.save(config);
+    const saved = await this.accessConfigRepository.save(config);
+    console.log('UpdateAccessConfig saved:', { validFrom: saved.validFrom?.toISOString(), validUntil: saved.validUntil?.toISOString() });
+    return saved;
   }
 
   async updateMetadataColumns(acpId: string, dto: UpdateMetadataColumnsDto): Promise<AcpAccessConfig> {
@@ -232,28 +239,193 @@ export class AcpService {
     return this.accessConfigRepository.save(config);
   }
 
-  async uploadCredentials(acpId: string, credentials: CredentialEntryDto[]): Promise<number> {
+  async uploadCredentials(
+    acpId: string,
+    credentials: CredentialEntryDto[],
+    mode: 'replace' | 'append' | 'upsert' = 'replace',
+  ): Promise<{ added: number; updated: number; skipped: number; duplicates: string[] }> {
     const config = await this.accessConfigRepository.findOne({ where: { acpId } });
     if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
       throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
     }
 
-    // Delete existing credentials
-    await this.credentialRepository.delete({ accessConfigId: config.id });
+    // Get existing credentials for comparison
+    const existingCreds = await this.credentialRepository.find({
+      where: { accessConfigId: config.id },
+    });
+    const existingMap = new Map(existingCreds.map((c) => [c.username, c]));
 
-    // Create new credentials
-    const entities = await Promise.all(
-      credentials.map(async (cred) => {
-        const passwordHash = await bcrypt.hash(cred.password, 12);
-        return this.credentialRepository.create({
-          accessConfigId: config.id,
-          username: cred.username,
-          passwordHash,
-        });
-      }),
-    );
+    let added = 0;
+    let updated = 0;
+    let skipped = 0;
+    const duplicates: string[] = [];
+    const seenInUpload = new Set<string>();
 
-    await this.credentialRepository.save(entities);
-    return entities.length;
+    // Check for duplicates within the upload itself
+    for (const cred of credentials) {
+      if (seenInUpload.has(cred.username)) {
+        duplicates.push(cred.username);
+        continue;
+      }
+      seenInUpload.add(cred.username);
+
+      const existing = existingMap.get(cred.username);
+
+      if (mode === 'replace') {
+        // Replace: just collect for recreation
+        continue;
+      } else if (mode === 'append') {
+        // Append: skip if exists
+        if (existing) {
+          skipped++;
+          continue;
+        }
+      } else if (mode === 'upsert') {
+        // Upsert: update if exists
+        if (existing) {
+          const passwordHash = await bcrypt.hash(cred.password, 12);
+          existing.passwordHash = passwordHash;
+          await this.credentialRepository.save(existing);
+          updated++;
+          continue;
+        }
+      }
+
+      added++;
+    }
+
+    if (mode === 'replace') {
+      // Delete all existing
+      await this.credentialRepository.delete({ accessConfigId: config.id });
+
+      // Create new credentials
+      const entities = await Promise.all(
+        credentials.map(async (cred) => {
+          const passwordHash = await bcrypt.hash(cred.password, 12);
+          return this.credentialRepository.create({
+            accessConfigId: config.id,
+            username: cred.username,
+            passwordHash,
+          });
+        }),
+      );
+
+      await this.credentialRepository.save(entities);
+      added = entities.length;
+    } else {
+      // For append/upsert: create only new credentials
+      const newCreds = credentials.filter((cred) => {
+        if (duplicates.includes(cred.username)) return false;
+        if (mode === 'append' && existingMap.has(cred.username)) return false;
+        if (mode === 'upsert' && existingMap.has(cred.username)) return false;
+        return true;
+      });
+
+      const entities = await Promise.all(
+        newCreds.map(async (cred) => {
+          const passwordHash = await bcrypt.hash(cred.password, 12);
+          return this.credentialRepository.create({
+            accessConfigId: config.id,
+            username: cred.username,
+            passwordHash,
+          });
+        }),
+      );
+
+      await this.credentialRepository.save(entities);
+    }
+
+    return { added, updated, skipped, duplicates };
+  }
+
+  async getCredentials(acpId: string): Promise<CredentialResponseDto[]> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      return [];
+    }
+    const credentials = await this.credentialRepository.find({
+      where: { accessConfigId: config.id },
+      select: ['id', 'username'],
+    });
+    return credentials.map(c => ({ id: c.id, username: c.username }));
+  }
+
+  async deleteCredential(acpId: string, credentialId: string): Promise<void> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config) {
+      throw new NotFoundException('Access configuration not found');
+    }
+    const credential = await this.credentialRepository.findOne({
+      where: { id: credentialId, accessConfigId: config.id },
+    });
+    if (!credential) {
+      throw new NotFoundException('Credential not found');
+    }
+    await this.credentialRepository.remove(credential);
+  }
+
+  async createCredential(
+    acpId: string,
+    dto: CreateCredentialDto,
+  ): Promise<CredentialResponseDto> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
+      throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
+    }
+
+    // Check for duplicate username
+    const existing = await this.credentialRepository.findOne({
+      where: { accessConfigId: config.id, username: dto.username },
+    });
+    if (existing) {
+      throw new ConflictException(`Username "${dto.username}" already exists`);
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const credential = this.credentialRepository.create({
+      accessConfigId: config.id,
+      username: dto.username,
+      passwordHash,
+    });
+
+    const saved = await this.credentialRepository.save(credential);
+    return { id: saved.id, username: saved.username };
+  }
+
+  async updateCredential(
+    acpId: string,
+    credentialId: string,
+    dto: UpdateCredentialDto,
+  ): Promise<CredentialResponseDto> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
+      throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
+    }
+
+    const credential = await this.credentialRepository.findOne({
+      where: { id: credentialId, accessConfigId: config.id },
+    });
+    if (!credential) {
+      throw new NotFoundException('Credential not found');
+    }
+
+    // Check for duplicate username if changing username
+    if (dto.username && dto.username !== credential.username) {
+      const existing = await this.credentialRepository.findOne({
+        where: { accessConfigId: config.id, username: dto.username },
+      });
+      if (existing) {
+        throw new ConflictException(`Username "${dto.username}" already exists`);
+      }
+      credential.username = dto.username;
+    }
+
+    // Update password if provided
+    if (dto.password) {
+      credential.passwordHash = await bcrypt.hash(dto.password, 12);
+    }
+
+    const saved = await this.credentialRepository.save(credential);
+    return { id: saved.id, username: saved.username };
   }
 }

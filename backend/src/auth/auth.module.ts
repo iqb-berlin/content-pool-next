@@ -9,6 +9,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { AcpAccessGuard } from './guards/acp-access.guard';
+import { OidcAuthGuard } from './guards/oidc-auth.guard';
+import { OidcValidationService } from './services/oidc-validation.service';
 import { User, AcpCredential, AcpAccessConfig, AcpUserRole } from '../database/entities';
 
 @Module({
@@ -27,7 +29,7 @@ import { User, AcpCredential, AcpAccessConfig, AcpUserRole } from '../database/e
     TypeOrmModule.forFeature([User, AcpCredential, AcpAccessConfig, AcpUserRole]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard, AcpAccessGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard, AcpAccessGuard, JwtModule],
+  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcValidationService, OidcAuthGuard],
+  exports: [AuthService, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcAuthGuard, OidcValidationService, JwtModule, TypeOrmModule],
 })
 export class AuthModule {}

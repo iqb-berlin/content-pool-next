@@ -16,7 +16,7 @@ import { User } from '../../core/models/api.models';
     @if (showCreate) {
       <div class="card">
         <h3>Neuen Nutzer anlegen</h3>
-        <form (ngSubmit)="createUser()">
+        <form>
           <div class="form-group">
             <label>Benutzername</label>
             <input [(ngModel)]="newUser.username" name="username" required>
@@ -37,17 +37,20 @@ import { User } from '../../core/models/api.models';
       </div>
     }
 
-    @if (error) { <div class="alert alert-error">{{ error }}</div> }
+    @if (error) {
+      <div class="alert alert-error">{{ error }}</div>
+    }
 
     <div class="card">
       <table class="table">
         <thead>
-          <tr>
-            <th>Benutzername</th>
-            <th>Anzeigename</th>
-            <th>Admin</th>
-            <th>Aktionen</th>
-          </tr>
+        <tr>
+          <th>Benutzername</th>
+          <th>Anzeigename</th>
+          <th>Admin</th>
+          <th>OIDC</th>
+          <th>Aktionen</th>
+        </tr>
         </thead>
         <tbody>
           @for (user of users; track user.id) {
@@ -60,10 +63,18 @@ import { User } from '../../core/models/api.models';
                 </span>
               </td>
               <td>
+                @if (user.oidcSub) {
+                  <span class="badge badge-success" title="{{ user.oidcSub }}">✓ Verknüpft</span>
+                } @else {
+                  <span class="badge badge-warning">✗ Lokal</span>
+                }
+              </td>
+              <td>
                 <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
                   {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
                 </button>
-                <button class="btn btn-sm btn-danger" (click)="deleteUser(user)" style="margin-left:8px">Löschen</button>
+                <button class="btn btn-sm btn-danger" (click)="deleteUser(user)" style="margin-left:8px">Löschen
+                </button>
               </td>
             </tr>
           }

@@ -49,7 +49,16 @@ import { Acp } from '../../core/models/api.models';
           @for (acp of acps; track acp.id) {
             <tr>
               <td><code>{{ acp.packageId }}</code></td>
-              <td>{{ acp.name }}</td>
+              <td>
+                @if (editingId === acp.id) {
+                  <input [(ngModel)]="editName" (keyup.enter)="saveRename(acp)" (keyup.escape)="cancelRename()" class="input-sm">
+                  <button class="btn btn-sm btn-primary" (click)="saveRename(acp)" style="margin-left:4px">Speichern</button>
+                  <button class="btn btn-sm btn-outline" (click)="cancelRename()" style="margin-left:4px">Abbrechen</button>
+                } @else {
+                  {{ acp.name }}
+                  <button class="btn btn-sm btn-link" (click)="startRename(acp)" style="margin-left:8px" title="Umbenennen">✏️</button>
+                }
+              </td>
               <td>{{ acp.description || '–' }}</td>
               <td>
                 <a [routerLink]="['/manage', acp.id]" class="btn btn-sm btn-outline">Verwalten</a>
@@ -70,6 +79,8 @@ export class AcpListComponent implements OnInit {
   showCreate = false;
   error = '';
   newAcp = { packageId: '', name: '', description: '' };
+  editingId: string | null = null;
+  editName = '';
 
   constructor(private api: ApiService) {}
 
@@ -93,5 +104,26 @@ export class AcpListComponent implements OnInit {
     if (confirm(`ACP "${acp.name}" wirklich löschen?`)) {
       this.api.deleteAcp(acp.id).subscribe({ next: () => this.load() });
     }
+  }
+
+  startRename(acp: Acp) {
+    this.editingId = acp.id;
+    this.editName = acp.name;
+  }
+
+  cancelRename() {
+    this.editingId = null;
+    this.editName = '';
+  }
+
+  saveRename(acp: Acp) {
+    if (!this.editName.trim()) {
+      this.error = 'Name darf nicht leer sein';
+      return;
+    }
+    this.api.updateAcp(acp.id, { name: this.editName.trim() }).subscribe({
+      next: () => { this.editingId = null; this.editName = ''; this.load(); },
+      error: err => this.error = err.error?.message || 'Fehler beim Umbenennen'
+    });
   }
 }

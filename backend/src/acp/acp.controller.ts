@@ -7,11 +7,13 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   Res,
   Header,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -23,14 +25,17 @@ import {
   UpdateAccessConfigDto,
   UploadCredentialsDto,
   UpdateMetadataColumnsDto,
+  CreateCredentialDto,
+  UpdateCredentialDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('ACP Management')
 @Controller('acp')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, OidcAuthGuard)
 @ApiBearerAuth()
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);
@@ -61,7 +66,9 @@ export class AcpController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update ACP name/description' })
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Update ACP name/description (ACP Manager or Admin only)' })
   async update(@Param('id') id: string, @Body() dto: UpdateAcpDto) {
     return this.acpService.update(id, dto);
   }
@@ -104,6 +111,8 @@ export class AcpController {
 
   // Role management
   @Get(':id/roles')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'List role assignments for ACP' })
   async getRoles(@Param('id') id: string) {
     return this.acpService.getRoles(id);
@@ -111,17 +120,29 @@ export class AcpController {
 
   @Post(':id/roles')
   @UseGuards(RolesGuard)
-  @Roles('APP_ADMIN')
-  @ApiOperation({ summary: 'Assign user role for ACP (Admin only)' })
-  async assignRole(@Param('id') id: string, @Body() dto: AssignRoleDto) {
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Assign user role for ACP (ACP Manager can assign READ_ONLY only)' })
+  async assignRole(@Param('id') id: string, @Body() dto: AssignRoleDto, @Request() req: any) {
+    // If user is not App Admin, they can only assign READ_ONLY role
+    if (!req.user?.isAppAdmin && dto.role === 'ACP_MANAGER') {
+      throw new ForbiddenException('Only Application Admins can assign ACP_MANAGER role');
+    }
     return this.acpService.assignRole(id, dto);
   }
 
   @Delete(':id/roles/:userId')
   @UseGuards(RolesGuard)
-  @Roles('APP_ADMIN')
-  @ApiOperation({ summary: 'Remove user role for ACP (Admin only)' })
-  async removeRole(@Param('id') id: string, @Param('userId') userId: string) {
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Remove user role for ACP (ACP Manager can remove READ_ONLY only)' })
+  async removeRole(@Param('id') id: string, @Param('userId') userId: string, @Request() req: any) {
+    // If user is not App Admin, check if they're removing an ACP_MANAGER role (which is forbidden)
+    if (!req.user?.isAppAdmin) {
+      const roles = await this.acpService.getRoles(id);
+      const roleToRemove = roles.find(r => r.userId === userId);
+      if (roleToRemove?.role === 'ACP_MANAGER') {
+        throw new ForbiddenException('Only Application Admins can remove ACP_MANAGER role');
+      }
+    }
     return this.acpService.removeRole(id, userId);
   }
 
@@ -140,9 +161,45 @@ export class AcpController {
 
   @Post(':id/access/credentials')
   @ApiOperation({ summary: 'Upload credentials list for ACP' })
-  async uploadCredentials(@Param('id') id: string, @Body() dto: UploadCredentialsDto) {
-    const count = await this.acpService.uploadCredentials(id, dto.credentials);
-    return { message: `${count} credentials uploaded successfully` };
+  async uploadCredentials(
+    @Param('id') id: string,
+    @Query('mode') mode: 'replace' | 'append' | 'upsert' = 'replace',
+    @Body() dto: UploadCredentialsDto,
+  ) {
+    const result = await this.acpService.uploadCredentials(id, dto.credentials, mode);
+    return {
+      message: `Credentials processed: ${result.added} added, ${result.updated} updated, ${result.skipped} skipped`,
+      ...result,
+    };
+  }
+
+  @Get(':id/access/credentials')
+  @ApiOperation({ summary: 'Get credentials list for ACP' })
+  async getCredentials(@Param('id') id: string) {
+    return this.acpService.getCredentials(id);
+  }
+
+  @Delete(':id/access/credentials/:credentialId')
+  @ApiOperation({ summary: 'Delete a credential from ACP' })
+  async deleteCredential(@Param('id') id: string, @Param('credentialId') credentialId: string) {
+    await this.acpService.deleteCredential(id, credentialId);
+    return { message: 'Credential deleted successfully' };
+  }
+
+  @Post(':id/access/credentials/single')
+  @ApiOperation({ summary: 'Create a single credential for ACP' })
+  async createCredential(@Param('id') id: string, @Body() dto: CreateCredentialDto) {
+    return this.acpService.createCredential(id, dto);
+  }
+
+  @Patch(':id/access/credentials/:credentialId')
+  @ApiOperation({ summary: 'Update a credential' })
+  async updateCredential(
+    @Param('id') id: string,
+    @Param('credentialId') credentialId: string,
+    @Body() dto: UpdateCredentialDto,
+  ) {
+    return this.acpService.updateCredential(id, credentialId, dto);
   }
 
   @Put(':id/metadata-columns')

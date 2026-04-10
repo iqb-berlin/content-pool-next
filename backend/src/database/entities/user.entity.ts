@@ -26,6 +26,9 @@ export class User {
   @Column({ name: 'is_app_admin', default: false })
   isAppAdmin!: boolean;
 
+  @Column({ name: 'oidc_sub', nullable: true, unique: true })
+  oidcSub?: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 

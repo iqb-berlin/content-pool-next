@@ -48,6 +48,19 @@ export class ViewsService {
       relations: ['acp'],
     });
 
+    console.log('[DEBUG] getPublicAcps - PUBLIC configs:', publicConfigs.length);
+    console.log('[DEBUG] getPublicAcps - CREDENTIALS_LIST configs:', credentialConfigs.length);
+    for (const cfg of credentialConfigs) {
+      console.log('[DEBUG] Credential config:', {
+        id: cfg.id,
+        acpId: cfg.acpId,
+        acpName: cfg.acp?.name,
+        accessModel: cfg.accessModel,
+        validFrom: cfg.validFrom,
+        validUntil: cfg.validUntil,
+      });
+    }
+
     const results: any[] = [];
     const seenIds = new Set<string>();
 
@@ -65,13 +78,8 @@ export class ViewsService {
 
     // Include credential-based ACPs (they are listed on landing page too)
     for (const config of credentialConfigs) {
-      if (seenIds.has(config.acp.id)) continue;
-      const now = new Date();
-      if (
-        config.acp &&
-        (!config.validFrom || now >= config.validFrom) &&
-        (!config.validUntil || now <= config.validUntil)
-      ) {
+      if (seenIds.has(config.acpId)) continue;
+      if (config.acp) {
         results.push({
           id: config.acp.id,
           name: config.acp.name,
@@ -83,10 +91,7 @@ export class ViewsService {
       }
     }
 
-    // If a user is logged in, we should ideally show REGISTERED ACPs too.
-    // However, this endpoint is public. For now, we only show PUBLIC and CREDENTIALS_LIST.
-    // Registered users can access these and see others via their private dashboard.
-
+    console.log('[DEBUG] getPublicAcps - final results:', results.length);
     return results;
   }
 

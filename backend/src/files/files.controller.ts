@@ -15,11 +15,10 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagg
 import { FilesService } from './files.service';
 import { UnitParserService } from './unit-parser.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 
 @ApiTags('ACP Files')
 @Controller('acp/:acpId/files')
-@UseGuards(JwtAuthGuard)
-@ApiBearerAuth()
 export class FilesController {
   constructor(
     private readonly filesService: FilesService,
@@ -27,12 +26,16 @@ export class FilesController {
   ) {}
 
   @Get()
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List all files for an ACP' })
   async findAll(@Param('acpId') acpId: string) {
     return this.filesService.findByAcp(acpId);
   }
 
   @Delete('all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete all files for an ACP' })
   async deleteAll(@Param('acpId') acpId: string) {
     await this.filesService.deleteAll(acpId);
@@ -40,18 +43,24 @@ export class FilesController {
   }
 
   @Get('validate-units')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate completeness of all unit files' })
   async validateUnits(@Param('acpId') acpId: string) {
     return this.unitParserService.validateUnitFiles(acpId);
   }
 
   @Get('item-list')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Extract item list with metadata from .vomd files' })
   async getItemList(@Param('acpId') acpId: string) {
     return this.unitParserService.getItemListFromFiles(acpId);
   }
 
   @Get('unit-view/:unitId')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get unit view data from uploaded files (player, definition)' })
   async getUnitView(
     @Param('acpId') acpId: string,
@@ -61,12 +70,16 @@ export class FilesController {
   }
 
   @Get(':fileId')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get file metadata' })
   async findOne(@Param('fileId') fileId: string) {
     return this.filesService.findById(fileId);
   }
 
   @Post('upload')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @UseInterceptors(FilesInterceptor('files', 100))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload files to ACP' })
@@ -78,6 +91,8 @@ export class FilesController {
   }
 
   @Get(':fileId/download')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Download a file' })
   async download(@Param('fileId') fileId: string, @Res() res: Response) {
     const { buffer, file } = await this.filesService.download(fileId);
@@ -87,6 +102,8 @@ export class FilesController {
   }
 
   @Delete(':fileId')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete a file' })
   async delete(@Param('fileId') fileId: string) {
     await this.filesService.delete(fileId);
@@ -94,6 +111,8 @@ export class FilesController {
   }
 
   @Get(':fileId/validation')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get validation result for a file' })
   async getValidation(@Param('fileId') fileId: string) {
     return this.filesService.getValidationResult(fileId);

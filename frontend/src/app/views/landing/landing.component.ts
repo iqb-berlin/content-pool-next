@@ -1,14 +1,16 @@
 import { Component, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { RouterLink, Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { forkJoin } from 'rxjs';
+import { forkJoin, map } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { PublicAcp } from '../../core/models/api.models';
+import { AuthService } from '../../core/services/auth.service';
+import { PublicAcp, Acp } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-landing',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, FormsModule],
   template: `
     <div class="landing">
       <!-- Hero -->
@@ -32,14 +34,76 @@ import { PublicAcp } from '../../core/models/api.models';
           @for (acp of acps; track acp.id) {
             <div class="card acp-card">
               <div class="acp-card-header">
-                <span class="badge" [class.badge-success]="acp.accessModel === 'PUBLIC'" [class.badge-info]="acp.accessModel !== 'PUBLIC'">
-                  {{ acp.accessModel === 'PUBLIC' ? 'Öffentlich' : 'Zugangsdaten erforderlich' }}
+                <span class="badge"
+                  [class.badge-success]="acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST'"
+                  [class.badge-info]="acp.accessModel !== 'PUBLIC' && acp.accessModel !== 'CREDENTIALS_LIST' && acp.accessModel !== 'ADMIN'"
+                  [class.badge-warning]="acp.accessModel === 'ADMIN'">
+                  @if (acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST') {
+                    Öffentlich
+                  } @else if (acp.accessModel === 'ADMIN') {
+                    Admin
+                  } @else {
+                    Zugangsdaten erforderlich
+                  }
                 </span>
               </div>
               <h3>{{ acp.name }}</h3>
               <p class="desc">{{ acp.description || 'Keine Beschreibung verfügbar.' }}</p>
               <div class="card-footer">
-                @if (acp.requiresLogin) {
+                @if (acp.accessModel === 'CREDENTIALS_LIST') {
+                  @if (loginAcpId === acp.id) {
+                    <!-- Inline login form -->
+                    <div class="inline-login-form">
+                      @if (loginError) {
+                        <div class="login-error">{{ loginError }}</div>
+                      }
+                      <form (ngSubmit)="onLoginSubmit(acp.id)">
+                        <div class="login-fields">
+                          <input
+                            type="text"
+                            [(ngModel)]="loginUsername"
+                            name="username"
+                            placeholder="Benutzername"
+                            class="login-input"
+                            [disabled]="loginLoading"
+                            required>
+                          <input
+                            type="password"
+                            [(ngModel)]="loginPassword"
+                            name="password"
+                            placeholder="Kennwort"
+                            class="login-input"
+                            [disabled]="loginLoading"
+                            required>
+                        </div>
+                        <div class="login-actions">
+                          <button
+                            type="submit"
+                            class="btn btn-primary btn-sm"
+                            [disabled]="loginLoading || !loginUsername || !loginPassword">
+                            @if (loginLoading) {
+                              <span class="spinner-inline"></span> Anmelden...
+                            } @else {
+                              Zugang öffnen
+                            }
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-outline btn-sm"
+                            [disabled]="loginLoading"
+                            (click)="cancelLogin()">
+                            Abbrechen
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  } @else {
+                    <!-- Show login button -->
+                    <button class="btn btn-primary" (click)="showLoginForm(acp.id)">
+                      <span class="btn-icon">🔑</span> Anmelden
+                    </button>
+                  }
+                } @else if (acp.requiresLogin) {
                   <a [routerLink]="['/credential-login', acp.id]" class="btn btn-primary">
                     <span class="btn-icon">🔑</span> Anmelden
                   </a>
@@ -255,6 +319,54 @@ import { PublicAcp } from '../../core/models/api.models';
     }
     .dialog-header h2 { margin-bottom: 0; }
     .dialog-body { line-height: 1.7; font-size: 0.95rem; }
+
+    /* Inline login form styles */
+    .inline-login-form {
+      width: 100%;
+    }
+    .login-error {
+      color: #e74c3c;
+      font-size: 0.85rem;
+      margin-bottom: 8px;
+      padding: 4px 8px;
+      background: rgba(231, 76, 60, 0.08);
+      border-radius: 4px;
+    }
+    .login-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .login-input {
+      padding: 8px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      font-size: 0.9rem;
+      font-family: inherit;
+    }
+    .login-input:focus {
+      outline: none;
+      border-color: var(--color-primary-light);
+      box-shadow: 0 0 0 2px rgba(41,128,185,0.15);
+    }
+    .login-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .spinner-inline {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
   `]
 })
 export class LandingComponent implements OnInit {
@@ -269,17 +381,51 @@ export class LandingComponent implements OnInit {
   activeLegalTitle: string = '';
   activeLegalContent: SafeHtml | null = null;
 
+  // Inline login form state
+  loginAcpId: string | null = null;
+  loginUsername = '';
+  loginPassword = '';
+  loginLoading = false;
+  loginError = '';
+
   constructor(
     private api: ApiService,
     private sanitizer: DomSanitizer,
+    private authService: AuthService,
+    private router: Router,
   ) {}
 
   ngOnInit() {
+    // For admins: fetch both public ACPs (with proper accessModel) and all ACPs, then merge
+    // For non-admins: just fetch public ACPs
+    const acpsRequest = this.authService.isAdmin
+      ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
+          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) => {
+            // Start with public ACPs (they have correct accessModel and requiresLogin)
+            const merged = [...publicAcps];
+            const publicIds = new Set(publicAcps.map((a: PublicAcp) => a.id));
+            // Add admin-only ACPs not in public list
+            for (const acp of allAcps) {
+              if (!publicIds.has(acp.id)) {
+                merged.push({
+                  id: acp.id,
+                  name: acp.name,
+                  description: acp.description,
+                  accessModel: 'ADMIN',
+                  requiresLogin: false,
+                });
+              }
+            }
+            return merged;
+          })
+        )
+      : this.api.getPublicAcps();
+
     forkJoin({
       settings: this.api.getPublicSettings(),
-      acps: this.api.getPublicAcps(),
+      acps: acpsRequest,
     }).subscribe(({ settings, acps }) => {
-      this.acps = acps;
+      this.acps = acps as PublicAcp[];
       this.logoUrl = settings.logoUrl;
       if (settings.landingPageHtml) {
         this.landingHtml = this.sanitizer.bypassSecurityTrustHtml(settings.landingPageHtml);
@@ -306,5 +452,40 @@ export class LandingComponent implements OnInit {
 
   closeLegalDialog() {
     this.activeLegalDialog = false;
+  }
+
+  // Inline login form handlers
+  showLoginForm(acpId: string) {
+    this.loginAcpId = acpId;
+    this.loginUsername = '';
+    this.loginPassword = '';
+    this.loginError = '';
+    this.loginLoading = false;
+  }
+
+  cancelLogin() {
+    this.loginAcpId = null;
+    this.loginUsername = '';
+    this.loginPassword = '';
+    this.loginError = '';
+    this.loginLoading = false;
+  }
+
+  onLoginSubmit(acpId: string) {
+    if (!this.loginUsername || !this.loginPassword || this.loginLoading) return;
+
+    this.loginLoading = true;
+    this.loginError = '';
+
+    this.authService.credentialLogin(acpId, this.loginUsername, this.loginPassword).subscribe({
+      next: () => {
+        this.loginLoading = false;
+        this.router.navigate(['/view', acpId, 'item-explorer']);
+      },
+      error: (err) => {
+        this.loginError = err.error?.message || 'Anmeldung fehlgeschlagen';
+        this.loginLoading = false;
+      }
+    });
   }
 }

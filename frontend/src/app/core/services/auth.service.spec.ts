@@ -9,6 +9,10 @@ describe('AuthService', () => {
     post: ReturnType<typeof vi.fn>;
     get: ReturnType<typeof vi.fn>;
   };
+  let broadcastChannelMock: {
+    postMessage: ReturnType<typeof vi.fn>;
+    onmessage: ((event: MessageEvent) => void) | null;
+  };
 
   const mockUserProfile: UserProfile = {
     id: '1',
@@ -20,8 +24,27 @@ describe('AuthService', () => {
 
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    
+    broadcastChannelMock = {
+      postMessage: vi.fn(),
+      onmessage: null,
+    };
+    
+    class BroadcastChannelMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      postMessage = broadcastChannelMock.postMessage;
+      constructor() {
+        setTimeout(() => {
+          broadcastChannelMock = this as any;
+        }, 0);
+      }
+    }
+    
+    vi.stubGlobal('BroadcastChannel', BroadcastChannelMock);
+    
     httpClientMock = {
-      post: vi.fn(),
+      post: vi.fn().mockReturnValue(of({})),
       get: vi.fn()
     };
     service = new AuthService(httpClientMock as any);
@@ -29,6 +52,8 @@ describe('AuthService', () => {
 
   afterEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
+    vi.unstubAllGlobals();
   });
 
   it('should be created', () => {
@@ -100,8 +125,39 @@ describe('AuthService', () => {
   describe('logout', () => {
     it('should remove token and clear user', () => {
       localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.post.mockReturnValue(of({}));
+      
       service.logout();
+      
       expect(localStorage.getItem('cp_token')).toBeNull();
+    });
+
+    it('should call backend logout endpoint', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.post.mockReturnValue(of({}));
+      
+      service.logout();
+      
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/logout', {});
+    });
+
+    it('should clear OIDC redirect URL from sessionStorage', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      sessionStorage.setItem('oidc_redirect_url', '/some-path');
+      httpClientMock.post.mockReturnValue(of({}));
+      
+      service.logout();
+      
+      expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
+    });
+
+    it('should broadcast logout to other tabs', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.post.mockReturnValue(of({}));
+      
+      service.logout();
+      
+      expect(broadcastChannelMock.postMessage).toHaveBeenCalledWith('logout');
     });
   });
 

@@ -26,9 +26,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    console.log(`JWT Strategy validating token for user: ${payload.sub}`);
+    console.log(`JWT Strategy validating token for user: ${payload.sub}, type: ${payload.type}`);
     
-    // Load full user with roles from database
+    // Credential users don't exist in User table - return payload directly
+    if (payload.type === 'credential') {
+      return {
+        sub: payload.sub,
+        username: payload.username,
+        isAppAdmin: false,
+        type: payload.type,
+        authType: payload.authType,
+        acpId: payload.acpId,
+        acpRoles: [],
+      };
+    }
+    
+    // Load full user with roles from database for regular users
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
       relations: ['acpRoles', 'acpRoles.acp'],
@@ -50,8 +63,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     const result = {
       sub: payload.sub,
       username: payload.username,
-      isAppAdmin: payload.isAppAdmin,
+      isAppAdmin: user.isAppAdmin,
       type: payload.type,
+      authType: payload.authType,
       acpId: payload.acpId,
       acpRoles: user.acpRoles.map(role => ({
         acpId: role.acpId,

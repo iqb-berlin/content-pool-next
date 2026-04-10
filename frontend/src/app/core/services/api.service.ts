@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Acp, AccessConfig, AcpSnapshot, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence } from '../models/api.models';
+import { Acp, AccessConfig, AcpSnapshot, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence, Credential } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -16,6 +16,9 @@ export class ApiService {
   deleteUser(id: string): Observable<void> { return this.http.delete<void>(`${this.API}/users/${id}`); }
   setAppAdmin(id: string, isAppAdmin: boolean): Observable<User> {
     return this.http.patch<User>(`${this.API}/users/${id}/app-admin`, { isAppAdmin });
+  }
+  linkOidcAccount(userId: string, oidcSub: string): Observable<any> {
+    return this.http.post(`${this.API}/auth/link-oidc`, { userId, oidcSub });
   }
 
   // Settings
@@ -48,8 +51,20 @@ export class ApiService {
   updateAccessConfig(id: string, data: any): Observable<AccessConfig> {
     return this.http.put<AccessConfig>(`${this.API}/acp/${id}/access`, data);
   }
-  uploadCredentials(id: string, credentials: any[]): Observable<any> {
-    return this.http.post(`${this.API}/acp/${id}/access/credentials`, { credentials });
+  uploadCredentials(id: string, credentials: any[], mode: 'replace' | 'append' | 'upsert' = 'replace'): Observable<any> {
+    return this.http.post(`${this.API}/acp/${id}/access/credentials?mode=${mode}`, { credentials });
+  }
+  getCredentials(id: string): Observable<Credential[]> {
+    return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
+  }
+  createCredential(acpId: string, username: string, password: string): Observable<Credential> {
+    return this.http.post<Credential>(`${this.API}/acp/${acpId}/access/credentials/single`, { username, password });
+  }
+  updateCredential(acpId: string, credentialId: string, data: { username?: string; password?: string }): Observable<Credential> {
+    return this.http.patch<Credential>(`${this.API}/acp/${acpId}/access/credentials/${credentialId}`, data);
+  }
+  deleteCredential(acpId: string, credentialId: string): Observable<void> {
+    return this.http.delete<void>(`${this.API}/acp/${acpId}/access/credentials/${credentialId}`);
   }
   updateMetadataColumns(id: string, data: any): Observable<AccessConfig> {
     return this.http.put<AccessConfig>(`${this.API}/acp/${id}/metadata-columns`, data);

@@ -9,7 +9,8 @@ export interface JwtPayload {
   sub: string;
   username: string;
   isAppAdmin: boolean;
-  type: 'user' | 'credential';
+  type: 'user' | 'credential' | 'oidc';
+  authType?: 'local' | 'oidc';
   acpId?: string;
 }
 
@@ -39,6 +40,12 @@ export class AuthService {
 
   async login(username: string, password: string) {
     const user = await this.validateUser(username, password);
+    
+    // Admin users must use OIDC
+    if (user.isAppAdmin) {
+      throw new UnauthorizedException('Admin users must login via OIDC');
+    }
+    
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
@@ -68,6 +75,13 @@ export class AuthService {
 
     // Check time validity
     const now = new Date();
+    console.log('Login check:', {
+      now: now.toISOString(),
+      validFrom: accessConfig.validFrom?.toISOString(),
+      validUntil: accessConfig.validUntil?.toISOString(),
+      nowLessThanValidFrom: accessConfig.validFrom ? now < accessConfig.validFrom : null,
+      nowGreaterThanValidUntil: accessConfig.validUntil ? now > accessConfig.validUntil : null,
+    });
     if (accessConfig.validFrom && now < accessConfig.validFrom) {
       throw new UnauthorizedException('Access period has not started yet');
     }
@@ -122,6 +136,64 @@ export class AuthService {
         acpName: role.acp?.name,
         role: role.role,
       })),
+    };
+  }
+
+  async generateTokenForOidcUser(userInfo: any) {
+    const payload: JwtPayload = {
+      sub: userInfo.sub,
+      username: userInfo.username,
+      isAppAdmin: userInfo.isAppAdmin,
+      type: 'oidc',
+      authType: 'oidc',
+    };
+
+    return {
+      accessToken: this.jwtService.sign(payload),
+      user: {
+        id: userInfo.sub,
+        username: userInfo.username,
+        displayName: userInfo.displayName,
+        isAppAdmin: userInfo.isAppAdmin,
+      },
+    };
+  }
+
+  async linkOidcAccount(userId: string, oidcSub: string) {
+    // Check if user exists
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Check if OIDC sub is already linked to another user
+    const existingUser = await this.userRepository.findOne({ where: { oidcSub } });
+    if (existingUser && existingUser.id !== userId) {
+      throw new UnauthorizedException('OIDC account already linked to another user');
+    }
+
+    // Update user with OIDC sub
+    user.oidcSub = oidcSub;
+    await this.userRepository.save(user);
+
+    return {
+      message: 'OIDC account linked successfully',
+      user: {
+        id: user.id,
+        username: user.username,
+        oidcSub: user.oidcSub,
+      },
+    };
+  }
+
+  async logout(userId: string) {
+    // Audit logging - in production, this could write to a database
+    console.log(`[AUDIT] User ${userId} logged out at ${new Date().toISOString()}`);
+
+    return {
+      message: 'Logout recorded',
+      userId,
+      timestamp: new Date().toISOString(),
     };
   }
 }

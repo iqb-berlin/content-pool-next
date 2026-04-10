@@ -112,9 +112,42 @@ export class UploadCredentialsDto {
   credentials!: CredentialEntryDto[];
 }
 
+export class CreateCredentialDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  username!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(4)
+  password!: string;
+}
+
+export class UpdateCredentialDto {
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  username?: string;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @MinLength(4)
+  @IsOptional()
+  password?: string;
+}
+
 export class CreateSnapshotDto {
   @ApiPropertyOptional({ description: 'Changelog text describing changes since last snapshot' })
   @IsString()
   @IsOptional()
   changelog?: string;
+}
+
+export class CredentialResponseDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  username!: string;
 }

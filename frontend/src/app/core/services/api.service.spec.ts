@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { of } from 'rxjs';
 import { ApiService } from './api.service';
-import { Acp, User, AppSettings, AcpFile, AcpSnapshot, Comment, PublicAcp } from '../models/api.models';
+import { Acp, User, AppSettings, AcpFile } from '../models/api.models';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -312,7 +312,18 @@ describe('ApiService', () => {
         expect(true).toBe(true);
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials', { credentials });
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials?mode=replace', { credentials });
+    });
+
+    it('should upload credentials with append mode', () => {
+      const credentials = [{ username: 'user1', password: 'pass' }];
+      httpClientMock.post.mockReturnValue(of({}));
+
+      service.uploadCredentials('acp1', credentials, 'append').subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/access/credentials?mode=append', { credentials });
     });
 
     it('should update metadata columns', () => {

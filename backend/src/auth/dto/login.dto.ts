@@ -29,3 +29,10 @@ export class CredentialLoginDto {
   @IsNotEmpty()
   password!: string;
 }
+
+export class OidcCallbackDto {
+  @ApiProperty({ description: 'ID token from OIDC provider' })
+  @IsString()
+  @IsNotEmpty()
+  idToken!: string;
+}

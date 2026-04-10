@@ -16,6 +16,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ghcr.io/iqb-berlin/content-pool-next/backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -56,6 +57,7 @@ services:
     restart: unless-stopped
 
   frontend-build:
+    image: ghcr.io/iqb-berlin/content-pool-next/frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod

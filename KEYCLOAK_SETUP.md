@@ -1,147 +1,265 @@
 # Keycloak Setup for IQB ContentPool
 
-Keycloak is now integrated as an Identity Provider for both development and production environments.
+Keycloak is integrated as an Identity Provider for both development and production environments.
 
-## Quick Start (Development)
+This setup supports **two deployment modes**:
+- **Mode 1: IP-Only** - Use when you only have a server IP (HTTP only, less secure)
+- **Mode 2: Domain with HTTPS** - Use when you have a domain with SSL certificates (recommended)
 
-1. Start all services:
-   ```bash
-   docker-compose up -d
-   ```
+---
 
-2. Access Keycloak Admin Console:
-   - URL: http://localhost:8080/admin
-   - Username: `admin`
-   - Password: `admin`
+## Mode 1: IP-Only Deployment (HTTP)
 
-3. Keycloak is pre-configured with:
-   - Realm: `iqb`
-   - Client: `contentpool` (public client)
-   - Pre-created users:
-     - `admin` / `admin123` (has admin role)
-     - `user` / `user123` (regular user)
+**⚠️ Security Warning**: This mode uses unencrypted HTTP. Tokens are transmitted in plain text.
+- Acceptable for: Private networks, testing, temporary deployments
+- **Not recommended for**: Public internet, production with sensitive data
 
-4. Open the application:
-   - Frontend: http://localhost:4200
-   - Login with "Mit Keycloak anmelden" button
+### Prerequisites
 
-## IP-Only Deployment (No Domain)
-
-If you only have a server IP address (no domain name):
+- Server with a public IP address
+- Ports 80 and 8080 accessible (configure firewall)
 
 ### 1. Configure Environment Variables
 
-```bash
-# Replace 203.0.113.1 with your actual server IP
-OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
-OIDC_PUBLIC_ISSUER_URL=http://203.0.113.1:8080/realms/iqb
-OIDC_REDIRECT_URI=http://203.0.113.1/auth/callback
-OIDC_CLIENT_ID=contentpool
-OIDC_SCOPE=openid profile email
+Copy `.env.example` to `.env` and use **Mode 1** configuration:
 
-# Keycloak runs in dev mode for IP-only (allows HTTP)
+```bash
+# ════════════════════════════════════════════════════════
+# MODE 1: IP-ONLY DEPLOYMENT (HTTP - Less Secure)
+# ════════════════════════════════════════════════════════
+KEYCLOAK_HOSTNAME=                    # Leave empty for IP mode
 KEYCLOAK_COMMAND=["start-dev", "--import-realm"]
 KC_HTTP_ENABLED=true
 KC_HOSTNAME_STRICT_HTTPS=false
 KC_PROXY=none
+KEYCLOAK_PORT_EXPOSE=8080:8080        # Bind to all interfaces
 
+OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
+OIDC_PUBLIC_ISSUER_URL=http://YOUR_SERVER_IP:8080/realms/iqb
+OIDC_REDIRECT_URI=http://YOUR_SERVER_IP/auth/callback
+CORS_ORIGIN=http://YOUR_SERVER_IP
+
+# Database (same for both modes)
+KEYCLOAK_DB_NAME=keycloak
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=change-me-to-a-secure-password
+
+# Admin credentials
 KEYCLOAK_ADMIN_USER=admin
-KEYCLOAK_ADMIN_PASSWORD=your-secure-password
+KEYCLOAK_ADMIN_PASSWORD=change-me-to-a-secure-password
 
-# Database
+# Application settings
 POSTGRES_DB=content_pool
 POSTGRES_USER=content_pool
-POSTGRES_PASSWORD=secure-password
-
-# JWT
-JWT_SECRET=your-random-secret-min-32-chars
+POSTGRES_PASSWORD=change-me-to-a-secure-password
+JWT_SECRET=change-me-to-a-random-string-at-least-32-chars
 JWT_EXPIRATION=24h
-
-# CORS - set to your server IP
-CORS_ORIGIN=http://203.0.113.1
 ```
 
-### 2. Deploy
+**Replace `YOUR_SERVER_IP`** with your actual server IP address.
+
+### 2. Update realm-export.json
+
+Edit `keycloak/realm-export.json` and update the IP placeholder:
+
+```json
+"redirectUris": [
+  "http://YOUR_SERVER_IP/*",
+  "http://YOUR_SERVER_IP:80/*"
+],
+"webOrigins": [
+  "http://YOUR_SERVER_IP",
+  "http://YOUR_SERVER_IP:80"
+]
+```
+
+### 3. Configure Firewall
+
+Open port 8080 for Keycloak:
+
+```bash
+# Ubuntu/Debian with ufw
+sudo ufw allow 8080/tcp
+
+# CentOS/RHEL with firewall-cmd
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --reload
+```
+
+### 4. Deploy
 
 ```bash
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-### 3. Access
+### 5. Access
 
-- Application: http://203.0.113.1 (via nginx on port 80)
-- Keycloak Admin: http://203.0.113.1:8080/admin
-  - Username: `admin`
+- Application: `http://YOUR_SERVER_IP`
+- Keycloak Admin: `http://YOUR_SERVER_IP:8080/admin`
+  - Username: `admin` (from .env)
   - Password: (from .env)
 
-### 4. Important Notes for IP Deployments
+### 6. Create Admin User
 
-- Keycloak runs in `start-dev` mode which allows HTTP
-- **Port 8080 must be open in your firewall** for Keycloak:
-  ```bash
-  # Example with ufw (Ubuntu)
-  sudo ufw allow 8080/tcp
-  
-  # Example with firewall-cmd (CentOS/RHEL)
-  sudo firewall-cmd --permanent --add-port=8080/tcp
-  sudo firewall-cmd --reload
-  ```
-- No HTTPS means tokens are transmitted unencrypted - **security risk on public networks**
-- The pre-configured Keycloak client allows all redirect URIs (`http://*/*`, `https://*/*`) to work with any IP
-- Consider using a reverse proxy with self-signed certificates for better security
+1. Login to Keycloak Admin Console
+2. Select `iqb` realm → Users → Add user
+3. Set username, email, first/last name
+4. Credentials tab → Set password
+5. Role mappings → Assign `admin` realm role
 
-## Configuration
+---
 
-### Environment Variables
+## Mode 2: Domain Deployment (HTTPS) - Recommended
 
-| Variable | Description | Default (Dev) |
-|----------|-------------|---------------|
-| `OIDC_ISSUER_URL` | Internal URL for backend-to-Keycloak API | `http://keycloak:8080/realms/iqb` |
-| `OIDC_PUBLIC_ISSUER_URL` | Public URL for browser redirects | `http://localhost:8080/realms/iqb` |
-| `OIDC_CLIENT_ID` | Keycloak client ID | `contentpool` |
-| `OIDC_REDIRECT_URI` | OAuth redirect URI | `http://localhost:4200/auth/callback` |
-| `OIDC_SCOPE` | OAuth scopes | `openid profile email` |
-| `KEYCLOAK_ADMIN_USER` | Keycloak admin username | `admin` |
-| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin password | `admin` |
-| `KEYCLOAK_HOSTNAME` | Public hostname for Keycloak (prod domain) | - |
-| `KEYCLOAK_COMMAND` | Keycloak start command | `start-dev` |
-| `KC_HTTP_ENABLED` | Enable HTTP (required for IP-only) | `true` |
-| `KC_HOSTNAME_STRICT_HTTPS` | Require HTTPS (disable for IP-only) | `false` |
-| `KC_PROXY` | Proxy mode: `none`, `edge`, or `reencrypt` | `none` |
+### Prerequisites
+
+- A domain name (e.g., `yourdomain.com`)
+- Valid SSL/TLS certificates (Let's Encrypt recommended)
+- DNS configured for `yourdomain.com` and `auth.yourdomain.com`
+
+### 1. Configure Environment Variables
+
+Copy `.env.example` to `.env` and use **Mode 2** configuration:
+
+```bash
+# ════════════════════════════════════════════════════════
+# MODE 2: DOMAIN DEPLOYMENT (HTTPS - Recommended)
+# ════════════════════════════════════════════════════════
+KEYCLOAK_HOSTNAME=auth.yourdomain.com
+KEYCLOAK_COMMAND=["start", "--optimized", "--import-realm"]
+KC_HTTP_ENABLED=false
+KC_HOSTNAME_STRICT_HTTPS=true
+KC_PROXY=edge
+KEYCLOAK_PORT_EXPOSE=127.0.0.1:8080:8080  # Local only
+
+OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
+OIDC_PUBLIC_ISSUER_URL=https://auth.yourdomain.com/realms/iqb
+OIDC_REDIRECT_URI=https://yourdomain.com/auth/callback
+CORS_ORIGIN=https://yourdomain.com
+
+# Database
+KEYCLOAK_DB_NAME=keycloak
+KEYCLOAK_DB_USER=keycloak
+KEYCLOAK_DB_PASSWORD=change-me-to-a-secure-password
+
+# Admin credentials
+KEYCLOAK_ADMIN_USER=admin
+KEYCLOAK_ADMIN_PASSWORD=change-me-to-a-very-secure-password
+
+# Application settings
+POSTGRES_DB=content_pool
+POSTGRES_USER=content_pool
+POSTGRES_PASSWORD=change-me-to-a-secure-password
+JWT_SECRET=change-me-to-a-random-string-at-least-32-chars
+JWT_EXPIRATION=24h
+```
+
+### 2. Update realm-export.json
+
+Edit `keycloak/realm-export.json` and update the domain placeholders:
+
+```json
+"redirectUris": [
+  "https://yourdomain.com/*"
+],
+"webOrigins": [
+  "https://yourdomain.com"
+]
+```
+
+### 3. Configure SSL Certificates
+
+**Option A: Let's Encrypt (Recommended)**
+
+1. Obtain certificates:
+   ```bash
+   sudo certbot certonly --standalone -d yourdomain.com -d auth.yourdomain.com
+   ```
+
+2. Uncomment HTTPS in `docker-compose.prod.yml`:
+   ```yaml
+   ports:
+     - "80:80"
+     - "443:443"
+   volumes:
+     - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+     - /etc/letsencrypt:/etc/letsencrypt:ro
+   ```
+
+3. Update `nginx.prod.conf`:
+   ```nginx
+   server_name yourdomain.com;
+   ```
+
+**Option B: External Load Balancer**
+
+If using AWS ALB, Cloudflare, etc.:
+- Configure load balancer to forward HTTP to nginx
+- Ensure `X-Forwarded-Proto: https` header is passed
+
+### 4. Deploy
+
+```bash
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### 5. Access
+
+- Application: `https://yourdomain.com`
+- Keycloak Admin: `https://auth.yourdomain.com/admin`
+
+### 6. Create Admin User
+
+Same steps as IP mode: Keycloak Admin → Users → Add user → Assign `admin` role
+
+### 7. Security Hardening
+
+1. **Restrict admin console access** in `nginx.prod.conf`:
+   ```nginx
+   location /admin/ {
+       # ... proxy settings ...
+       allow 10.0.0.0/8;     # Your office/VPN IP
+       deny all;
+   }
+   ```
+
+2. **Enable 2FA** in Keycloak: Realm Settings → Authentication → OTP
+
+3. **Review brute force settings**: Realm Settings → Security Defenses
+
+## Configuration Reference
+
+### Mode-Specific Variables
+
+| Variable | IP-Only Mode | Domain/HTTPS Mode |
+|----------|--------------|-------------------|
+| `KEYCLOAK_HOSTNAME` | Empty or your IP | `auth.yourdomain.com` |
+| `KEYCLOAK_COMMAND` | `["start-dev", "--import-realm"]` | `["start", "--optimized", "--import-realm"]` |
+| `KC_HTTP_ENABLED` | `true` | `false` |
+| `KC_HOSTNAME_STRICT_HTTPS` | `false` | `true` |
+| `KC_PROXY` | `none` | `edge` |
+| `KEYCLOAK_PORT_EXPOSE` | `8080:8080` (all interfaces) | `127.0.0.1:8080:8080` (localhost only) |
+| `OIDC_ISSUER_URL` | `http://keycloak:8080/realms/iqb` | `http://keycloak:8080/realms/iqb` |
+| `OIDC_PUBLIC_ISSUER_URL` | `http://YOUR_IP:8080/realms/iqb` | `https://auth.yourdomain.com/realms/iqb` |
+
+### Common Variables (Required for Both Modes)
+
+| Variable | Description |
+|----------|-------------|
+| `KEYCLOAK_DB_PASSWORD` | PostgreSQL password for Keycloak database |
+| `KEYCLOAK_ADMIN_PASSWORD` | Keycloak admin password |
+| `POSTGRES_PASSWORD` | Application database password |
+| `JWT_SECRET` | Secret for JWT signing (min 32 chars) |
 
 ### Development Setup
 
-All defaults are pre-configured in `docker-compose.yml`. Just run:
+For local development, use the development compose file:
 
 ```bash
 docker-compose up -d
 ```
 
-### Production Setup (With Domain)
-
-1. Copy `.env.example` to `.env` and configure:
-   ```bash
-   # Required for production
-   KEYCLOAK_HOSTNAME=auth.yourdomain.com
-   KEYCLOAK_ADMIN_PASSWORD=your-secure-password
-
-   # OIDC URLs
-   OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb  # Internal (Docker)
-   OIDC_PUBLIC_ISSUER_URL=https://auth.yourdomain.com/realms/iqb  # Public
-   OIDC_REDIRECT_URI=https://yourdomain.com/auth/callback
-
-   # Keycloak production mode settings
-   KEYCLOAK_COMMAND=["start", "--optimized", "--import-realm"]
-   KC_HOSTNAME_STRICT=true
-   KC_HOSTNAME_STRICT_HTTPS=true
-   KC_PROXY=edge
-   ```
-
-2. For HTTPS production, Keycloak runs in production mode with `KC_HOSTNAME_STRICT_HTTPS=true`
-
-3. Uncomment the HTTPS port and Let's Encrypt volume in `docker-compose.prod.yml`
-
-4. To proxy Keycloak through nginx (optional), uncomment the Keycloak location block in `nginx.prod.conf`
+This uses HTTP, pre-configured test users (admin/admin123, user/user123), and H2 database.
 
 ## How It Works
 
@@ -203,10 +321,99 @@ Update `redirectUris` in `keycloak/realm-export.json` or via Keycloak Admin Cons
 - Verify client secret matches (if using confidential client)
 - Ensure realms and clients exist in Keycloak
 
-## Security Notes
+## Security Comparison
 
-- **Development**: Uses `start-dev` mode with HTTP enabled
-- **Production**: Uses `start` mode with HTTPS enforced, `KC_HOSTNAME_STRICT_HTTPS=true`
-- Change default admin password in production
-- Use strong `JWT_SECRET` in production
-- Consider using confidential client with client secret for additional security
+| Feature | IP-Only (HTTP) | Domain (HTTPS) |
+|---------|----------------|----------------|
+| Encryption | ❌ None (tokens in plain text) | ✅ TLS 1.2/1.3 |
+| Brute Force Protection | ✅ Enabled | ✅ Enabled |
+| Client Type | Confidential (secret required) | Confidential (secret required) |
+| Hardcoded Users | ❌ None (must create) | ❌ None (must create) |
+| Database | ✅ PostgreSQL | ✅ PostgreSQL |
+| Production Mode | ❌ Development mode | ✅ Optimized production |
+
+**⚠️ IP-Only Mode Warnings:**
+- Tokens are transmitted unencrypted
+- Susceptible to man-in-the-middle attacks on public networks
+- Use only for testing or private networks
+- Migrate to HTTPS as soon as you have a domain
+
+## Troubleshooting
+
+### "Invalid redirect_uri" error
+
+The redirect URI in the request must match exactly what's configured in Keycloak.
+
+**Check/replace in `keycloak/realm-export.json` before first deployment:**
+```json
+"redirectUris": [
+  "http://YOUR_IP/*",           // For IP mode
+  "https://yourdomain.com/*"    // For domain mode
+]
+```
+
+**Or fix via Keycloak Admin Console:**
+1. Login to Keycloak Admin Console
+2. Select `iqb` realm → Clients → `contentpool`
+3. Valid Redirect URIs → Add your URL
+
+### IP Mode: "Cannot connect to Keycloak"
+
+1. **Check firewall**: Port 8080 must be open
+   ```bash
+   sudo ufw status  # Ubuntu
+   sudo firewall-cmd --list-ports  # CentOS
+   ```
+
+2. **Verify port binding**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml ps
+   # Should show 0.0.0.0:8080->8080/tcp or YOUR_IP:8080->8080/tcp
+   ```
+
+3. **Check environment**: Ensure `KEYCLOAK_PORT_EXPOSE=8080:8080` (not 127.0.0.1)
+
+### Domain Mode: SSL/TLS Issues
+
+1. **Certificate errors**:
+   - Verify certificates mounted in docker-compose.prod.yml
+   - Check permissions: `sudo ls -la /etc/letsencrypt/live/yourdomain.com/`
+
+2. **Hostname mismatch**:
+   - Ensure `KEYCLOAK_HOSTNAME` matches certificate CN/SAN
+   - Check: `openssl x509 -in /etc/letsencrypt/live/yourdomain.com/cert.pem -text | grep DNS`
+
+3. **Mixed content errors** (HTTP/HTTPS mixed):
+   - Verify all URLs in `.env` use `https://`
+   - Check `CORS_ORIGIN` matches your domain
+
+### Database Connection Issues
+
+```bash
+# Check logs
+docker-compose -f docker-compose.prod.yml logs keycloak
+
+# Verify database is healthy
+docker-compose -f docker-compose.prod.yml ps
+
+# Common fixes:
+# 1. Ensure KEYCLOAK_DB_PASSWORD is set
+# 2. Check keycloak-db container is running
+# 3. Verify network connectivity: docker network inspect content-pool-next_keycloak-network
+```
+
+### Migrating from IP to Domain
+
+When you get a domain, follow these steps:
+
+1. **Update DNS**: Point domain and auth subdomain to your server IP
+2. **Obtain SSL certificates**: Use Let's Encrypt or your provider
+3. **Update `.env`**: Switch from Mode 1 to Mode 2 configuration
+4. **Update `realm-export.json`**: Replace IP with domain in redirect URIs
+5. **Update nginx**: Add HTTPS configuration
+6. **Restart services**:
+   ```bash
+   docker-compose -f docker-compose.prod.yml down
+   docker-compose -f docker-compose.prod.yml up -d
+   ```
+7. **Verify**: Test login at `https://yourdomain.com`

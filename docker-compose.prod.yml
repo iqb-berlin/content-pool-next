@@ -1,34 +1,74 @@
 # Production Docker Compose for IQB ContentPool
 services:
+  keycloak-db:
+    image: postgres:16-alpine
+    container_name: keycloak-db
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD must be set}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER:-keycloak} -d ${KEYCLOAK_DB_NAME:-keycloak}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - keycloak-network
+
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     container_name: keycloak
-    # Use 'start-dev' for IP-only without HTTPS, 'start --optimized' for domain with HTTPS
-    command: ${KEYCLOAK_COMMAND:-["start-dev", "--import-realm"]}
+    # MODE: IP-only (HTTP) or Domain (HTTPS)
+    # IP Mode:   command: ["start-dev", "--import-realm"]
+    # Domain Mode: command: ["start", "--optimized", "--import-realm"]
+    command: ${KEYCLOAK_COMMAND:-["start", "--optimized", "--import-realm"]}
     environment:
-      # Hostname - set for domain deployments, leave empty for IP-only
+      # Database configuration
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?KEYCLOAK_DB_PASSWORD must be set}
+      # Hostname configuration
+      # IP Mode: leave empty or set to your IP
+      # Domain Mode: set to your auth domain (e.g., auth.yourdomain.com)
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-}
-      KC_HOSTNAME_STRICT: ${KEYCLOAK_HOSTNAME_STRICT:-false}
-      KC_HOSTNAME_STRICT_BACKCHANNEL: ${KEYCLOAK_HOSTNAME_STRICT_BACKCHANNEL:-false}
-      # HTTP/HTTPS settings - enable HTTP for IP-only deployments
-      KC_HTTP_ENABLED: ${KC_HTTP_ENABLED:-true}
-      KC_HOSTNAME_STRICT_HTTPS: ${KC_HOSTNAME_STRICT_HTTPS:-false}
-      # Proxy - use 'edge' if behind nginx with HTTPS, 'none' for direct HTTP
-      KC_PROXY: ${KC_PROXY:-none}
+      KC_HOSTNAME_STRICT: ${KEYCLOAK_HOSTNAME_STRICT:-true}
+      KC_HOSTNAME_STRICT_BACKCHANNEL: ${KEYCLOAK_HOSTNAME_STRICT_BACKCHANNEL:-true}
+      # HTTP/HTTPS settings
+      # IP Mode: KC_HTTP_ENABLED=true, KC_HOSTNAME_STRICT_HTTPS=false
+      # Domain Mode: KC_HTTP_ENABLED=false, KC_HOSTNAME_STRICT_HTTPS=true
+      KC_HTTP_ENABLED: ${KC_HTTP_ENABLED:-false}
+      KC_HTTPS_PORT: 8443
+      KC_HOSTNAME_STRICT_HTTPS: ${KC_HOSTNAME_STRICT_HTTPS:-true}
+      # Proxy mode
+      # IP Mode: KC_PROXY=none
+      # Domain Mode: KC_PROXY=edge (if behind nginx with HTTPS)
+      KC_PROXY: ${KC_PROXY:-edge}
       KC_HEALTH_ENABLED: "true"
+      # Admin credentials - MUST be changed from defaults
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
+    # Port exposure - only needed for IP mode without reverse proxy
+    # In domain mode with nginx, Keycloak is accessed via proxy (no direct port needed)
     ports:
-      - "8080:8080"
+      - ${KEYCLOAK_PORT_EXPOSE:-127.0.0.1:8080:8080}
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
-      - keycloak-data:/opt/keycloak/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    networks:
+      - keycloak-network
+      - app-network
 
   content-pool-db:
     image: postgres:16-alpine
@@ -102,9 +142,16 @@ services:
       - content-pool-api
       - content-pool-web
       - keycloak
+    networks:
+      - app-network
+      - keycloak-network
     restart: unless-stopped
 
 volumes:
   content-pool-db-data:
   uploads:
-  keycloak-data:
+  keycloak-db-data:
+
+networks:
+  app-network:
+  keycloak-network:

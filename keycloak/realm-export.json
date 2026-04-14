@@ -3,13 +3,13 @@
   "enabled": true,
   "displayName": "IQB ContentPool",
   "displayNameHtml": "<div class=\"kc-logo-text\"><span>IQB ContentPool</span></div>",
-  "sslRequired": "none",
+  "sslRequired": "external",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
-  "bruteForceProtected": false,
+  "bruteForceProtected": true,
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
   "minimumQuickLoginWaitSeconds": 60,
@@ -77,20 +77,16 @@
       "clientAuthenticatorType": "client-secret",
       "secret": "contentpool-secret",
       "redirectUris": [
-        "http://localhost:4200/*",
-        "http://localhost:4201/*",
-        "http://localhost/*",
-        "http://localhost:8080/*",
-        "http://*/*",
-        "https://*/*"
+        "https://yourdomain.com/*",
+        "https://auth.yourdomain.com/*",
+        "http://YOUR_SERVER_IP/*",
+        "http://YOUR_SERVER_IP:80/*"
       ],
       "webOrigins": [
-        "http://localhost:4200",
-        "http://localhost:4201",
-        "http://localhost",
-        "http://localhost:8080",
-        "http://*",
-        "https://*"
+        "https://yourdomain.com",
+        "https://auth.yourdomain.com",
+        "http://YOUR_SERVER_IP",
+        "http://YOUR_SERVER_IP:80"
       ],
       "notBefore": 0,
       "bearerOnly": false,
@@ -99,7 +95,7 @@
       "implicitFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-      "publicClient": true,
+      "publicClient": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
@@ -227,48 +223,7 @@
       }
     }
   ],
-  "users": [
-    {
-      "id": "admin-user-id",
-      "username": "admin",
-      "enabled": true,
-      "email": "admin@iqb.example",
-      "emailVerified": true,
-      "firstName": "Admin",
-      "lastName": "User",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "admin123",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["admin"],
-      "clientRoles": {
-        "contentpool": ["admin"]
-      }
-    },
-    {
-      "id": "regular-user-id",
-      "username": "user",
-      "enabled": true,
-      "email": "user@iqb.example",
-      "emailVerified": true,
-      "firstName": "Regular",
-      "lastName": "User",
-      "credentials": [
-        {
-          "type": "password",
-          "value": "user123",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["user"],
-      "clientRoles": {
-        "contentpool": ["user"]
-      }
-    }
-  ],
+  "users": [],
   "browserSecurityHeaders": {
     "contentSecurityPolicyReportOnly": "",
     "xContentTypeOptions": "nosniff",

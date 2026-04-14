@@ -1,0 +1,319 @@
+{
+  "realm": "iqb",
+  "enabled": true,
+  "displayName": "IQB ContentPool",
+  "displayNameHtml": "<div class=\"kc-logo-text\"><span>IQB ContentPool</span></div>",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 30,
+  "roles": {
+    "realm": [
+      {
+        "id": "admin-role-id",
+        "name": "admin",
+        "description": "Application administrator",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "iqb"
+      },
+      {
+        "id": "user-role-id",
+        "name": "user",
+        "description": "Regular user",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "iqb"
+      }
+    ],
+    "client": {
+      "contentpool": [
+        {
+          "id": "client-admin-role-id",
+          "name": "admin",
+          "description": "ContentPool administrator",
+          "composite": false,
+          "clientRole": true,
+          "containerId": "contentpool"
+        },
+        {
+          "id": "client-user-role-id",
+          "name": "user",
+          "description": "ContentPool user",
+          "composite": false,
+          "clientRole": true,
+          "containerId": "contentpool"
+        }
+      ]
+    }
+  },
+  "defaultRole": {
+    "name": "user",
+    "description": "Regular user"
+  },
+  "requiredCredentials": ["password"],
+  "clients": [
+    {
+      "id": "contentpool-client-id",
+      "clientId": "contentpool",
+      "name": "ContentPool Application",
+      "description": "IQB ContentPool OIDC Client",
+      "rootUrl": "",
+      "adminUrl": "",
+      "baseUrl": "",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "contentpool-secret",
+      "redirectUris": [
+        "http://localhost:4200/*",
+        "http://localhost:4201/*",
+        "http://localhost/*",
+        "http://localhost:8080/*",
+        "http://*/*",
+        "https://*/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200",
+        "http://localhost:4201",
+        "http://localhost",
+        "http://localhost:8080",
+        "http://*",
+        "https://*"
+      ],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "oidc.ciba.grant.enabled": "false",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": true,
+      "nodeReRegistrationTimeout": -1,
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "email"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "preferred_username"
+          }
+        },
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "realm_access.roles"
+          }
+        }
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "web-origins",
+      "description": "OpenID Connect scope for add allowed web origins to the access token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "acr",
+      "description": "OpenID Connect scope for add acr (authentication context class reference) to the token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "profile",
+      "description": "OpenID Connect built-in scope: profile",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "${profileScopeConsentText}"
+      }
+    },
+    {
+      "name": "roles",
+      "description": "OpenID Connect scope for add user roles to the access token",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "false",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "email",
+      "description": "OpenID Connect built-in scope: email",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "true",
+        "consent.screen.text": "${emailScopeConsentText}"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "admin-user-id",
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@iqb.example",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"],
+      "clientRoles": {
+        "contentpool": ["admin"]
+      }
+    },
+    {
+      "id": "regular-user-id",
+      "username": "user",
+      "enabled": true,
+      "email": "user@iqb.example",
+      "emailVerified": true,
+      "firstName": "Regular",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"],
+      "clientRoles": {
+        "contentpool": ["user"]
+      }
+    }
+  ],
+  "browserSecurityHeaders": {
+    "contentSecurityPolicyReportOnly": "",
+    "xContentTypeOptions": "nosniff",
+    "xRobotsTag": "none",
+    "xFrameOptions": "SAMEORIGIN",
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+    "xXSSProtection": "1; mode=block",
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+  },
+  "smtpServer": {},
+  "eventsEnabled": false,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": [],
+  "adminEventsEnabled": false,
+  "adminEventsDetailsEnabled": false,
+  "identityProviders": [],
+  "identityProviderMappers": [],
+  "components": {
+    "org.keycloak.keys.KeyProvider": [
+      {
+        "name": "rsa-generated",
+        "providerId": "rsa-generated",
+        "subComponents": {},
+        "config": {
+          "priority": ["100"]
+        }
+      },
+      {
+        "name": "hmac-generated",
+        "providerId": "hmac-generated",
+        "subComponents": {},
+        "config": {
+          "priority": ["100"],
+          "algorithm": ["HS256"]
+        }
+      }
+    ]
+  },
+  "internationalizationEnabled": false,
+  "supportedLocales": [],
+  "browserFlow": "browser",
+  "registrationFlow": "registration",
+  "directGrantFlow": "direct grant",
+  "resetCredentialsFlow": "reset credentials",
+  "clientAuthenticationFlow": "clients",
+  "dockerAuthenticationFlow": "docker auth",
+  "keycloakVersion": "24.0.1"
+}

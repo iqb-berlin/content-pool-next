@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: contentpool_dev
       POSTGRES_DB: contentpool
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -31,10 +31,13 @@ services:
       JWT_EXPIRATION: 24h
       FILE_STORAGE_PATH: /app/uploads
       CORS_ORIGIN: http://localhost:4200
-      # OIDC Configuration (optional for dev)
-      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:4200/auth/callback}
+      # OIDC Configuration (Keycloak)
+      # Internal URL for backend-to-keycloak communication
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://keycloak:8080/realms/iqb}
+      # Public URL for frontend browser redirects (must be accessible from browser)
+      OIDC_PUBLIC_ISSUER_URL: ${OIDC_PUBLIC_ISSUER_URL:-http://localhost:8080/realms/iqb}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-contentpool}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:4201/auth/callback}
       OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
     ports:
       - "3000:3000"
@@ -44,18 +47,48 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "4200:4200"
+      - "4201:4200"
     volumes:
       - ./frontend/src:/app/src
     depends_on:
       - backend
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: 8080
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HEALTH_ENABLED: "true"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+      - keycloak-data:/opt/keycloak/data
+    healthcheck:
+      test: ["CMD-SHELL", "echo > /dev/tcp/localhost/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    depends_on:
+      - db
+
 volumes:
   pgdata:
   uploads:
+  keycloak-data:

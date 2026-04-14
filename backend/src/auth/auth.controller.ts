@@ -19,9 +19,11 @@ export class AuthController {
   @Get('oidc-config')
   @ApiOperation({ summary: 'Get OIDC configuration' })
   async getOidcConfig() {
+    // Use public issuer URL for frontend, fallback to internal URL if not set
+    const publicIssuerUrl = process.env.OIDC_PUBLIC_ISSUER_URL || process.env.OIDC_ISSUER_URL;
     return {
       enabled: this.oidcValidationService.isOidcEnabled(),
-      issuerUrl: process.env.OIDC_ISSUER_URL || null,
+      issuerUrl: publicIssuerUrl || null,
       clientId: process.env.OIDC_CLIENT_ID || null,
       redirectUri: process.env.OIDC_REDIRECT_URI || 'http://localhost:4200/auth/callback',
       scope: process.env.OIDC_SCOPE || 'openid profile email',

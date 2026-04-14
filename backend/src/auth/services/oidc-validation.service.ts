@@ -33,10 +33,13 @@ export class OidcValidationService {
     }
 
     const issuerUrl = this.configService.get<string>('OIDC_ISSUER_URL');
+    // For token validation, use public issuer URL if available (for Docker internal vs external hostname mismatch)
+    const expectedIssuer = this.configService.get<string>('OIDC_PUBLIC_ISSUER_URL') || issuerUrl;
     const clientId = this.configService.get<string>('OIDC_CLIENT_ID');
     
     console.log('OIDC Validation - JWKS URL:', this.jwksUrl);
-    console.log('OIDC Validation - Expected Issuer:', issuerUrl);
+    console.log('OIDC Validation - Internal Issuer (for JWKS):', issuerUrl);
+    console.log('OIDC Validation - Expected Issuer (for token):', expectedIssuer);
     console.log('OIDC Validation - Expected Audience:', clientId);
 
     try {
@@ -44,7 +47,7 @@ export class OidcValidationService {
       // For Access Tokens, audience is 'account', not the client_id
       // We validate issuer and check azp (authorized party) instead
       const { payload } = await jwtVerify(idToken, JWKS, {
-        issuer: issuerUrl!,
+        issuer: expectedIssuer!,
         // Do not validate audience for access tokens (aud is 'account')
       });
 

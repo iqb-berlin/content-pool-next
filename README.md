@@ -13,6 +13,24 @@ Web application for managing **Assessment Content Packages (ACPs)** — bundles 
 
 ## Quick Start (Development)
 
+### Using Makefile (Recommended)
+
+```bash
+# Setup and start everything
+make dev-setup  # First time only - install dependencies
+make dev        # Start all services (PostgreSQL, Keycloak, Backend, Frontend)
+
+# Useful commands
+make help              # Show all available commands
+make dev-logs          # View logs
+make dev-logs-backend  # View backend logs only
+make dev-stop          # Stop all services
+make health            # Check service health
+make keycloak-admin    # Show Keycloak admin info
+```
+
+### Manual Start
+
 ```bash
 # Start PostgreSQL
 docker compose up db -d

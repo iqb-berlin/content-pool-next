@@ -22,9 +22,12 @@ services:
     image: quay.io/keycloak/keycloak:24.0.1
     container_name: keycloak
     # MODE: IP-only (HTTP) or Domain (HTTPS)
-    # IP Mode:   command: ["start-dev", "--import-realm"]
-    # Domain Mode: command: ["start", "--optimized", "--import-realm"]
-    command: ${KEYCLOAK_COMMAND:-["start", "--optimized", "--import-realm"]}
+    # IP Mode:   KEYCLOAK_COMMAND=["start-dev", "--import-realm"]
+    # Domain Mode: KEYCLOAK_COMMAND=["start", "--optimized", "--import-realm"]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      CMD=$(echo "${KEYCLOAK_COMMAND:-[\"start\", \"--optimized\", \"--import-realm\"]}" | sed 's/\[//g; s/\]//g; s/["'"'"']//g; s/,//g');
+      exec /opt/keycloak/bin/kc.sh $$CMD
     environment:
       # Database configuration
       KC_DB: postgres

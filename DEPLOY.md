@@ -70,106 +70,111 @@ docker compose -f docker-compose.prod.yml up --build -d
 
 Build images on a powerful machine (local dev or CI), push to GitHub Container Registry, then just pull on the server. **No build on the server at all.**
 
+### Version Strategy
+
+| Phase | Version | When to use |
+|-------|---------|-------------|
+| **Testing** | `v0.1.0`, `v0.2.0`... | Still iterating, breaking changes expected |
+| **Production** | `v1.0.0`, `v1.1.0`... | Stable, backward compatible |
+
 ### 1. Build and push images (on your dev machine or CI)
 
+**For testing phase (recommended):**
+```bash
+# Start with v0.1.0
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+**When ready for production:**
+```bash
+# Move to v1.0.0
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Images will be published to:
+- `ghcr.io/iqb-berlin/content-pool-backend:v0.1.0`
+- `ghcr.io/iqb-berlin/content-pool-frontend:v0.1.0`
+
+**Or build locally and push:**
 ```bash
 # Log in to GitHub Container Registry
 docker login ghcr.io -u YOUR_GITHUB_USERNAME
 
-# Set the image tag
-export IMAGE_TAG=ghcr.io/iqb-berlin/content-pool-next
-export VERSION=latest   # or a git tag like v1.2.0
-
-# Build backend
-docker build -t ${IMAGE_TAG}/backend:${VERSION} -f backend/Dockerfile.prod ./backend
-
-# Build frontend
-docker build -t ${IMAGE_TAG}/frontend:${VERSION} -f frontend/Dockerfile.prod ./frontend
-
-# Push
-docker push ${IMAGE_TAG}/backend:${VERSION}
-docker push ${IMAGE_TAG}/frontend:${VERSION}
+# Build and push (example with v0.1.0)
+make build-push VERSION=v0.1.0
 ```
 
-### 2. On the server: create a compose file that pulls images
+### 2. On the server: deploy using pre-built images
 
-Create a `docker-compose.server.yml` (or edit `docker-compose.prod.yml`):
-
-```yaml
-services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${DB_USERNAME:-contentpool}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-contentpool_prod}
-      POSTGRES_DB: ${DB_DATABASE:-contentpool}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-contentpool}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-  backend:
-    image: ghcr.io/iqb-berlin/content-pool-next/backend:latest
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-contentpool}
-      DB_PASSWORD: ${DB_PASSWORD:-contentpool_prod}
-      DB_DATABASE: ${DB_DATABASE:-contentpool}
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
-      FILE_STORAGE_PATH: /app/uploads
-      CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
-      OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
-    volumes:
-      - uploads:/app/uploads
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  nginx:
-    image: ghcr.io/iqb-berlin/content-pool-next/frontend:latest
-    ports:
-      - "${APP_PORT:-80}:80"
-    depends_on:
-      - backend
-    restart: unless-stopped
-
-volumes:
-  pgdata:
-  uploads:
-```
-
-> **Note:** The frontend Dockerfile.prod already uses nginx as the production stage. So the pushed `frontend` image is a self-contained nginx serving the Angular SPA with the reverse proxy config baked in.
-
-### 3. On the server: pull and run
+The repository includes `docker-compose.server.yml` configured to pull images from GHCR.
 
 ```bash
+# Clone the repo (only needed files: docker-compose.server.yml, nginx.server.conf, .env.example)
+git clone https://github.com/iqb-berlin/content-pool-next.git
+cd content-pool-next
+
 # Create .env
 cp .env.example .env
-nano .env
+nano .env  # Set JWT_SECRET, DB_PASSWORD, KEYCLOAK passwords, IMAGE_VERSION, etc.
+```
 
-# Pull and start
-docker compose -f docker-compose.server.yml pull
-docker compose -f docker-compose.server.yml up -d
+**For testing with `latest` (auto-updates on redeploy):**
+```bash
+# .env
+IMAGE_VERSION=latest
+
+make server-up
+```
+
+**For testing with pinned version (recommended for stability):**
+```bash
+# .env - pin to a specific version
+IMAGE_VERSION=v0.1.0
+
+make server-up
+```
+
+To update to a new version:
+```bash
+# Edit .env: IMAGE_VERSION=v0.2.0
+make server-update
+```
+
+### 3. Verify deployment
+
+```bash
+# Check all containers are running
+docker compose -f docker-compose.server.yml ps
+
+# Test the API
+curl http://localhost/api/auth/oidc-config
+
+# View logs
+make server-logs
 ```
 
 ### 4. Update
 
 ```bash
-docker compose -f docker-compose.server.yml pull
-docker compose -f docker-compose.server.yml up -d
+# Pull latest images and restart
+make server-update
+
+# Or manually:
+# docker compose -f docker-compose.server.yml pull
+# docker compose -f docker-compose.server.yml up -d
 ```
+
+### Server Deployment Commands
+
+| Command | Description |
+|---------|-------------|
+| `make server-up` | Pull images and start server deployment |
+| `make server-stop` | Stop server deployment |
+| `make server-update` | Pull latest images and restart |
+| `make server-logs` | View all service logs |
+| `make server-clean` | Stop and remove all containers and volumes |
 
 ---
 

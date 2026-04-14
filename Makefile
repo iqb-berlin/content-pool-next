@@ -91,6 +91,48 @@ prod-clean: ## Stop and remove production containers, volumes, and images
 	docker compose -f docker-compose.prod.yml down -v --rmi local
 
 # ============================================
+# Server Deployment Commands (Pre-built Images)
+# ============================================
+
+server-up: ## Deploy on server using pre-built images (requires .env file)
+	@echo "Deploying using pre-built images from GHCR..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
+	docker compose -f docker-compose.server.yml pull
+	docker compose -f docker-compose.server.yml up -d
+	@echo "Server deployment complete!"
+	@echo "  Application: http://YOUR_SERVER_IP"
+
+server-stop: ## Stop server deployment
+	@echo "Stopping server deployment..."
+	docker compose -f docker-compose.server.yml down
+
+server-logs: ## View server deployment logs
+	docker compose -f docker-compose.server.yml logs -f
+
+server-update: ## Pull latest images and restart server deployment
+	@echo "Updating server deployment..."
+	docker compose -f docker-compose.server.yml pull
+	docker compose -f docker-compose.server.yml up -d
+	@echo "Server deployment updated!"
+
+server-clean: ## Stop and remove server deployment
+	@echo "Cleaning server deployment..."
+	docker compose -f docker-compose.server.yml down -v
+
+# ============================================
+# Build & Push Commands (for GHCR)
+# ============================================
+
+build-push: ## Build and push images to GitHub Container Registry
+	@echo "Building and pushing images to GHCR..."
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make build-push VERSION=v1.0.0"; exit 1; fi
+	docker build -t ghcr.io/iqb-berlin/content-pool-backend:$(VERSION) -f backend/Dockerfile.prod ./backend
+	docker build -t ghcr.io/iqb-berlin/content-pool-frontend:$(VERSION) -f frontend/Dockerfile.prod ./frontend
+	docker push ghcr.io/iqb-berlin/content-pool-backend:$(VERSION)
+	docker push ghcr.io/iqb-berlin/content-pool-frontend:$(VERSION)
+	@echo "Images pushed: ghcr.io/iqb-berlin/content-pool-{backend,frontend}:$(VERSION)"
+
+# ============================================
 # Database Commands
 # ============================================
 

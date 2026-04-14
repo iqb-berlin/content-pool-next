@@ -34,14 +34,113 @@ npx ng serve
 
 ## Production Deployment
 
-```bash
-# Set required env vars
-export JWT_SECRET=your-secret-here
-export DB_PASSWORD=your-db-password
+### Prerequisites
 
-# Build and run
-docker compose -f docker-compose.prod.yml up --build -d
-# → http://localhost (nginx)
+- Docker and Docker Compose installed
+- Server with ports 80 and 443 available
+- Domain name pointing to your server (optional but recommended)
+
+### Quick Deploy
+
+```bash
+# 1. Clone repository
+git clone <your-repo-url>
+cd content-pool-next
+
+# 2. Setup environment
+cp .env.example .env
+nano .env  # Edit with your values
+
+# 3. Deploy
+docker compose -f docker-compose.prod.yml up -d --build
+# → Application at http://your-server-ip
+```
+
+### Environment Configuration
+
+Create `.env` file with your production values:
+
+```bash
+# Database (REQUIRED - change passwords!)
+POSTGRES_DB=content_pool
+POSTGRES_USER=content_pool
+POSTGRES_PASSWORD=your-secure-password-here
+
+# JWT (REQUIRED - generate random string)
+JWT_SECRET=your-random-secret-at-least-32-characters
+JWT_EXPIRATION=24h
+
+# CORS (set to your domain)
+CORS_ORIGIN=https://your-domain.de
+
+# OIDC (optional - leave empty to disable)
+OIDC_ISSUER_URL=
+OIDC_CLIENT_ID=
+OIDC_REDIRECT_URI=
+OIDC_SCOPE=openid profile email
+```
+
+### HTTPS Setup with Let's Encrypt
+
+```bash
+# 1. Install certbot on server
+sudo apt update && sudo apt install certbot
+
+# 2. Get certificate (replace your-domain.de)
+sudo certbot certonly --standalone -d your-domain.de
+
+# 3. Update nginx.prod.conf with your domain
+# Edit server_name from "deine-domain.de" to your actual domain
+
+# 4. Restart containers
+docker compose -f docker-compose.prod.yml restart nginx
+```
+
+### Production Architecture
+
+The production setup includes:
+
+- **PostgreSQL**: Database with persistent storage
+- **NestJS API**: Backend running on port 3000 (internal only)
+- **Angular SPA**: Frontend served by nginx (internal only)
+- **nginx Reverse Proxy**: Handles SSL termination and routing
+- **Security**: Non-root containers, no exposed internal ports
+
+### Management Commands
+
+```bash
+# View logs
+docker compose -f docker-compose.prod.yml logs -f
+
+# Update application
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+
+# Backup database
+docker exec content-pool-db pg_dump -U content_pool content_pool > backup.sql
+
+# Stop services
+docker compose -f docker-compose.prod.yml down
+
+# Full reset (removes all data)
+docker compose -f docker-compose.prod.yml down -v
+```
+
+### Troubleshooting
+
+```bash
+# Check container status
+docker compose -f docker-compose.prod.yml ps
+
+# Check specific service logs
+docker compose -f docker-compose.prod.yml logs content-pool-api
+docker compose -f docker-compose.prod.yml logs content-pool-db
+
+# Access database directly
+docker exec -it content-pool-db psql -U content_pool -d content_pool
+
+# Test nginx configuration
+docker exec content-pool-nginx nginx -t
 ```
 
 ## Project Structure

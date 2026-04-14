@@ -19,6 +19,10 @@ import { AuthContext, OidcConfig } from '../core/models/api.models';
           <div class="alert alert-error">{{ error }}</div>
         }
 
+        @if (message) {
+          <div class="alert alert-success">{{ message }}</div>
+        }
+
         @if (loading) {
           <div class="loading">Lade...</div>
         }
@@ -74,6 +78,7 @@ import { AuthContext, OidcConfig } from '../core/models/api.models';
     .divider::after { right: 0; }
     .divider span { color: var(--color-text-secondary); font-size: 0.85rem; padding: 0 8px; background: white; }
     .loading { text-align: center; padding: 20px; color: var(--color-text-secondary); }
+    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; padding: 12px; border-radius: 4px; margin-bottom: 16px; }
   `]
 })
 export class LoginComponent implements OnInit {
@@ -81,6 +86,7 @@ export class LoginComponent implements OnInit {
   password = '';
   loading = false;
   error = '';
+  message = '';
   authContext: AuthContext | null = null;
   oidcConfig: OidcConfig | null = null;
   forType: 'admin' | 'acp' | null = null;
@@ -96,6 +102,9 @@ export class LoginComponent implements OnInit {
     this.route.queryParams.subscribe(params => {
       if (params['error']) {
         this.error = params['error'];
+      }
+      if (params['message']) {
+        this.message = params['message'];
       }
 
       const forParam = params['for'];

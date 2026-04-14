@@ -2,13 +2,16 @@
   "realm": "iqb",
   "enabled": true,
   "displayName": "IQB ContentPool",
-  "displayNameHtml": "<div class=\"kc-logo-text\"><span>IQB ContentPool</span></div>",
-  "sslRequired": "external",
-  "registrationAllowed": false,
+  "loginTheme": "iqb-theme",
+  "accountTheme": "keycloak.v2",
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "verifyEmail": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "resetPasswordAllowed": false,
+  "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
+  "passwordPolicy": "length(8) and notUsername(undefined) and notEmail(undefined) and upperCase(1) and lowerCase(1)",
   "bruteForceProtected": true,
   "permanentLockout": false,
   "maxFailureWaitSeconds": 900,
@@ -17,6 +20,17 @@
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "failureFactor": 30,
+  "smtpServer": {
+    "from": "noreply@iqb.hu-berlin.de",
+    "fromDisplayName": "IQB ContentPool",
+    "host": "mailtrap.io",
+    "port": "587",
+    "ssl": "false",
+    "starttls": "true",
+    "auth": "true",
+    "user": "YOUR_SMTP_USER",
+    "password": "YOUR_SMTP_PASS"
+  },
   "roles": {
     "realm": [
       {
@@ -64,6 +78,105 @@
   "requiredCredentials": ["password"],
   "clients": [
     {
+      "id": "account",
+      "clientId": "account",
+      "name": "${client_account}",
+      "rootUrl": "${authBaseUrl}",
+      "baseUrl": "/realms/iqb/account/",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "/realms/iqb/account/*"
+      ],
+      "webOrigins": [],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": false,
+      "nodeReRegistrationTimeout": 0,
+      "protocolMappers": [
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "full name",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-full-name-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "id": "account-console",
+      "clientId": "account-console",
+      "name": "Account Console",
+      "description": "Keycloak Account Console",
+      "rootUrl": "${authBaseUrl}",
+      "adminUrl": "",
+      "baseUrl": "/realms/iqb/account/",
+      "surrogateAuthRequired": false,
+      "enabled": true,
+      "alwaysDisplayInConsole": false,
+      "clientAuthenticatorType": "client-secret",
+      "redirectUris": [
+        "/realms/iqb/account/*"
+      ],
+      "webOrigins": ["+"],
+      "notBefore": 0,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": true,
+      "frontchannelLogout": false,
+      "protocol": "openid-connect",
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "authenticationFlowBindingOverrides": {},
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "audience resolve",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-resolve-mapper",
+          "consentRequired": false,
+          "config": {}
+        }
+      ]
+    },
+    {
       "id": "contentpool-client-id",
       "clientId": "contentpool",
       "name": "ContentPool Application",
@@ -80,13 +193,25 @@
         "https://yourdomain.com/*",
         "https://auth.yourdomain.com/*",
         "http://YOUR_SERVER_IP/*",
-        "http://YOUR_SERVER_IP:80/*"
+        "http://YOUR_SERVER_IP:80/*",
+        "http://localhost/*",
+        "http://localhost:4200/*",
+        "http://localhost:4201/*",
+        "http://127.0.0.1/*",
+        "http://127.0.0.1:4200/*",
+        "http://127.0.0.1:4201/*"
       ],
       "webOrigins": [
         "https://yourdomain.com",
         "https://auth.yourdomain.com",
         "http://YOUR_SERVER_IP",
-        "http://YOUR_SERVER_IP:80"
+        "http://YOUR_SERVER_IP:80",
+        "http://localhost",
+        "http://localhost:4200",
+        "http://localhost:4201",
+        "http://127.0.0.1",
+        "http://127.0.0.1:4200",
+        "http://127.0.0.1:4201"
       ],
       "notBefore": 0,
       "bearerOnly": false,
@@ -223,7 +348,26 @@
       }
     }
   ],
-  "users": [],
+  "users": [
+    {
+      "id": "iqb-admin-user",
+      "username": "iqb-admin",
+      "email": "admin@iqb.hu-berlin.de",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Admin",
+      "lastName": "IQB",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin1234!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin", "user"],
+      "requiredActions": []
+    }
+  ],
   "browserSecurityHeaders": {
     "contentSecurityPolicyReportOnly": "",
     "xContentTypeOptions": "nosniff",
@@ -262,8 +406,9 @@
       }
     ]
   },
-  "internationalizationEnabled": false,
-  "supportedLocales": [],
+  "internationalizationEnabled": true,
+  "defaultLocale": "de",
+  "supportedLocales": ["de", "en"],
   "browserFlow": "browser",
   "registrationFlow": "registration",
   "directGrantFlow": "direct grant",

@@ -13,6 +13,7 @@ export class AuthService {
   private readonly AUTH_TYPE_KEY = 'cp_auth_type';
   private logoutChannel: BroadcastChannel | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
+  private oidcConfigCache: OidcConfig | null = null;
 
   currentUser$ = this.currentUserSubject.asObservable();
 
@@ -36,6 +37,10 @@ export class AuthService {
 
   get isAdmin(): boolean {
     return this.currentUserSubject.value?.isAppAdmin ?? false;
+  }
+
+  get isOidcUser(): boolean {
+    return localStorage.getItem(this.AUTH_TYPE_KEY) === 'oidc';
   }
 
   get currentUser(): UserProfile | null {
@@ -89,6 +94,36 @@ export class AuthService {
         this.loadProfile();
       })
     );
+  }
+
+  changePassword(): void {
+    const authType = localStorage.getItem(this.AUTH_TYPE_KEY);
+    if (authType !== 'oidc') {
+      console.error('Password change only available for OIDC users');
+      return;
+    }
+
+    this.getOidcConfig().subscribe(config => {
+      if (!config.enabled || !config.issuerUrl) {
+        console.error('OIDC not configured');
+        return;
+      }
+
+      // Store current URL to return after password change
+      sessionStorage.setItem(this.OIDC_REDIRECT_KEY, window.location.pathname + window.location.search);
+      sessionStorage.setItem('kc_action', 'UPDATE_PASSWORD');
+
+      // Use Keycloak's UPDATE_PASSWORD required action flow
+      const authUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/auth`);
+      authUrl.searchParams.set('client_id', config.clientId || '');
+      authUrl.searchParams.set('redirect_uri', config.redirectUri);
+      authUrl.searchParams.set('response_type', 'id_token token');
+      authUrl.searchParams.set('scope', config.scope);
+      authUrl.searchParams.set('kc_action', 'UPDATE_PASSWORD');
+      authUrl.searchParams.set('nonce', this.generateNonce());
+
+      window.location.href = authUrl.toString();
+    });
   }
 
   private generateNonce(): string {

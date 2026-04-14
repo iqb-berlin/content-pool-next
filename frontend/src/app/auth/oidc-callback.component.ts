@@ -98,10 +98,22 @@ export class OidcCallbackComponent implements OnInit {
         // Send access_token to backend (contains roles), id_token for logout
         await this.auth.handleOidcCallback(accessToken, idToken).toPromise();
 
+        // Check if this was a password change flow
+        const wasPasswordChange = sessionStorage.getItem('kc_action') === 'UPDATE_PASSWORD';
+        sessionStorage.removeItem('kc_action');
+
         // Check for stored redirect URL
         const redirectUrl = sessionStorage.getItem('oidc_redirect_url') || '/';
         sessionStorage.removeItem('oidc_redirect_url');
-        this.router.navigate([redirectUrl]);
+
+        if (wasPasswordChange) {
+          // Show success message for password change
+          this.router.navigate([redirectUrl], {
+            queryParams: { message: 'Passwort wurde erfolgreich geändert' }
+          });
+        } else {
+          this.router.navigate([redirectUrl]);
+        }
         return;
       }
 

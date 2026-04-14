@@ -23,6 +23,9 @@ import { ApiService } from './core/services/api.service';
         }
         @if (auth.isLoggedIn) {
           <span class="user-info">{{ auth.currentUser?.displayName || auth.currentUser?.username }}</span>
+          @if (auth.isOidcUser) {
+            <button class="btn-change-password" (click)="changePassword()" title="Passwort ändern">🔒</button>
+          }
           <button class="btn-logout" (click)="logout()">Abmelden</button>
         } @else {
           <a routerLink="/login">Anmelden</a>
@@ -53,6 +56,12 @@ import { ApiService } from './core/services/api.service';
       color: white; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
     }
     .btn-logout:hover { background: rgba(255,255,255,0.25); }
+    .btn-change-password {
+      background: transparent; border: none;
+      color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 1rem;
+      opacity: 0.85;
+    }
+    .btn-change-password:hover { opacity: 1; background: rgba(255,255,255,0.15); }
     .app-main { flex: 1; padding: 24px; width: 100%; margin: 0 auto; box-sizing: border-box; }
   `]
 })
@@ -74,5 +83,9 @@ export class AppComponent implements OnInit {
   logout() {
     this.auth.logout();
     this.router.navigate(['/login']);
+  }
+
+  changePassword() {
+    this.auth.changePassword();
   }
 }

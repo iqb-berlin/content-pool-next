@@ -131,7 +131,7 @@ export class OidcValidationService {
         type: 'oidc',
         authType: 'oidc',
         oidcSub: sub,
-        acpRoles: user.acpRoles.map(role => ({
+        acpRoles: (user.acpRoles || []).map(role => ({
           acpId: role.acpId,
           acpName: role.acp?.name,
           role: role.role,

@@ -26,8 +26,7 @@ export class FilesController {
   ) {}
 
   @Get()
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List all files for an ACP' })
   async findAll(@Param('acpId') acpId: string) {
     return this.filesService.findByAcp(acpId);
@@ -51,16 +50,14 @@ export class FilesController {
   }
 
   @Get('item-list')
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Extract item list with metadata from .vomd files' })
   async getItemList(@Param('acpId') acpId: string) {
     return this.unitParserService.getItemListFromFiles(acpId);
   }
 
   @Get('unit-view/:unitId')
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get unit view data from uploaded files (player, definition)' })
   async getUnitView(
     @Param('acpId') acpId: string,
@@ -70,8 +67,7 @@ export class FilesController {
   }
 
   @Get(':fileId')
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get file metadata' })
   async findOne(@Param('fileId') fileId: string) {
     return this.filesService.findById(fileId);
@@ -91,8 +87,7 @@ export class FilesController {
   }
 
   @Get(':fileId/download')
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Download a file' })
   async download(@Param('fileId') fileId: string, @Res() res: Response) {
     const { buffer, file } = await this.filesService.download(fileId);

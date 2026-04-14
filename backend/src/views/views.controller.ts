@@ -1,9 +1,7 @@
 import { Controller, Get, Param, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ViewsService } from './views.service';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
 
 @ApiTags('Public Views')
 @Controller('view')
@@ -23,16 +21,14 @@ export class ViewsController {
   }
 
   @Get('acp/:acpId')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'ACP start page data' })
   async getAcpStartPage(@Param('acpId') acpId: string) {
     return this.viewsService.getAcpStartPage(acpId);
   }
 
   @Get('acp/:acpId/units')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List all units in an ACP' })
   async getUnits(@Param('acpId') acpId: string) {
     const data = await this.viewsService.getAcpStartPage(acpId);
@@ -40,8 +36,7 @@ export class ViewsController {
   }
 
   @Get('acp/:acpId/units/:unitId')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get unit view data' })
   async getUnit(
     @Param('acpId') acpId: string,
@@ -51,16 +46,14 @@ export class ViewsController {
   }
 
   @Get('acp/:acpId/items')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get item list for an ACP' })
   async getItems(@Param('acpId') acpId: string) {
     return this.viewsService.getItemList(acpId);
   }
 
   @Get('acp/:acpId/sequences')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List task sequences for an ACP' })
   async getSequences(@Param('acpId') acpId: string) {
     const data = await this.viewsService.getAcpStartPage(acpId);
@@ -68,8 +61,7 @@ export class ViewsController {
   }
 
   @Get('acp/:acpId/sequences/:sequenceId')
-  @UseGuards(JwtAuthGuard, OidcAuthGuard, AcpAccessGuard)
-  @ApiBearerAuth()
+  @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get task sequence with ordered units' })
   async getSequence(
     @Param('acpId') acpId: string,

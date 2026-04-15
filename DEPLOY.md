@@ -46,6 +46,9 @@ Update `keycloak/realm-export.json` to your real hostnames:
 - `webOrigins`: include your frontend origin
 
 Current defaults are placeholders (`app.example.com`, `YOUR_SERVER_IP`) and should be replaced before first deploy.
+If you use TLS on an IP-based setup, use `https://YOUR_SERVER_IP/...` entries.
+The scheme must match exactly (`https` vs `http`), otherwise Keycloak rejects
+login with `Invalid parameter: redirect_uri`.
 
 ## 5. Validate config before start
 

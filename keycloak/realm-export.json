@@ -190,6 +190,7 @@
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
         "https://app.example.com/auth/callback",
+        "https://YOUR_SERVER_IP/auth/callback",
         "http://YOUR_SERVER_IP/auth/callback",
         "http://localhost:4200/auth/callback",
         "http://localhost:4201/auth/callback",
@@ -198,6 +199,7 @@
       ],
       "webOrigins": [
         "https://app.example.com",
+        "https://YOUR_SERVER_IP",
         "http://YOUR_SERVER_IP",
         "http://localhost:4200",
         "http://localhost:4201",
@@ -219,7 +221,8 @@
         "oauth2.device.authorization.grant.enabled": "false",
         "backchannel.logout.session.required": "true",
         "backchannel.logout.revoke.offline.tokens": "false",
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://app.example.com/login##https://YOUR_SERVER_IP/login##http://YOUR_SERVER_IP/login##http://localhost:4200/login##http://localhost:4201/login##http://127.0.0.1:4200/login##http://127.0.0.1:4201/login"
       },
       "authenticationFlowBindingOverrides": {},
       "fullScopeAllowed": true,

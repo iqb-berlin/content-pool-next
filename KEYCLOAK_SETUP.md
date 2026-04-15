@@ -66,6 +66,42 @@ You still must replace placeholder domains/IPs in:
 - `redirectUris`
 - `webOrigins`
 
+For IP-based deployments with TLS, use `https://YOUR_SERVER_IP/...` values
+(not only `http://...`).
+
+## Troubleshooting: `Ungültiger Parameter: redirect_uri`
+
+If Keycloak shows this error on login, the requested `redirect_uri` does not
+exactly match the client configuration.
+
+For client `contentpool`, verify in Keycloak Admin Console:
+
+- **Valid redirect URIs** contains your exact callback URL
+  (for example `https://187.127.71.69/auth/callback`)
+- **Web origins** contains your exact frontend origin
+  (for example `https://187.127.71.69`)
+- `OIDC_REDIRECT_URI` in `.env` matches the same callback URL exactly
+
+Important: realm JSON import is typically only applied when a realm is created.
+If realm `iqb` already exists, update the client in the Keycloak UI (or delete
+and recreate the realm) instead of only editing `realm-export.json`.
+
+## Troubleshooting: `Ungültige Redirect Uri` on logout
+
+If logout fails with a redirect error, configure **Valid post logout redirect URIs**
+for client `contentpool`.
+
+Example values:
+
+- `https://187.127.71.69/login`
+- `https://app.example.com/login`
+
+In exported JSON this is stored under:
+
+- `attributes["post.logout.redirect.uris"]`
+
+Multiple values are separated by `##`.
+
 ## Admin access (recommended)
 
 Use SSH tunneling instead of exposing Keycloak admin publicly:

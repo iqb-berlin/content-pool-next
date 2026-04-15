@@ -88,17 +88,25 @@ export class UsersService {
    * Seeds the initial admin user if no users exist.
    */
   async seedInitialAdmin(): Promise<void> {
+    const shouldSeed =
+      process.env.SEED_DEFAULT_ADMIN === 'true' || process.env.NODE_ENV !== 'production';
+    if (!shouldSeed) {
+      return;
+    }
+
     const count = await this.userRepository.count();
     if (count === 0) {
-      const passwordHash = await bcrypt.hash('admin', 12);
+      const username = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
+      const password = process.env.DEFAULT_ADMIN_PASSWORD || 'admin';
+      const passwordHash = await bcrypt.hash(password, 12);
       const admin = this.userRepository.create({
-        username: 'admin',
+        username,
         passwordHash,
         displayName: 'Administrator',
         isAppAdmin: true,
       });
       await this.userRepository.save(admin);
-      console.log('Initial admin user created (username: admin, password: admin)');
+      console.log(`Initial admin user created (username: ${username})`);
     }
   }
 }

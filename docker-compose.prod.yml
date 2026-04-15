@@ -21,13 +21,8 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.1
     container_name: keycloak
-    # MODE: IP-only (HTTP) or Domain (HTTPS)
-    # IP Mode:   KEYCLOAK_COMMAND=["start-dev", "--import-realm"]
-    # Domain Mode: KEYCLOAK_COMMAND=["start", "--optimized", "--import-realm"]
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      CMD=$(echo "${KEYCLOAK_COMMAND:-[\"start\", \"--optimized\", \"--import-realm\"]}" | sed 's/\[//g; s/\]//g; s/["'"'"']//g; s/,//g');
-      exec /opt/keycloak/bin/kc.sh $$CMD
+    entrypoint: ["/opt/keycloak/bin/kc.sh"]
+    command: ["start", "--import-realm"]
     environment:
       # Database configuration
       KC_DB: postgres
@@ -39,12 +34,11 @@ services:
       # Domain Mode: set to your auth domain (e.g., auth.yourdomain.com)
       KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-}
       KC_HOSTNAME_STRICT: ${KEYCLOAK_HOSTNAME_STRICT:-true}
-      KC_HOSTNAME_STRICT_BACKCHANNEL: ${KEYCLOAK_HOSTNAME_STRICT_BACKCHANNEL:-true}
+      KC_HOSTNAME_STRICT_BACKCHANNEL: ${KEYCLOAK_HOSTNAME_STRICT_BACKCHANNEL:-false}
       # HTTP/HTTPS settings
       # IP Mode: KC_HTTP_ENABLED=true, KC_HOSTNAME_STRICT_HTTPS=false
-      # Domain Mode: KC_HTTP_ENABLED=false, KC_HOSTNAME_STRICT_HTTPS=true
-      KC_HTTP_ENABLED: ${KC_HTTP_ENABLED:-false}
-      KC_HTTPS_PORT: 8443
+      # Domain Mode (reverse proxy): KC_HTTP_ENABLED=true, KC_HOSTNAME_STRICT_HTTPS=true
+      KC_HTTP_ENABLED: ${KC_HTTP_ENABLED:-true}
       KC_HOSTNAME_STRICT_HTTPS: ${KC_HOSTNAME_STRICT_HTTPS:-true}
       # Proxy mode
       # IP Mode: KC_PROXY=none
@@ -64,7 +58,7 @@ services:
     volumes:
       - ./keycloak:/opt/keycloak/data/import:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080'"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -77,9 +71,9 @@ services:
     image: postgres:16-alpine
     container_name: content-pool-db
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - content-pool-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -88,6 +82,8 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+    networks:
+      - app-network
 
   content-pool-api:
     build:
@@ -104,25 +100,32 @@ services:
       PORT: 3000
       DB_HOST: content-pool-db
       DB_PORT: 5432
-      DB_USERNAME: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      DB_DATABASE: ${POSTGRES_DB}
+      DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      DB_DATABASE: ${POSTGRES_DB:?POSTGRES_DB must be set}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
       FILE_STORAGE_PATH: /app/uploads
-      CORS_ORIGIN: ${CORS_ORIGIN}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN must be set}
       # OIDC Configuration (optional)
       # Internal URL for backend-to-keycloak communication
       OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:-http://keycloak:8080/realms/iqb}
       # Public URL for frontend browser redirects (must be accessible from browser)
       OIDC_PUBLIC_ISSUER_URL: ${OIDC_PUBLIC_ISSUER_URL}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-contentpool}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?OIDC_CLIENT_ID must be set}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?OIDC_REDIRECT_URI must be set}
       OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email}
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
+      DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-false}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      SEED_DEFAULT_ADMIN: ${SEED_DEFAULT_ADMIN:-false}
     volumes:
       - uploads:/app/uploads
     restart: unless-stopped
     # Kein Port nach außen – läuft hinter Nginx
+    networks:
+      - app-network
+      - keycloak-network
 
   content-pool-web:
     build:
@@ -131,12 +134,14 @@ services:
     container_name: content-pool-web
     restart: unless-stopped
     # Kein Port nach außen – läuft hinter Nginx
+    networks:
+      - app-network
 
   nginx:
     image: nginx:alpine
     container_name: content-pool-nginx
     ports:
-      - "80:80"
+      - "${APP_PORT:-80}:80"
       # - "443:443"  # Uncomment when using HTTPS with valid certificates
     volumes:
       - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro

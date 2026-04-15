@@ -17,7 +17,7 @@ dev: ## Start development environment (docker compose up -d)
 	@echo "Starting development environment..."
 	docker compose up -d
 	@echo "Development environment started!"
-	@echo "  Frontend: http://localhost:4200"
+	@echo "  Frontend: http://localhost:4201"
 	@echo "  Backend API: http://localhost:3000"
 	@echo "  Keycloak: http://localhost:8080"
 
@@ -59,7 +59,7 @@ prod: ## Start production environment (requires .env file)
 	docker compose -f docker-compose.prod.yml up -d
 	@echo "Production environment started!"
 	@echo "  Application: http://YOUR_SERVER_IP (or configured domain)"
-	@echo "  Keycloak: http://YOUR_SERVER_IP:8080"
+	@echo "  Keycloak (localhost only): http://127.0.0.1:8080"
 
 prod-build: ## Build and start production environment
 	@echo "Building production environment..."
@@ -100,7 +100,7 @@ server-up: ## Deploy on server using pre-built images (requires .env file)
 	docker compose -f docker-compose.server.yml pull
 	docker compose -f docker-compose.server.yml up -d
 	@echo "Server deployment complete!"
-	@echo "  Application: http://YOUR_SERVER_IP"
+	@echo "  Application: http://YOUR_SERVER_IP (or configured domain)"
 
 server-stop: ## Stop server deployment
 	@echo "Stopping server deployment..."
@@ -169,7 +169,9 @@ db-migrate-generate: ## Generate new migration (usage: make db-migrate-generate 
 keycloak-admin: ## Open Keycloak admin console URL info
 	@echo "Keycloak Admin Console:"
 	@echo "  Development: http://localhost:8080/admin"
-	@echo "  Production:  http://YOUR_SERVER_IP:8080/admin"
+	@echo "  Production (recommended via SSH tunnel):"
+	@echo "    ssh -L 8080:127.0.0.1:8080 USER@YOUR_SERVER"
+	@echo "    then open http://localhost:8080/admin"
 	@echo ""
 	@echo "Default credentials:"
 	@echo "  Username: admin"
@@ -242,8 +244,8 @@ health: ## Check health of all services
 	@echo "Checking development environment..."
 	@./scripts/check-health.sh dev \
 		"http://localhost:8080" \
-		"http://localhost:3000" \
-		"http://localhost:4200"
+		"http://localhost:3000/api" \
+		"http://localhost:4201"
 
 health-prod: ## Check health of production services
 	@echo "Checking production environment..."

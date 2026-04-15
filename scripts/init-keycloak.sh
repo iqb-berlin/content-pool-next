@@ -14,7 +14,7 @@ echo ""
 
 # Wait for Keycloak to be ready
 echo "Waiting for Keycloak to start..."
-until curl -s "$KEYCLOAK_URL/health/ready" > /dev/null 2>&1; do
+until curl -s "$KEYCLOAK_URL/realms/master/.well-known/openid-configuration" > /dev/null 2>&1; do
     echo "  Keycloak not ready yet, waiting..."
     sleep 5
 done
@@ -51,7 +51,7 @@ if [ "$REALM_CHECK" = "200" ]; then
     echo "Realm '$REALM_NAME' already exists."
 else
     echo "Realm '$REALM_NAME' does not exist."
-    echo "Please ensure the realm is imported via docker-compose volume."
+    echo "Please ensure the realm is imported via docker compose volume."
     echo "The keycloak/realm-export.json file should be mounted at /opt/keycloak/data/import/"
 fi
 
@@ -60,7 +60,3 @@ echo "=== Keycloak initialization check complete ==="
 echo ""
 echo "Admin Console: $KEYCLOAK_URL/admin"
 echo "Realm: $REALM_NAME"
-echo ""
-echo "Default users:"
-echo "  - admin / admin123 (admin role)"
-echo "  - user / user123 (user role)"

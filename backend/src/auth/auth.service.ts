@@ -153,7 +153,7 @@ export class AuthService {
       user: {
         id: userInfo.sub,
         username: userInfo.username,
-        displayName: userInfo.displayName,
+        displayName: userInfo.displayName || userInfo.username,
         isAppAdmin: userInfo.isAppAdmin,
       },
     };

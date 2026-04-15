@@ -7,6 +7,10 @@ export default registerAs('database', () => ({
   username: process.env.DB_USERNAME || 'contentpool',
   password: process.env.DB_PASSWORD || 'contentpool_dev',
   database: process.env.DB_DATABASE || 'contentpool',
-  synchronize: process.env.NODE_ENV === 'development',
+  synchronize: process.env.DB_SYNCHRONIZE === 'true' || process.env.NODE_ENV === 'development',
+  migrationsRun:
+    process.env.DB_RUN_MIGRATIONS === 'true' &&
+    process.env.DB_SYNCHRONIZE !== 'true' &&
+    process.env.NODE_ENV !== 'development',
   logging: process.env.NODE_ENV === 'development',
 }));

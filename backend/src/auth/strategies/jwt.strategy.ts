@@ -21,13 +21,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromUrlQueryParameter('auth_token'),
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET', 'dev-secret'),
+      secretOrKey: configService.get<string>('JWT_SECRET', 'dev-secret-change-in-production'),
     });
   }
 
   async validate(payload: JwtPayload) {
-    console.log(`JWT Strategy validating token for user: ${payload.sub}, type: ${payload.type}`);
-    
     // Credential users don't exist in User table - return payload directly
     if (payload.type === 'credential') {
       return {
@@ -47,20 +45,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       relations: ['acpRoles', 'acpRoles.acp'],
     });
     
-    console.log(`Loaded user from database:`, {
-      userId: user?.id,
-      username: user?.username,
-      isAppAdmin: user?.isAppAdmin,
-      acpRolesCount: user?.acpRoles?.length,
-      acpRoles: user?.acpRoles
-    });
-    
     if (!user) {
-      console.warn(`User not found: ${payload.sub}`);
       return null;
     }
-    
-    const result = {
+
+    return {
       sub: payload.sub,
       username: payload.username,
       isAppAdmin: user.isAppAdmin,
@@ -73,8 +62,5 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         role: role.role,
       })),
     };
-    
-    console.log(`JWT validation result:`, result);
-    return result;
   }
 }

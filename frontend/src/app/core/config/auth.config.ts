@@ -5,12 +5,12 @@ export function createAuthConfig(issuerUrl: string, clientId: string, redirectUr
     issuer: issuerUrl,
     redirectUri: redirectUri,
     clientId: clientId,
-    responseType: 'id_token token',
+    responseType: 'code',
     scope: 'openid profile email',
-    showDebugInformation: true,
-    requireHttps: false, // Set to true in production
-    strictDiscoveryDocumentValidation: false,
-    skipIssuerCheck: true,
+    showDebugInformation: false,
+    requireHttps: true,
+    strictDiscoveryDocumentValidation: true,
+    skipIssuerCheck: false,
     oidc: true,
     useSilentRefresh: false,
   };

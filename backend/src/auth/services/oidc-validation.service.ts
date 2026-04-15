@@ -33,116 +33,104 @@ export class OidcValidationService {
     }
 
     const issuerUrl = this.configService.get<string>('OIDC_ISSUER_URL');
-    // For token validation, use public issuer URL if available (for Docker internal vs external hostname mismatch)
     const expectedIssuer = this.configService.get<string>('OIDC_PUBLIC_ISSUER_URL') || issuerUrl;
     const clientId = this.configService.get<string>('OIDC_CLIENT_ID');
-    
-    console.log('OIDC Validation - JWKS URL:', this.jwksUrl);
-    console.log('OIDC Validation - Internal Issuer (for JWKS):', issuerUrl);
-    console.log('OIDC Validation - Expected Issuer (for token):', expectedIssuer);
-    console.log('OIDC Validation - Expected Audience:', clientId);
+
+    if (!expectedIssuer || !clientId) {
+      throw new UnauthorizedException('OIDC configuration is incomplete');
+    }
 
     try {
       const JWKS = createRemoteJWKSet(new URL(this.jwksUrl));
-      // For Access Tokens, audience is 'account', not the client_id
-      // We validate issuer and check azp (authorized party) instead
-      const { payload } = await jwtVerify(idToken, JWKS, {
-        issuer: expectedIssuer!,
-        // Do not validate audience for access tokens (aud is 'account')
-      });
 
-      // Verify the token was issued for our client (check azp for access tokens)
-      const authorizedParty = payload.azp as string;
-      if (authorizedParty !== clientId) {
-        throw new UnauthorizedException(`Invalid token: azp ${authorizedParty} does not match expected client ${clientId}`);
+      // Prefer strict OIDC ID token validation (issuer + audience).
+      // If legacy access tokens are still submitted, fall back to azp validation.
+      let payload: any;
+      try {
+        const result = await jwtVerify(idToken, JWKS, {
+          issuer: expectedIssuer,
+          audience: clientId,
+        });
+        payload = result.payload;
+      } catch (error) {
+        if (!this.isAudienceValidationError(error)) {
+          throw error;
+        }
+
+        const result = await jwtVerify(idToken, JWKS, { issuer: expectedIssuer });
+        const authorizedParty = result.payload.azp as string | undefined;
+
+        if (!authorizedParty || authorizedParty !== clientId) {
+          throw new UnauthorizedException('Invalid OIDC token: azp does not match configured client');
+        }
+
+        payload = result.payload;
       }
 
-      console.log('OIDC Validation - Token verified. Payload sub:', payload.sub);
-      console.log('OIDC Validation - Token issuer:', payload.iss);
-      console.log('OIDC Validation - Token audience:', payload.aud);
-      console.log('OIDC Validation - Token azp:', authorizedParty);
-
-      const sub = payload.sub;
+      const sub = payload.sub as string | undefined;
       const email = payload.email as string | undefined;
       const name = payload.name as string | undefined;
       const preferredUsername = payload.preferred_username as string | undefined;
-      
-      // Extract Keycloak roles from token
+
       const realmRoles = (payload.realm_access as any)?.roles || [];
       const resourceAccess = payload.resource_access as any;
-      const clientRoles = clientId && resourceAccess?.[clientId]?.roles ? resourceAccess[clientId].roles : [];
+      const clientRoles = resourceAccess?.[clientId]?.roles || [];
       const isKeycloakAdmin = realmRoles.includes('admin') || clientRoles.includes('admin');
-      
-      console.log('OIDC Validation - Realm roles:', realmRoles);
-      console.log('OIDC Validation - Client roles:', clientRoles);
-      console.log('OIDC Validation - Is Keycloak admin:', isKeycloakAdmin);
-      
+
       if (!sub) {
         throw new UnauthorizedException('Invalid OIDC token: missing sub claim');
       }
 
-      // Find user by OIDC sub
       let user = await this.userRepository.findOne({
         where: { oidcSub: sub },
         relations: ['acpRoles', 'acpRoles.acp'],
       });
 
-      console.log('OIDC Validation - Looking for user with oidcSub:', sub);
-      console.log('OIDC Validation - User found:', user ? 'YES' : 'NO');
-
-      // Auto-create user if not found
       if (!user) {
-        console.log('OIDC Validation - Auto-creating new user for OIDC sub:', sub);
-        
-        // Generate username from available claims
         const baseUsername = preferredUsername || email?.split('@')[0] || `oidc_${sub.substring(0, 8)}`;
         let username = baseUsername;
         let counter = 1;
-        
-        // Ensure username is unique
+
         while (await this.userRepository.findOne({ where: { username } })) {
           username = `${baseUsername}_${counter}`;
           counter++;
         }
-        
+
         user = this.userRepository.create({
           username,
           displayName: name || preferredUsername || username,
           oidcSub: sub,
-          passwordHash: '', // No password needed for OIDC users
+          passwordHash: '',
           isAppAdmin: isKeycloakAdmin,
         });
-        
+
         await this.userRepository.save(user);
-        console.log('OIDC Validation - Created new user:', user.id, user.username);
-      } else {
-        // Update admin status if Keycloak roles have changed
-        if (user.isAppAdmin !== isKeycloakAdmin) {
-          user.isAppAdmin = isKeycloakAdmin;
-          await this.userRepository.save(user);
-          console.log('OIDC Validation - Updated user admin status:', user.id, 'isAppAdmin:', isKeycloakAdmin);
-        }
+      } else if (user.isAppAdmin !== isKeycloakAdmin) {
+        user.isAppAdmin = isKeycloakAdmin;
+        await this.userRepository.save(user);
       }
 
       return {
         sub: user.id,
         username: user.username,
+        displayName: user.displayName,
         isAppAdmin: user.isAppAdmin,
         type: 'oidc',
         authType: 'oidc',
         oidcSub: sub,
-        acpRoles: (user.acpRoles || []).map(role => ({
+        acpRoles: (user.acpRoles || []).map((role) => ({
           acpId: role.acpId,
           acpName: role.acp?.name,
           role: role.role,
         })),
       };
     } catch (error) {
-      console.error('OIDC Validation Error:', error);
       if (error instanceof UnauthorizedException) {
         throw error;
       }
-      throw new UnauthorizedException(`Invalid OIDC token: ${error.message}`);
+
+      const message = error instanceof Error ? error.message : 'Unknown verification error';
+      throw new UnauthorizedException(`Invalid OIDC token: ${message}`);
     }
   }
 
@@ -150,5 +138,13 @@ export class OidcValidationService {
     const issuerUrl = this.configService.get<string>('OIDC_ISSUER_URL');
     const clientId = this.configService.get<string>('OIDC_CLIENT_ID');
     return !!(issuerUrl && clientId);
+  }
+
+  private isAudienceValidationError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') return false;
+
+    const code = (error as { code?: string }).code;
+    const claim = (error as { claim?: string }).claim;
+    return code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' && claim === 'aud';
   }
 }

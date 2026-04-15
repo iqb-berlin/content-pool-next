@@ -22,19 +22,27 @@ import { ServerApiModule } from './api/server-api.module';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres',
-        host: configService.get<string>('DB_HOST', 'localhost'),
-        port: configService.get<number>('DB_PORT', 5432),
-        username: configService.get<string>('DB_USERNAME', 'contentpool'),
-        password: configService.get<string>('DB_PASSWORD', 'contentpool_dev'),
-        database: configService.get<string>('DB_DATABASE', 'contentpool'),
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
-        migrations: [__dirname + '/database/migrations/**/*{.ts,.js}'],
-        synchronize: configService.get<string>('NODE_ENV') === 'development',
-        migrationsRun: configService.get<string>('NODE_ENV') === 'production',
-        logging: configService.get<string>('NODE_ENV') === 'development',
-      }),
+      useFactory: (configService: ConfigService) => {
+        const nodeEnv = configService.get<string>('NODE_ENV', 'development');
+        const synchronizeDefault = nodeEnv === 'development' ? 'true' : 'false';
+        const synchronize = configService.get<string>('DB_SYNCHRONIZE', synchronizeDefault) === 'true';
+        const migrationsRun =
+          configService.get<string>('DB_RUN_MIGRATIONS', 'false') === 'true' && !synchronize;
+
+        return {
+          type: 'postgres',
+          host: configService.get<string>('DB_HOST', 'localhost'),
+          port: configService.get<number>('DB_PORT', 5432),
+          username: configService.get<string>('DB_USERNAME', 'contentpool'),
+          password: configService.get<string>('DB_PASSWORD', 'contentpool_dev'),
+          database: configService.get<string>('DB_DATABASE', 'contentpool'),
+          entities: [__dirname + '/**/*.entity{.ts,.js}'],
+          migrations: [__dirname + '/database/migrations/**/*{.ts,.js}'],
+          synchronize,
+          migrationsRun,
+          logging: nodeEnv === 'development',
+        };
+      },
     }),
     AuthModule,
     UsersModule,

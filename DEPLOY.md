@@ -1,230 +1,128 @@
-# Deployment Guide
+# Deployment Guide (VPS + Keycloak)
 
-Two ways to deploy content-pool-next to a server. **Option A** is the simplest; **Option B** avoids building on the server entirely.
+This guide describes a **secure** deployment of ContentPool with Keycloak on a VPS.
 
----
+## 1. Preconditions (must be true)
 
-## Server Requirements
+- Docker Engine + Compose v2 installed (`docker compose version`)
+- Domain setup (recommended):
+  - App: `app.example.com`
+  - Keycloak: `auth.example.com` (can point to same VPS)
+- TLS/HTTPS at the edge (nginx on VPS or upstream reverse proxy/load balancer)
+- Firewall:
+  - open: `80` (and `443` if terminating TLS on VPS)
+  - closed from internet: `8080` (Keycloak stays localhost-bound)
+- At least 2 GB RAM (4 GB recommended)
 
-| Requirement | Minimum |
-|---|---|
-| Docker + Compose v2 | ✅ |
-| RAM | 2 GB (4 GB recommended) |
-| Disk | 5 GB free |
-| Ports | 80 (or custom `APP_PORT`) |
+## 2. Choose deployment mode
 
----
+- `docker-compose.prod.yml`: build locally on VPS
+- `docker-compose.server.yml`: pull pre-built images from GHCR (recommended for small VPS)
 
-## Option A: Git Clone on Server
-
-Build and run directly on the server. Simple, but the first build takes a few minutes.
-
-### 1. Clone the repo
-
-```bash
-git clone https://github.com/iqb-berlin/content-pool-next.git
-cd content-pool-next
-```
-
-### 2. Create `.env`
+## 3. Prepare configuration
 
 ```bash
 cp .env.example .env
-nano .env   # set JWT_SECRET, DB_PASSWORD, etc.
 ```
 
-**Required:** `JWT_SECRET` and `DB_PASSWORD` must be changed from defaults.
+Edit `.env` and set at least:
 
-### 3. Build and start
+- `POSTGRES_PASSWORD`
+- `KEYCLOAK_DB_PASSWORD`
+- `KEYCLOAK_ADMIN_PASSWORD`
+- `JWT_SECRET` (long random value)
+- `CORS_ORIGIN` (for example `https://app.example.com`)
+- `KEYCLOAK_HOSTNAME` (for example `auth.example.com`)
+- `OIDC_PUBLIC_ISSUER_URL` (for example `https://auth.example.com/realms/iqb`)
+- `OIDC_REDIRECT_URI` (for example `https://app.example.com/auth/callback`)
+- `OIDC_CLIENT_ID` (default `contentpool`)
+- `DB_SYNCHRONIZE=true` for first deployment to a fresh database
+
+## 4. Adjust Keycloak client redirect/web origins
+
+Update `keycloak/realm-export.json` to your real hostnames:
+
+- `redirectUris`: include your exact callback URL
+- `webOrigins`: include your frontend origin
+
+Current defaults are placeholders (`app.example.com`, `YOUR_SERVER_IP`) and should be replaced before first deploy.
+
+## 5. Validate config before start
 
 ```bash
-docker compose -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.server.yml config >/tmp/compose.server.resolved.yml
+# or:
+docker compose -f docker-compose.prod.yml config >/tmp/compose.prod.resolved.yml
 ```
 
-### 4. Verify
+If this fails, required env vars are missing or malformed.
+
+## 6. Start services
+
+### Option A: pre-built images
 
 ```bash
-# Check all containers are running
-docker compose -f docker-compose.prod.yml ps
-
-# Test the API
-curl http://localhost/api/auth/oidc-config
-
-# Default admin login: admin / admin
+docker compose -f docker-compose.server.yml pull
+docker compose -f docker-compose.server.yml up -d
 ```
 
-### 5. Stop / Update
+### Option B: build on VPS
 
 ```bash
-# Stop
-docker compose -f docker-compose.prod.yml down
-
-# Update to latest
-git pull
-docker compose -f docker-compose.prod.yml up --build -d
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
----
-
-## Option B: Pre-built Images via Registry
-
-Build images on a powerful machine (local dev or CI), push to GitHub Container Registry, then just pull on the server. **No build on the server at all.**
-
-### Version Strategy
-
-| Phase | Version | When to use |
-|-------|---------|-------------|
-| **Testing** | `v0.1.0`, `v0.2.0`... | Still iterating, breaking changes expected |
-| **Production** | `v1.0.0`, `v1.1.0`... | Stable, backward compatible |
-
-### 1. Build and push images (on your dev machine or CI)
-
-**For testing phase (recommended):**
-```bash
-# Start with v0.1.0
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-**When ready for production:**
-```bash
-# Move to v1.0.0
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Images will be published to:
-- `ghcr.io/iqb-berlin/content-pool-backend:v0.1.0`
-- `ghcr.io/iqb-berlin/content-pool-frontend:v0.1.0`
-
-**Or build locally and push:**
-```bash
-# Log in to GitHub Container Registry
-docker login ghcr.io -u YOUR_GITHUB_USERNAME
-
-# Build and push (example with v0.1.0)
-make build-push VERSION=v0.1.0
-```
-
-### 2. On the server: deploy using pre-built images
-
-The repository includes `docker-compose.server.yml` configured to pull images from GHCR.
+## 7. Verify health
 
 ```bash
-# Clone the repo (only needed files: docker-compose.server.yml, nginx.server.conf, .env.example)
-git clone https://github.com/iqb-berlin/content-pool-next.git
-cd content-pool-next
-
-# Create .env
-cp .env.example .env
-nano .env  # Set JWT_SECRET, DB_PASSWORD, KEYCLOAK passwords, IMAGE_VERSION, etc.
-```
-
-**For testing with `latest` (auto-updates on redeploy):**
-```bash
-# .env
-IMAGE_VERSION=latest
-
-make server-up
-```
-
-**For testing with pinned version (recommended for stability):**
-```bash
-# .env - pin to a specific version
-IMAGE_VERSION=v0.1.0
-
-make server-up
-```
-
-To update to a new version:
-```bash
-# Edit .env: IMAGE_VERSION=v0.2.0
-make server-update
-```
-
-### 3. Verify deployment
-
-```bash
-# Check all containers are running
 docker compose -f docker-compose.server.yml ps
-
-# Test the API
-curl http://localhost/api/auth/oidc-config
-
-# View logs
-make server-logs
+./scripts/check-health.sh server "https://auth.example.com/realms/iqb" "http://localhost/api" "http://localhost"
 ```
 
-### 4. Update
+Expected:
+
+- `content-pool-nginx`, `content-pool-api`, `content-pool-db`, `keycloak`, `keycloak-db` are `Up`
+- `GET /api/auth/oidc-config` returns `"enabled": true`
+
+## 8. Access Keycloak Admin securely
+
+Keycloak is bound to `127.0.0.1:8080` by default.
+
+Use an SSH tunnel from your local machine:
 
 ```bash
-# Pull latest images and restart
-make server-update
-
-# Or manually:
-# docker compose -f docker-compose.server.yml pull
-# docker compose -f docker-compose.server.yml up -d
+ssh -L 8080:127.0.0.1:8080 USER@YOUR_SERVER
 ```
 
-### Server Deployment Commands
+Then open:
 
-| Command | Description |
-|---------|-------------|
-| `make server-up` | Pull images and start server deployment |
-| `make server-stop` | Stop server deployment |
-| `make server-update` | Pull latest images and restart |
-| `make server-logs` | View all service logs |
-| `make server-clean` | Stop and remove all containers and volumes |
+- `http://localhost:8080/admin`
 
----
+Login with `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`.
 
-## Environment Variables
+## 9. First login bootstrap
 
-| Variable | Default | Required | Description |
-|---|---|---|---|
-| `JWT_SECRET` | — | **yes** | Secret for signing JWT tokens |
-| `DB_PASSWORD` | `contentpool_prod` | **yes** | PostgreSQL password (change!) |
-| `DB_USERNAME` | `contentpool` | no | PostgreSQL user |
-| `DB_DATABASE` | `contentpool` | no | PostgreSQL database name |
-| `APP_PORT` | `80` | no | Port nginx listens on |
-| `CORS_ORIGIN` | `*` | no | Allowed CORS origin |
-| `JWT_EXPIRATION` | `24h` | no | JWT token lifetime |
-| `OIDC_ISSUER_URL` | — | no | Keycloak realm URL |
-| `OIDC_CLIENT_ID` | — | no | Keycloak client ID |
-| `OIDC_REDIRECT_URI` | — | no | Callback URL after Keycloak login |
-| `OIDC_SCOPE` | `openid profile email` | no | OIDC scopes |
+1. In Keycloak realm `iqb`, create your real admin user.
+2. Assign realm role `admin` to that user.
+3. Login to ContentPool via OIDC.
+4. Verify that the user becomes `isAppAdmin=true` automatically.
 
----
-
-## Database Migrations
-
-After the first deployment or when the schema changes:
+## 10. Updates
 
 ```bash
-# Run inside the backend container
-docker compose -f docker-compose.prod.yml exec backend \
-  npx typeorm-ts-node-commonjs migration:run -d src/config/data-source.ts
+# pre-built mode
+docker compose -f docker-compose.server.yml pull
+docker compose -f docker-compose.server.yml up -d
+
+# build mode
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
----
+## 11. Backups (recommended)
 
-## OIDC / Keycloak Setup
-
-See [README.md](README.md#oidc--keycloak-integration) for the full setup guide. Quick summary:
-
-1. Create a Keycloak client with `Client ID = contentpool-frontend`
-2. Set `OIDC_ISSUER_URL`, `OIDC_CLIENT_ID`, `OIDC_REDIRECT_URI` in `.env`
-3. Restart containers
-4. Verify: `curl http://localhost/api/auth/oidc-config` → `{"enabled": true}`
-
----
-
-## Troubleshooting
-
-| Problem | Cause | Fix |
-|---|---|---|
-| Build takes >10 min | Low RAM, server swapping | Use Option B (pre-built images) or add swap |
-| `bcrypt` native build fails | Missing build tools on Alpine | Already fixed — project uses `bcryptjs` (pure JS) |
-| Containers restart loop | DB not ready | `depends_on` with `condition: service_healthy` handles this; check DB logs |
-| 502 Bad Gateway | Backend not up yet | Wait 30s after `docker compose up`, or check `docker compose logs backend` |
-| Uploads lost after restart | Missing volume | `uploads` volume is defined in compose — check with `docker volume ls` |
+```bash
+mkdir -p backups
+docker exec content-pool-db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/contentpool_$(date +%F_%H-%M-%S).sql
+docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > backups/keycloak_$(date +%F_%H-%M-%S).sql
+```

@@ -4,7 +4,7 @@
   "displayName": "IQB ContentPool",
   "loginTheme": "iqb-theme",
   "accountTheme": "keycloak.v2",
-  "sslRequired": "external",
+  "sslRequired": "none",
   "registrationAllowed": false,
   "verifyEmail": true,
   "loginWithEmailAllowed": true,
@@ -20,17 +20,7 @@
   "quickLoginCheckMilliSeconds": 1000,
   "maxDeltaTimeSeconds": 43200,
   "failureFactor": 30,
-  "smtpServer": {
-    "from": "noreply@iqb.hu-berlin.de",
-    "fromDisplayName": "IQB ContentPool",
-    "host": "mailtrap.io",
-    "port": "587",
-    "ssl": "false",
-    "starttls": "true",
-    "auth": "true",
-    "user": "YOUR_SMTP_USER",
-    "password": "YOUR_SMTP_PASS"
-  },
+  "smtpServer": {},
   "roles": {
     "realm": [
       {
@@ -75,7 +65,9 @@
     "name": "user",
     "description": "Regular user"
   },
-  "requiredCredentials": ["password"],
+  "requiredCredentials": [
+    "password"
+  ],
   "clients": [
     {
       "id": "account",
@@ -150,7 +142,9 @@
       "redirectUris": [
         "/realms/iqb/account/*"
       ],
-      "webOrigins": ["+"],
+      "webOrigins": [
+        "+"
+      ],
       "notBefore": 0,
       "bearerOnly": false,
       "consentRequired": false,
@@ -189,20 +183,20 @@
       "alwaysDisplayInConsole": false,
       "clientAuthenticatorType": "client-secret",
       "redirectUris": [
-        "https://app.example.com/auth/callback",
-        "http://YOUR_SERVER_IP/auth/callback",
-        "http://localhost:4200/auth/callback",
         "http://localhost:4201/auth/callback",
+        "http://localhost:4201/*",
+        "http://localhost:4200/auth/callback",
+        "http://localhost:4200/*",
+        "http://127.0.0.1:4201/auth/callback",
+        "http://127.0.0.1:4201/*",
         "http://127.0.0.1:4200/auth/callback",
-        "http://127.0.0.1:4201/auth/callback"
+        "http://127.0.0.1:4200/*"
       ],
       "webOrigins": [
-        "https://app.example.com",
-        "http://YOUR_SERVER_IP",
-        "http://localhost:4200",
         "http://localhost:4201",
-        "http://127.0.0.1:4200",
-        "http://127.0.0.1:4201"
+        "http://localhost:4200",
+        "http://127.0.0.1:4201",
+        "http://127.0.0.1:4200"
       ],
       "notBefore": 0,
       "bearerOnly": false,
@@ -356,7 +350,10 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"],
+      "realmRoles": [
+        "admin",
+        "user"
+      ],
       "requiredActions": []
     }
   ],
@@ -369,9 +366,10 @@
     "xXSSProtection": "1; mode=block",
     "strictTransportSecurity": "max-age=31536000; includeSubDomains"
   },
-  "smtpServer": {},
   "eventsEnabled": false,
-  "eventsListeners": ["jboss-logging"],
+  "eventsListeners": [
+    "jboss-logging"
+  ],
   "enabledEventTypes": [],
   "adminEventsEnabled": false,
   "adminEventsDetailsEnabled": false,
@@ -384,7 +382,9 @@
         "providerId": "rsa-generated",
         "subComponents": {},
         "config": {
-          "priority": ["100"]
+          "priority": [
+            "100"
+          ]
         }
       },
       {
@@ -392,15 +392,22 @@
         "providerId": "hmac-generated",
         "subComponents": {},
         "config": {
-          "priority": ["100"],
-          "algorithm": ["HS256"]
+          "priority": [
+            "100"
+          ],
+          "algorithm": [
+            "HS256"
+          ]
         }
       }
     ]
   },
   "internationalizationEnabled": true,
   "defaultLocale": "de",
-  "supportedLocales": ["de", "en"],
+  "supportedLocales": [
+    "de",
+    "en"
+  ],
   "browserFlow": "browser",
   "registrationFlow": "registration",
   "directGrantFlow": "direct grant",

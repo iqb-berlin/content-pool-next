@@ -56,7 +56,7 @@ npx ng serve
 
 - Docker and Docker Compose installed
 - Server with ports 80 and 443 available
-- Domain name pointing to your server (optional but recommended)
+- Domain names for app + auth (recommended for secure OIDC)
 
 ### Quick Deploy
 
@@ -87,15 +87,23 @@ POSTGRES_PASSWORD=your-secure-password-here
 # JWT (REQUIRED - generate random string)
 JWT_SECRET=your-random-secret-at-least-32-characters
 JWT_EXPIRATION=24h
+DB_SYNCHRONIZE=true
+DB_RUN_MIGRATIONS=false
 
 # CORS (set to your domain)
-CORS_ORIGIN=https://your-domain.de
+CORS_ORIGIN=https://app.example.com
 
-# OIDC (optional - leave empty to disable)
-OIDC_ISSUER_URL=
-OIDC_CLIENT_ID=
-OIDC_REDIRECT_URI=
+# OIDC (required for admin/manager login)
+KEYCLOAK_HOSTNAME=auth.example.com
+OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
+OIDC_PUBLIC_ISSUER_URL=https://auth.example.com/realms/iqb
+OIDC_CLIENT_ID=contentpool
+OIDC_REDIRECT_URI=https://app.example.com/auth/callback
 OIDC_SCOPE=openid profile email
+
+# Keycloak credentials
+KEYCLOAK_DB_PASSWORD=your-keycloak-db-password
+KEYCLOAK_ADMIN_PASSWORD=your-keycloak-admin-password
 ```
 
 ### HTTPS Setup with Let's Encrypt
@@ -104,11 +112,10 @@ OIDC_SCOPE=openid profile email
 # 1. Install certbot on server
 sudo apt update && sudo apt install certbot
 
-# 2. Get certificate (replace your-domain.de)
-sudo certbot certonly --standalone -d your-domain.de
+# 2. Get certificate (replace your domains)
+sudo certbot certonly --standalone -d app.example.com -d auth.example.com
 
-# 3. Update nginx.prod.conf with your domain
-# Edit server_name from "deine-domain.de" to your actual domain
+# 3. Configure your reverse proxy/edge to terminate TLS and forward to this stack
 
 # 4. Restart containers
 docker compose -f docker-compose.prod.yml restart nginx
@@ -213,108 +220,18 @@ cd backend && npm run test:e2e
 
 ## OIDC / Keycloak Integration
 
-Admin and ACP Manager features require OIDC authentication via Keycloak. Public ACP access with credentials continues to work with local username/password.
+Admin and ACP Manager features use Keycloak OIDC. Public ACP access with credential lists still works without OIDC.
 
-### 1. Keycloak Client Configuration
+Highlights:
 
-Create a new client in your Keycloak realm:
+- Frontend flow: **Authorization Code + PKCE**
+- Realm export is preconfigured for secure defaults (`implicitFlowEnabled=false`, `publicClient=true`, `pkce=S256`)
+- Development uses `keycloak/realm-export.dev.json` (localhost redirects, `sslRequired=none`)
+- Production uses `keycloak/realm-export.json` (secure baseline, `sslRequired=external`)
+- Reverse proxy must expose `/realms/*` and `/resources/*`
+- `/auth/callback` is reserved for the frontend and must not be proxied to Keycloak
 
-| Setting | Value |
-|---------|-------|
-| Client ID | `contentpool-frontend` (or your choice) |
-| Client Protocol | `openid-connect` |
-| Access Type | `public` |
-| Valid Redirect URIs | `http://localhost:4200/auth/callback` |
-| Web Origins | `http://localhost:4200` |
+For full setup and secure VPS deployment:
 
-**Required Client Scopes:**
-- `openid`
-- `profile`
-- `email`
-
-### 2. Docker Configuration
-
-All OIDC configuration is done via Docker environment variables. The Keycloak login button only appears when OIDC is properly configured.
-
-**Quick Start - Activate OIDC in Development:**
-
-```bash
-# 1. Copy the example file
-cp .env.example .env
-
-# 2. Edit .env with your Keycloak values
-nano .env
-# Set: OIDC_ISSUER_URL=https://your-keycloak.com/realms/iqb
-# Set: OIDC_CLIENT_ID=contentpool-frontend
-
-# 3. Restart containers
-docker-compose up -d
-```
-
-**Manual Setup (without .env file):**
-
-```bash
-export OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm
-export OIDC_CLIENT_ID=contentpool-frontend
-docker-compose up -d
-```
-
-**Production** (`docker-compose.prod.yml`):
-```bash
-export OIDC_ISSUER_URL=https://keycloak.example.com/realms/your-realm
-export OIDC_CLIENT_ID=contentpool-frontend
-export OIDC_REDIRECT_URI=https://contentpool.example.com/auth/callback
-export JWT_SECRET=your-secure-secret
-
-docker-compose -f docker-compose.prod.yml up -d
-```
-
-**Verify OIDC is active:**
-```bash
-# The API should return "enabled": true
-curl http://localhost:3000/api/auth/oidc-config
-```
-
-### 3. Database Migration
-
-Run the migration to add the `oidc_sub` column:
-
-```bash
-cd backend
-npx typeorm-ts-node-commonjs migration:run -d src/database/data-source.ts
-```
-
-### 4. Link Users to Keycloak Accounts
-
-After configuration, link existing ContentPool users to Keycloak:
-
-**Step 1:** Get the user's Keycloak `sub` claim
-- From Keycloak Admin Console → Users → {user} → ID field
-- Or inspect the JWT token from a successful Keycloak login
-
-**Step 2:** Link via API (as ContentPool Admin):
-
-```bash
-curl -X POST http://localhost:3000/api/auth/link-oidc \
-  -H "Authorization: Bearer <your-admin-jwt>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "userId": "contentpool-user-uuid",
-    "oidcSub": "keycloak-user-sub-uuid"
-  }'
-```
-
-### 5. Login Flow
-
-1. User clicks **"Mit Keycloak anmelden"** on the login page
-2. Redirect to Keycloak login page
-3. After successful Keycloak auth → redirect to `/auth/callback?id_token=...`
-4. Frontend exchanges ID token for ContentPool JWT
-5. User is logged in and can access Admin/ACP Manager features
-
-### Security Notes
-
-- Admin and ACP Manager endpoints require OIDC authentication (`OidcAuthGuard`)
-- The local username/password login still works for ACP credential-based access
-- JWT tokens from OIDC login contain `authType: 'oidc'` for verification
-- The `oidcSub` uniquely links a ContentPool user to a Keycloak identity
+- [KEYCLOAK_SETUP.md](KEYCLOAK_SETUP.md)
+- [DEPLOY.md](DEPLOY.md)

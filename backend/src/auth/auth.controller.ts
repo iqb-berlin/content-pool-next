@@ -21,11 +21,14 @@ export class AuthController {
   async getOidcConfig() {
     // Use public issuer URL for frontend, fallback to internal URL if not set
     const publicIssuerUrl = process.env.OIDC_PUBLIC_ISSUER_URL || process.env.OIDC_ISSUER_URL;
+    const redirectUri = process.env.OIDC_REDIRECT_URI || 'http://localhost:4201/auth/callback';
+    const enabled = this.oidcValidationService.isOidcEnabled() && !!publicIssuerUrl && !!redirectUri;
+
     return {
-      enabled: this.oidcValidationService.isOidcEnabled(),
+      enabled,
       issuerUrl: publicIssuerUrl || null,
       clientId: process.env.OIDC_CLIENT_ID || null,
-      redirectUri: process.env.OIDC_REDIRECT_URI || 'http://localhost:4200/auth/callback',
+      redirectUri,
       scope: process.env.OIDC_SCOPE || 'openid profile email',
     };
   }

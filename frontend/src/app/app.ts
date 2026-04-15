@@ -66,7 +66,7 @@ import { ApiService } from './core/services/api.service';
   `]
 })
 export class AppComponent implements OnInit {
-  logoUrl: string | null = null;
+  logoUrl: string | null = 'assets/brandmark-violet.svg';
 
   constructor(
     public auth: AuthService,
@@ -76,7 +76,7 @@ export class AppComponent implements OnInit {
 
   ngOnInit() {
     this.api.getPublicSettings().subscribe(settings => {
-      this.logoUrl = settings.logoUrl;
+      this.logoUrl = settings.logoUrl || 'assets/brandmark-violet.svg';
     });
   }
 

@@ -371,7 +371,7 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
 })
 export class LandingComponent implements OnInit {
   acps: PublicAcp[] = [];
-  logoUrl: string | null = null;
+  logoUrl: string | null = 'assets/logo-violet.svg';
   landingHtml: SafeHtml | null = null;
   imprintHtml: SafeHtml | null = null;
   privacyHtml: SafeHtml | null = null;
@@ -426,7 +426,7 @@ export class LandingComponent implements OnInit {
       acps: acpsRequest,
     }).subscribe(({ settings, acps }) => {
       this.acps = acps as PublicAcp[];
-      this.logoUrl = settings.logoUrl;
+      this.logoUrl = settings.logoUrl || 'assets/logo-violet.svg';
       if (settings.landingPageHtml) {
         this.landingHtml = this.sanitizer.bypassSecurityTrustHtml(settings.landingPageHtml);
       }

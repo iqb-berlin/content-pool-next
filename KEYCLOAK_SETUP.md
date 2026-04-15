@@ -6,10 +6,36 @@ ContentPool uses Keycloak via OpenID Connect with **Authorization Code Flow + PK
 
 - Development (`docker-compose.yml`) imports `keycloak/realm-export.dev.json`:
   - `sslRequired: none`
+  - `verifyEmail: false` (dev convenience; no email verification step)
   - localhost redirect URIs / web origins
+  - preconfigured Identity Provider alias `kodierbox` (realm `coding-box`)
 - Production (`docker-compose.prod.yml`, `docker-compose.server.yml`) imports `keycloak/realm-export.json`:
   - `sslRequired: external`
   - secure domain-based baseline
+
+## Dev brokering with external Keycloak (`kodierbox`)
+
+The development realm export now includes a brokered OIDC provider:
+
+- alias: `kodierbox`
+- external issuer: `https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box`
+- external client id: `coding-box`
+- `trustEmail=true` (no local email verification required for brokered users)
+- dev realm has `verifyEmail=false` to avoid blocking broker logins on local setups
+
+For the external client (`coding-box`) ensure these redirect URIs are allowed:
+
+- `http://localhost:8080/realms/iqb/broker/kodierbox/endpoint`
+- `http://127.0.0.1:8080/realms/iqb/broker/kodierbox/endpoint`
+
+Important for local dev: realm import is applied only when realm `iqb` is created.
+If you already started Keycloak before, recreate the dev Keycloak data volume:
+
+```bash
+docker compose down
+docker volume rm content-pool-next_keycloak-data
+docker compose up -d
+```
 
 ## Secure baseline
 

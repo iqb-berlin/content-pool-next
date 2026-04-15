@@ -227,6 +227,7 @@ Highlights:
 - Frontend flow: **Authorization Code + PKCE**
 - Realm export is preconfigured for secure defaults (`implicitFlowEnabled=false`, `publicClient=true`, `pkce=S256`)
 - Development uses `keycloak/realm-export.dev.json` (localhost redirects, `sslRequired=none`)
+- Development realm includes external broker `kodierbox` (external realm `coding-box`)
 - Production uses `keycloak/realm-export.json` (secure baseline, `sslRequired=external`)
 - Reverse proxy must expose `/realms/*` and `/resources/*`
 - `/auth/callback` is reserved for the frontend and must not be proxied to Keycloak

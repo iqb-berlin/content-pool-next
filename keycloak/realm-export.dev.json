@@ -6,7 +6,7 @@
   "accountTheme": "keycloak.v2",
   "sslRequired": "none",
   "registrationAllowed": false,
-  "verifyEmail": true,
+  "verifyEmail": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
@@ -374,7 +374,38 @@
   "enabledEventTypes": [],
   "adminEventsEnabled": false,
   "adminEventsDetailsEnabled": false,
-  "identityProviders": [],
+  "identityProviders": [
+    {
+      "alias": "kodierbox",
+      "displayName": "Keycloak Kodierbox",
+      "providerId": "keycloak-oidc",
+      "enabled": true,
+      "updateProfileFirstLoginMode": "on",
+      "trustEmail": true,
+      "storeToken": true,
+      "addReadTokenRoleOnCreate": false,
+      "authenticateByDefault": false,
+      "linkOnly": false,
+      "firstBrokerLoginFlowAlias": "first broker login",
+      "config": {
+        "hideOnLoginPage": "false",
+        "issuer": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box",
+        "authorizationUrl": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box/protocol/openid-connect/auth",
+        "tokenUrl": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box/protocol/openid-connect/token",
+        "logoutUrl": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box/protocol/openid-connect/logout",
+        "userInfoUrl": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box/protocol/openid-connect/userinfo",
+        "jwksUrl": "https://keycloak.kodierbox.iqb.hu-berlin.de/realms/coding-box/protocol/openid-connect/certs",
+        "useJwksUrl": "true",
+        "validateSignature": "true",
+        "syncMode": "IMPORT",
+        "clientId": "coding-box",
+        "defaultScope": "openid profile email",
+        "backchannelSupported": "true",
+        "pkceEnabled": "true",
+        "pkceMethod": "S256"
+      }
+    }
+  ],
   "identityProviderMappers": [],
   "components": {
     "org.keycloak.keys.KeyProvider": [

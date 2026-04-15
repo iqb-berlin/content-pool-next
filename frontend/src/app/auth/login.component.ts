@@ -41,7 +41,7 @@ import { AuthContext, OidcConfig } from '../core/models/api.models';
               <div class="divider"><span>oder</span></div>
             }
 
-            <form>
+            <form (ngSubmit)="onSubmit()">
               <div class="form-group">
                 <label for="username">Benutzername</label>
                 <input id="username" [(ngModel)]="username" name="username" required autofocus>

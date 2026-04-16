@@ -214,59 +214,80 @@ export class ValidationService {
     const issues: ValidationIssue[] = [];
     const index = toRuntimeAcpIndex(acp.acpIndex);
     const units = getIndexUnits(index);
+    const unitIds = new Set(
+      units
+        .map((u: any) => (typeof u?.id === 'string' ? u.id : ''))
+        .filter((id: string) => id.length > 0),
+    );
     const files = await this.fileRepository.find({ where: { acpId } });
     const fileNames = new Set(files.map((f) => f.originalName));
 
     // Check that all unit dependencies reference existing files
-    for (const unit of units) {
-      for (const dep of unit.dependencies || []) {
-        if (!fileNames.has(dep.id)) {
+    for (const [unitIndex, unit] of units.entries()) {
+      const dependencies = Array.isArray(unit?.dependencies) ? unit.dependencies : [];
+      for (const [depIndex, dep] of dependencies.entries()) {
+        const depId = typeof dep?.id === 'string' ? dep.id : '';
+        if (!depId || !fileNames.has(depId)) {
           issues.push({
             severity: 'error',
-            message: `Unit "${unit.id}" references missing file: ${dep.id}`,
-            path: `units/${unit.id}/dependencies`,
+            message: `Unit "${unit.id}" references missing file: ${depId || '(unbekannt)'}`,
+            path: `units[${unitIndex}].dependencies[${depIndex}].id`,
           });
         }
       }
     }
 
     // Check that booklet modules reference existing units
-    for (const part of getAssessmentParts(index)) {
-      for (const module of part.bookletModules || []) {
-        for (const modUnit of module.units || []) {
-          const unitExists = units.some(
-            (u: any) => u.id === modUnit.id,
-          );
+    const assessmentParts = getAssessmentParts(index);
+    for (const [partIndex, part] of assessmentParts.entries()) {
+      const modules = Array.isArray(part?.bookletModules) ? part.bookletModules : [];
+      const moduleIds = new Set(
+        modules
+          .map((m: any) => (typeof m?.id === 'string' ? m.id : ''))
+          .filter((id: string) => id.length > 0),
+      );
+
+      for (const [moduleIndex, module] of modules.entries()) {
+        const moduleUnitRefs = Array.isArray(module?.units) ? module.units : [];
+        for (const [moduleUnitIndex, modUnit] of moduleUnitRefs.entries()) {
+          const { id: moduleUnitId, pathSuffix } = this.resolveUnitReference(modUnit);
+          const unitExists = !!moduleUnitId && unitIds.has(moduleUnitId);
           if (!unitExists) {
             issues.push({
               severity: 'error',
-              message: `Module "${module.id}" references missing unit: ${modUnit.id}`,
-              path: `assessmentParts/bookletModules/${module.id}/units`,
+              message: `Module "${module?.id || '(unbekannt)'}" references missing unit: ${moduleUnitId || '(unbekannt)'}`,
+              path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}].units[${moduleUnitIndex}]${pathSuffix}`,
             });
           }
         }
       }
 
       // Check instruments reference existing modules
-      for (const instrument of part.instruments || []) {
-        for (const booklet of instrument.testcenterBooklet || []) {
-          if (!fileNames.has(booklet.definitionId)) {
+      const instruments = Array.isArray(part?.instruments) ? part.instruments : [];
+      for (const [instrumentIndex, instrument] of instruments.entries()) {
+        const booklets = Array.isArray(instrument?.testcenterBooklet)
+          ? instrument.testcenterBooklet
+          : [];
+        for (const [bookletIndex, booklet] of booklets.entries()) {
+          const definitionId =
+            typeof booklet?.definitionId === 'string' ? booklet.definitionId : '';
+          if (definitionId && !fileNames.has(definitionId)) {
             issues.push({
               severity: 'warning',
-              message: `Instrument "${instrument.id}" references missing booklet file: ${booklet.definitionId}`,
-              path: `assessmentParts/instruments/${instrument.id}`,
+              message: `Instrument "${instrument?.id || '(unbekannt)'}" references missing booklet file: ${definitionId}`,
+              path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].definitionId`,
             });
           }
-          for (const modRef of booklet.modules || []) {
-            const moduleRefId = this.resolveModuleReferenceId(modRef);
-            const moduleExists = (part.bookletModules || []).some(
-              (m: any) => m.id === moduleRefId,
-            );
-            if (!moduleRefId || !moduleExists) {
+
+          const moduleRefs = Array.isArray(booklet?.modules) ? booklet.modules : [];
+          for (const [moduleRefIndex, modRef] of moduleRefs.entries()) {
+            const { id: moduleRefId, pathSuffix } = this.resolveModuleReference(modRef);
+            const moduleExists = !!moduleRefId && moduleIds.has(moduleRefId);
+            if (!moduleExists) {
               issues.push({
                 severity: 'error',
-                message: `Instrument "${instrument.id}" references missing module: ${moduleRefId || '(unbekannt)'}`,
-                path: `assessmentParts/instruments/${instrument.id}`,
+                message: `Instrument "${instrument?.id || '(unbekannt)'}" references missing module: ${moduleRefId || '(unbekannt)'}`,
+                path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].modules[${moduleRefIndex}]${pathSuffix}`,
               });
             }
           }
@@ -274,26 +295,24 @@ export class ValidationService {
       }
     }
 
-    // Check scale item references
-    for (const scale of getIndexScales(index)) {
-      if (scale.typeParameters?.items) {
-        for (const scaleItem of scale.typeParameters.items) {
-          // Check if item ID exists in any unit
-          const itemExists = units.some((u: any) =>
-            (u.items || []).some((i: any) => {
-              const fullId = i.useUnitAliasAsPrefix !== false
-                ? `${u.id}_${i.id}`
-                : i.id;
-              return fullId === scaleItem.id || i.id === scaleItem.id;
-            }),
-          );
-          if (!itemExists) {
-            issues.push({
-              severity: 'warning',
-              message: `Scale "${scale.id}" references unknown item: ${scaleItem.id}`,
-              path: `scales/${scale.id}/items`,
-            });
-          }
+    const knownItemIds = this.collectKnownItemIds(units);
+    const scalesInParts = this.collectScaleEntriesFromAssessmentParts(assessmentParts);
+    const scaleEntries = scalesInParts.length
+      ? scalesInParts
+      : this.collectScaleEntriesFromLegacyTopLevel(index);
+
+    for (const scaleEntry of scaleEntries) {
+      const scaleItems = Array.isArray(scaleEntry.scale?.typeParameters?.items)
+        ? scaleEntry.scale.typeParameters.items
+        : [];
+      for (const [scaleItemIndex, scaleItem] of scaleItems.entries()) {
+        const scaleItemId = this.resolveScaleItemId(scaleItem);
+        if (!scaleItemId || !knownItemIds.has(scaleItemId)) {
+          issues.push({
+            severity: 'warning',
+            message: `Scale "${scaleEntry.scale?.id || '(unbekannt)'}" references unknown item: ${scaleItemId || '(unbekannt)'}`,
+            path: `${scaleEntry.pathBase}.typeParameters.items[${scaleItemIndex}].id`,
+          });
         }
       }
     }
@@ -516,5 +535,118 @@ export class ValidationService {
       }
     }
     return null;
+  }
+
+  private resolveModuleReference(
+    moduleRef: unknown,
+  ): { id: string | null; pathSuffix: string } {
+    if (typeof moduleRef === 'string') {
+      const id = moduleRef.trim();
+      return {
+        id: id.length ? id : null,
+        pathSuffix: '',
+      };
+    }
+    if (moduleRef && typeof moduleRef === 'object') {
+      const ref = moduleRef as { moduleId?: unknown; id?: unknown };
+      if (typeof ref.moduleId === 'string') {
+        const id = ref.moduleId.trim();
+        return {
+          id: id.length ? id : null,
+          pathSuffix: '.moduleId',
+        };
+      }
+      if (typeof ref.id === 'string') {
+        const id = ref.id.trim();
+        return {
+          id: id.length ? id : null,
+          pathSuffix: '.id',
+        };
+      }
+      return { id: null, pathSuffix: '' };
+    }
+    return { id: null, pathSuffix: '' };
+  }
+
+  private resolveUnitReference(
+    unitRef: unknown,
+  ): { id: string | null; pathSuffix: string } {
+    if (typeof unitRef === 'string') {
+      const id = unitRef.trim();
+      return {
+        id: id.length ? id : null,
+        pathSuffix: '',
+      };
+    }
+    if (unitRef && typeof unitRef === 'object') {
+      const ref = unitRef as { id?: unknown };
+      if (typeof ref.id === 'string') {
+        const id = ref.id.trim();
+        return {
+          id: id.length ? id : null,
+          pathSuffix: '.id',
+        };
+      }
+      return { id: null, pathSuffix: '' };
+    }
+    return { id: null, pathSuffix: '' };
+  }
+
+  private collectKnownItemIds(units: any[]): Set<string> {
+    const knownItemIds = new Set<string>();
+    for (const unit of units) {
+      const unitId = typeof unit?.id === 'string' ? unit.id : '';
+      const items = Array.isArray(unit?.items) ? unit.items : [];
+      for (const item of items) {
+        const itemId = typeof item?.id === 'string' ? item.id : '';
+        if (!itemId) continue;
+        knownItemIds.add(itemId);
+        if (unitId && item.useUnitAliasAsPrefix !== false) {
+          knownItemIds.add(`${unitId}_${itemId}`);
+        }
+      }
+    }
+    return knownItemIds;
+  }
+
+  private resolveScaleItemId(scaleItem: unknown): string | null {
+    if (typeof scaleItem === 'string') {
+      const id = scaleItem.trim();
+      return id.length ? id : null;
+    }
+    if (scaleItem && typeof scaleItem === 'object') {
+      const entry = scaleItem as { id?: unknown };
+      if (typeof entry.id === 'string') {
+        const id = entry.id.trim();
+        return id.length ? id : null;
+      }
+    }
+    return null;
+  }
+
+  private collectScaleEntriesFromAssessmentParts(
+    assessmentParts: any[],
+  ): Array<{ scale: any; pathBase: string }> {
+    const entries: Array<{ scale: any; pathBase: string }> = [];
+    for (const [partIndex, part] of assessmentParts.entries()) {
+      const partScales = Array.isArray(part?.scales) ? part.scales : [];
+      for (const [scaleIndex, scale] of partScales.entries()) {
+        entries.push({
+          scale,
+          pathBase: `assessmentParts[${partIndex}].scales[${scaleIndex}]`,
+        });
+      }
+    }
+    return entries;
+  }
+
+  private collectScaleEntriesFromLegacyTopLevel(
+    index: Record<string, unknown>,
+  ): Array<{ scale: any; pathBase: string }> {
+    const scales = getIndexScales(index);
+    return scales.map((scale, scaleIndex) => ({
+      scale,
+      pathBase: `scales[${scaleIndex}]`,
+    }));
   }
 }

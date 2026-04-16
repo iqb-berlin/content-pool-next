@@ -117,6 +117,78 @@ describe('ValidationService', () => {
       expect(result.valid).toBe(true);
     });
 
+    it('should report missing module references with precise ACP path', async () => {
+      acpRepo.findOne.mockResolvedValue({
+        id: 'acp-1',
+        acpIndex: {
+          assessmentParts: [
+            {
+              units: [{ id: 'u1', dependencies: [] }],
+              bookletModules: [{ id: 'mod-1', units: [{ id: 'u1' }] }],
+              instruments: [
+                {
+                  id: 'inst-1',
+                  testcenterBooklet: [
+                    { definitionId: 'booklet.xml', modules: [{ moduleId: 'mod-missing' }] },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      });
+      fileRepo.find.mockResolvedValue([{ originalName: 'booklet.xml' }]);
+
+      const result = await service.validateAcpConsistency('acp-1');
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            path: 'assessmentParts[0].instruments[0].testcenterBooklet[0].modules[0].moduleId',
+          }),
+        ]),
+      );
+    });
+
+    it('should validate assessmentParts scales and report precise item paths', async () => {
+      acpRepo.findOne.mockResolvedValue({
+        id: 'acp-1',
+        acpIndex: {
+          assessmentParts: [
+            {
+              units: [
+                {
+                  id: 'u1',
+                  dependencies: [],
+                  items: [{ id: 'i1', useUnitAliasAsPrefix: true }],
+                },
+              ],
+              scales: [
+                {
+                  id: 'scale-1',
+                  typeParameters: {
+                    items: [{ id: 'u1_missing-item' }],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      fileRepo.find.mockResolvedValue([]);
+
+      const result = await service.validateAcpConsistency('acp-1');
+      expect(result.valid).toBe(true);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            message: expect.stringContaining('scale-1'),
+            path: 'assessmentParts[0].scales[0].typeParameters.items[0].id',
+          }),
+        ]),
+      );
+    });
+
     it('should return error for unknown ACP', async () => {
       acpRepo.findOne.mockResolvedValue(null);
       const result = await service.validateAcpConsistency('bad');

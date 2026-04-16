@@ -143,6 +143,13 @@ export class ApiService {
   getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
     return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);
   }
+  getViewIndex(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/index`);
+  }
+  getViewIndexExportUrl(acpId: string): string {
+    const token = localStorage.getItem('cp_token');
+    return `${this.API}/view/acp/${acpId}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
+  }
 
   // Items
   uploadEmpiricalDifficulties(acpId: string, file: File): Observable<{ updated: number, failed: any[], successes: any[] }> {

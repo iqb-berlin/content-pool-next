@@ -113,6 +113,6 @@ export class AcpIndexViewComponent implements OnInit {
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
-    this.api.getAcpIndex(this.acpId).subscribe(idx => this.index = idx);
+    this.api.getViewIndex(this.acpId).subscribe(idx => this.index = idx);
   }
 }

@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
-import { AcpFile } from '../database/entities';
+import { AcpFile, Acp } from '../database/entities';
 
 jest.mock('fs/promises', () => ({
   mkdir: jest.fn().mockResolvedValue(undefined),
@@ -15,6 +15,7 @@ jest.mock('fs/promises', () => ({
 describe('FilesService', () => {
   let service: FilesService;
   let repo: any;
+  let acpRepo: any;
 
   const mockFile = {
     id: 'file-1',
@@ -36,11 +37,42 @@ describe('FilesService', () => {
       save: jest.fn().mockImplementation(entity => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
     };
+    acpRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'acp-1',
+        acpIndex: {
+          units: [
+            {
+              id: 'unit-1',
+              dependencies: [{ id: 'test.json', type: 'UNIT_DEFINITION' }],
+            },
+            {
+              id: 'unit-2',
+              dependencies: [{ id: 'second.json', type: 'UNIT_DEFINITION' }],
+            },
+          ],
+          assessmentParts: [
+            {
+              bookletModules: [
+                {
+                  id: 'seq-1',
+                  units: [
+                    { id: 'unit-1', order: 1 },
+                    { id: 'unit-2', order: 2 },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FilesService,
         { provide: getRepositoryToken(AcpFile), useValue: repo },
+        { provide: getRepositoryToken(Acp), useValue: acpRepo },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('./uploads') } },
       ],
     }).compile();
@@ -105,6 +137,36 @@ describe('FilesService', () => {
       repo.findOne.mockResolvedValue({ ...mockFile });
       await service.updateValidationResult('file-1', result);
       expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ validationResult: result }));
+    });
+  });
+
+  describe('createUnitZip', () => {
+    it('should create a ZIP for a single unit', async () => {
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: 'f1', originalName: 'test.json' },
+        { ...mockFile, id: 'f2', originalName: 'unit-1.xml' },
+      ]);
+      const result = await service.createUnitZip('acp-1', 'unit-1');
+      expect(result.fileName).toBe('acp-acp-1-unit-unit-1.zip');
+      expect(result.buffer.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('createSequenceZip', () => {
+    it('should create a ZIP for all units in a sequence', async () => {
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: 'f1', originalName: 'test.json' },
+        { ...mockFile, id: 'f2', originalName: 'unit-1.xml' },
+        { ...mockFile, id: 'f3', originalName: 'second.json' },
+        { ...mockFile, id: 'f4', originalName: 'unit-2.xml' },
+      ]);
+      const result = await service.createSequenceZip('acp-1', 'seq-1');
+      expect(result.fileName).toBe('acp-acp-1-sequence-seq-1.zip');
+      expect(result.buffer.length).toBeGreaterThan(0);
+    });
+
+    it('should throw when sequence does not exist', async () => {
+      await expect(service.createSequenceZip('acp-1', 'unknown-seq')).rejects.toThrow(NotFoundException);
     });
   });
 });

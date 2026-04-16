@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
   Delete,
   Param,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFiles,
@@ -28,7 +30,32 @@ export class FilesController {
   @Get()
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List all files for an ACP' })
-  async findAll(@Param('acpId') acpId: string) {
+  async findAll(
+    @Param('acpId') acpId: string,
+    @Query('format') format?: string,
+    @Query('unitId') unitId?: string,
+    @Query('sequenceId') sequenceId?: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    if (format === 'zip') {
+      if (unitId && sequenceId) {
+        throw new BadRequestException('Please provide either unitId or sequenceId, not both');
+      }
+
+      if (!unitId && !sequenceId) {
+        throw new BadRequestException('ZIP download requires unitId or sequenceId');
+      }
+
+      const archive = unitId
+        ? await this.filesService.createUnitZip(acpId, unitId)
+        : await this.filesService.createSequenceZip(acpId, sequenceId!);
+
+      res?.setHeader('Content-Type', 'application/zip');
+      res?.setHeader('Content-Disposition', `attachment; filename="${archive.fileName}"`);
+      res?.send(archive.buffer);
+      return;
+    }
+
     return this.filesService.findByAcp(acpId);
   }
 
@@ -113,4 +140,3 @@ export class FilesController {
     return this.filesService.getValidationResult(fileId);
   }
 }
-

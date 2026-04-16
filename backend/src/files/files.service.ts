@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
-import { AcpFile } from '../database/entities';
+import { AcpFile, Acp } from '../database/entities';
 
 @Injectable()
 export class FilesService {
@@ -18,6 +18,8 @@ export class FilesService {
   constructor(
     @InjectRepository(AcpFile)
     private readonly fileRepository: Repository<AcpFile>,
+    @InjectRepository(Acp)
+    private readonly acpRepository: Repository<Acp>,
     private readonly configService: ConfigService,
   ) {
     this.storagePath = this.configService.get<string>(
@@ -131,5 +133,119 @@ export class FilesService {
     const file = await this.findById(id);
     file.validationResult = result;
     return this.fileRepository.save(file);
+  }
+
+  async createUnitZip(acpId: string, unitId: string): Promise<{ buffer: Buffer; fileName: string }> {
+    const index = await this.getAcpIndex(acpId);
+    const allFiles = await this.findByAcp(acpId);
+    const unitFiles = this.collectUnitFiles(index, allFiles, unitId);
+    if (!unitFiles.length) {
+      throw new NotFoundException(`No files found for unit "${unitId}"`);
+    }
+
+    const buffer = await this.createZipBuffer(unitFiles);
+    return { buffer, fileName: `acp-${acpId}-unit-${unitId}.zip` };
+  }
+
+  async createSequenceZip(acpId: string, sequenceId: string): Promise<{ buffer: Buffer; fileName: string }> {
+    const index = await this.getAcpIndex(acpId);
+    const allFiles = await this.findByAcp(acpId);
+    const unitIds = this.resolveSequenceUnitIds(index, sequenceId);
+
+    if (!unitIds.length) {
+      throw new NotFoundException(`Sequence "${sequenceId}" not found`);
+    }
+
+    const fileMap = new Map<string, AcpFile>();
+    for (const unitId of unitIds) {
+      const unitFiles = this.collectUnitFiles(index, allFiles, unitId, false);
+      for (const file of unitFiles) {
+        fileMap.set(file.id, file);
+      }
+    }
+
+    const files = Array.from(fileMap.values());
+    if (!files.length) {
+      throw new NotFoundException(`No files found for sequence "${sequenceId}"`);
+    }
+
+    const buffer = await this.createZipBuffer(files);
+    return { buffer, fileName: `acp-${acpId}-sequence-${sequenceId}.zip` };
+  }
+
+  private async getAcpIndex(acpId: string): Promise<any> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
+    return (acp.acpIndex || {}) as any;
+  }
+
+  private resolveSequenceUnitIds(index: any, sequenceId: string): string[] {
+    const parts = index.assessmentParts || [];
+    for (const part of parts) {
+      for (const module of part.bookletModules || []) {
+        if (module.id === sequenceId) {
+          return (module.units || [])
+            .slice()
+            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+            .map((u: any) => u.id)
+            .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+        }
+      }
+    }
+    return [];
+  }
+
+  private collectUnitFiles(index: any, allFiles: AcpFile[], unitId: string, throwOnMissingUnit = true): AcpFile[] {
+    const unit = (index.units || []).find((u: any) => u.id === unitId);
+    if (!unit) {
+      if (throwOnMissingUnit) {
+        throw new NotFoundException(`Unit "${unitId}" not found`);
+      }
+      return [];
+    }
+
+    const dependencyNames = new Set<string>();
+    for (const dep of unit.dependencies || []) {
+      if (dep?.id && typeof dep.id === 'string') {
+        dependencyNames.add(dep.id);
+      }
+    }
+
+    // Most ACP exports include one XML per unit; include it if available.
+    dependencyNames.add(`${unitId}.xml`);
+
+    return allFiles.filter((file) => dependencyNames.has(file.originalName));
+  }
+
+  private async createZipBuffer(files: AcpFile[]): Promise<Buffer> {
+    // JSZip is already part of the backend dependency tree.
+    // Use dynamic require here to avoid TypeScript type dependency friction.
+    const JSZip = require('jszip');
+    const zip = new JSZip();
+
+    let added = 0;
+    for (const file of files) {
+      try {
+        const data = await fs.readFile(file.filePath);
+        zip.file(file.originalName, data);
+        added++;
+      } catch {
+        // Ignore missing on-disk files; we still zip what is available.
+      }
+    }
+
+    if (added === 0) {
+      throw new NotFoundException('None of the selected files are available on disk');
+    }
+
+    const buffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 },
+    });
+
+    return buffer as Buffer;
   }
 }

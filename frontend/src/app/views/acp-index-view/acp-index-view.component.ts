@@ -62,10 +62,12 @@ import { ApiService } from '../../core/services/api.service';
                           <div class="booklet-link">
                             📖 <strong>Booklet:</strong> {{ book.definitionId }}
                             <div class="modules-list">
-                              @for (modId of book.modules; track modId) {
-                                <a [routerLink]="['/view', acpId, 'sequence', modId]" class="module-tag">
-                                  {{ modId }}
-                                </a>
+                              @for (moduleRef of book.modules || []; track moduleRefTrack(moduleRef, $index)) {
+                                @if (moduleRefId(moduleRef); as moduleId) {
+                                  <a [routerLink]="['/view', acpId, 'sequence', moduleId]" class="module-tag">
+                                    {{ moduleId }}
+                                  </a>
+                                }
                               }
                             </div>
                           </div>
@@ -114,5 +116,24 @@ export class AcpIndexViewComponent implements OnInit {
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.api.getViewIndex(this.acpId).subscribe(idx => this.index = idx);
+  }
+
+  moduleRefTrack(moduleRef: any, index: number): string {
+    return this.moduleRefId(moduleRef) || `module-${index}`;
+  }
+
+  moduleRefId(moduleRef: any): string | null {
+    if (typeof moduleRef === 'string' && moduleRef.trim().length > 0) {
+      return moduleRef.trim();
+    }
+    if (moduleRef && typeof moduleRef === 'object') {
+      if (typeof moduleRef.moduleId === 'string' && moduleRef.moduleId.trim().length > 0) {
+        return moduleRef.moduleId.trim();
+      }
+      if (typeof moduleRef.id === 'string' && moduleRef.id.trim().length > 0) {
+        return moduleRef.id.trim();
+      }
+    }
+    return null;
   }
 }

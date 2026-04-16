@@ -129,20 +129,46 @@ export class ViewsService {
       description: u.description,
     }));
 
-    // Extract task sequences from booklet modules
-    const sequences: any[] = [];
+    // Sequence model: one sequence equals one booklet module.
+    const sequenceMap = new Map<string, any>();
     const parts = getAssessmentParts(index);
     for (const part of parts) {
-      for (const instrument of part.instruments || []) {
-        for (const booklet of instrument.testcenterBooklet || []) {
-          sequences.push({
-            id: booklet.definitionId,
-            instrumentName: instrument.name,
-            modules: booklet.modules,
+      const modulesById = new Map<string, any>();
+      for (const module of part.bookletModules || []) {
+        if (!module?.id || typeof module.id !== 'string') continue;
+        modulesById.set(module.id, module);
+        if (!sequenceMap.has(module.id)) {
+          sequenceMap.set(module.id, {
+            id: module.id,
+            name: module.name || module.id,
           });
         }
       }
+
+      for (const instrument of part.instruments || []) {
+        for (const booklet of instrument.testcenterBooklet || []) {
+          for (const moduleRef of booklet.modules || []) {
+            const moduleId = this.getModuleReferenceId(moduleRef);
+            if (!moduleId) continue;
+
+            const existing = sequenceMap.get(moduleId) || {};
+            const module = modulesById.get(moduleId);
+
+            sequenceMap.set(moduleId, {
+              id: moduleId,
+              name: module?.name || existing.name || moduleId,
+              instrumentName: existing.instrumentName || instrument.name,
+              bookletDefinitionId:
+                existing.bookletDefinitionId ||
+                (typeof booklet.definitionId === 'string'
+                  ? booklet.definitionId
+                  : undefined),
+            });
+          }
+        }
+      }
     }
+    const sequences = Array.from(sequenceMap.values());
 
     return {
       id: acp.id,
@@ -266,6 +292,22 @@ export class ViewsService {
       }
     }
 
+    return null;
+  }
+
+  private getModuleReferenceId(moduleRef: unknown): string | null {
+    if (typeof moduleRef === 'string' && moduleRef.trim().length > 0) {
+      return moduleRef.trim();
+    }
+    if (moduleRef && typeof moduleRef === 'object') {
+      const ref = moduleRef as { moduleId?: unknown; id?: unknown };
+      if (typeof ref.moduleId === 'string' && ref.moduleId.trim().length > 0) {
+        return ref.moduleId.trim();
+      }
+      if (typeof ref.id === 'string' && ref.id.trim().length > 0) {
+        return ref.id.trim();
+      }
+    }
     return null;
   }
 }

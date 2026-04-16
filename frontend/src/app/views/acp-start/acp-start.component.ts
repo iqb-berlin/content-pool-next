@@ -44,7 +44,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <div class="seq-list">
               @for (seq of data.sequences; track seq.id) {
                 <a [routerLink]="['/view', acpId, 'sequence', seq.id]" class="seq-link">
-                  {{ seq.instrumentName || seq.id }}
+                  {{ sequenceLabel(seq) }}
                 </a>
               }
             </div>
@@ -260,5 +260,31 @@ export class AcpStartComponent implements OnInit {
 
   downloadIndex() {
     window.open(this.api.getViewIndexExportUrl(this.acpId), '_blank');
+  }
+
+  sequenceLabel(sequence: any): string {
+    const name = this.textValue(sequence?.name);
+    if (name) return name;
+
+    const instrumentName = this.textValue(sequence?.instrumentName);
+    if (instrumentName) return instrumentName;
+
+    return sequence?.id || '';
+  }
+
+  private textValue(value: any): string {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) {
+      const de = value.find((entry: any) => entry && entry.lang === 'de');
+      if (de?.value) return String(de.value);
+      const first = value.find((entry: any) => entry && entry.value);
+      if (first?.value) return String(first.value);
+      return '';
+    }
+    if (value && typeof value === 'object') {
+      if (typeof value.de === 'string') return value.de;
+      if (typeof value.value === 'string') return value.value;
+    }
+    return '';
   }
 }

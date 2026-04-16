@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { AcpService } from './acp.service';
 import { Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings, AccessModel, User } from '../database/entities';
 
@@ -122,6 +122,41 @@ describe('AcpService', () => {
       const result = await service.updateIndex('acp-1', newIndex);
       expect(result).toMatchObject(newIndex);
       expect((result as any).assessmentParts?.[0]?.units).toEqual([{ id: 'u1' }]);
+    });
+
+    it('should reject invalid status', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      await expect(
+        service.updateIndex('acp-1', { packageId: 'test-pkg', status: 'DRAFT' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('importIndex', () => {
+    it('should fill missing required fields with defaults', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
+
+      const result = await service.importIndex('acp-1', { assessmentParts: [] });
+
+      expect((result as any).packageId).toBe('test-pkg');
+      expect((result as any).version).toBe('0.5.0');
+      expect((result as any).status).toBe('IN_DEVELOPMENT');
+      expect((result as any).name).toEqual([{ lang: 'de', value: 'Test ACP' }]);
+    });
+
+    it('should reject unknown status values', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      await expect(
+        service.importIndex('acp-1', { packageId: 'test-pkg', status: 'INVALID_STATUS' } as any),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject packageId mismatch', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      await expect(
+        service.importIndex('acp-1', { packageId: 'other-pkg' } as any),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

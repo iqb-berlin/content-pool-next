@@ -29,6 +29,7 @@ import {
   UpdateCredentialDto,
 } from './dto/acp.dto';
 import {
+  ACP_INDEX_ALLOWED_STATUS_VALUES,
   DEFAULT_ACP_INDEX_VERSION,
   normalizeIndexForStorage,
   toRuntimeAcpIndex,
@@ -129,7 +130,7 @@ export class AcpService {
 
   async updateIndex(id: string, index: Record<string, unknown>): Promise<Record<string, unknown>> {
     const acp = await this.findById(id);
-    acp.acpIndex = normalizeIndexForStorage(index);
+    acp.acpIndex = this.prepareIndexForSave(acp, index, {});
     const saved = await this.acpRepository.save(acp);
     return toRuntimeAcpIndex(saved.acpIndex);
   }
@@ -145,7 +146,7 @@ export class AcpService {
     }
 
     // Merge: uploaded index takes priority, defaults fill in missing required fields
-    acp.acpIndex = normalizeIndexForStorage({ ...defaultIndex, ...indexJson });
+    acp.acpIndex = this.prepareIndexForSave(acp, indexJson, defaultIndex);
     const saved = await this.acpRepository.save(acp);
     return toRuntimeAcpIndex(saved.acpIndex);
   }
@@ -486,5 +487,131 @@ export class AcpService {
     return this.acpUserRoleRepository.count({
       where: { acpId, role: AcpRole.ACP_MANAGER },
     });
+  }
+
+  private prepareIndexForSave(
+    acp: Acp,
+    inputIndex: Record<string, unknown>,
+    defaultIndex: Record<string, unknown>,
+  ): Record<string, unknown> {
+    if (!inputIndex || typeof inputIndex !== 'object' || Array.isArray(inputIndex)) {
+      throw new BadRequestException(
+        'ACP-Index muss ein JSON-Objekt sein.',
+      );
+    }
+
+    const merged = { ...defaultIndex, ...inputIndex } as Record<string, unknown>;
+    const packageId = this.resolvePackageId(acp, merged.packageId);
+    const version = this.resolveVersion(merged.version);
+    const status = this.resolveStatus(merged.status);
+    const name = this.resolveLanguageTextArray(
+      merged.name,
+      [{ lang: 'de', value: acp.name || acp.packageId }],
+      'name',
+    );
+    const description = this.resolveLanguageTextArray(
+      merged.description,
+      acp.description ? [{ lang: 'de', value: acp.description }] : [],
+      'description',
+      true,
+    );
+
+    const sanitizedIndex = {
+      ...merged,
+      packageId,
+      version,
+      status,
+      name,
+      description,
+    };
+
+    return normalizeIndexForStorage(sanitizedIndex);
+  }
+
+  private resolvePackageId(acp: Acp, rawPackageId: unknown): string {
+    if (rawPackageId === undefined || rawPackageId === null || rawPackageId === '') {
+      return acp.packageId;
+    }
+
+    if (typeof rawPackageId !== 'string') {
+      throw new BadRequestException('Ungültiges Feld "packageId": Muss ein Text sein.');
+    }
+
+    if (rawPackageId !== acp.packageId) {
+      throw new BadRequestException(
+        `Ungültiges Feld "packageId": Erwartet "${acp.packageId}", erhalten "${rawPackageId}".`,
+      );
+    }
+
+    return rawPackageId;
+  }
+
+  private resolveVersion(rawVersion: unknown): string {
+    if (rawVersion === undefined || rawVersion === null || rawVersion === '') {
+      return DEFAULT_ACP_INDEX_VERSION;
+    }
+
+    if (typeof rawVersion !== 'string') {
+      throw new BadRequestException('Ungültiges Feld "version": Muss ein Text sein.');
+    }
+
+    return rawVersion;
+  }
+
+  private resolveStatus(rawStatus: unknown): string {
+    if (rawStatus === undefined || rawStatus === null || rawStatus === '') {
+      return 'IN_DEVELOPMENT';
+    }
+
+    if (typeof rawStatus !== 'string') {
+      throw new BadRequestException('Ungültiges Feld "status": Muss ein Text sein.');
+    }
+
+    if (!ACP_INDEX_ALLOWED_STATUS_VALUES.includes(rawStatus as any)) {
+      throw new BadRequestException(
+        `Ungültiges Feld "status": "${rawStatus}". Erlaubte Werte: ${ACP_INDEX_ALLOWED_STATUS_VALUES.join(', ')}`,
+      );
+    }
+
+    return rawStatus;
+  }
+
+  private resolveLanguageTextArray(
+    rawValue: unknown,
+    fallback: Array<{ lang: string; value: string }>,
+    fieldName: string,
+    optional = false,
+  ): Array<{ lang: string; value: string }> {
+    if (rawValue === undefined || rawValue === null) {
+      return optional ? fallback : [...fallback];
+    }
+
+    if (!Array.isArray(rawValue)) {
+      throw new BadRequestException(`Ungültiges Feld "${fieldName}": Muss ein Array sein.`);
+    }
+
+    if (rawValue.length === 0) {
+      return optional ? [] : [...fallback];
+    }
+
+    const parsed = rawValue.map((entry: any, idx) => {
+      const lang = entry?.lang;
+      const value = entry?.value;
+
+      if (typeof lang !== 'string' || !/^[a-z]{2}$/.test(lang)) {
+        throw new BadRequestException(
+          `Ungültiges Feld "${fieldName}[${idx}].lang": Muss ein ISO-Sprachcode mit 2 Kleinbuchstaben sein.`,
+        );
+      }
+      if (typeof value !== 'string' || !value.trim()) {
+        throw new BadRequestException(
+          `Ungültiges Feld "${fieldName}[${idx}].value": Muss ein nicht-leerer Text sein.`,
+        );
+      }
+
+      return { lang, value };
+    });
+
+    return parsed;
   }
 }

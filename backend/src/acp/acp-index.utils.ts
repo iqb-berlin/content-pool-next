@@ -1,5 +1,11 @@
 type UnknownRecord = Record<string, unknown>;
 export const DEFAULT_ACP_INDEX_VERSION = '0.5.0';
+export const ACP_INDEX_ALLOWED_STATUS_VALUES = [
+  'IN_DEVELOPMENT',
+  'DISCONTINUED',
+  'RELEASED_PUBLIC',
+  'RELEASED_CONFIDENTIAL',
+] as const;
 
 function asRecord(value: unknown): UnknownRecord {
   if (value && typeof value === 'object' && !Array.isArray(value)) {

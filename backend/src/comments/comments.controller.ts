@@ -93,6 +93,9 @@ export class CommentsController {
     if (req.user.isAppAdmin || req.acpAccessLevel === 'MANAGER') {
       return this.commentsService.exportComments(acpId);
     }
+    if (req.user.type === 'credential') {
+      return this.commentsService.exportCommentsByCredential(acpId, req.user.username);
+    }
     return this.commentsService.exportComments(acpId, req.user.sub);
   }
 }

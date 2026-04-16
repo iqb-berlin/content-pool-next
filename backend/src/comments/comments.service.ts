@@ -77,6 +77,17 @@ export class CommentsService {
     }));
   }
 
+  async exportCommentsByCredential(acpId: string, username: string): Promise<any[]> {
+    const comments = await this.findByCredential(acpId, username);
+    return comments.map((c) => ({
+      targetType: c.targetType,
+      targetId: c.targetId,
+      comment: c.commentText,
+      author: c.credentialUsername || c.user?.displayName || c.user?.username || 'Unknown',
+      createdAt: c.createdAt.toISOString(),
+    }));
+  }
+
   /**
    * Export comments as XLSX buffer using exceljs.
    */

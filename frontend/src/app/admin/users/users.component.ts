@@ -16,7 +16,7 @@ import { User } from '../../core/models/api.models';
     @if (showCreate) {
       <div class="card">
         <h3>Neuen Nutzer anlegen</h3>
-        <form>
+        <form (ngSubmit)="createUser()">
           <div class="form-group">
             <label>Benutzername</label>
             <input [(ngModel)]="newUser.username" name="username" required>
@@ -104,6 +104,12 @@ export class UsersComponent implements OnInit {
   }
 
   createUser() {
+    if (!this.newUser.username.trim() || !this.newUser.password.trim()) {
+      this.error = 'Benutzername und Kennwort sind erforderlich';
+      return;
+    }
+
+    this.error = '';
     this.api.createUser(this.newUser).subscribe({
       next: () => { this.showCreate = false; this.newUser = { username: '', password: '', displayName: '' }; this.load(); },
       error: err => this.error = err.error?.message || 'Fehler beim Anlegen'

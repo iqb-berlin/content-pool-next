@@ -45,7 +45,7 @@ describe('AuthService', () => {
     
     httpClientMock = {
       post: vi.fn().mockReturnValue(of({})),
-      get: vi.fn()
+      get: vi.fn().mockReturnValue(of(mockUserProfile))
     };
     service = new AuthService(httpClientMock as any);
   });

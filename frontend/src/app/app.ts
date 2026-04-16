@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterOutlet, RouterLink, Router } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import { ApiService } from './core/services/api.service';
+import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
 
 @Component({
   selector: 'app-root',
@@ -65,8 +66,23 @@ import { ApiService } from './core/services/api.service';
     .app-main { flex: 1; padding: 24px; width: 100%; margin: 0 auto; box-sizing: border-box; }
   `]
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, OnDestroy {
   logoUrl: string | null = 'assets/brandmark-violet.svg';
+  private readonly settingsUpdatedListener = (event: Event) => {
+    const customEvent = event as CustomEvent<{
+      logoUrl?: string | null;
+      theme?: Record<string, unknown>;
+      language?: string;
+    }>;
+    const detail = customEvent.detail;
+    if (!detail) {
+      return;
+    }
+
+    this.logoUrl = detail.logoUrl || 'assets/brandmark-violet.svg';
+    applyTheme(detail.theme);
+    applyLanguage(detail.language);
+  };
 
   constructor(
     public auth: AuthService,
@@ -75,9 +91,17 @@ export class AppComponent implements OnInit {
   ) {}
 
   ngOnInit() {
+    window.addEventListener('cp-settings-updated', this.settingsUpdatedListener as EventListener);
+
     this.api.getPublicSettings().subscribe(settings => {
       this.logoUrl = settings.logoUrl || 'assets/brandmark-violet.svg';
+      applyTheme(settings.theme);
+      applyLanguage(settings.language);
     });
+  }
+
+  ngOnDestroy() {
+    window.removeEventListener('cp-settings-updated', this.settingsUpdatedListener as EventListener);
   }
 
   logout() {

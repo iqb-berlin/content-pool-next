@@ -15,16 +15,16 @@ export class AcpItemPreference {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ name: 'acp_id' })
+  @Column({ name: 'acp_id', type: 'uuid' })
   acpId!: string;
 
-  @Column({ name: 'view_id', default: 'item-list' })
+  @Column({ name: 'view_id', type: 'varchar', default: 'item-list' })
   viewId!: string;
 
-  @Column({ name: 'user_id', nullable: true })
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId?: string | null;
 
-  @Column({ name: 'credential_username', nullable: true })
+  @Column({ name: 'credential_username', type: 'varchar', nullable: true })
   credentialUsername?: string | null;
 
   @Column({ type: 'jsonb', default: {} })

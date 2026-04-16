@@ -30,6 +30,21 @@ import { firstValueFrom } from 'rxjs';
       </div> 
     }
 
+    @if (lastSyncReport) {
+      <div class="alert alert-info">
+        Index-Sync: {{ lastSyncReport.unitsAdded }} Units hinzugefügt, {{ lastSyncReport.unitsUpdated }} Units aktualisiert,
+        {{ lastSyncReport.itemsAdded }} Items hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items aktualisiert.
+        @if (lastSyncReport.warnings?.length) {
+          <div style="margin-top:6px">
+            Warnungen:
+            @for (warning of lastSyncReport.warnings; track warning) {
+              <div>- {{ warning }}</div>
+            }
+          </div>
+        }
+      </div>
+    }
+
     <!-- Validation Results -->
     @if (validationResults.length) {
       <div class="card" style="margin-bottom:16px">
@@ -121,6 +136,7 @@ export class FilesComponent implements OnInit {
   uploadProgress = '';
   validating = false;
   validationResults: any[] = [];
+  lastSyncReport: any = null;
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
@@ -139,7 +155,16 @@ export class FilesComponent implements OnInit {
     
     const filesArray = Array.from(input.files);
     this.uploading = true;
+    this.lastSyncReport = null;
     const chunkSize = 50;
+    const mergedWarnings = new Set<string>();
+    const aggregateReport = {
+      unitsAdded: 0,
+      unitsUpdated: 0,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      warnings: [] as string[],
+    };
     
     try {
       for (let i = 0; i < filesArray.length; i += chunkSize) {
@@ -151,8 +176,19 @@ export class FilesComponent implements OnInit {
           fd.append('files', file);
         }
         
-        await firstValueFrom(this.api.uploadFiles(this.acpId, fd));
+        const uploadResult = await firstValueFrom(this.api.uploadFiles(this.acpId, fd));
+        if (uploadResult?.syncReport) {
+          aggregateReport.unitsAdded += uploadResult.syncReport.unitsAdded || 0;
+          aggregateReport.unitsUpdated += uploadResult.syncReport.unitsUpdated || 0;
+          aggregateReport.itemsAdded += uploadResult.syncReport.itemsAdded || 0;
+          aggregateReport.itemsUpdated += uploadResult.syncReport.itemsUpdated || 0;
+          for (const warning of uploadResult.syncReport.warnings || []) {
+            mergedWarnings.add(warning);
+          }
+        }
       }
+      aggregateReport.warnings = Array.from(mergedWarnings);
+      this.lastSyncReport = aggregateReport;
       this.load();
     } catch (err) {
       console.error('Upload Error:', err);
@@ -199,4 +235,3 @@ export class FilesComponent implements OnInit {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 }
-

@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Acp, AcpAccessConfig } from '../database/entities';
 import { UnitParserService } from '../files/unit-parser.service';
+import { getIndexUnits } from '../acp/acp-index.utils';
 
 export interface ItemData {
   itemId: string;
@@ -33,9 +34,10 @@ export class ItemsService {
     if (!acp) return [];
 
     const index = acp.acpIndex as any;
+    const units = getIndexUnits(index);
     const items: ItemData[] = [];
 
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       for (const item of unit.items || []) {
         const itemId = item.useUnitAliasAsPrefix !== false
           ? `${unit.id}_${item.id}`

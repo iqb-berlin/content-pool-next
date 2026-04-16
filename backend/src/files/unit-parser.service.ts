@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as fs from 'fs/promises';
 import { AcpFile, Acp } from '../database/entities';
+import { getAssessmentParts, normalizeIndexForStorage } from '../acp/acp-index.utils';
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -54,6 +55,14 @@ export interface ItemListResult {
   items: VomdItemData[];
   unitMetadata: Record<string, any[]>; // unitId → unit-level profile entries
   codingSchemes: Record<string, any>;  // unitId → coding scheme JSON
+}
+
+export interface IndexSyncReport {
+  unitsAdded: number;
+  unitsUpdated: number;
+  itemsAdded: number;
+  itemsUpdated: number;
+  warnings: string[];
 }
 
 @Injectable()
@@ -225,6 +234,190 @@ export class UnitParserService {
     }
 
     return results;
+  }
+
+  /**
+   * Merge uploaded unit files into ACP-Index (non-destructive).
+   * - Adds/updates units and items inferred from unit XML + VOMD
+   * - Preserves existing manual index fields
+   * - Never removes existing units/items automatically
+   */
+  async syncIndexFromFiles(acpId: string): Promise<IndexSyncReport> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
+
+    const allFiles = await this.fileRepository.find({ where: { acpId } });
+    const fileNames = allFiles.map((f) => f.originalName);
+    const fileNameSet = new Set(fileNames);
+
+    const warningSet = new Set<string>();
+    const report: IndexSyncReport = {
+      unitsAdded: 0,
+      unitsUpdated: 0,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      warnings: [],
+    };
+
+    const normalizedIndex = normalizeIndexForStorage(acp.acpIndex || {});
+    const parts = getAssessmentParts(normalizedIndex).map((part: any) => ({
+      ...part,
+      units: Array.isArray(part?.units) ? [...part.units] : [],
+    }));
+
+    if (!parts.length) {
+      parts.push({
+        id: 'default-assessment-part',
+        name: [{ lang: 'de', value: 'Default Assessment Part' }],
+        units: [],
+      });
+    }
+
+    const unitLocation = new Map<string, { partIndex: number; unitIndex: number }>();
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const units = Array.isArray(parts[partIndex].units) ? parts[partIndex].units : [];
+      parts[partIndex].units = units;
+      for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
+        const unitId = typeof units[unitIndex]?.id === 'string' ? units[unitIndex].id : '';
+        if (unitId && !unitLocation.has(unitId)) {
+          unitLocation.set(unitId, { partIndex, unitIndex });
+        }
+      }
+    }
+
+    const xmlFiles = allFiles.filter((f) =>
+      f.originalName.toLowerCase().endsWith('.xml') &&
+      !f.originalName.toLowerCase().startsWith('booklet') &&
+      !f.originalName.toLowerCase().startsWith('testtaker'),
+    );
+
+    for (const xmlFile of xmlFiles) {
+      let xmlContent = '';
+      try {
+        xmlContent = await fs.readFile(xmlFile.filePath, 'utf-8');
+      } catch (e) {
+        warningSet.add(`Konnte Unit-XML nicht lesen: ${xmlFile.originalName}`);
+        this.logger.warn(`Could not read XML file ${xmlFile.originalName}: ${e}`);
+        continue;
+      }
+
+      if (!xmlContent.includes('<Unit')) {
+        continue;
+      }
+
+      const parsedUnit = this.parseUnitXml(xmlContent, xmlFile.originalName);
+      if (!parsedUnit?.unitId) {
+        warningSet.add(`Unit-XML konnte nicht geparst werden: ${xmlFile.originalName}`);
+        continue;
+      }
+
+      const location = unitLocation.get(parsedUnit.unitId);
+      const existingUnit = location
+        ? parts[location.partIndex].units[location.unitIndex]
+        : undefined;
+
+      const dependencies = this.buildDependenciesFromUnitRefs(
+        parsedUnit,
+        fileNames,
+        fileNameSet,
+        warningSet,
+      );
+
+      const existingItems = Array.isArray(existingUnit?.items) ? [...existingUnit.items] : [];
+      const parsedItems = await this.extractItemsForUnit(parsedUnit, allFiles, warningSet);
+      const mergedItems = [...existingItems];
+
+      for (const parsedItem of parsedItems) {
+        const existingIndex = mergedItems.findIndex((i: any) => i?.id === parsedItem.id);
+        if (existingIndex === -1) {
+          mergedItems.push(parsedItem);
+          report.itemsAdded++;
+          continue;
+        }
+
+        const existingItem = mergedItems[existingIndex] || {};
+        const nextItem = { ...existingItem };
+        let changed = false;
+
+        if (!nextItem.name && parsedItem.name) {
+          nextItem.name = parsedItem.name;
+          changed = true;
+        }
+
+        if (!nextItem.sourceVariable && parsedItem.sourceVariable) {
+          nextItem.sourceVariable = parsedItem.sourceVariable;
+          changed = true;
+        }
+
+        if (nextItem.useUnitAliasAsPrefix === undefined && parsedItem.useUnitAliasAsPrefix !== undefined) {
+          nextItem.useUnitAliasAsPrefix = parsedItem.useUnitAliasAsPrefix;
+          changed = true;
+        }
+
+        if (parsedItem.metadata && Object.keys(parsedItem.metadata).length) {
+          const existingMetadata = nextItem.metadata && typeof nextItem.metadata === 'object'
+            ? nextItem.metadata
+            : {};
+          const mergedMetadata = {
+            ...parsedItem.metadata,
+            ...existingMetadata,
+          };
+          if (JSON.stringify(mergedMetadata) !== JSON.stringify(existingMetadata)) {
+            nextItem.metadata = mergedMetadata;
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          mergedItems[existingIndex] = nextItem;
+          report.itemsUpdated++;
+        }
+      }
+
+      const existingDependencies = Array.isArray(existingUnit?.dependencies)
+        ? existingUnit.dependencies
+        : [];
+
+      const mergedUnit = {
+        ...(existingUnit || {}),
+        id: parsedUnit.unitId,
+        name: existingUnit?.name || parsedUnit.unitLabel || parsedUnit.unitId,
+        description: existingUnit?.description || parsedUnit.description,
+        dependencies: this.mergeDependencies(existingDependencies, dependencies),
+        items: mergedItems,
+      };
+
+      if (!location) {
+        parts[0].units.push(mergedUnit);
+        unitLocation.set(parsedUnit.unitId, {
+          partIndex: 0,
+          unitIndex: parts[0].units.length - 1,
+        });
+        report.unitsAdded++;
+        continue;
+      }
+
+      const previous = parts[location.partIndex].units[location.unitIndex];
+      if (JSON.stringify(previous) !== JSON.stringify(mergedUnit)) {
+        parts[location.partIndex].units[location.unitIndex] = mergedUnit;
+        report.unitsUpdated++;
+      }
+    }
+
+    const nextIndex = normalizeIndexForStorage({
+      ...normalizedIndex,
+      assessmentParts: parts,
+    });
+
+    if (JSON.stringify(acp.acpIndex || {}) !== JSON.stringify(nextIndex)) {
+      acp.acpIndex = nextIndex;
+      await this.acpRepository.save(acp);
+    }
+
+    report.warnings = Array.from(warningSet);
+    return report;
   }
 
   /**
@@ -432,6 +625,149 @@ export class UnitParserService {
       description: parsed.description,
       dependencies,
     };
+  }
+
+  private buildDependenciesFromUnitRefs(
+    parsedUnit: UnitXmlData,
+    fileNames: string[],
+    fileNameSet: Set<string>,
+    warningSet: Set<string>,
+  ): { id: string; type: string }[] {
+    const dependencies: { id: string; type: string }[] = [];
+
+    if (parsedUnit.definitionRef) {
+      dependencies.push({ id: parsedUnit.definitionRef, type: 'UNIT_DEFINITION' });
+      if (!fileNameSet.has(parsedUnit.definitionRef)) {
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" referenziert fehlende Definitionsdatei: ${parsedUnit.definitionRef}`,
+        );
+      }
+    }
+
+    if (parsedUnit.codingSchemeRef) {
+      dependencies.push({ id: parsedUnit.codingSchemeRef, type: 'CODING_SCHEME' });
+      if (!fileNameSet.has(parsedUnit.codingSchemeRef)) {
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" referenziert fehlendes Kodierschema: ${parsedUnit.codingSchemeRef}`,
+        );
+      }
+    }
+
+    if (parsedUnit.metadataRef) {
+      const metadataFileName = fileNameSet.has(parsedUnit.metadataRef)
+        ? parsedUnit.metadataRef
+        : fileNameSet.has(`${parsedUnit.metadataRef}.json`)
+          ? `${parsedUnit.metadataRef}.json`
+          : parsedUnit.metadataRef;
+
+      dependencies.push({ id: metadataFileName, type: 'METADATA' });
+      if (!fileNameSet.has(metadataFileName)) {
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" referenziert fehlende Metadaten: ${parsedUnit.metadataRef}`,
+        );
+      }
+    }
+
+    if (parsedUnit.playerRef) {
+      const playerFileName = this.findPlayerFile(parsedUnit.playerRef, fileNames);
+      if (playerFileName) {
+        dependencies.push({ id: playerFileName, type: 'PLAYER' });
+      } else {
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" hat keinen passenden Player für Ref "${parsedUnit.playerRef}"`,
+        );
+      }
+    }
+
+    return dependencies;
+  }
+
+  private mergeDependencies(
+    existing: any[],
+    inferred: { id: string; type: string }[],
+  ): { id: string; type: string }[] {
+    const merged: { id: string; type: string }[] = [];
+    const seen = new Set<string>();
+
+    const pushIfValid = (dep: any) => {
+      const id = typeof dep?.id === 'string' ? dep.id : '';
+      if (!id) return;
+      const type = typeof dep?.type === 'string' ? dep.type : 'FILE';
+      const key = `${type}::${id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push({ id, type });
+    };
+
+    for (const dep of existing || []) pushIfValid(dep);
+    for (const dep of inferred || []) pushIfValid(dep);
+
+    return merged;
+  }
+
+  private async extractItemsForUnit(
+    parsedUnit: UnitXmlData,
+    allFiles: AcpFile[],
+    warningSet: Set<string>,
+  ): Promise<Array<{ id: string; name: string; sourceVariable?: string; metadata: Record<string, string>; useUnitAliasAsPrefix?: boolean }>> {
+    if (!parsedUnit.metadataRef) return [];
+
+    const vomdFile = this.findFileByOriginalName(allFiles, parsedUnit.metadataRef);
+    if (!vomdFile) {
+      warningSet.add(
+        `Unit "${parsedUnit.unitId}" referenziert VOMD "${parsedUnit.metadataRef}", die nicht hochgeladen wurde`,
+      );
+      return [];
+    }
+
+    let vomdContent = '';
+    try {
+      vomdContent = await fs.readFile(vomdFile.filePath, 'utf-8');
+    } catch (e) {
+      warningSet.add(
+        `VOMD für Unit "${parsedUnit.unitId}" konnte nicht gelesen werden: ${vomdFile.originalName}`,
+      );
+      this.logger.warn(`Could not read VOMD ${vomdFile.originalName}: ${e}`);
+      return [];
+    }
+
+    const vomdData = this.parseVomd(vomdContent);
+    if (!vomdData) {
+      warningSet.add(`VOMD für Unit "${parsedUnit.unitId}" ist kein valides JSON: ${vomdFile.originalName}`);
+      return [];
+    }
+
+    const parsedItems: Array<{ id: string; name: string; sourceVariable?: string; metadata: Record<string, string>; useUnitAliasAsPrefix?: boolean }> = [];
+    for (const item of vomdData.items || []) {
+      if (!item?.id) {
+        warningSet.add(`Unit "${parsedUnit.unitId}" enthält ein Item ohne ID in ${vomdFile.originalName}`);
+        continue;
+      }
+
+      const metadata: Record<string, string> = {};
+      for (const profile of item.profiles || []) {
+        for (const entry of profile.entries || []) {
+          if (!entry?.id) continue;
+          metadata[entry.id] = this.extractValueText(entry.valueAsText);
+        }
+      }
+
+      parsedItems.push({
+        id: item.id,
+        name: item.description || item.id,
+        sourceVariable: item.variableId || item.variableReadOnlyId || undefined,
+        metadata,
+        useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
+      });
+    }
+
+    return parsedItems;
+  }
+
+  private findFileByOriginalName(allFiles: AcpFile[], originalName: string): AcpFile | undefined {
+    return allFiles.find(
+      (f) => f.originalName === originalName || f.originalName === `${originalName}.json`,
+    );
   }
 
   /**

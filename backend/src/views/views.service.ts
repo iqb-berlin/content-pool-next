@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Acp, AcpAccessConfig, AccessModel, AcpFile, AppSettings } from '../database/entities';
+import {
+  findUnitInIndex,
+  getAssessmentParts,
+  getIndexUnits,
+  toRuntimeAcpIndex,
+} from '../acp/acp-index.utils';
 
 @Injectable()
 export class ViewsService {
@@ -114,10 +120,10 @@ export class ViewsService {
     });
 
     const featureConfig = (config?.featureConfig || {}) as Record<string, unknown>;
-    const index = acp.acpIndex as any;
+    const index = toRuntimeAcpIndex(acp.acpIndex);
 
     // Extract units from ACP-Index
-    const units = (index.units || []).map((u: any) => ({
+    const units = getIndexUnits(index).map((u: any) => ({
       id: u.id,
       name: u.name,
       description: u.description,
@@ -125,7 +131,7 @@ export class ViewsService {
 
     // Extract task sequences from booklet modules
     const sequences: any[] = [];
-    const parts = index.assessmentParts || [];
+    const parts = getAssessmentParts(index);
     for (const part of parts) {
       for (const instrument of part.instruments || []) {
         for (const booklet of instrument.testcenterBooklet || []) {
@@ -154,7 +160,7 @@ export class ViewsService {
   async getAcpIndex(acpId: string): Promise<Record<string, unknown> | null> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
-    return (acp.acpIndex || {}) as Record<string, unknown>;
+    return toRuntimeAcpIndex(acp.acpIndex);
   }
 
   /**
@@ -164,8 +170,8 @@ export class ViewsService {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
 
-    const index = acp.acpIndex as any;
-    const unit = (index.units || []).find((u: any) => u.id === unitId);
+    const index = toRuntimeAcpIndex(acp.acpIndex);
+    const unit = findUnitInIndex(index, unitId);
     if (!unit) return null;
 
     // Resolve file references
@@ -204,10 +210,10 @@ export class ViewsService {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return [];
 
-    const index = acp.acpIndex as any;
+    const index = toRuntimeAcpIndex(acp.acpIndex);
     const items: any[] = [];
 
-    for (const unit of index.units || []) {
+    for (const unit of getIndexUnits(index)) {
       for (const item of unit.items || []) {
         const itemId = item.useUnitAliasAsPrefix !== false
           ? `${unit.id}_${item.id}`
@@ -233,8 +239,8 @@ export class ViewsService {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
 
-    const index = acp.acpIndex as any;
-    const parts = index.assessmentParts || [];
+    const index = toRuntimeAcpIndex(acp.acpIndex);
+    const parts = getAssessmentParts(index);
 
     // Find the module
     for (const part of parts) {
@@ -245,7 +251,7 @@ export class ViewsService {
             .map((u: any) => u.id);
 
           const units = unitIds.map((uid: string) => {
-            const unit = (index.units || []).find((u: any) => u.id === uid);
+            const unit = findUnitInIndex(index, uid);
             return unit
               ? { id: unit.id, name: unit.name }
               : { id: uid, name: uid };

@@ -18,7 +18,7 @@ describe('AcpService', () => {
     packageId: 'test-pkg',
     name: 'Test ACP',
     description: 'A test ACP',
-    acpIndex: { packageId: 'test-pkg', version: '0.1.0', units: [] },
+    acpIndex: { packageId: 'test-pkg', version: '0.5.0', units: [] },
     settings: {},
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -120,7 +120,8 @@ describe('AcpService', () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
       const result = await service.updateIndex('acp-1', newIndex);
-      expect(result).toEqual(newIndex);
+      expect(result).toMatchObject(newIndex);
+      expect((result as any).assessmentParts?.[0]?.units).toEqual([{ id: 'u1' }]);
     });
   });
 

@@ -52,6 +52,19 @@ export interface AcpFile {
   uploadedAt: string;
 }
 
+export interface IndexSyncReport {
+  unitsAdded: number;
+  unitsUpdated: number;
+  itemsAdded: number;
+  itemsUpdated: number;
+  warnings: string[];
+}
+
+export interface FileUploadResponse {
+  files: AcpFile[];
+  syncReport: IndexSyncReport;
+}
+
 export interface ValidationResult {
   valid: boolean;
   issues: ValidationIssue[];

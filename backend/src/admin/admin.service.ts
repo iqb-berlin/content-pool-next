@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppSettings } from '../database/entities';
+import { DEFAULT_ACP_INDEX_VERSION } from '../acp/acp-index.utils';
 
 @Injectable()
 export class AdminService {
@@ -16,7 +17,10 @@ export class AdminService {
       settings = this.settingsRepository.create({
         theme: {},
         language: 'de',
-        defaultAcpIndex: {},
+        defaultAcpIndex: {
+          version: DEFAULT_ACP_INDEX_VERSION,
+          assessmentParts: [],
+        },
       });
       settings = await this.settingsRepository.save(settings);
     }

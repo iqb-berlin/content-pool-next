@@ -10,6 +10,12 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
 import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
+import {
+  findUnitInIndex,
+  getAssessmentParts,
+  getIndexUnits,
+  toRuntimeAcpIndex,
+} from '../acp/acp-index.utils';
 
 @Injectable()
 export class FilesService {
@@ -218,7 +224,7 @@ export class FilesService {
 
   async isUnitDependencyFile(acpId: string, fileName: string): Promise<boolean> {
     const index = await this.getAcpIndex(acpId);
-    for (const unit of index.units || []) {
+    for (const unit of getIndexUnits(index)) {
       if (`${unit.id}.xml` === fileName) {
         return true;
       }
@@ -237,11 +243,11 @@ export class FilesService {
     if (!acp) {
       throw new NotFoundException(`ACP with ID ${acpId} not found`);
     }
-    return (acp.acpIndex || {}) as any;
+    return toRuntimeAcpIndex(acp.acpIndex);
   }
 
   private resolveSequenceUnitIds(index: any, sequenceId: string): string[] {
-    const parts = index.assessmentParts || [];
+    const parts = getAssessmentParts(index);
     for (const part of parts) {
       for (const module of part.bookletModules || []) {
         if (module.id === sequenceId) {
@@ -257,7 +263,7 @@ export class FilesService {
   }
 
   private collectUnitFiles(index: any, allFiles: AcpFile[], unitId: string, throwOnMissingUnit = true): AcpFile[] {
-    const unit = (index.units || []).find((u: any) => u.id === unitId);
+    const unit = findUnitInIndex(index, unitId);
     if (!unit) {
       if (throwOnMissingUnit) {
         throw new NotFoundException(`Unit "${unitId}" not found`);

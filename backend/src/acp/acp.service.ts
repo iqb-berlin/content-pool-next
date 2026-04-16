@@ -28,6 +28,11 @@ import {
   CreateCredentialDto,
   UpdateCredentialDto,
 } from './dto/acp.dto';
+import {
+  DEFAULT_ACP_INDEX_VERSION,
+  normalizeIndexForStorage,
+  toRuntimeAcpIndex,
+} from './acp-index.utils';
 
 @Injectable()
 export class AcpService {
@@ -81,22 +86,24 @@ export class AcpService {
       defaultIndex = { ...settings.defaultAcpIndex };
     }
 
+    const normalizedIndex = normalizeIndexForStorage({
+      ...defaultIndex,
+      packageId: dto.packageId,
+      version: DEFAULT_ACP_INDEX_VERSION,
+      name: [{ lang: 'de', value: dto.name }],
+      description: dto.description
+        ? [{ lang: 'de', value: dto.description }]
+        : [],
+      status: 'IN_DEVELOPMENT',
+      units: [],
+      assessmentParts: [],
+    });
+
     const acp = this.acpRepository.create({
       packageId: dto.packageId,
       name: dto.name,
       description: dto.description,
-      acpIndex: {
-        ...defaultIndex,
-        packageId: dto.packageId,
-        version: '0.1.0',
-        name: [{ lang: 'de', value: dto.name }],
-        description: dto.description
-          ? [{ lang: 'de', value: dto.description }]
-          : [],
-        status: 'IN_DEVELOPMENT',
-        units: [],
-        assessmentParts: [],
-      },
+      acpIndex: normalizedIndex,
     });
 
     return this.acpRepository.save(acp);
@@ -117,14 +124,14 @@ export class AcpService {
   // ACP-Index management
   async getIndex(id: string): Promise<Record<string, unknown>> {
     const acp = await this.findById(id);
-    return acp.acpIndex;
+    return toRuntimeAcpIndex(acp.acpIndex);
   }
 
   async updateIndex(id: string, index: Record<string, unknown>): Promise<Record<string, unknown>> {
     const acp = await this.findById(id);
-    acp.acpIndex = index;
+    acp.acpIndex = normalizeIndexForStorage(index);
     const saved = await this.acpRepository.save(acp);
-    return saved.acpIndex;
+    return toRuntimeAcpIndex(saved.acpIndex);
   }
 
   async importIndex(id: string, indexJson: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -138,9 +145,9 @@ export class AcpService {
     }
 
     // Merge: uploaded index takes priority, defaults fill in missing required fields
-    acp.acpIndex = { ...defaultIndex, ...indexJson };
+    acp.acpIndex = normalizeIndexForStorage({ ...defaultIndex, ...indexJson });
     const saved = await this.acpRepository.save(acp);
-    return saved.acpIndex;
+    return toRuntimeAcpIndex(saved.acpIndex);
   }
 
   // Role management

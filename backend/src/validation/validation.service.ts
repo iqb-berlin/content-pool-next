@@ -2,6 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AcpFile, Acp } from '../database/entities';
+import {
+  getAssessmentParts,
+  getIndexScales,
+  getIndexUnits,
+  toRuntimeAcpIndex,
+} from '../acp/acp-index.utils';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning' | 'info';
@@ -90,12 +96,13 @@ export class ValidationService {
     }
 
     const issues: ValidationIssue[] = [];
-    const index = acp.acpIndex as any;
+    const index = toRuntimeAcpIndex(acp.acpIndex);
+    const units = getIndexUnits(index);
     const files = await this.fileRepository.find({ where: { acpId } });
     const fileNames = new Set(files.map((f) => f.originalName));
 
     // Check that all unit dependencies reference existing files
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       for (const dep of unit.dependencies || []) {
         if (!fileNames.has(dep.id)) {
           issues.push({
@@ -108,10 +115,10 @@ export class ValidationService {
     }
 
     // Check that booklet modules reference existing units
-    for (const part of index.assessmentParts || []) {
+    for (const part of getAssessmentParts(index)) {
       for (const module of part.bookletModules || []) {
         for (const modUnit of module.units || []) {
-          const unitExists = (index.units || []).some(
+          const unitExists = units.some(
             (u: any) => u.id === modUnit.id,
           );
           if (!unitExists) {
@@ -151,11 +158,11 @@ export class ValidationService {
     }
 
     // Check scale item references
-    for (const scale of index.scales || []) {
+    for (const scale of getIndexScales(index)) {
       if (scale.typeParameters?.items) {
         for (const scaleItem of scale.typeParameters.items) {
           // Check if item ID exists in any unit
-          const itemExists = (index.units || []).some((u: any) =>
+          const itemExists = units.some((u: any) =>
             (u.items || []).some((i: any) => {
               const fullId = i.useUnitAliasAsPrefix !== false
                 ? `${u.id}_${i.id}`

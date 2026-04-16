@@ -154,7 +154,21 @@ export class FilesController {
     @Param('acpId') acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
-    return this.filesService.uploadMultiple(acpId, files);
+    const uploadedFiles = await this.filesService.uploadMultiple(acpId, files);
+    const syncReport = await this.unitParserService.syncIndexFromFiles(acpId);
+    return {
+      files: uploadedFiles,
+      syncReport,
+    };
+  }
+
+  @Post('sync-index')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Synchronize ACP-Index from uploaded unit files (non-destructive merge)' })
+  async syncIndex(@Param('acpId') acpId: string) {
+    return this.unitParserService.syncIndexFromFiles(acpId);
   }
 
   @Get(':fileId/download')

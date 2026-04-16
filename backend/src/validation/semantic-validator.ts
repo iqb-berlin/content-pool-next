@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Acp, AcpFile } from '../database/entities';
+import {
+  getAssessmentParts,
+  getIndexUnits,
+  toRuntimeAcpIndex,
+} from '../acp/acp-index.utils';
 
 export interface SemanticValidationResult {
   valid: boolean;
@@ -34,7 +39,7 @@ export class SemanticValidator {
       return { valid: false, issues: [{ severity: 'error', message: 'ACP not found' }] };
     }
 
-    const index = acp.acpIndex as any;
+    const index = toRuntimeAcpIndex(acp.acpIndex);
     if (!index) {
       return { valid: false, issues: [{ severity: 'error', message: 'ACP-Index is empty' }] };
     }
@@ -43,10 +48,11 @@ export class SemanticValidator {
     const fileNames = new Set(files.map(f => f.originalName));
 
     // Collect all unit IDs
-    const unitIds = new Set((index.units || []).map((u: any) => u.id));
+    const units = getIndexUnits(index);
+    const unitIds = new Set(units.map((u: any) => u.id));
 
     // 1. Validate file dependencies in units
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       for (const dep of unit.dependencies || []) {
         if (dep.id && !fileNames.has(dep.id)) {
           issues.push({
@@ -59,7 +65,7 @@ export class SemanticValidator {
     }
 
     // 2. Validate unit references in assessment parts (booklets)
-    for (const part of index.assessmentParts || []) {
+    for (const part of getAssessmentParts(index)) {
       for (const instrument of part.instruments || []) {
         for (const unitRef of instrument.units || []) {
           const refId = typeof unitRef === 'string' ? unitRef : unitRef.id;
@@ -75,7 +81,7 @@ export class SemanticValidator {
     }
 
     // 3. Validate item-level references
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       for (const item of unit.items || []) {
         // Check that items have required identifiers
         if (!item.id) {
@@ -90,7 +96,7 @@ export class SemanticValidator {
 
     // 4. Check for duplicate unit IDs
     const seenUnitIds = new Set<string>();
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       if (seenUnitIds.has(unit.id)) {
         issues.push({
           severity: 'error',
@@ -102,7 +108,7 @@ export class SemanticValidator {
     }
 
     // 5. Check for duplicate item IDs within a unit
-    for (const unit of index.units || []) {
+    for (const unit of units) {
       const seenItems = new Set<string>();
       for (const item of unit.items || []) {
         if (item.id && seenItems.has(item.id)) {

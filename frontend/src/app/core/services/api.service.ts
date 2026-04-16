@@ -1,7 +1,22 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Acp, AccessConfig, AcpSnapshot, SnapshotCurrentDiff, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence, Credential } from '../models/api.models';
+import {
+  Acp,
+  AccessConfig,
+  AcpSnapshot,
+  SnapshotCurrentDiff,
+  AcpFile,
+  Comment,
+  AppSettings,
+  User,
+  PublicAcp,
+  UnitViewData,
+  TaskSequence,
+  Credential,
+  FileUploadResponse,
+  IndexSyncReport,
+} from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -75,8 +90,11 @@ export class ApiService {
 
   // Files
   getFiles(acpId: string): Observable<AcpFile[]> { return this.http.get<AcpFile[]>(`${this.API}/acp/${acpId}/files`); }
-  uploadFiles(acpId: string, formData: FormData): Observable<AcpFile[]> {
-    return this.http.post<AcpFile[]>(`${this.API}/acp/${acpId}/files/upload`, formData);
+  uploadFiles(acpId: string, formData: FormData): Observable<FileUploadResponse> {
+    return this.http.post<FileUploadResponse>(`${this.API}/acp/${acpId}/files/upload`, formData);
+  }
+  syncIndexFromFiles(acpId: string): Observable<IndexSyncReport> {
+    return this.http.post<IndexSyncReport>(`${this.API}/acp/${acpId}/files/sync-index`, {});
   }
   deleteFile(acpId: string, fileId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/files/${fileId}`);

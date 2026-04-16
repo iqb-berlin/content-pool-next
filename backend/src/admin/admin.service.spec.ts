@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AdminService } from './admin.service';
 import { AppSettings } from '../database/entities';
+import { DEFAULT_ACP_INDEX_VERSION } from '../acp/acp-index.utils';
 
 describe('AdminService', () => {
   let service: AdminService;
@@ -36,7 +37,10 @@ describe('AdminService', () => {
     expect(repo.create).toHaveBeenCalledWith({
       theme: {},
       language: 'de',
-      defaultAcpIndex: {},
+      defaultAcpIndex: {
+        version: DEFAULT_ACP_INDEX_VERSION,
+        assessmentParts: [],
+      },
     });
     expect(repo.save).toHaveBeenCalled();
     expect(result.language).toBe('de');

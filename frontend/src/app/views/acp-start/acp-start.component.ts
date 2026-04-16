@@ -253,12 +253,12 @@ export class AcpStartComponent implements OnInit {
       const csv = [
         headers.join(','),
         ...comments.map(c => [
-          c.id,
-          c.targetId,
-          c.targetType,
-          `"${c.commentText.replace(/"/g, '""')}"`,
-          c.credentialUsername || c.userId || 'anonymous',
-          c.createdAt
+          c.id || '',
+          c.targetId || '',
+          c.targetType || '',
+          `"${String(c.commentText ?? c.comment ?? '').replace(/"/g, '""')}"`,
+          c.author || c.credentialUsername || c.userId || 'anonymous',
+          c.createdAt || ''
         ].join(','))
       ].join('\n');
 
@@ -273,6 +273,6 @@ export class AcpStartComponent implements OnInit {
   }
 
   downloadIndex() {
-    window.open(`/api/acp/${this.acpId}/index/export`, '_blank');
+    window.open(this.api.getViewIndexExportUrl(this.acpId), '_blank');
   }
 }

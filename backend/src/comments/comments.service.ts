@@ -1,13 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Comment, CommentTargetType } from '../database/entities';
+import { Comment, CommentTargetType, AcpAccessConfig } from '../database/entities';
 
 @Injectable()
 export class CommentsService {
   constructor(
     @InjectRepository(Comment)
     private readonly commentRepository: Repository<Comment>,
+    @InjectRepository(AcpAccessConfig)
+    private readonly accessConfigRepository: Repository<AcpAccessConfig>,
   ) {}
 
   async findByAcp(acpId: string): Promise<Comment[]> {
@@ -136,5 +138,24 @@ export class CommentsService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
+  }
+
+  async isCommentingEnabled(acpId: string, targetType: CommentTargetType): Promise<boolean> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const featureConfig = (config?.featureConfig || {}) as Record<string, unknown>;
+
+    if (!featureConfig.enableCommenting) {
+      return false;
+    }
+
+    const targets = Array.isArray(featureConfig.commentTargets)
+      ? (featureConfig.commentTargets as string[])
+      : [];
+
+    if (targets.length === 0) {
+      return true;
+    }
+
+    return targets.includes(targetType);
   }
 }

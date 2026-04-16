@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
-import { AcpFile, Acp } from '../database/entities';
+import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
 
 @Injectable()
 export class FilesService {
@@ -20,6 +20,8 @@ export class FilesService {
     private readonly fileRepository: Repository<AcpFile>,
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
+    @InjectRepository(AcpAccessConfig)
+    private readonly accessConfigRepository: Repository<AcpAccessConfig>,
     private readonly configService: ConfigService,
   ) {
     this.storagePath = this.configService.get<string>(
@@ -39,6 +41,14 @@ export class FilesService {
     const file = await this.fileRepository.findOne({ where: { id } });
     if (!file) {
       throw new NotFoundException(`File with ID ${id} not found`);
+    }
+    return file;
+  }
+
+  async findByIdForAcp(acpId: string, id: string): Promise<AcpFile> {
+    const file = await this.findById(id);
+    if (file.acpId !== acpId) {
+      throw new NotFoundException(`File with ID ${id} not found for ACP ${acpId}`);
     }
     return file;
   }
@@ -99,8 +109,28 @@ export class FilesService {
     }
   }
 
+  async downloadForAcp(acpId: string, id: string): Promise<{ buffer: Buffer; file: AcpFile }> {
+    const file = await this.findByIdForAcp(acpId, id);
+    try {
+      const buffer = await fs.readFile(file.filePath);
+      return { buffer, file };
+    } catch {
+      throw new NotFoundException('File not found on disk');
+    }
+  }
+
   async delete(id: string): Promise<void> {
     const file = await this.findById(id);
+    try {
+      await fs.unlink(file.filePath);
+    } catch {
+      // File may already be deleted from disk
+    }
+    await this.fileRepository.remove(file);
+  }
+
+  async deleteForAcp(acpId: string, id: string): Promise<void> {
+    const file = await this.findByIdForAcp(acpId, id);
     try {
       await fs.unlink(file.filePath);
     } catch {
@@ -123,6 +153,14 @@ export class FilesService {
 
   async getValidationResult(id: string): Promise<Record<string, unknown> | null> {
     const file = await this.findById(id);
+    return (file.validationResult as Record<string, unknown>) || null;
+  }
+
+  async getValidationResultForAcp(
+    acpId: string,
+    id: string,
+  ): Promise<Record<string, unknown> | null> {
+    const file = await this.findByIdForAcp(acpId, id);
     return (file.validationResult as Record<string, unknown>) || null;
   }
 
@@ -171,6 +209,27 @@ export class FilesService {
 
     const buffer = await this.createZipBuffer(files);
     return { buffer, fileName: `acp-${acpId}-sequence-${sequenceId}.zip` };
+  }
+
+  async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    return (config?.featureConfig || {}) as Record<string, any>;
+  }
+
+  async isUnitDependencyFile(acpId: string, fileName: string): Promise<boolean> {
+    const index = await this.getAcpIndex(acpId);
+    for (const unit of index.units || []) {
+      if (`${unit.id}.xml` === fileName) {
+        return true;
+      }
+
+      for (const dep of unit.dependencies || []) {
+        if (dep?.id && dep.id === fileName) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private async getAcpIndex(acpId: string): Promise<any> {

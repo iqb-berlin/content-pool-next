@@ -42,6 +42,14 @@ export class SnapshotsService {
     return snapshot;
   }
 
+  async findByIdInAcp(acpId: string, snapshotId: string): Promise<AcpSnapshot> {
+    const snapshot = await this.findById(snapshotId);
+    if (snapshot.acpId !== acpId) {
+      throw new NotFoundException(`Snapshot with ID ${snapshotId} not found for ACP ${acpId}`);
+    }
+    return snapshot;
+  }
+
   async delete(snapshotId: string): Promise<void> {
     const snapshot = await this.findById(snapshotId);
     const snapshotAcpId = snapshot.acpId;

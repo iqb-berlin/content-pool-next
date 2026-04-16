@@ -2,12 +2,26 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AcpService } from './acp.service';
 import { AcpController } from './acp.controller';
-import { Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings } from '../database/entities';
+import {
+  Acp,
+  AcpUserRole,
+  AcpAccessConfig,
+  AcpCredential,
+  AppSettings,
+  User,
+} from '../database/entities';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings]),
+    TypeOrmModule.forFeature([
+      Acp,
+      AcpUserRole,
+      AcpAccessConfig,
+      AcpCredential,
+      AppSettings,
+      User,
+    ]),
     AuthModule,
   ],
   controllers: [AcpController],

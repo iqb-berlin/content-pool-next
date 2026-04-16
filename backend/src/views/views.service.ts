@@ -47,10 +47,17 @@ export class ViewsService {
       where: { accessModel: AccessModel.CREDENTIALS_LIST },
       relations: ['acp'],
     });
+    const now = new Date();
+    const activeCredentialConfigs = credentialConfigs.filter((cfg) => {
+      const startsOk = !cfg.validFrom || cfg.validFrom <= now;
+      const endsOk = !cfg.validUntil || cfg.validUntil >= now;
+      return startsOk && endsOk;
+    });
 
     console.log('[DEBUG] getPublicAcps - PUBLIC configs:', publicConfigs.length);
     console.log('[DEBUG] getPublicAcps - CREDENTIALS_LIST configs:', credentialConfigs.length);
-    for (const cfg of credentialConfigs) {
+    console.log('[DEBUG] getPublicAcps - active CREDENTIALS_LIST configs:', activeCredentialConfigs.length);
+    for (const cfg of activeCredentialConfigs) {
       console.log('[DEBUG] Credential config:', {
         id: cfg.id,
         acpId: cfg.acpId,
@@ -77,7 +84,7 @@ export class ViewsService {
     }
 
     // Include credential-based ACPs (they are listed on landing page too)
-    for (const config of credentialConfigs) {
+    for (const config of activeCredentialConfigs) {
       if (seenIds.has(config.acpId)) continue;
       if (config.acp) {
         results.push({

@@ -71,13 +71,13 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
               </div>
               <div class="form-group">
                 <label>Kennwort</label>
-                <input type="text" [(ngModel)]="newPassword" placeholder="Kennwort" minlength="4">
+                <input type="password" [(ngModel)]="newPassword" placeholder="Kennwort" minlength="12">
               </div>
             </div>
             @if (addError) {
               <div class="alert alert-error" style="margin-top: 8px;">{{ addError }}</div>
             }
-            <button class="btn btn-accent" style="margin-top: 8px;" (click)="addCredential()" [disabled]="!newUsername.trim() || !newPassword.trim() || newPassword.length < 4">
+            <button class="btn btn-accent" style="margin-top: 8px;" (click)="addCredential()" [disabled]="!newUsername.trim() || !newPassword.trim() || !isStrongPassword(newPassword)">
               Hinzufügen
             </button>
           </div>
@@ -305,8 +305,8 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
           </div>
           @if (editChangePassword) {
             <div class="form-group" style="margin-top: 8px;">
-              <label>Neues Kennwort (min. 4 Zeichen)</label>
-              <input type="text" [(ngModel)]="editPassword" minlength="4" placeholder="Neues Kennwort">
+              <label>Neues Kennwort (mind. 12 Zeichen, Groß-/Kleinbuchstabe, Zahl, Sonderzeichen)</label>
+              <input type="password" [(ngModel)]="editPassword" minlength="12" placeholder="Neues Kennwort">
             </div>
           }
           @if (editError) {
@@ -315,7 +315,7 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
         </div>
         <div class="dialog-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
           <button class="btn btn-outline" (click)="closeEditDialog()">Abbrechen</button>
-          <button class="btn btn-primary" (click)="saveEdit()" [disabled]="editChangePassword && editPassword.length < 4">Speichern</button>
+          <button class="btn btn-primary" (click)="saveEdit()" [disabled]="editChangePassword && !isStrongPassword(editPassword)">Speichern</button>
         </div>
       </div>
     </div>
@@ -388,6 +388,10 @@ import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.m
   `]
 })
 export class AccessConfigComponent implements OnInit {
+  private readonly strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+  private readonly strongPasswordHint =
+    'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
+
   acpId = '';
   accessModel = 'PUBLIC';
   allowRegistered = false;
@@ -628,8 +632,8 @@ export class AccessConfigComponent implements OnInit {
       this.addError = 'Benutzername und Kennwort sind erforderlich.';
       return;
     }
-    if (password.length < 4) {
-      this.addError = 'Kennwort muss mindestens 4 Zeichen haben.';
+    if (!this.isStrongPassword(password)) {
+      this.addError = this.strongPasswordHint;
       return;
     }
     if (this.credentials.some(c => c.username === username)) {
@@ -790,7 +794,11 @@ export class AccessConfigComponent implements OnInit {
     if (username !== this.editingCredential.username) {
       data.username = username;
     }
-    if (this.editChangePassword && this.editPassword.length >= 4) {
+    if (this.editChangePassword) {
+      if (!this.isStrongPassword(this.editPassword)) {
+        this.editError = this.strongPasswordHint;
+        return;
+      }
       data.password = this.editPassword;
     }
 
@@ -829,5 +837,9 @@ export class AccessConfigComponent implements OnInit {
         alert('Fehler beim Löschen des Zugangsdatums');
       }
     });
+  }
+
+  isStrongPassword(password: string): boolean {
+    return this.strongPasswordRegex.test(password || '');
   }
 }

@@ -69,6 +69,14 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+    if (!isManager) {
+      const enabled = await this.commentsService.isCommentingEnabled(acpId, dto.targetType);
+      if (!enabled) {
+        throw new ForbiddenException('Commenting is not enabled for this ACP or target type');
+      }
+    }
+
     return this.commentsService.create({
       acpId,
       userId: req.user.type === 'user' ? req.user.sub : undefined,

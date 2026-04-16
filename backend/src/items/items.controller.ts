@@ -1,10 +1,12 @@
-import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put, ForbiddenException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody, ApiProperty } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
 import { ItemResponseStateService } from './item-response-state.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { IsObject } from 'class-validator';
 
 class SaveItemTagsDto {
@@ -44,7 +46,11 @@ export class ItemsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get persisted item tags for an ACP' })
-  async getItemTags(@Param('acpId') acpId: string) {
+  async getItemTags(@Param('acpId') acpId: string, @Request() req: any) {
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+    if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
+      throw new ForbiddenException('Item tags are not enabled for this ACP');
+    }
     return this.itemsService.getItemTags(acpId);
   }
 
@@ -55,7 +61,12 @@ export class ItemsController {
   async saveItemTags(
     @Param('acpId') acpId: string,
     @Body() dto: SaveItemTagsDto,
+    @Request() req: any,
   ) {
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+    if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
+      throw new ForbiddenException('Item tags are not enabled for this ACP');
+    }
     return this.itemsService.saveItemTags(acpId, dto.tags || {});
   }
 
@@ -70,7 +81,8 @@ export class ItemsController {
   }
 
   @Post('upload-empirical-difficulty')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Upload a CSV to match empirical item difficulties' })
   @ApiConsumes('multipart/form-data')
@@ -94,7 +106,8 @@ export class ItemsController {
   }
 
   @Delete('empirical-difficulty')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Clear all empirical difficulties for an ACP' })
   async clearEmpiricalDifficulties(@Param('acpId') acpId: string) {
@@ -102,31 +115,31 @@ export class ItemsController {
   }
 
   @Get('response-state/all')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get all response states for an ACP (Manager only)' })
   async getAllResponseStates(
     @Param('acpId') acpId: string,
-    @Request() req: any,
+    @Request() _req: any,
   ) {
-    const isManager = req.acpAccessLevel === 'MANAGER' || req.user?.isAppAdmin;
-    return this.stateService.getAllStatesForAcp(acpId, isManager);
+    return this.stateService.getAllStatesForAcp(acpId, true);
   }
 
   // Response State Endpoints
 
   @Post(':itemId/response-state')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Save response state for an item (Manager only)' })
   async saveResponseState(
     @Param('acpId') acpId: string,
     @Param('itemId') itemId: string,
     @Body() body: { unitId: string; responseData: Record<string, any> },
-    @Request() req: any,
+    @Request() _req: any,
   ) {
-    const isManager = req.acpAccessLevel === 'MANAGER' || req.user?.isAppAdmin;
-    return this.stateService.saveResponseState(acpId, itemId, body.unitId, body.responseData, isManager);
+    return this.stateService.saveResponseState(acpId, itemId, body.unitId, body.responseData, true);
   }
 
   @Get(':itemId/response-state')
@@ -157,15 +170,15 @@ export class ItemsController {
   }
 
   @Delete(':itemId/response-state')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete response state for an item (Manager only)' })
   async deleteResponseState(
     @Param('acpId') acpId: string,
     @Param('itemId') itemId: string,
-    @Request() req: any,
+    @Request() _req: any,
   ) {
-    const isManager = req.acpAccessLevel === 'MANAGER' || req.user?.isAppAdmin;
-    return this.stateService.deleteResponseState(acpId, itemId, isManager);
+    return this.stateService.deleteResponseState(acpId, itemId, true);
   }
 }

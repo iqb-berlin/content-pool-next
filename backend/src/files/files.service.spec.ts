@@ -3,7 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
-import { AcpFile, Acp } from '../database/entities';
+import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
 
 jest.mock('fs/promises', () => ({
   mkdir: jest.fn().mockResolvedValue(undefined),
@@ -16,6 +16,7 @@ describe('FilesService', () => {
   let service: FilesService;
   let repo: any;
   let acpRepo: any;
+  let accessConfigRepo: any;
 
   const mockFile = {
     id: 'file-1',
@@ -67,12 +68,16 @@ describe('FilesService', () => {
         },
       }),
     };
+    accessConfigRepo = {
+      findOne: jest.fn().mockResolvedValue({ featureConfig: {} }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FilesService,
         { provide: getRepositoryToken(AcpFile), useValue: repo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
+        { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepo },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('./uploads') } },
       ],
     }).compile();

@@ -3,11 +3,12 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from './users.service';
-import { User } from '../database/entities';
+import { User, AcpUserRole } from '../database/entities';
 
 describe('UsersService', () => {
   let service: UsersService;
   let repo: any;
+  let roleRepo: any;
 
   const mockUser = {
     id: 'user-1',
@@ -28,11 +29,16 @@ describe('UsersService', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       count: jest.fn(),
     };
+    roleRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(2),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         { provide: getRepositoryToken(User), useValue: repo },
+        { provide: getRepositoryToken(AcpUserRole), useValue: roleRepo },
       ],
     }).compile();
 

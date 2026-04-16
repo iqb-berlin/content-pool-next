@@ -1228,6 +1228,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   enableTags = false;
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
+  persistUserPreferences = false;
 
   // File Upload
   showUploadReport = false;
@@ -1354,9 +1355,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
+      this.persistUserPreferences = !!fc.persistUserPreferences && this.authService.isLoggedIn;
       
       // Load metadata column settings
       this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
+      this.loadUiPreferences();
 
       if (this.enableTags && this.items.length) {
         this.loadPersistedTags();
@@ -1433,6 +1436,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
 
     this.applySort();
+    this.saveUiPreferences();
   }
 
   // --- Sorting ---
@@ -1484,6 +1488,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
+
+    this.saveUiPreferences();
   }
 
   // --- CSV Upload Handling ---
@@ -1855,6 +1861,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private saveTags() {
+    if (this.persistUserPreferences) {
+      localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(this.itemTags || {}));
+      this.applyFilter();
+      return;
+    }
+
     this.api.saveItemTags(this.acpId, this.itemTags).subscribe({
       next: (savedTags) => {
         this.itemTags = savedTags || {};
@@ -1867,6 +1879,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private loadPersistedTags() {
+    if (this.persistUserPreferences) {
+      const raw = localStorage.getItem(this.getTagPreferencesKey());
+      if (raw) {
+        try {
+          this.itemTags = JSON.parse(raw) || {};
+        } catch {
+          this.itemTags = {};
+        }
+      }
+      this.applyFilter();
+      return;
+    }
+
     this.api.getItemTags(this.acpId).subscribe({
       next: (tags) => {
         this.itemTags = tags || this.itemTags;
@@ -2089,5 +2114,47 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   resetToDefault() {
     this.metadataSettings = { visible: [], order: [] };
     this.columns = this.filterVisibleColumns(this.allColumns);
+  }
+
+  private getUiPreferencesKey(): string {
+    const userId = this.authService.currentUser?.id || 'anonymous';
+    return `cp:item-explorer:prefs:${this.acpId}:${userId}`;
+  }
+
+  private getTagPreferencesKey(): string {
+    const userId = this.authService.currentUser?.id || 'anonymous';
+    return `cp:item-explorer:tags:${this.acpId}:${userId}`;
+  }
+
+  private loadUiPreferences() {
+    if (!this.persistUserPreferences) return;
+
+    const raw = localStorage.getItem(this.getUiPreferencesKey());
+    if (!raw) return;
+
+    try {
+      const prefs = JSON.parse(raw);
+      this.filterText = typeof prefs.filterText === 'string' ? prefs.filterText : this.filterText;
+      this.sortField = typeof prefs.sortField === 'string' ? prefs.sortField : this.sortField;
+      this.sortIsMeta = typeof prefs.sortIsMeta === 'boolean' ? prefs.sortIsMeta : this.sortIsMeta;
+      this.sortDir = prefs.sortDir === 'desc' ? 'desc' : 'asc';
+      this.columnFilters =
+        prefs.columnFilters && typeof prefs.columnFilters === 'object' ? prefs.columnFilters : {};
+    } catch {
+      // ignore malformed preference payloads
+    }
+  }
+
+  private saveUiPreferences() {
+    if (!this.persistUserPreferences) return;
+
+    const prefs = {
+      filterText: this.filterText,
+      sortField: this.sortField,
+      sortIsMeta: this.sortIsMeta,
+      sortDir: this.sortDir,
+      columnFilters: this.columnFilters,
+    };
+    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(prefs));
   }
 }

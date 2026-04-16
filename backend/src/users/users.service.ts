@@ -1,8 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
-import { User } from '../database/entities';
+import { User, AcpUserRole, AcpRole } from '../database/entities';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 
 @Injectable()
@@ -10,6 +10,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(AcpUserRole)
+    private readonly acpUserRoleRepository: Repository<AcpUserRole>,
   ) {}
 
   async findAll(): Promise<User[]> {
@@ -71,6 +73,22 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
+
+    // Ensure at least one ACP manager remains per ACP.
+    const managerRoles = await this.acpUserRoleRepository.find({
+      where: { userId: id, role: AcpRole.ACP_MANAGER },
+    });
+    for (const managerRole of managerRoles) {
+      const managerCount = await this.acpUserRoleRepository.count({
+        where: { acpId: managerRole.acpId, role: AcpRole.ACP_MANAGER },
+      });
+      if (managerCount <= 1) {
+        throw new BadRequestException(
+          `Cannot delete user because ACP ${managerRole.acpId} would have no ACP_MANAGER`,
+        );
+      }
+    }
+
     await this.userRepository.remove(user);
   }
 

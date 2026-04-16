@@ -15,6 +15,7 @@ import {
   AccessModel,
   AcpCredential,
   AppSettings,
+  User,
 } from '../database/entities';
 import {
   CreateAcpDto,
@@ -41,6 +42,8 @@ export class AcpService {
     private readonly credentialRepository: Repository<AcpCredential>,
     @InjectRepository(AppSettings)
     private readonly settingsRepository: Repository<AppSettings>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
 
   async findAll(): Promise<Acp[]> {
@@ -143,19 +146,31 @@ export class AcpService {
   // Role management
   async assignRole(acpId: string, dto: AssignRoleDto): Promise<AcpUserRole> {
     await this.findById(acpId);
+    const targetUser = await this.userRepository.findOne({ where: { id: dto.userId } });
+    if (!targetUser) {
+      throw new NotFoundException(`User with ID ${dto.userId} not found`);
+    }
+
+    const targetRole = dto.role as AcpRole;
 
     const existing = await this.acpUserRoleRepository.findOne({
       where: { userId: dto.userId, acpId },
     });
     if (existing) {
-      existing.role = dto.role as AcpRole;
+      if (existing.role === AcpRole.ACP_MANAGER && targetRole !== AcpRole.ACP_MANAGER) {
+        const managerCount = await this.countAcpManagers(acpId);
+        if (managerCount <= 1) {
+          throw new BadRequestException('At least one ACP_MANAGER must remain assigned');
+        }
+      }
+      existing.role = targetRole;
       return this.acpUserRoleRepository.save(existing);
     }
 
     const role = this.acpUserRoleRepository.create({
       userId: dto.userId,
       acpId,
-      role: dto.role as AcpRole,
+      role: targetRole,
     });
     return this.acpUserRoleRepository.save(role);
   }
@@ -165,6 +180,12 @@ export class AcpService {
       where: { userId, acpId },
     });
     if (role) {
+      if (role.role === AcpRole.ACP_MANAGER) {
+        const managerCount = await this.countAcpManagers(acpId);
+        if (managerCount <= 1) {
+          throw new BadRequestException('At least one ACP_MANAGER must remain assigned');
+        }
+      }
       await this.acpUserRoleRepository.remove(role);
     }
   }
@@ -187,14 +208,24 @@ export class AcpService {
   async updateAccessConfig(acpId: string, dto: UpdateAccessConfigDto): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
-    console.log('UpdateAccessConfig received:', { validFrom: dto.validFrom, validUntil: dto.validUntil });
-
     // Validate time limit for CREDENTIALS_LIST
-    if (dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil) {
+    if (dto.accessModel === 'CREDENTIALS_LIST') {
+      if (!dto.validFrom || !dto.validUntil) {
+        throw new BadRequestException('Credential-based access requires validFrom and validUntil');
+      }
+
+      const validFrom = new Date(dto.validFrom);
       const validUntil = new Date(dto.validUntil);
-      const maxDate = new Date();
-      maxDate.setMonth(maxDate.getMonth() + 3);
-      if (validUntil > maxDate) {
+      if (Number.isNaN(validFrom.getTime()) || Number.isNaN(validUntil.getTime())) {
+        throw new BadRequestException('validFrom and validUntil must be valid ISO date strings');
+      }
+      if (validUntil <= validFrom) {
+        throw new BadRequestException('validUntil must be after validFrom');
+      }
+
+      const maxEnd = new Date(validFrom);
+      maxEnd.setMonth(maxEnd.getMonth() + 3);
+      if (validUntil > maxEnd) {
         throw new BadRequestException('Credential-based access is limited to 3 months');
       }
     }
@@ -204,22 +235,28 @@ export class AcpService {
       config.accessModel = dto.accessModel as AccessModel;
       if (dto.allowRegistered !== undefined) config.allowRegistered = dto.allowRegistered;
       if (dto.featureConfig) config.featureConfig = dto.featureConfig;
-      if (dto.validFrom) config.validFrom = new Date(dto.validFrom);
-      if (dto.validUntil) config.validUntil = new Date(dto.validUntil);
+      config.validFrom =
+        dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom ? new Date(dto.validFrom) : undefined;
+      config.validUntil =
+        dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil ? new Date(dto.validUntil) : undefined;
     } else {
       config = this.accessConfigRepository.create({
         acpId,
         accessModel: dto.accessModel as AccessModel,
         allowRegistered: dto.allowRegistered || false,
         featureConfig: dto.featureConfig || {},
-        validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
-        validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
+        validFrom:
+          dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom
+            ? new Date(dto.validFrom)
+            : undefined,
+        validUntil:
+          dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil
+            ? new Date(dto.validUntil)
+            : undefined,
       });
     }
 
-    const saved = await this.accessConfigRepository.save(config);
-    console.log('UpdateAccessConfig saved:', { validFrom: saved.validFrom?.toISOString(), validUntil: saved.validUntil?.toISOString() });
-    return saved;
+    return this.accessConfigRepository.save(config);
   }
 
   async updateMetadataColumns(acpId: string, dto: UpdateMetadataColumnsDto): Promise<AcpAccessConfig> {
@@ -350,6 +387,15 @@ export class AcpService {
     return credentials.map(c => ({ id: c.id, username: c.username }));
   }
 
+  async getAssignableUsers(acpId: string): Promise<Pick<User, 'id' | 'username' | 'displayName'>[]> {
+    await this.findById(acpId);
+    return this.userRepository.find({
+      where: { isAppAdmin: false },
+      select: ['id', 'username', 'displayName'],
+      order: { username: 'ASC' },
+    });
+  }
+
   async deleteCredential(acpId: string, credentialId: string): Promise<void> {
     const config = await this.accessConfigRepository.findOne({ where: { acpId } });
     if (!config) {
@@ -427,5 +473,11 @@ export class AcpService {
 
     const saved = await this.credentialRepository.save(credential);
     return { id: saved.id, username: saved.username };
+  }
+
+  private async countAcpManagers(acpId: string): Promise<number> {
+    return this.acpUserRoleRepository.count({
+      where: { acpId, role: AcpRole.ACP_MANAGER },
+    });
   }
 }

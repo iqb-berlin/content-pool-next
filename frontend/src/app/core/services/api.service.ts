@@ -45,6 +45,9 @@ export class ApiService {
   removeAcpRole(acpId: string, userId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/roles/${userId}`);
   }
+  getAssignableUsers(acpId: string): Observable<User[]> {
+    return this.http.get<User[]>(`${this.API}/acp/${acpId}/assignable-users`);
+  }
 
   // ACP Access
   getAccessConfig(id: string): Observable<AccessConfig> { return this.http.get<AccessConfig>(`${this.API}/acp/${id}/access`); }

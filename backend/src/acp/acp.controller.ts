@@ -29,13 +29,12 @@ import {
   UpdateCredentialDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { OidcAuthGuard } from '../auth/guards/oidc-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 @ApiTags('ACP Management')
 @Controller('acp')
-@UseGuards(JwtAuthGuard, OidcAuthGuard)
+@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);
@@ -52,6 +51,8 @@ export class AcpController {
   }
 
   @Get(':id')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Get ACP by ID' })
   async findOne(@Param('id') id: string) {
     return this.acpService.findById(id);
@@ -83,30 +84,46 @@ export class AcpController {
 
   // ACP-Index endpoints
   @Get(':id/index')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Get ACP-Index' })
   async getIndex(@Param('id') id: string) {
     return this.acpService.getIndex(id);
   }
 
   @Put(':id/index')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Update ACP-Index' })
   async updateIndex(@Param('id') id: string, @Body() index: Record<string, unknown>) {
     return this.acpService.updateIndex(id, index);
   }
 
   @Post(':id/index/import')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Import ACP-Index from JSON (replaces existing)' })
   async importIndex(@Param('id') id: string, @Body() index: Record<string, unknown>) {
     return this.acpService.importIndex(id, index);
   }
 
   @Get(':id/index/export')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @Header('Content-Type', 'application/json')
   @ApiOperation({ summary: 'Export ACP-Index as JSON file download' })
   async exportIndex(@Param('id') id: string, @Res() res: Response) {
     const index = await this.acpService.getIndex(id);
     res.setHeader('Content-Disposition', `attachment; filename="acp-index-${id}.json"`);
     res.json(index);
+  }
+
+  @Get(':id/assignable-users')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'List users that can be assigned read access by ACP managers' })
+  async getAssignableUsers(@Param('id') id: string) {
+    return this.acpService.getAssignableUsers(id);
   }
 
   // Role management

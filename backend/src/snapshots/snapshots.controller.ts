@@ -10,11 +10,14 @@ import {
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SnapshotsService } from './snapshots.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/roles.decorator';
 import { CreateSnapshotDto } from '../acp/dto/acp.dto';
 
 @ApiTags('ACP Snapshots')
 @Controller('acp/:acpId/snapshots')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ACP_MANAGER')
 @ApiBearerAuth()
 export class SnapshotsController {
   constructor(private readonly snapshotsService: SnapshotsService) {}
@@ -27,8 +30,11 @@ export class SnapshotsController {
 
   @Get(':snapshotId')
   @ApiOperation({ summary: 'Get snapshot details' })
-  async findOne(@Param('snapshotId') snapshotId: string) {
-    return this.snapshotsService.findById(snapshotId);
+  async findOne(
+    @Param('acpId') acpId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    return this.snapshotsService.findByIdInAcp(acpId, snapshotId);
   }
 
   @Post()
@@ -42,25 +48,41 @@ export class SnapshotsController {
 
   @Post(':snapshotId/restore')
   @ApiOperation({ summary: 'Restore ACP to a snapshot' })
-  async restore(@Param('snapshotId') snapshotId: string) {
+  async restore(
+    @Param('acpId') acpId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    await this.snapshotsService.findByIdInAcp(acpId, snapshotId);
     return this.snapshotsService.restore(snapshotId);
   }
 
   @Get(':snapshotId/diff')
   @ApiOperation({ summary: 'Compare snapshot with previous' })
-  async diff(@Param('snapshotId') snapshotId: string) {
+  async diff(
+    @Param('acpId') acpId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    await this.snapshotsService.findByIdInAcp(acpId, snapshotId);
     return this.snapshotsService.diff(snapshotId);
   }
 
   @Get(':snapshotId/diff/current')
   @ApiOperation({ summary: 'Compare snapshot with current ACP state' })
-  async diffWithCurrent(@Param('snapshotId') snapshotId: string) {
+  async diffWithCurrent(
+    @Param('acpId') acpId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    await this.snapshotsService.findByIdInAcp(acpId, snapshotId);
     return this.snapshotsService.diffWithCurrent(snapshotId);
   }
 
   @Delete(':snapshotId')
   @ApiOperation({ summary: 'Delete snapshot' })
-  async delete(@Param('snapshotId') snapshotId: string) {
+  async delete(
+    @Param('acpId') acpId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    await this.snapshotsService.findByIdInAcp(acpId, snapshotId);
     await this.snapshotsService.delete(snapshotId);
     return { message: 'Snapshot deleted successfully' };
   }

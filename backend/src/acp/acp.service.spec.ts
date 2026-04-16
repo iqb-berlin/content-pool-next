@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { AcpService } from './acp.service';
-import { Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings, AccessModel } from '../database/entities';
+import { Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings, AccessModel, User } from '../database/entities';
 
 describe('AcpService', () => {
   let service: AcpService;
@@ -11,6 +11,7 @@ describe('AcpService', () => {
   let accessConfigRepo: any;
   let credentialRepo: any;
   let settingsRepo: any;
+  let userRepo: any;
 
   const mockAcp = {
     id: 'acp-1',
@@ -51,6 +52,10 @@ describe('AcpService', () => {
     settingsRepo = {
       findOne: jest.fn().mockResolvedValue(null),
     };
+    userRepo = {
+      findOne: jest.fn().mockResolvedValue({ id: 'user-1', isAppAdmin: false }),
+      find: jest.fn().mockResolvedValue([]),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -60,6 +65,7 @@ describe('AcpService', () => {
         { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepo },
         { provide: getRepositoryToken(AcpCredential), useValue: credentialRepo },
         { provide: getRepositoryToken(AppSettings), useValue: settingsRepo },
+        { provide: getRepositoryToken(User), useValue: userRepo },
       ],
     }).compile();
 

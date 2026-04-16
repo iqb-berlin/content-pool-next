@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Acp } from '../database/entities';
+import { Acp, AcpAccessConfig } from '../database/entities';
 import { UnitParserService } from '../files/unit-parser.service';
 
 export interface ItemData {
@@ -20,6 +20,8 @@ export class ItemsService {
   constructor(
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
+    @InjectRepository(AcpAccessConfig)
+    private readonly accessConfigRepository: Repository<AcpAccessConfig>,
     private readonly unitParserService: UnitParserService,
   ) { }
 
@@ -209,6 +211,12 @@ export class ItemsService {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) throw new NotFoundException('ACP not found');
     return this.extractTags(acp.itemProperties || {});
+  }
+
+  async canUseItemTags(acpId: string): Promise<boolean> {
+    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const featureConfig = (config?.featureConfig || {}) as Record<string, unknown>;
+    return Boolean(featureConfig.enableItemListTags);
   }
 
   async saveItemTags(

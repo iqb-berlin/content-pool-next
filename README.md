@@ -41,7 +41,8 @@ npm install --cache /tmp/npm-cache
 npm run start:dev
 # → API at http://localhost:3000/api
 # → Swagger at http://localhost:3000/api/docs
-# → Default login: admin / admin
+# → Seeded local users are available (for non-admin login)
+# → App-Admin login requires OIDC (development user: iqb-admin / Admin1234!)
 
 # Frontend
 cd frontend
@@ -93,7 +94,7 @@ DB_RUN_MIGRATIONS=false
 # CORS (set to your domain)
 CORS_ORIGIN=https://app.example.com
 
-# OIDC (required for admin/manager login)
+# OIDC (required for Application-Admin login)
 KEYCLOAK_HOSTNAME=auth.example.com
 OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
 OIDC_PUBLIC_ISSUER_URL=https://auth.example.com/realms/iqb
@@ -220,7 +221,7 @@ cd backend && npm run test:e2e
 
 ## OIDC / Keycloak Integration
 
-Admin and ACP Manager features use Keycloak OIDC. Public ACP access with credential lists still works without OIDC.
+Application-Admin login uses Keycloak OIDC. ACP-Manager and READ_ONLY users can use local ContentPool credentials (JWT-based login). ACP credential-list access continues to work without OIDC.
 
 Highlights:
 

@@ -136,7 +136,7 @@ export class DashboardComponent implements OnInit {
       const myAssignment = roles.find(r => r.userId === myId);
       this.myRole = myAssignment ? myAssignment.role : null;
     });
-    this.api.getUsers().subscribe(users => {
+    this.api.getAssignableUsers(id).subscribe(users => {
       this.allUsers = users;
       if (users.length) this.selectedUserId = users[0].id;
     });

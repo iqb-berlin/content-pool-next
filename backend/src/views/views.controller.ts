@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Request,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Response } from 'express';
 import { ViewsService } from './views.service';
@@ -38,7 +46,11 @@ export class ViewsController {
   @Get('acp/:acpId/index/export')
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Export ACP-Index JSON for read-only view' })
-  async exportAcpIndex(@Param('acpId') acpId: string, @Res() res: Response) {
+  async exportAcpIndex(@Param('acpId') acpId: string, @Request() req: any, @Res() res: Response) {
+    if (!(await this.canUseFeature(acpId, req, 'allowIndexDownload'))) {
+      throw new ForbiddenException('Index download is not enabled for this ACP');
+    }
+
     const index = await this.viewsService.getAcpIndex(acpId);
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="acp-index-${acpId}.json"`);
@@ -59,21 +71,34 @@ export class ViewsController {
   async getUnit(
     @Param('acpId') acpId: string,
     @Param('unitId') unitId: string,
+    @Request() req: any,
   ) {
+    if (!(await this.canUseFeature(acpId, req, 'enableUnitView'))) {
+      throw new ForbiddenException('Unit view is not enabled for this ACP');
+    }
+
     return this.viewsService.getUnitViewData(acpId, unitId);
   }
 
   @Get('acp/:acpId/items')
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'Get item list for an ACP' })
-  async getItems(@Param('acpId') acpId: string) {
+  async getItems(@Param('acpId') acpId: string, @Request() req: any) {
+    if (!(await this.canUseFeature(acpId, req, 'enableItemList', true))) {
+      throw new ForbiddenException('Item list is not enabled for this ACP');
+    }
+
     return this.viewsService.getItemList(acpId);
   }
 
   @Get('acp/:acpId/sequences')
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List task sequences for an ACP' })
-  async getSequences(@Param('acpId') acpId: string) {
+  async getSequences(@Param('acpId') acpId: string, @Request() req: any) {
+    if (!(await this.canUseFeature(acpId, req, 'enableSequenceNavigation', true))) {
+      throw new ForbiddenException('Task sequences are not enabled for this ACP');
+    }
+
     const data = await this.viewsService.getAcpStartPage(acpId);
     return data?.sequences || [];
   }
@@ -84,7 +109,31 @@ export class ViewsController {
   async getSequence(
     @Param('acpId') acpId: string,
     @Param('sequenceId') sequenceId: string,
+    @Request() req: any,
   ) {
+    if (!(await this.canUseFeature(acpId, req, 'enableSequenceNavigation', true))) {
+      throw new ForbiddenException('Task sequences are not enabled for this ACP');
+    }
+
     return this.viewsService.getTaskSequence(acpId, sequenceId);
+  }
+
+  private async canUseFeature(
+    acpId: string,
+    req: any,
+    featureKey: string,
+    defaultWhenUnset = false,
+  ): Promise<boolean> {
+    if (req?.acpAccessLevel === 'MANAGER' || req?.acpAccessLevel === 'ADMIN') {
+      return true;
+    }
+
+    const data = await this.viewsService.getAcpStartPage(acpId);
+    const featureConfig = (data?.featureConfig || {}) as Record<string, unknown>;
+    const value = featureConfig[featureKey];
+    if (value === undefined) {
+      return defaultWhenUnset;
+    }
+    return Boolean(value);
   }
 }

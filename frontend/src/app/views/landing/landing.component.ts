@@ -50,7 +50,7 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
               <h3>{{ acp.name }}</h3>
               <p class="desc">{{ acp.description || 'Keine Beschreibung verfügbar.' }}</p>
               <div class="card-footer">
-                @if (acp.accessModel === 'CREDENTIALS_LIST') {
+                @if (acp.accessModel === 'CREDENTIALS_LIST' && !isLoggedIn) {
                   @if (loginAcpId === acp.id) {
                     <!-- Inline login form -->
                     <div class="inline-login-form">
@@ -103,14 +103,20 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
                       <span class="btn-icon">🔑</span> Anmelden
                     </button>
                   }
-                } @else if (acp.requiresLogin) {
+                } @else if (acp.requiresLogin && !isLoggedIn) {
                   <a [routerLink]="['/credential-login', acp.id]" class="btn btn-primary">
                     <span class="btn-icon">🔑</span> Anmelden
                   </a>
                 } @else {
-                  <a [routerLink]="['/view', acp.id]" class="btn btn-primary">
-                    <span class="btn-icon">📦</span> Öffnen
-                  </a>
+                  @if (isManagerForAcp(acp.id)) {
+                    <a [routerLink]="['/manage', acp.id]" class="btn btn-primary">
+                      <span class="btn-icon">🛠</span> Verwalten
+                    </a>
+                  } @else {
+                    <a [routerLink]="['/view', acp.id]" class="btn btn-primary">
+                      <span class="btn-icon">📦</span> Öffnen
+                    </a>
+                  }
                 }
               </div>
             </div>
@@ -395,29 +401,22 @@ export class LandingComponent implements OnInit {
     private router: Router,
   ) {}
 
+  get isLoggedIn(): boolean {
+    return this.authService.isLoggedIn;
+  }
+
   ngOnInit() {
-    // For admins: fetch both public ACPs (with proper accessModel) and all ACPs, then merge
-    // For non-admins: just fetch public ACPs
     const acpsRequest = this.authService.isAdmin
       ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
-          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) => {
-            // Start with public ACPs (they have correct accessModel and requiresLogin)
-            const merged = [...publicAcps];
-            const publicIds = new Set(publicAcps.map((a: PublicAcp) => a.id));
-            // Add admin-only ACPs not in public list
-            for (const acp of allAcps) {
-              if (!publicIds.has(acp.id)) {
-                merged.push({
-                  id: acp.id,
-                  name: acp.name,
-                  description: acp.description,
-                  accessModel: 'ADMIN',
-                  requiresLogin: false,
-                });
-              }
-            }
-            return merged;
-          })
+          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) =>
+            this.mergeForAdmin(publicAcps, allAcps),
+          )
+        )
+      : this.authService.isLoggedIn
+      ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
+          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) =>
+            this.mergeForLoggedUsers(publicAcps, allAcps),
+          )
         )
       : this.api.getPublicAcps();
 
@@ -480,12 +479,71 @@ export class LandingComponent implements OnInit {
     this.authService.credentialLogin(acpId, this.loginUsername, this.loginPassword).subscribe({
       next: () => {
         this.loginLoading = false;
-        this.router.navigate(['/view', acpId, 'item-explorer']);
+        this.router.navigate([this.isManagerForAcp(acpId) ? '/manage' : '/view', acpId]);
       },
       error: (err) => {
         this.loginError = err.error?.message || 'Anmeldung fehlgeschlagen';
         this.loginLoading = false;
       }
     });
+  }
+
+  isManagerForAcp(acpId: string): boolean {
+    return this.authService.hasAcpRole(acpId, 'ACP_MANAGER');
+  }
+
+  private mergeForAdmin(publicAcps: PublicAcp[], allAcps: Acp[]): PublicAcp[] {
+    const merged = [...publicAcps];
+    const byId = new Map(merged.map((acp) => [acp.id, acp]));
+
+    for (const acp of allAcps) {
+      const existing = byId.get(acp.id);
+      if (existing) {
+        // Admins can always access configured credential ACPs directly.
+        existing.requiresLogin = false;
+        continue;
+      }
+
+      const mapped: PublicAcp = {
+        id: acp.id,
+        name: acp.name,
+        description: acp.description,
+        accessModel: 'ADMIN',
+        requiresLogin: false,
+      };
+      merged.push(mapped);
+      byId.set(mapped.id, mapped);
+    }
+
+    return merged;
+  }
+
+  private mergeForLoggedUsers(publicAcps: PublicAcp[], allAcps: Acp[]): PublicAcp[] {
+    const merged = [...publicAcps];
+    const byId = new Map(merged.map((acp) => [acp.id, acp]));
+
+    for (const acp of allAcps) {
+      const existing = byId.get(acp.id);
+      if (existing) {
+        // Logged-in users with explicit ACP roles should not be forced into credential re-login.
+        existing.requiresLogin = false;
+        if (existing.accessModel === 'CREDENTIALS_LIST') {
+          existing.accessModel = 'REGISTERED';
+        }
+        continue;
+      }
+
+      const mapped: PublicAcp = {
+        id: acp.id,
+        name: acp.name,
+        description: acp.description,
+        accessModel: 'REGISTERED',
+        requiresLogin: false,
+      };
+      merged.push(mapped);
+      byId.set(mapped.id, mapped);
+    }
+
+    return merged;
   }
 }

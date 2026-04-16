@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 
 @Component({
@@ -126,10 +127,12 @@ export class ItemListComponent implements OnInit {
   enableTags = false;
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
+  persistUserPreferences = false;
 
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
+    private auth: AuthService,
   ) {}
 
   ngOnInit() {
@@ -148,6 +151,11 @@ export class ItemListComponent implements OnInit {
       this.enableClick = fc.enableItemClick !== false;
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
+      this.persistUserPreferences = !!fc.persistUserPreferences && this.auth.isLoggedIn;
+      this.loadUiPreferences();
+      if (this.enableTags) {
+        this.loadTagPreferences();
+      }
     });
 
     this.api.getViewItems(this.acpId).subscribe(items => {
@@ -165,17 +173,20 @@ export class ItemListComponent implements OnInit {
       (i.unitName || '').toLowerCase().includes(term)
     );
     this.applySort();
+    this.saveUiPreferences();
   }
 
   sortBy(field: string) {
     if (this.sortField === field) { this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc'; }
     else { this.sortField = field; this.sortDir = 'asc'; }
     this.applySort();
+    this.saveUiPreferences();
   }
 
   toggleSortDir() {
     this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     this.applySort();
+    this.saveUiPreferences();
   }
 
   applySort() {
@@ -185,6 +196,7 @@ export class ItemListComponent implements OnInit {
       const cmp = aVal.localeCompare(bVal);
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
+    this.saveUiPreferences();
   }
 
   navigateToItem(item: any) {
@@ -197,6 +209,7 @@ export class ItemListComponent implements OnInit {
     if (!this.itemTags[itemId]) this.itemTags[itemId] = [];
     if (!this.itemTags[itemId].includes(tag)) {
       this.itemTags[itemId].push(tag);
+      this.saveTagPreferences();
     }
     (event.target as HTMLSelectElement).value = '';
   }
@@ -204,6 +217,60 @@ export class ItemListComponent implements OnInit {
   removeItemTag(itemId: string, tag: string) {
     if (this.itemTags[itemId]) {
       this.itemTags[itemId] = this.itemTags[itemId].filter(t => t !== tag);
+      this.saveTagPreferences();
     }
+  }
+
+  private getUiPreferencesKey(): string {
+    const userId = this.auth.currentUser?.id || 'anonymous';
+    return `cp:item-list:prefs:${this.acpId}:${userId}`;
+  }
+
+  private loadUiPreferences() {
+    if (!this.persistUserPreferences) return;
+    const raw = localStorage.getItem(this.getUiPreferencesKey());
+    if (!raw) return;
+
+    try {
+      const prefs = JSON.parse(raw);
+      this.filterText = typeof prefs.filterText === 'string' ? prefs.filterText : this.filterText;
+      this.sortField = typeof prefs.sortField === 'string' ? prefs.sortField : this.sortField;
+      this.sortDir = prefs.sortDir === 'desc' ? 'desc' : 'asc';
+    } catch {
+      // ignore malformed preference payloads
+    }
+  }
+
+  private saveUiPreferences() {
+    if (!this.persistUserPreferences) return;
+    const prefs = {
+      filterText: this.filterText,
+      sortField: this.sortField,
+      sortDir: this.sortDir,
+    };
+    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(prefs));
+  }
+
+  private getTagPreferencesKey(): string {
+    const userId = this.auth.currentUser?.id || 'anonymous';
+    return `cp:item-list:tags:${this.acpId}:${userId}`;
+  }
+
+  private loadTagPreferences() {
+    if (!this.persistUserPreferences) return;
+    const raw = localStorage.getItem(this.getTagPreferencesKey());
+    if (!raw) return;
+
+    try {
+      const tags = JSON.parse(raw);
+      this.itemTags = tags && typeof tags === 'object' ? tags : {};
+    } catch {
+      this.itemTags = {};
+    }
+  }
+
+  private saveTagPreferences() {
+    if (!this.persistUserPreferences) return;
+    localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(this.itemTags || {}));
   }
 }

@@ -65,6 +65,12 @@ export interface IndexSyncReport {
   warnings: string[];
 }
 
+export interface IndexDependencyCleanupReport {
+  unitsUpdated: number;
+  dependenciesRemoved: number;
+  indexUpdated: boolean;
+}
+
 @Injectable()
 export class UnitParserService {
   private readonly logger = new Logger(UnitParserService.name);
@@ -241,6 +247,7 @@ export class UnitParserService {
    * - Adds/updates units and items inferred from unit XML + VOMD
    * - Preserves existing manual index fields
    * - Never removes existing units/items automatically
+   * - Prunes dependency entries that reference files no longer present
    */
   async syncIndexFromFiles(acpId: string): Promise<IndexSyncReport> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
@@ -406,6 +413,8 @@ export class UnitParserService {
       }
     }
 
+    this.pruneMissingDependenciesFromParts(parts, fileNameSet);
+
     const nextIndex = normalizeIndexForStorage({
       ...normalizedIndex,
       assessmentParts: parts,
@@ -418,6 +427,44 @@ export class UnitParserService {
 
     report.warnings = Array.from(warningSet);
     return report;
+  }
+
+  /**
+   * Remove unit dependency entries that reference files no longer present
+   * in ACP storage. This is intended for cleanup after file deletions.
+   */
+  async pruneMissingDependencies(acpId: string): Promise<IndexDependencyCleanupReport> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
+
+    const allFiles = await this.fileRepository.find({ where: { acpId } });
+    const fileNameSet = new Set(allFiles.map((f) => f.originalName));
+    const normalizedIndex = normalizeIndexForStorage(acp.acpIndex || {});
+    const parts = getAssessmentParts(normalizedIndex).map((part: any) => ({
+      ...part,
+      units: Array.isArray(part?.units) ? [...part.units] : [],
+    }));
+
+    const cleanup = this.pruneMissingDependenciesFromParts(parts, fileNameSet);
+
+    const nextIndex = normalizeIndexForStorage({
+      ...normalizedIndex,
+      assessmentParts: parts,
+    });
+    const indexUpdated = JSON.stringify(acp.acpIndex || {}) !== JSON.stringify(nextIndex);
+
+    if (indexUpdated) {
+      acp.acpIndex = nextIndex;
+      await this.acpRepository.save(acp);
+    }
+
+    return {
+      unitsUpdated: cleanup.unitsUpdated,
+      dependenciesRemoved: cleanup.dependenciesRemoved,
+      indexUpdated,
+    };
   }
 
   /**
@@ -703,6 +750,58 @@ export class UnitParserService {
     for (const dep of inferred || []) pushIfValid(dep);
 
     return merged;
+  }
+
+  private shouldKeepDependency(dep: any, availableFiles: Set<string>): boolean {
+    const id = typeof dep?.id === 'string' ? dep.id.trim() : '';
+    if (!id) return false;
+
+    const type = typeof dep?.type === 'string' ? dep.type : 'FILE';
+    const fileBackedTypes = new Set([
+      'UNIT_DEFINITION',
+      'CODING_SCHEME',
+      'METADATA',
+      'PLAYER',
+      'FILE',
+    ]);
+
+    if (!fileBackedTypes.has(type)) {
+      return true;
+    }
+
+    return availableFiles.has(id);
+  }
+
+  private pruneMissingDependenciesFromParts(
+    parts: any[],
+    fileNameSet: Set<string>,
+  ): { unitsUpdated: number; dependenciesRemoved: number } {
+    let unitsUpdated = 0;
+    let dependenciesRemoved = 0;
+
+    for (const part of parts) {
+      for (let unitIndex = 0; unitIndex < part.units.length; unitIndex++) {
+        const unit = part.units[unitIndex];
+        const dependencies = Array.isArray(unit?.dependencies) ? unit.dependencies : [];
+        if (!dependencies.length) continue;
+
+        const filteredDependencies = dependencies.filter((dep: any) =>
+          this.shouldKeepDependency(dep, fileNameSet),
+        );
+
+        const removedForUnit = dependencies.length - filteredDependencies.length;
+        if (removedForUnit > 0) {
+          part.units[unitIndex] = {
+            ...unit,
+            dependencies: filteredDependencies,
+          };
+          unitsUpdated++;
+          dependenciesRemoved += removedForUnit;
+        }
+      }
+    }
+
+    return { unitsUpdated, dependenciesRemoved };
   }
 
   private async extractItemsForUnit(

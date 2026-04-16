@@ -18,6 +18,7 @@ import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { FilesService } from './files.service';
 import { UnitParserService } from './unit-parser.service';
+import { ValidationService } from '../validation/validation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -29,6 +30,7 @@ export class FilesController {
   constructor(
     private readonly filesService: FilesService,
     private readonly unitParserService: UnitParserService,
+    private readonly validationService: ValidationService,
   ) {}
 
   @Get()
@@ -81,7 +83,16 @@ export class FilesController {
   @ApiOperation({ summary: 'Delete all files for an ACP' })
   async deleteAll(@Param('acpId') acpId: string) {
     await this.filesService.deleteAll(acpId);
-    return { message: 'All files deleted successfully' };
+    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
+    const validationRun = await this.validationService.autoValidateUploadedFiles(
+      acpId,
+      await this.filesService.findByAcp(acpId),
+    );
+    return {
+      message: 'All files deleted successfully',
+      cleanupReport,
+      validationSummary: validationRun.summary,
+    };
   }
 
   @Get('validate-units')
@@ -156,9 +167,14 @@ export class FilesController {
   ) {
     const uploadedFiles = await this.filesService.uploadMultiple(acpId, files);
     const syncReport = await this.unitParserService.syncIndexFromFiles(acpId);
+    const validationRun = await this.validationService.autoValidateUploadedFiles(
+      acpId,
+      uploadedFiles,
+    );
     return {
-      files: uploadedFiles,
+      files: validationRun.files,
       syncReport,
+      validationSummary: validationRun.summary,
     };
   }
 
@@ -205,7 +221,16 @@ export class FilesController {
   @ApiOperation({ summary: 'Delete a file' })
   async delete(@Param('acpId') acpId: string, @Param('fileId') fileId: string) {
     await this.filesService.deleteForAcp(acpId, fileId);
-    return { message: 'File deleted successfully' };
+    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
+    const validationRun = await this.validationService.autoValidateUploadedFiles(
+      acpId,
+      await this.filesService.findByAcp(acpId),
+    );
+    return {
+      message: 'File deleted successfully',
+      cleanupReport,
+      validationSummary: validationRun.summary,
+    };
   }
 
   @Get(':fileId/validation')

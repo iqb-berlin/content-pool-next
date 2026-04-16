@@ -147,4 +147,86 @@ describe('UnitParserService', () => {
     expect(unit.name).toBe('Manueller Name');
     expect(unit.items).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'i1' })]));
   });
+
+  it('prunes dependencies that reference deleted files', async () => {
+    fileRepo.find.mockResolvedValueOnce([
+      { id: 'f-voud', acpId: 'acp-1', originalName: 'u1.voud', filePath: '/tmp/u1.voud' },
+      { id: 'f-player', acpId: 'acp-1', originalName: 'iqb-player-aspect-2.11.6.html', filePath: '/tmp/player.html' },
+    ]);
+
+    acpRepo.findOne.mockResolvedValueOnce({
+      id: 'acp-1',
+      acpIndex: {
+        packageId: 'pkg-1',
+        version: '0.5.0',
+        assessmentParts: [
+          {
+            id: 'part-1',
+            units: [
+              {
+                id: 'u1',
+                name: 'Unit 1',
+                dependencies: [
+                  { id: 'u1.voud', type: 'UNIT_DEFINITION' },
+                  { id: 'u1.vocs', type: 'CODING_SCHEME' },
+                  { id: 'u1.vomd', type: 'METADATA' },
+                  { id: 'iqb-player-aspect-2.11.6.html', type: 'PLAYER' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await service.pruneMissingDependencies('acp-1');
+
+    expect(result.dependenciesRemoved).toBe(2);
+    expect(result.unitsUpdated).toBe(1);
+    expect(result.indexUpdated).toBe(true);
+    expect(acpRepo.save).toHaveBeenCalledTimes(1);
+
+    const saved = acpRepo.save.mock.calls[0][0];
+    expect(saved.acpIndex.assessmentParts[0].units[0].dependencies).toEqual([
+      { id: 'u1.voud', type: 'UNIT_DEFINITION' },
+      { id: 'iqb-player-aspect-2.11.6.html', type: 'PLAYER' },
+    ]);
+  });
+
+  it('prunes stale dependencies during sync even when no unit XML exists', async () => {
+    fileRepo.find.mockResolvedValueOnce([
+      { id: 'f-player', acpId: 'acp-1', originalName: 'iqb-player-aspect-2.11.6.html', filePath: '/tmp/player.html' },
+    ]);
+
+    acpRepo.findOne.mockResolvedValueOnce({
+      id: 'acp-1',
+      acpIndex: {
+        packageId: 'pkg-1',
+        version: '0.5.0',
+        assessmentParts: [
+          {
+            id: 'part-1',
+            units: [
+              {
+                id: 'stale-unit',
+                name: 'Stale Unit',
+                dependencies: [
+                  { id: 'stale-unit.voud', type: 'UNIT_DEFINITION' },
+                  { id: 'stale-unit.vocs', type: 'CODING_SCHEME' },
+                ],
+                items: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const report = await service.syncIndexFromFiles('acp-1');
+
+    expect(report.unitsUpdated).toBe(0);
+    expect(acpRepo.save).toHaveBeenCalledTimes(1);
+    const saved = acpRepo.save.mock.calls[0][0];
+    expect(saved.acpIndex.assessmentParts[0].units[0].dependencies).toEqual([]);
+  });
 });

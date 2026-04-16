@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
-import { AcpFile } from '../../core/models/api.models';
+import { AcpFile, UploadValidationSummary } from '../../core/models/api.models';
 import { firstValueFrom } from 'rxjs';
 
 @Component({
@@ -42,6 +42,19 @@ import { firstValueFrom } from 'rxjs';
             }
           </div>
         }
+      </div>
+    }
+
+    @if (lastValidationSummary) {
+      <div class="alert" [class.alert-success]="lastValidationSummary.invalidFiles === 0" [class.alert-warning]="lastValidationSummary.invalidFiles > 0">
+        Auto-Validierung: {{ lastValidationSummary.validFiles }} von {{ lastValidationSummary.totalFiles }} Datei(en) ohne Fehler.
+        @if (lastValidationSummary.invalidFiles > 0) {
+          <span> {{ lastValidationSummary.invalidFiles }} Datei(en) enthalten Fehler.</span>
+        }
+        <div style="margin-top:6px">
+          ACP-Semantik: {{ lastValidationSummary.semanticValid ? 'OK' : 'Fehler/Warnungen vorhanden' }}
+          ({{ lastValidationSummary.semanticIssueCount }} Issue(s))
+        </div>
       </div>
     }
 
@@ -101,6 +114,21 @@ import { firstValueFrom } from 'rxjs';
                   <span class="badge" [class.badge-success]="file.validationResult.valid" [class.badge-danger]="!file.validationResult.valid">
                     {{ file.validationResult.valid ? 'OK' : 'Fehler' }}
                   </span>
+
+                  @if (file.validationResult.issues.length) {
+                    <div class="file-validation-issues">
+                      @for (issue of file.validationResult.issues; track issueTrack(issue, $index)) {
+                        <div
+                          class="file-validation-issue"
+                          [class.issue-error]="issue.severity === 'error'"
+                          [class.issue-warning]="issue.severity === 'warning'"
+                          [class.issue-info]="issue.severity === 'info'">
+                          <span class="issue-tag">{{ issue.severity.toUpperCase() }}</span>
+                          <span>{{ issue.message }}</span>
+                        </div>
+                      }
+                    </div>
+                  }
                 } @else {
                   <span class="badge badge-warning">Nicht geprüft</span>
                 }
@@ -127,6 +155,16 @@ import { firstValueFrom } from 'rxjs';
     .validation-unit.invalid { border-left-color: var(--color-danger); background: rgba(231,76,60,0.05); }
     .validation-header { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
     .validation-details { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 32px; }
+    .file-validation-issues { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 320px; }
+    .file-validation-issue { display: flex; gap: 6px; align-items: flex-start; font-size: 0.75rem; color: var(--color-text-secondary); }
+    .file-validation-issue .issue-tag {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 56px; padding: 1px 6px; border-radius: 4px; font-weight: 700;
+      background: var(--color-bg); color: var(--color-text-secondary);
+    }
+    .file-validation-issue.issue-error .issue-tag { background: rgba(231,76,60,0.15); color: #a93226; }
+    .file-validation-issue.issue-warning .issue-tag { background: rgba(243,156,18,0.18); color: #9c640c; }
+    .file-validation-issue.issue-info .issue-tag { background: rgba(52,152,219,0.16); color: #1f618d; }
   `]
 })
 export class FilesComponent implements OnInit {
@@ -137,6 +175,7 @@ export class FilesComponent implements OnInit {
   validating = false;
   validationResults: any[] = [];
   lastSyncReport: any = null;
+  lastValidationSummary: UploadValidationSummary | null = null;
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
@@ -156,6 +195,7 @@ export class FilesComponent implements OnInit {
     const filesArray = Array.from(input.files);
     this.uploading = true;
     this.lastSyncReport = null;
+    this.lastValidationSummary = null;
     const chunkSize = 50;
     const mergedWarnings = new Set<string>();
     const aggregateReport = {
@@ -165,6 +205,7 @@ export class FilesComponent implements OnInit {
       itemsUpdated: 0,
       warnings: [] as string[],
     };
+    let latestValidationSummary: UploadValidationSummary | null = null;
     
     try {
       for (let i = 0; i < filesArray.length; i += chunkSize) {
@@ -186,10 +227,15 @@ export class FilesComponent implements OnInit {
             mergedWarnings.add(warning);
           }
         }
+        if (uploadResult?.validationSummary) {
+          latestValidationSummary = uploadResult.validationSummary;
+        }
       }
       aggregateReport.warnings = Array.from(mergedWarnings);
       this.lastSyncReport = aggregateReport;
+      this.lastValidationSummary = latestValidationSummary;
       this.load();
+      this.validateFiles();
     } catch (err) {
       console.error('Upload Error:', err);
     } finally {
@@ -233,5 +279,9 @@ export class FilesComponent implements OnInit {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  issueTrack(issue: any, index: number): string {
+    return `${issue?.severity || 'unknown'}-${issue?.message || ''}-${issue?.path || ''}-${index}`;
   }
 }

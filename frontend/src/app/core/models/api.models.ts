@@ -63,6 +63,16 @@ export interface IndexSyncReport {
 export interface FileUploadResponse {
   files: AcpFile[];
   syncReport: IndexSyncReport;
+  validationSummary?: UploadValidationSummary;
+}
+
+export interface UploadValidationSummary {
+  totalFiles: number;
+  validFiles: number;
+  invalidFiles: number;
+  semanticValid: boolean;
+  semanticIssueCount: number;
+  timestamp: string;
 }
 
 export interface ValidationResult {

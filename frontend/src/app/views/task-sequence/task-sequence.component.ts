@@ -204,6 +204,7 @@ export class TaskSequenceComponent implements OnInit {
 
   downloadSequence() {
     // Download all units in the sequence as ZIP
-    window.open(`/api/acp/${this.acpId}/files?sequenceId=${this.sequenceId}&format=zip`, '_blank');
+    const url = `/api/acp/${this.acpId}/files?sequenceId=${this.sequenceId}&format=zip`;
+    window.open(this.api.appendAuthToken(url), '_blank');
   }
 }

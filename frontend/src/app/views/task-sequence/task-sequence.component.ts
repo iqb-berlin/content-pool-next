@@ -17,47 +17,59 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <h1>{{ sequence.name || sequence.id }}</h1>
         <div class="seq-actions">
           @if (showUnitListBtn) {
-            <button class="btn btn-outline btn-sm" (click)="unitListOpen = !unitListOpen">📋 Aufgabenliste</button>
+            <button class="btn btn-outline btn-sm" (click)="toggleUnitList()">📋 Aufgabenliste</button>
           }
           @if (showCommentBtn) {
             <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
           }
           @if (showDownloadBtn) {
-            <button class="btn btn-outline btn-sm" (click)="downloadSequence()">⬇️ Download</button>
+            <button class="btn btn-outline btn-sm" (click)="downloadSequence()" [disabled]="!hasUnits">⬇️ Download</button>
           }
         </div>
       </div>
 
       <!-- Navigation bar -->
       <div class="nav-bar">
-        <button class="btn btn-primary" [disabled]="currentIndex <= 0" (click)="prev()">← Zurück</button>
-        <span class="nav-info">
-          Aufgabe {{ currentIndex + 1 }} / {{ sequence.units.length }}:
-          <strong>{{ sequence.units[currentIndex]?.name || sequence.units[currentIndex]?.id }}</strong>
-        </span>
-        <button class="btn btn-primary" [disabled]="currentIndex >= sequence.units.length - 1" (click)="next()">Weiter →</button>
+        <button class="btn btn-primary" [disabled]="!canGoPrev" (click)="prev()">← Zurück</button>
+        @if (hasUnits && currentUnit) {
+          <span class="nav-info">
+            Aufgabe {{ currentIndex + 1 }} / {{ sequence.units.length }}:
+            <strong>{{ currentUnit.name || currentUnit.id }}</strong>
+          </span>
+        } @else {
+          <span class="nav-info"><strong>Keine Unit in dieser Aufgabenfolge</strong></span>
+        }
+        <button class="btn btn-primary" [disabled]="!canGoNext" (click)="next()">Weiter →</button>
       </div>
 
       <!-- Current unit → navigate to unit view -->
-      <div class="unit-embed card">
-        <div class="embed-header">
-          <h3>{{ sequence.units[currentIndex]?.name || sequence.units[currentIndex]?.id }}</h3>
-          <a [routerLink]="['/view', acpId, 'unit', sequence.units[currentIndex]?.id]" class="btn btn-sm btn-outline">
-            Vollansicht ↗
-          </a>
+      @if (hasUnits && currentUnit) {
+        <div class="unit-embed card">
+          <div class="embed-header">
+            <h3>{{ currentUnit.name || currentUnit.id }}</h3>
+            <a [routerLink]="['/view', acpId, 'unit', currentUnit.id]" class="btn btn-sm btn-outline">
+              Vollansicht ↗
+            </a>
+          </div>
+          <div class="embed-body">
+            <p class="help-text">
+              Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
+            </p>
+            <a [routerLink]="['/view', acpId, 'unit', currentUnit.id]" class="btn btn-primary" style="margin-top: 12px">
+              📝 Aufgabe {{ currentUnit.name || currentUnit.id }} öffnen
+            </a>
+          </div>
         </div>
-        <div class="embed-body">
-          <p class="help-text">
-            Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
-          </p>
-          <a [routerLink]="['/view', acpId, 'unit', sequence.units[currentIndex]?.id]" class="btn btn-primary" style="margin-top: 12px">
-            📝 Aufgabe {{ sequence.units[currentIndex]?.name || sequence.units[currentIndex]?.id }} öffnen
-          </a>
+      } @else {
+        <div class="unit-embed card">
+          <div class="embed-body">
+            <p class="help-text">Diese Aufgabenfolge enthält aktuell keine referenzierten Units.</p>
+          </div>
         </div>
-      </div>
+      }
 
       <!-- Unit list popup -->
-      @if (unitListOpen) {
+      @if (unitListOpen && hasUnits) {
         <div class="popup-overlay" (click)="unitListOpen = false">
           <div class="popup card" (click)="$event.stopPropagation()">
             <div class="popup-header">
@@ -165,31 +177,62 @@ export class TaskSequenceComponent implements OnInit {
 
     this.api.getAcpStartPage(this.acpId).subscribe(data => {
       const fc = data?.featureConfig || {};
-      this.showCommentBtn = !!(fc.enableCommenting && fc.commentTargets?.includes('TASK_SEQUENCE'));
+      const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
+      this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('TASK_SEQUENCE'));
       this.showDownloadBtn = !!fc.allowUnitDownload;
+      this.showUnitListBtn = fc.enableSequenceNavigation !== false;
     });
 
     this.api.getViewSequence(this.acpId, this.sequenceId).subscribe(s => {
-      this.sequence = s;
+      this.sequence = this.normalizeSequence(s);
+      this.currentIndex = 0;
+      this.unitListOpen = false;
       this.breadcrumbs = [
         { label: 'ContentPool', route: ['/'] },
         { label: 'ACP', route: ['/view', this.acpId] },
-        { label: s.name || 'Aufgabenfolge' },
+        { label: this.sequence.name || 'Aufgabenfolge' },
       ];
     });
   }
 
+  get hasUnits(): boolean {
+    return !!(this.sequence?.units?.length);
+  }
+
+  get currentUnit(): { id: string; name: string } | null {
+    if (!this.sequence?.units?.length) return null;
+    return this.sequence.units[this.currentIndex] || null;
+  }
+
+  get canGoPrev(): boolean {
+    return this.hasUnits && this.currentIndex > 0;
+  }
+
+  get canGoNext(): boolean {
+    return this.hasUnits && !!this.sequence && this.currentIndex < this.sequence.units.length - 1;
+  }
+
   prev() {
-    if (this.currentIndex > 0) this.currentIndex--;
+    if (!this.canGoPrev) return;
+    this.currentIndex -= 1;
   }
 
   next() {
-    if (this.sequence && this.currentIndex < this.sequence.units.length - 1) this.currentIndex++;
+    if (!this.canGoNext) return;
+    this.currentIndex += 1;
   }
 
   jumpTo(index: number) {
+    if (!this.sequence?.units?.length) return;
+    const max = this.sequence.units.length - 1;
+    if (index < 0 || index > max) return;
     this.currentIndex = index;
     this.unitListOpen = false;
+  }
+
+  toggleUnitList() {
+    if (!this.hasUnits) return;
+    this.unitListOpen = !this.unitListOpen;
   }
 
   openComment() {
@@ -203,8 +246,26 @@ export class TaskSequenceComponent implements OnInit {
   }
 
   downloadSequence() {
+    if (!this.hasUnits) return;
     // Download all units in the sequence as ZIP
     const url = `/api/acp/${this.acpId}/files?sequenceId=${this.sequenceId}&format=zip`;
     window.open(this.api.appendAuthToken(url), '_blank');
+  }
+
+  private normalizeSequence(raw: TaskSequence | null | undefined): TaskSequence {
+    const units = (Array.isArray(raw?.units) ? raw.units : [])
+      .filter((unit: any) => typeof unit?.id === 'string' && unit.id.trim().length > 0)
+      .map((unit: any) => ({
+        id: unit.id.trim(),
+        name: typeof unit?.name === 'string' && unit.name.trim().length > 0
+          ? unit.name
+          : unit.id.trim(),
+      }));
+
+    return {
+      id: raw?.id || this.sequenceId,
+      name: raw?.name || raw?.id || this.sequenceId,
+      units,
+    };
   }
 }

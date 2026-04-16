@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { Acp, AccessConfig, AcpSnapshot, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence, Credential } from '../models/api.models';
+import { Acp, AccessConfig, AcpSnapshot, SnapshotCurrentDiff, AcpFile, Comment, AppSettings, User, PublicAcp, UnitViewData, TaskSequence, Credential } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -118,8 +118,14 @@ export class ApiService {
   restoreSnapshot(acpId: string, snapshotId: string): Observable<Acp> {
     return this.http.post<Acp>(`${this.API}/acp/${acpId}/snapshots/${snapshotId}/restore`, {});
   }
+  deleteSnapshot(acpId: string, snapshotId: string): Observable<{ message: string }> {
+    return this.http.delete<{ message: string }>(`${this.API}/acp/${acpId}/snapshots/${snapshotId}`);
+  }
   getSnapshotDiff(acpId: string, snapshotId: string): Observable<any> {
     return this.http.get(`${this.API}/acp/${acpId}/snapshots/${snapshotId}/diff`);
+  }
+  getSnapshotCurrentDiff(acpId: string, snapshotId: string): Observable<SnapshotCurrentDiff> {
+    return this.http.get<SnapshotCurrentDiff>(`${this.API}/acp/${acpId}/snapshots/${snapshotId}/diff/current`);
   }
 
   // Comments

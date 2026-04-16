@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Body,
   UseGuards,
@@ -49,5 +50,18 @@ export class SnapshotsController {
   @ApiOperation({ summary: 'Compare snapshot with previous' })
   async diff(@Param('snapshotId') snapshotId: string) {
     return this.snapshotsService.diff(snapshotId);
+  }
+
+  @Get(':snapshotId/diff/current')
+  @ApiOperation({ summary: 'Compare snapshot with current ACP state' })
+  async diffWithCurrent(@Param('snapshotId') snapshotId: string) {
+    return this.snapshotsService.diffWithCurrent(snapshotId);
+  }
+
+  @Delete(':snapshotId')
+  @ApiOperation({ summary: 'Delete snapshot' })
+  async delete(@Param('snapshotId') snapshotId: string) {
+    await this.snapshotsService.delete(snapshotId);
+    return { message: 'Snapshot deleted successfully' };
   }
 }

@@ -3,7 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
-import { AcpSnapshot } from '../../core/models/api.models';
+import { AcpSnapshot, SnapshotCurrentDiff } from '../../core/models/api.models';
 
 @Component({
   selector: 'app-snapshots',
@@ -40,7 +40,11 @@ import { AcpSnapshot } from '../../core/models/api.models';
               <td>{{ snap.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
               <td>{{ snap.changelog || '–' }}</td>
               <td>
+                <button class="btn btn-sm btn-outline" (click)="previewDiff(snap)">
+                  {{ loadingDiffSnapshotId === snap.id ? 'Lade…' : 'Diff zum aktuellen Stand' }}
+                </button>
                 <button class="btn btn-sm btn-outline" (click)="restore(snap)">Wiederherstellen</button>
+                <button class="btn btn-sm btn-danger" (click)="deleteSnapshot(snap)">Löschen</button>
               </td>
             </tr>
           }
@@ -50,6 +54,33 @@ import { AcpSnapshot } from '../../core/models/api.models';
         <div class="empty-state"><h3>Noch keine Snapshots vorhanden</h3></div>
       }
     </div>
+
+    @if (diffPreview) {
+      <div class="card">
+        <h3>Diff-Vorschau zu Version v{{ diffPreviewSnapshotVersion }}</h3>
+        <p><strong>ACP-Index geändert:</strong> {{ diffPreview.indexChanged ? 'Ja' : 'Nein' }}</p>
+        <p><strong>Unverändert:</strong> {{ diffPreview.unchanged }} Dateien</p>
+
+        <div class="form-group">
+          <label>Neu im aktuellen Stand</label>
+          <div>{{ diffPreview.added.length ? diffPreview.added.join(', ') : 'Keine' }}</div>
+        </div>
+        <div class="form-group">
+          <label>Fehlen im aktuellen Stand</label>
+          <div>{{ diffPreview.removed.length ? diffPreview.removed.join(', ') : 'Keine' }}</div>
+        </div>
+        <div class="form-group">
+          <label>Inhaltlich geändert</label>
+          <div>{{ diffPreview.modified.length ? diffPreview.modified.join(', ') : 'Keine' }}</div>
+        </div>
+      </div>
+    }
+
+    @if (diffError) {
+      <div class="card">
+        <p style="color:#b00020;"><strong>Diff konnte nicht geladen werden:</strong> {{ diffError }}</p>
+      </div>
+    }
   `
 })
 export class SnapshotsComponent implements OnInit {
@@ -57,6 +88,10 @@ export class SnapshotsComponent implements OnInit {
   snapshots: AcpSnapshot[] = [];
   showCreate = false;
   changelog = '';
+  diffPreview: SnapshotCurrentDiff | null = null;
+  diffPreviewSnapshotVersion: number | null = null;
+  diffError = '';
+  loadingDiffSnapshotId: string | null = null;
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
@@ -75,11 +110,51 @@ export class SnapshotsComponent implements OnInit {
     });
   }
 
+  previewDiff(snap: AcpSnapshot) {
+    this.loadingDiffSnapshotId = snap.id;
+    this.diffError = '';
+    this.api.getSnapshotCurrentDiff(this.acpId, snap.id).subscribe({
+      next: (diff) => {
+        this.diffPreview = diff;
+        this.diffPreviewSnapshotVersion = snap.versionNumber;
+        this.loadingDiffSnapshotId = null;
+      },
+      error: (err) => {
+        this.diffPreview = null;
+        this.diffPreviewSnapshotVersion = null;
+        this.diffError = err?.error?.message || 'Unbekannter Fehler';
+        this.loadingDiffSnapshotId = null;
+      },
+    });
+  }
+
   restore(snap: AcpSnapshot) {
     if (confirm(`Version v${snap.versionNumber} wiederherstellen?`)) {
       this.api.restoreSnapshot(this.acpId, snap.id).subscribe(() => {
         alert('ACP-Index wurde wiederhergestellt.');
+        this.load();
       });
     }
+  }
+
+  deleteSnapshot(snap: AcpSnapshot) {
+    if (!confirm(`Snapshot v${snap.versionNumber} wirklich löschen?`)) {
+      return;
+    }
+
+    this.api.deleteSnapshot(this.acpId, snap.id).subscribe({
+      next: () => {
+        if (this.diffPreview?.snapshotId === snap.id) {
+          this.diffPreview = null;
+          this.diffPreviewSnapshotVersion = null;
+          this.diffError = '';
+        }
+        this.load();
+      },
+      error: (err) => {
+        const message = err?.error?.message || 'Unbekannter Fehler';
+        this.diffError = message;
+      },
+    });
   }
 }

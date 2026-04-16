@@ -74,6 +74,16 @@ export interface AcpSnapshot {
   createdAt: string;
 }
 
+export interface SnapshotCurrentDiff {
+  snapshotId: string;
+  comparedWith: 'current';
+  indexChanged: boolean;
+  added: string[];
+  removed: string[];
+  modified: string[];
+  unchanged: number;
+}
+
 export interface AccessConfig {
   id: string;
   acpId: string;

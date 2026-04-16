@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -42,6 +42,26 @@ export class SnapshotsService {
     return snapshot;
   }
 
+  async delete(snapshotId: string): Promise<void> {
+    const snapshot = await this.findById(snapshotId);
+    const snapshotAcpId = snapshot.acpId;
+    const snapshotEntityId = snapshot.id;
+
+    if (!snapshotAcpId || !snapshotEntityId) {
+      throw new NotFoundException(`Snapshot with ID ${snapshotId} is missing required metadata`);
+    }
+
+    await this.snapshotRepository.remove(snapshot);
+
+    const snapshotDir = path.join(this.storagePath, snapshotAcpId, 'snapshots', snapshotEntityId);
+    const restoreDir = path.join(this.storagePath, snapshotAcpId, 'snapshot-restore', snapshotEntityId);
+
+    await Promise.allSettled([
+      fs.rm(snapshotDir, { recursive: true, force: true }),
+      fs.rm(restoreDir, { recursive: true, force: true }),
+    ]);
+  }
+
   async create(acpId: string, changelog?: string): Promise<AcpSnapshot> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
@@ -64,17 +84,25 @@ export class SnapshotsService {
     });
     const savedSnapshot = await this.snapshotRepository.save(snapshot);
 
-    // Copy file references
+    // Persist file state for this snapshot so restore stays independent
+    // from future file deletions or replacements in the active ACP.
     const files = await this.fileRepository.find({ where: { acpId } });
-    const snapshotFiles = files.map((file) =>
-      this.snapshotFileRepository.create({
+    const snapshotFiles: AcpSnapshotFile[] = [];
+    for (const [index, file] of files.entries()) {
+      const snapshotFilePath = await this.persistSnapshotFile(
+        acpId,
+        savedSnapshot.id,
+        file,
+        index,
+      );
+      snapshotFiles.push(this.snapshotFileRepository.create({
         snapshotId: savedSnapshot.id,
-        filePath: file.filePath,
+        filePath: snapshotFilePath,
         originalName: file.originalName,
         checksum: file.checksum,
         fileSize: file.fileSize,
-      }),
-    );
+      }));
+    }
     if (snapshotFiles.length > 0) {
       await this.snapshotFileRepository.save(snapshotFiles);
     }
@@ -95,10 +123,10 @@ export class SnapshotsService {
     acp.acpIndex = { ...snapshot.acpIndexSnapshot };
     await this.acpRepository.save(acp);
 
-    // Restore file reference state from snapshot.
-    await this.fileRepository.delete({ acpId: snapshot.acpId });
+    // Resolve all file data first; only mutate DB state after all files
+    // are restorable to avoid partial restores.
+    const restoredFiles: AcpFile[] = [];
     if (snapshot.snapshotFiles?.length) {
-      const restoredFiles: AcpFile[] = [];
       for (const sf of snapshot.snapshotFiles) {
         const { filePath, fileSize } = await this.resolveRestoredFilePath(acp.id, snapshot.id, sf);
         restoredFiles.push(
@@ -111,6 +139,9 @@ export class SnapshotsService {
           }),
         );
       }
+    }
+    await this.fileRepository.delete({ acpId: snapshot.acpId });
+    if (restoredFiles.length) {
       await this.fileRepository.save(restoredFiles);
     }
 
@@ -125,8 +156,9 @@ export class SnapshotsService {
     try {
       await fs.access(snapshotFile.filePath);
     } catch {
-      // Source file missing; fall back to stored reference path.
-      return { filePath: snapshotFile.filePath, fileSize: snapshotFile.fileSize };
+      throw new NotFoundException(
+        `Snapshot file "${snapshotFile.originalName}" is missing on disk and cannot be restored`,
+      );
     }
 
     try {
@@ -137,22 +169,46 @@ export class SnapshotsService {
       const stats = await fs.stat(targetPath);
       return { filePath: targetPath, fileSize: Number(stats.size) };
     } catch {
-      // Copy failed; keep path reference to source file.
-      return { filePath: snapshotFile.filePath, fileSize: snapshotFile.fileSize };
+      throw new NotFoundException(
+        `Snapshot file "${snapshotFile.originalName}" could not be copied for restore`,
+      );
+    }
+  }
+
+  private async persistSnapshotFile(
+    acpId: string,
+    snapshotId: string,
+    file: AcpFile,
+    index: number,
+  ): Promise<string> {
+    const snapshotDir = path.join(this.storagePath, acpId, 'snapshots', snapshotId);
+    await fs.mkdir(snapshotDir, { recursive: true });
+    const sourceBaseName = path.basename(file.filePath) || file.originalName;
+    const snapshotFilePath = path.join(snapshotDir, `${index}-${sourceBaseName}`);
+
+    try {
+      await fs.copyFile(file.filePath, snapshotFilePath);
+      return snapshotFilePath;
+    } catch {
+      // Fall back to previous behavior if copy fails unexpectedly.
+      return file.filePath;
     }
   }
 
   async diff(snapshotId: string): Promise<Record<string, unknown>> {
     const snapshot = await this.findById(snapshotId);
 
-    // Find previous snapshot
+    // Find direct previous snapshot (highest version lower than current).
     const previousSnapshot = await this.snapshotRepository.findOne({
-      where: { acpId: snapshot.acpId },
+      where: {
+        acpId: snapshot.acpId,
+        versionNumber: LessThan(snapshot.versionNumber),
+      },
       order: { versionNumber: 'DESC' },
       relations: ['snapshotFiles'],
     });
 
-    if (!previousSnapshot || previousSnapshot.id === snapshotId) {
+    if (!previousSnapshot) {
       return { message: 'No previous snapshot to compare with' };
     }
 
@@ -188,6 +244,53 @@ export class SnapshotsService {
       removed,
       modified,
       unchanged: currentFiles.length - added.length - modified.length,
+    };
+  }
+
+  async diffWithCurrent(snapshotId: string): Promise<Record<string, unknown>> {
+    const snapshot = await this.findById(snapshotId);
+    const acp = await this.acpRepository.findOne({ where: { id: snapshot.acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${snapshot.acpId} not found`);
+    }
+
+    const snapshotFiles = snapshot.snapshotFiles || [];
+    const currentFiles = await this.fileRepository.find({ where: { acpId: snapshot.acpId } });
+
+    const snapshotChecksums = new Map(
+      snapshotFiles.map((file) => [file.originalName, file.checksum]),
+    );
+    const currentChecksums = new Map(
+      currentFiles.map((file) => [file.originalName, file.checksum]),
+    );
+
+    const added = currentFiles
+      .filter((file) => !snapshotChecksums.has(file.originalName))
+      .map((file) => file.originalName);
+    const removed = snapshotFiles
+      .filter((file) => !currentChecksums.has(file.originalName))
+      .map((file) => file.originalName);
+    const modified = currentFiles
+      .filter(
+        (file) =>
+          snapshotChecksums.has(file.originalName) &&
+          snapshotChecksums.get(file.originalName) !== file.checksum,
+      )
+      .map((file) => file.originalName);
+    const unchanged = currentFiles.filter(
+      (file) =>
+        snapshotChecksums.has(file.originalName) &&
+        snapshotChecksums.get(file.originalName) === file.checksum,
+    ).length;
+
+    return {
+      snapshotId,
+      comparedWith: 'current',
+      indexChanged: JSON.stringify(snapshot.acpIndexSnapshot || {}) !== JSON.stringify(acp.acpIndex || {}),
+      added,
+      removed,
+      modified,
+      unchanged,
     };
   }
 }

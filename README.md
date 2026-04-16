@@ -219,6 +219,50 @@ cd backend && npm run test:e2e
 - **Verona Player Integration**: Unit display via iframe
 - **Server-to-Server API**: For Studio, Testcenter, Kodierbox integration
 
+## Server-to-Server API
+
+Authentication is token-based for integrations (`X-Server-Token: <token>` or `Authorization: Bearer <token>`), independent from generic user login.
+
+### Core Endpoints
+
+- `GET /api/server/acp`: List transferable ACPs
+- `GET /api/server/acp/:acpId`: Full transfer payload (index + files metadata)
+- `GET /api/server/acp/:acpId/export`: Alias for full transfer payload
+- `POST /api/server/acp/import`: Create/update ACP by `packageId`
+- `POST /api/server/acp`: Legacy alias for import
+- `GET /api/server/acp/:acpId/index`: Transfer only ACP index
+- `PUT /api/server/acp/:acpId/index`: Update ACP index only
+- `GET /api/server/acp/:acpId/files`: List ACP files for transfer
+- `GET /api/server/acp/:acpId/files/:fileId`: File metadata
+- `GET /api/server/acp/:acpId/files/:fileId/download`: Download one file
+- `POST /api/server/acp/:acpId/files/upload`: Upload one or more files (multipart)
+- `GET /api/server/audit`: Read integration audit log entries (scope required)
+
+### Conflict Strategy
+
+- ACP import (`POST /api/server/acp/import`, `POST /api/server/acp`):
+  - `conflictStrategy=reject` (default): fail when `packageId` already exists
+  - `conflictStrategy=overwrite`: replace existing ACP index
+  - `conflictStrategy=merge`: deep-merge incoming index into existing index
+- Index update (`PUT /api/server/acp/:acpId/index`):
+  - `strategy=overwrite` (default) or `strategy=merge`
+- File upload (`POST /api/server/acp/:acpId/files/upload`):
+  - `conflictStrategy=keep-both` (default), `overwrite`, or `reject`
+- Optimistic concurrency is supported via `expectedUpdatedAt` (ISO timestamp) for ACP/index updates.
+
+### Integration Scopes
+
+Tokens can be scoped per integration client. Supported scopes:
+
+- `acp.read`
+- `transfer.read`
+- `transfer.write`
+- `index.read`
+- `index.write`
+- `files.read`
+- `files.write`
+- `audit.read`
+
 ## OIDC / Keycloak Integration
 
 Application-Admin login uses Keycloak OIDC. ACP-Manager and READ_ONLY users can use local ContentPool credentials (JWT-based login). ACP credential-list access continues to work without OIDC.

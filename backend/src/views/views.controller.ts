@@ -1,5 +1,6 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Res, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Response } from 'express';
 import { ViewsService } from './views.service';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 
@@ -25,6 +26,23 @@ export class ViewsController {
   @ApiOperation({ summary: 'ACP start page data' })
   async getAcpStartPage(@Param('acpId') acpId: string) {
     return this.viewsService.getAcpStartPage(acpId);
+  }
+
+  @Get('acp/:acpId/index')
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: 'Get ACP-Index for read-only view' })
+  async getAcpIndex(@Param('acpId') acpId: string) {
+    return this.viewsService.getAcpIndex(acpId);
+  }
+
+  @Get('acp/:acpId/index/export')
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: 'Export ACP-Index JSON for read-only view' })
+  async exportAcpIndex(@Param('acpId') acpId: string, @Res() res: Response) {
+    const index = await this.viewsService.getAcpIndex(acpId);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="acp-index-${acpId}.json"`);
+    res.json(index || {});
   }
 
   @Get('acp/:acpId/units')

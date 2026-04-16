@@ -142,6 +142,15 @@ export class ViewsService {
   }
 
   /**
+   * Get full ACP-Index for read-only/public view routes.
+   */
+  async getAcpIndex(acpId: string): Promise<Record<string, unknown> | null> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) return null;
+    return (acp.acpIndex || {}) as Record<string, unknown>;
+  }
+
+  /**
    * Get unit view data including player reference.
    */
   async getUnitViewData(acpId: string, unitId: string): Promise<any> {

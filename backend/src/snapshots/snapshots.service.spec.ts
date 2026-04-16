@@ -1,8 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SnapshotsService } from './snapshots.service';
 import { AcpSnapshot, AcpSnapshotFile, Acp, AcpFile } from '../database/entities';
+import * as fs from 'fs/promises';
+
+jest.mock('fs/promises', () => ({
+  access: jest.fn(),
+  mkdir: jest.fn(),
+  copyFile: jest.fn(),
+  stat: jest.fn(),
+}));
 
 describe('SnapshotsService', () => {
   let service: SnapshotsService;
@@ -10,6 +19,7 @@ describe('SnapshotsService', () => {
   let snapshotFileRepo: any;
   let acpRepo: any;
   let fileRepo: any;
+  let configService: any;
 
   const mockAcp = {
     id: 'acp-1',
@@ -45,7 +55,21 @@ describe('SnapshotsService', () => {
       find: jest.fn().mockResolvedValue([
         { filePath: '/f1.json', originalName: 'f1.json', checksum: 'abc', fileSize: 100 },
       ]),
+      create: jest.fn().mockImplementation(dto => dto),
+      save: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
+    configService = {
+      get: jest.fn().mockImplementation((key: string, fallback: string) => {
+        if (key === 'FILE_STORAGE_PATH') return '/tmp/uploads-test';
+        return fallback;
+      }),
+    };
+
+    (fs.access as jest.Mock).mockResolvedValue(undefined);
+    (fs.mkdir as jest.Mock).mockResolvedValue(undefined);
+    (fs.copyFile as jest.Mock).mockResolvedValue(undefined);
+    (fs.stat as jest.Mock).mockResolvedValue({ size: 456 });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -54,6 +78,7 @@ describe('SnapshotsService', () => {
         { provide: getRepositoryToken(AcpSnapshotFile), useValue: snapshotFileRepo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
         { provide: getRepositoryToken(AcpFile), useValue: fileRepo },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -111,14 +136,33 @@ describe('SnapshotsService', () => {
   });
 
   describe('restore', () => {
-    it('should restore ACP-Index from snapshot', async () => {
-      snapshotRepo.findOne.mockResolvedValue(mockSnapshot);
+    it('should restore ACP-Index and file references from snapshot', async () => {
+      const snapshotWithFiles = {
+        ...mockSnapshot,
+        snapshotFiles: [
+          {
+            id: 'sf-1',
+            snapshotId: 'snap-1',
+            filePath: '/tmp/source/f1.json',
+            originalName: 'f1.json',
+            checksum: 'abc',
+            fileSize: 100,
+          },
+        ],
+      };
+      snapshotRepo.findOne.mockResolvedValue(snapshotWithFiles);
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
 
-      const result = await service.restore('snap-1');
+      await service.restore('snap-1');
       expect(acpRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-        acpIndex: mockSnapshot.acpIndexSnapshot,
+        acpIndex: snapshotWithFiles.acpIndexSnapshot,
       }));
+      expect(fileRepo.delete).toHaveBeenCalledWith({ acpId: 'acp-1' });
+      expect(fileRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+        acpId: 'acp-1',
+        originalName: 'f1.json',
+      }));
+      expect(fileRepo.save).toHaveBeenCalled();
     });
   });
 });

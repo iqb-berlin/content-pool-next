@@ -12,6 +12,7 @@ export interface ItemData {
   sourceVariable?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
+  tags?: string[];
 }
 
 @Injectable()
@@ -48,6 +49,7 @@ export class ItemsService {
           sourceVariable: item.sourceVariable,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
+          tags: Array.isArray(props.tags) ? props.tags : [],
         });
       }
     }
@@ -201,5 +203,74 @@ export class ItemsService {
     }
 
     return { success: true };
+  }
+
+  async getItemTags(acpId: string): Promise<Record<string, string[]>> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) throw new NotFoundException('ACP not found');
+    return this.extractTags(acp.itemProperties || {});
+  }
+
+  async saveItemTags(
+    acpId: string,
+    tags: Record<string, string[]>,
+  ): Promise<Record<string, string[]>> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) throw new NotFoundException('ACP not found');
+
+    const normalizedTags = this.normalizeTags(tags || {});
+    const itemProperties = { ...(acp.itemProperties || {}) };
+
+    // Replace current tag state completely to keep client and server in sync.
+    for (const itemId of Object.keys(itemProperties)) {
+      if (itemProperties[itemId] && 'tags' in itemProperties[itemId]) {
+        delete itemProperties[itemId].tags;
+      }
+    }
+
+    for (const [itemId, tagList] of Object.entries(normalizedTags)) {
+      if (!tagList.length) continue;
+      itemProperties[itemId] = {
+        ...(itemProperties[itemId] || {}),
+        tags: tagList,
+      };
+    }
+
+    acp.itemProperties = itemProperties;
+    await this.acpRepository.save(acp);
+    return normalizedTags;
+  }
+
+  private extractTags(
+    itemProperties: Record<string, Record<string, any>>,
+  ): Record<string, string[]> {
+    const tags: Record<string, string[]> = {};
+    for (const [itemId, props] of Object.entries(itemProperties || {})) {
+      if (!Array.isArray(props?.tags)) continue;
+      const normalized = this.normalizeTagArray(props.tags);
+      if (normalized.length) {
+        tags[itemId] = normalized;
+      }
+    }
+    return tags;
+  }
+
+  private normalizeTags(tags: Record<string, string[]>): Record<string, string[]> {
+    const normalized: Record<string, string[]> = {};
+    for (const [itemId, values] of Object.entries(tags || {})) {
+      if (!itemId || !itemId.trim()) continue;
+      const clean = this.normalizeTagArray(values);
+      if (clean.length) {
+        normalized[itemId] = clean;
+      }
+    }
+    return normalized;
+  }
+
+  private normalizeTagArray(values: unknown[]): string[] {
+    const clean = values
+      .map((v) => String(v || '').trim())
+      .filter((v) => v.length > 0);
+    return Array.from(new Set(clean));
   }
 }

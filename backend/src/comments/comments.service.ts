@@ -93,8 +93,16 @@ export class CommentsService {
    */
   async exportCommentsXlsx(acpId: string, userId?: string): Promise<Buffer> {
     const data = await this.exportComments(acpId, userId);
+    return this.buildXlsxBuffer(data);
+  }
 
-    // Dynamic import to avoid issues if exceljs is not installed
+  async exportCommentsXlsxByCredential(acpId: string, username: string): Promise<Buffer> {
+    const data = await this.exportCommentsByCredential(acpId, username);
+    return this.buildXlsxBuffer(data);
+  }
+
+  private async buildXlsxBuffer(data: any[]): Promise<Buffer> {
+    // Dynamic import to avoid startup cost.
     const ExcelJS = await import('exceljs');
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'IQB ContentPool';

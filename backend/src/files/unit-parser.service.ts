@@ -45,6 +45,7 @@ export interface VomdItemData {
   variableId: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  tags?: string[];
 }
 
 /** Full item list response */
@@ -323,6 +324,11 @@ export class UnitParserService {
             variableId: item.variableId || item.variableReadOnlyId || '',
             metadata,
             empiricalDifficulty: (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
+            tags:
+              (item.uuid && Array.isArray(itemProps[item.uuid]?.tags) ? itemProps[item.uuid].tags : undefined) ||
+              (Array.isArray(itemProps[resolvedItemId]?.tags) ? itemProps[resolvedItemId].tags : undefined) ||
+              (Array.isArray(itemProps[item.id]?.tags) ? itemProps[item.id].tags : undefined) ||
+              [],
           });
         }
       } catch (e) {
@@ -459,4 +465,3 @@ export class UnitParserService {
     return '';
   }
 }
-

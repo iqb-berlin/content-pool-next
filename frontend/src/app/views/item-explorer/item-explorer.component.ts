@@ -25,6 +25,7 @@ interface ExplorerItem {
   variableId: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  tags?: string[];
 }
 
 interface MetadataSettings {
@@ -1356,6 +1357,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       
       // Load metadata column settings
       this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
+
+      if (this.enableTags && this.items.length) {
+        this.loadPersistedTags();
+      }
     });
 
     this.reloadItems();
@@ -1368,10 +1373,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.allColumns = result.columns || [];
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.items = result.items || [];
+      this.hydrateItemTagsFromItems();
       this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
       this.filteredItems = [...this.items];
       this.unitMetadataCache = result.unitMetadata || {};
       this.codingSchemeCache = result.codingSchemes || {};
+      if (this.enableTags) {
+        this.loadPersistedTags();
+      }
       this.applyFilter(); // re-apply current filters and sort
     });
   }
@@ -1846,8 +1855,37 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private saveTags() {
-    // TODO: Persist tags to backend/vomd
-    console.log('Tags updated:', this.itemTags);
+    this.api.saveItemTags(this.acpId, this.itemTags).subscribe({
+      next: (savedTags) => {
+        this.itemTags = savedTags || {};
+        this.applyFilter();
+      },
+      error: (err) => {
+        console.error('Failed to persist item tags', err);
+      },
+    });
+  }
+
+  private loadPersistedTags() {
+    this.api.getItemTags(this.acpId).subscribe({
+      next: (tags) => {
+        this.itemTags = tags || this.itemTags;
+        this.applyFilter();
+      },
+      error: (err) => {
+        console.error('Failed to load item tags', err);
+      },
+    });
+  }
+
+  private hydrateItemTagsFromItems() {
+    const tagsFromItems: Record<string, string[]> = {};
+    for (const item of this.items) {
+      if (item.uuid && Array.isArray(item.tags) && item.tags.length) {
+        tagsFromItems[item.uuid] = [...item.tags];
+      }
+    }
+    this.itemTags = tagsFromItems;
   }
 
   // --- Helpers ---

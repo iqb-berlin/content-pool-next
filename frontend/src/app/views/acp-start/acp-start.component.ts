@@ -89,7 +89,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <h3>Kommentare</h3>
             <div class="comment-actions">
               <button class="btn btn-outline btn-sm" (click)="commentOpen = true">💬 Kommentar hinzufügen</button>
-              <button class="btn btn-outline btn-sm" (click)="exportComments()">📄 Kommentare exportieren (CSV)</button>
+              <button class="btn btn-outline btn-sm" (click)="exportComments()">📄 Kommentare exportieren (XLSX)</button>
             </div>
             @if (myComments.length > 0) {
               <div class="my-comments">
@@ -247,26 +247,12 @@ export class AcpStartComponent implements OnInit {
   }
 
   exportComments() {
-    this.api.exportComments(this.acpId).subscribe(comments => {
-      if (!comments.length) return;
-      const headers = ['ID', 'Target', 'Type', 'Comment', 'User', 'Date'];
-      const csv = [
-        headers.join(','),
-        ...comments.map(c => [
-          c.id || '',
-          c.targetId || '',
-          c.targetType || '',
-          `"${String(c.commentText ?? c.comment ?? '').replace(/"/g, '""')}"`,
-          c.author || c.credentialUsername || c.userId || 'anonymous',
-          c.createdAt || ''
-        ].join(','))
-      ].join('\n');
-
-      const blob = new Blob([csv], { type: 'text/csv' });
+    this.api.exportCommentsXlsx(this.acpId).subscribe(blob => {
+      if (!blob || blob.size === 0) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `comments-${this.acpId}.csv`;
+      a.download = `comments-${this.acpId}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     });

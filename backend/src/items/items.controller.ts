@@ -1,10 +1,21 @@
-import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody, ApiProperty } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
 import { ItemResponseStateService } from './item-response-state.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
+import { IsObject } from 'class-validator';
+
+class SaveItemTagsDto {
+  @ApiProperty({
+    description: 'Map of item UUID to tag list',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  tags!: Record<string, string[]>;
+}
 
 @ApiTags('Items')
 @Controller('acp/:acpId/items')
@@ -27,6 +38,25 @@ export class ItemsController {
     @Query('sortDir') sortDir?: 'asc' | 'desc',
   ) {
     return this.itemsService.getFilteredItems(acpId, filter, sortBy, sortDir);
+  }
+
+  @Get('tags')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get persisted item tags for an ACP' })
+  async getItemTags(@Param('acpId') acpId: string) {
+    return this.itemsService.getItemTags(acpId);
+  }
+
+  @Put('tags')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Persist item tags for an ACP' })
+  async saveItemTags(
+    @Param('acpId') acpId: string,
+    @Body() dto: SaveItemTagsDto,
+  ) {
+    return this.itemsService.saveItemTags(acpId, dto.tags || {});
   }
 
   @Get(':itemId')

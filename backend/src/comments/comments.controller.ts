@@ -8,11 +8,13 @@ import {
   UseGuards,
   Request,
   Res,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { CommentsService } from './comments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 import { CommentTargetType } from '../database/entities';
 import { IsString, IsNotEmpty, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
@@ -39,15 +41,16 @@ export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all comments for an ACP (Manager only)' })
-  async findAll(@Param('acpId') acpId: string) {
+  async findAll(@Param('acpId') acpId: string, @Request() req: any) {
+    this.assertManagerAccess(req);
     return this.commentsService.findByAcp(acpId);
   }
 
   @Get('mine')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List my comments for an ACP' })
   async findMine(@Param('acpId') acpId: string, @Request() req: any) {
@@ -58,7 +61,7 @@ export class CommentsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a comment' })
   async create(
@@ -77,18 +80,19 @@ export class CommentsController {
   }
 
   @Delete()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete all comments for an ACP (Manager only)' })
-  async deleteAll(@Param('acpId') acpId: string) {
+  async deleteAll(@Param('acpId') acpId: string, @Request() req: any) {
+    this.assertManagerAccess(req);
     const count = await this.commentsService.deleteByAcp(acpId);
     return { message: `${count} comments deleted` };
   }
 
   @Get('export')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Export comments as JSON (XLSX generation on client)' })
+  @ApiOperation({ summary: 'Export comments as JSON' })
   async exportComments(@Param('acpId') acpId: string, @Request() req: any) {
     if (req.user.isAppAdmin || req.acpAccessLevel === 'MANAGER') {
       return this.commentsService.exportComments(acpId);
@@ -97,5 +101,48 @@ export class CommentsController {
       return this.commentsService.exportCommentsByCredential(acpId, req.user.username);
     }
     return this.commentsService.exportComments(acpId, req.user.sub);
+  }
+
+  @Get('export.xlsx')
+  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Export comments as XLSX' })
+  async exportCommentsXlsx(
+    @Param('acpId') acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    let buffer: Buffer;
+    let fileSuffix = 'all';
+
+    if (req.user.isAppAdmin || req.acpAccessLevel === 'MANAGER') {
+      buffer = await this.commentsService.exportCommentsXlsx(acpId);
+    } else if (req.user.type === 'credential') {
+      fileSuffix = req.user.username || 'mine';
+      buffer = await this.commentsService.exportCommentsXlsxByCredential(
+        acpId,
+        req.user.username,
+      );
+    } else {
+      fileSuffix = req.user.username || 'mine';
+      buffer = await this.commentsService.exportCommentsXlsx(acpId, req.user.sub);
+    }
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="comments-${acpId}-${fileSuffix}.xlsx"`,
+    );
+    res.send(buffer);
+  }
+
+  private assertManagerAccess(req: any): void {
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+    if (!isManager) {
+      throw new ForbiddenException('Manager access required');
+    }
   }
 }

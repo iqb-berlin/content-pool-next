@@ -129,6 +129,9 @@ export class ApiService {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/comments`, data);
   }
   exportComments(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/acp/${acpId}/comments/export`); }
+  exportCommentsXlsx(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/comments/export.xlsx`, { responseType: 'blob' });
+  }
 
   // Public Views
   getPublicSettings(): Observable<any> { return this.http.get(`${this.API}/view/settings`); }
@@ -160,6 +163,14 @@ export class ApiService {
 
   clearEmpiricalDifficulties(acpId: string): Observable<void> {
     return this.http.delete<void>(`${this.API}/acp/${acpId}/items/empirical-difficulty`);
+  }
+
+  getItemTags(acpId: string): Observable<Record<string, string[]>> {
+    return this.http.get<Record<string, string[]>>(`${this.API}/acp/${acpId}/items/tags`);
+  }
+
+  saveItemTags(acpId: string, tags: Record<string, string[]>): Observable<Record<string, string[]>> {
+    return this.http.put<Record<string, string[]>>(`${this.API}/acp/${acpId}/items/tags`, { tags });
   }
 
   // Response State

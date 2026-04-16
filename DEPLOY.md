@@ -36,7 +36,21 @@ Edit `.env` and set at least:
 - `OIDC_PUBLIC_ISSUER_URL` (for example `https://auth.example.com/realms/iqb`)
 - `OIDC_REDIRECT_URI` (for example `https://app.example.com/auth/callback`)
 - `OIDC_CLIENT_ID` (default `contentpool`)
-- `DB_SYNCHRONIZE=true` for first deployment to a fresh database
+- `DB_SYNCHRONIZE=false`
+- `DB_RUN_MIGRATIONS=true`
+
+## 3a. Migration strategy (required for production)
+
+Use migrations as the only schema-change mechanism in production.
+
+- Fresh deployment:
+  - `DB_SYNCHRONIZE=false`
+  - `DB_RUN_MIGRATIONS=true`
+  - start stack and let backend run migrations on boot
+- Upgrade deployment:
+  - keep the same values (`false` / `true`)
+  - deploy new image and verify logs for successful migration run
+
 
 ## 4. Adjust Keycloak client redirect/web origins
 

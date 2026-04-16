@@ -88,8 +88,9 @@ POSTGRES_PASSWORD=your-secure-password-here
 # JWT (REQUIRED - generate random string)
 JWT_SECRET=your-random-secret-at-least-32-characters
 JWT_EXPIRATION=24h
-DB_SYNCHRONIZE=true
-DB_RUN_MIGRATIONS=false
+# Production-safe schema handling
+DB_SYNCHRONIZE=false
+DB_RUN_MIGRATIONS=true
 
 # CORS (set to your domain)
 CORS_ORIGIN=https://app.example.com

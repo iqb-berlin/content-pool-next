@@ -32,3 +32,6 @@ npm-debug.log*
 
 # Temp
 tmp/
+
+# Local credential export
+non_iqb_login_password.csv

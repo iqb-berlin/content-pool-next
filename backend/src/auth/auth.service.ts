@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -14,8 +14,28 @@ export interface JwtPayload {
   acpId?: string;
 }
 
+interface CredentialLoginAttemptState {
+  attempts: number;
+  firstAttemptAt: number;
+  blockedUntil?: number;
+}
+
 @Injectable()
 export class AuthService {
+  private readonly credentialLoginAttempts = new Map<string, CredentialLoginAttemptState>();
+  private readonly credentialLoginMaxAttempts = this.parsePositiveInt(
+    process.env.CREDENTIAL_LOGIN_MAX_ATTEMPTS,
+    5,
+  );
+  private readonly credentialLoginWindowMs = this.parsePositiveInt(
+    process.env.CREDENTIAL_LOGIN_WINDOW_MS,
+    15 * 60 * 1000,
+  );
+  private readonly credentialLoginBlockMs = this.parsePositiveInt(
+    process.env.CREDENTIAL_LOGIN_BLOCK_MS,
+    15 * 60 * 1000,
+  );
+
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
@@ -63,59 +83,71 @@ export class AuthService {
     };
   }
 
-  async credentialLogin(acpId: string, username: string, password: string) {
-    // Find active access config for this ACP with credentials
-    const accessConfig = await this.accessConfigRepository.findOne({
-      where: { acpId, accessModel: 'CREDENTIALS_LIST' as any },
-    });
+  async credentialLogin(acpId: string, username: string, password: string, clientId = 'unknown') {
+    const normalizedClientId = this.normalizeClientId(clientId);
+    this.enforceCredentialLoginRateLimit(acpId, username, normalizedClientId);
 
-    if (!accessConfig) {
-      throw new UnauthorizedException('No credential-based access configured for this ACP');
+    try {
+      // Find active access config for this ACP with credentials
+      const accessConfig = await this.accessConfigRepository.findOne({
+        where: { acpId, accessModel: 'CREDENTIALS_LIST' as any },
+      });
+
+      if (!accessConfig) {
+        throw new UnauthorizedException('No credential-based access configured for this ACP');
+      }
+
+      // Check time validity
+      const now = new Date();
+      console.log('Login check:', {
+        now: now.toISOString(),
+        validFrom: accessConfig.validFrom?.toISOString(),
+        validUntil: accessConfig.validUntil?.toISOString(),
+        nowLessThanValidFrom: accessConfig.validFrom ? now < accessConfig.validFrom : null,
+        nowGreaterThanValidUntil: accessConfig.validUntil ? now > accessConfig.validUntil : null,
+      });
+      if (accessConfig.validFrom && now < accessConfig.validFrom) {
+        throw new UnauthorizedException('Access period has not started yet');
+      }
+      if (accessConfig.validUntil && now > accessConfig.validUntil) {
+        throw new UnauthorizedException('Access period has expired');
+      }
+
+      // Find credential
+      const credential = await this.credentialRepository.findOne({
+        where: { accessConfigId: accessConfig.id, username },
+      });
+
+      if (!credential) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, credential.passwordHash);
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      this.clearCredentialLoginRateLimit(acpId, username, normalizedClientId);
+
+      const payload: JwtPayload = {
+        sub: credential.id,
+        username: credential.username,
+        isAppAdmin: false,
+        type: 'credential',
+        acpId,
+      };
+
+      return {
+        accessToken: this.jwtService.sign(payload),
+        acpId,
+        username: credential.username,
+      };
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        this.registerFailedCredentialLoginAttempt(acpId, username, normalizedClientId);
+      }
+      throw error;
     }
-
-    // Check time validity
-    const now = new Date();
-    console.log('Login check:', {
-      now: now.toISOString(),
-      validFrom: accessConfig.validFrom?.toISOString(),
-      validUntil: accessConfig.validUntil?.toISOString(),
-      nowLessThanValidFrom: accessConfig.validFrom ? now < accessConfig.validFrom : null,
-      nowGreaterThanValidUntil: accessConfig.validUntil ? now > accessConfig.validUntil : null,
-    });
-    if (accessConfig.validFrom && now < accessConfig.validFrom) {
-      throw new UnauthorizedException('Access period has not started yet');
-    }
-    if (accessConfig.validUntil && now > accessConfig.validUntil) {
-      throw new UnauthorizedException('Access period has expired');
-    }
-
-    // Find credential
-    const credential = await this.credentialRepository.findOne({
-      where: { accessConfigId: accessConfig.id, username },
-    });
-
-    if (!credential) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, credential.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const payload: JwtPayload = {
-      sub: credential.id,
-      username: credential.username,
-      isAppAdmin: false,
-      type: 'credential',
-      acpId,
-    };
-
-    return {
-      accessToken: this.jwtService.sign(payload),
-      acpId,
-      username: credential.username,
-    };
   }
 
   async getProfile(userId: string) {
@@ -195,5 +227,86 @@ export class AuthService {
       userId,
       timestamp: new Date().toISOString(),
     };
+  }
+
+  private parsePositiveInt(value: string | undefined, fallback: number): number {
+    const parsed = Number.parseInt(value || '', 10);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  private normalizeClientId(clientId: string | undefined): string {
+    const normalized = (clientId || '').trim().toLowerCase();
+    return normalized.length > 0 ? normalized : 'unknown';
+  }
+
+  private credentialLoginRateLimitKey(acpId: string, username: string, clientId: string): string {
+    return `${acpId}:${username.toLowerCase()}:${clientId}`;
+  }
+
+  private enforceCredentialLoginRateLimit(acpId: string, username: string, clientId: string): void {
+    const now = Date.now();
+    this.pruneCredentialLoginAttempts(now);
+
+    const key = this.credentialLoginRateLimitKey(acpId, username, clientId);
+    const attempt = this.credentialLoginAttempts.get(key);
+    if (!attempt) {
+      return;
+    }
+
+    if (attempt.blockedUntil && attempt.blockedUntil > now) {
+      throw new HttpException(
+        'Too many failed login attempts. Please try again later.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    if (now - attempt.firstAttemptAt > this.credentialLoginWindowMs) {
+      this.credentialLoginAttempts.delete(key);
+    }
+  }
+
+  private registerFailedCredentialLoginAttempt(acpId: string, username: string, clientId: string): void {
+    const now = Date.now();
+    const key = this.credentialLoginRateLimitKey(acpId, username, clientId);
+    const current = this.credentialLoginAttempts.get(key);
+
+    if (!current || now - current.firstAttemptAt > this.credentialLoginWindowMs) {
+      this.credentialLoginAttempts.set(key, {
+        attempts: 1,
+        firstAttemptAt: now,
+      });
+      return;
+    }
+
+    const attempts = current.attempts + 1;
+    this.credentialLoginAttempts.set(key, {
+      attempts,
+      firstAttemptAt: current.firstAttemptAt,
+      blockedUntil: attempts >= this.credentialLoginMaxAttempts ? now + this.credentialLoginBlockMs : undefined,
+    });
+  }
+
+  private clearCredentialLoginRateLimit(acpId: string, username: string, clientId: string): void {
+    const key = this.credentialLoginRateLimitKey(acpId, username, clientId);
+    this.credentialLoginAttempts.delete(key);
+  }
+
+  private pruneCredentialLoginAttempts(now: number): void {
+    if (this.credentialLoginAttempts.size === 0) {
+      return;
+    }
+
+    const staleAfterMs = Math.max(this.credentialLoginWindowMs, this.credentialLoginBlockMs);
+    for (const [key, attempt] of this.credentialLoginAttempts.entries()) {
+      const isExpired =
+        (attempt.blockedUntil && attempt.blockedUntil <= now) ||
+        now - attempt.firstAttemptAt > staleAfterMs;
+      if (isExpired) {
+        this.credentialLoginAttempts.delete(key);
+      }
+    }
   }
 }

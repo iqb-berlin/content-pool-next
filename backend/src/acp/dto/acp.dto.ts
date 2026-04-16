@@ -8,9 +8,14 @@ import {
   IsArray,
   ValidateNested,
   MinLength,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+const STRONG_CREDENTIAL_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+const STRONG_CREDENTIAL_PASSWORD_MESSAGE =
+  'Password must be at least 12 characters long and include uppercase, lowercase, number, and special character.';
 
 export class CreateAcpDto {
   @ApiProperty({ example: 'vera-2026-math' })
@@ -100,7 +105,8 @@ export class CredentialEntryDto {
 
   @ApiProperty()
   @IsString()
-  @MinLength(4)
+  @MinLength(12)
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
   password!: string;
 }
 
@@ -120,7 +126,8 @@ export class CreateCredentialDto {
 
   @ApiProperty()
   @IsString()
-  @MinLength(4)
+  @MinLength(12)
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
   password!: string;
 }
 
@@ -132,7 +139,8 @@ export class UpdateCredentialDto {
 
   @ApiPropertyOptional()
   @IsString()
-  @MinLength(4)
+  @MinLength(12)
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
   @IsOptional()
   password?: string;
 }

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { UnauthorizedException } from '@nestjs/common';
+import { HttpStatus, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
 import { AuthService } from './auth.service';
 import { User, AcpAccessConfig, AcpCredential, AccessModel } from '../database/entities';
@@ -94,6 +94,33 @@ describe('AuthService', () => {
     it('should throw when access config not found', async () => {
       accessConfigRepo.findOne.mockResolvedValue(null);
       await expect(service.credentialLogin('acp-1', 'u', 'p')).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should rate-limit repeated failed credential logins', async () => {
+      const hashedPw = await bcrypt.hash('cred-pass', 12);
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: 'config-1',
+        acpId: 'acp-1',
+        accessModel: AccessModel.CREDENTIALS_LIST,
+        validFrom: null,
+        validUntil: null,
+      });
+      credentialRepo.findOne.mockResolvedValue({
+        username: 'creduser',
+        passwordHash: hashedPw,
+      });
+
+      for (let i = 0; i < 5; i++) {
+        await expect(service.credentialLogin('acp-1', 'creduser', 'wrong-password', '1.2.3.4')).rejects.toThrow(
+          UnauthorizedException,
+        );
+      }
+
+      await expect(service.credentialLogin('acp-1', 'creduser', 'wrong-password', '1.2.3.4')).rejects.toMatchObject(
+        {
+          status: HttpStatus.TOO_MANY_REQUESTS,
+        },
+      );
     });
   });
 

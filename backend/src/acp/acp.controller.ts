@@ -148,18 +148,24 @@ export class AcpController {
 
   // Access configuration
   @Get(':id/access')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Get access configuration for ACP' })
   async getAccessConfig(@Param('id') id: string) {
     return this.acpService.getAccessConfig(id);
   }
 
   @Put(':id/access')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Update access configuration for ACP' })
   async updateAccessConfig(@Param('id') id: string, @Body() dto: UpdateAccessConfigDto) {
     return this.acpService.updateAccessConfig(id, dto);
   }
 
   @Post(':id/access/credentials')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Upload credentials list for ACP' })
   async uploadCredentials(
     @Param('id') id: string,
@@ -174,12 +180,16 @@ export class AcpController {
   }
 
   @Get(':id/access/credentials')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Get credentials list for ACP' })
   async getCredentials(@Param('id') id: string) {
     return this.acpService.getCredentials(id);
   }
 
   @Delete(':id/access/credentials/:credentialId')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Delete a credential from ACP' })
   async deleteCredential(@Param('id') id: string, @Param('credentialId') credentialId: string) {
     await this.acpService.deleteCredential(id, credentialId);
@@ -187,12 +197,16 @@ export class AcpController {
   }
 
   @Post(':id/access/credentials/single')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Create a single credential for ACP' })
   async createCredential(@Param('id') id: string, @Body() dto: CreateCredentialDto) {
     return this.acpService.createCredential(id, dto);
   }
 
   @Patch(':id/access/credentials/:credentialId')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
   @ApiOperation({ summary: 'Update a credential' })
   async updateCredential(
     @Param('id') id: string,

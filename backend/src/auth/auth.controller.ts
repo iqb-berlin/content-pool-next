@@ -96,11 +96,13 @@ export class AuthController {
 
   @Post('credential-login')
   @ApiOperation({ summary: 'Login with ACP credentials' })
-  async credentialLogin(@Body() credentialLoginDto: CredentialLoginDto) {
+  async credentialLogin(@Body() credentialLoginDto: CredentialLoginDto, @Request() req: any) {
+    const clientId = this.extractClientId(req);
     return this.authService.credentialLogin(
       credentialLoginDto.acpId,
       credentialLoginDto.username,
       credentialLoginDto.password,
+      clientId,
     );
   }
 
@@ -140,5 +142,16 @@ export class AuthController {
 
     // Generate a NEW JWT token with the updated admin status
     return this.authService.generateTokenForOidcUser(userInfo);
+  }
+
+  private extractClientId(req: any): string {
+    const xForwardedFor = req?.headers?.['x-forwarded-for'];
+    const rawClient =
+      (Array.isArray(xForwardedFor) ? xForwardedFor[0] : xForwardedFor) ||
+      req?.ip ||
+      req?.socket?.remoteAddress ||
+      'unknown';
+    const firstHop = String(rawClient).split(',')[0].trim();
+    return firstHop || 'unknown';
   }
 }

@@ -143,6 +143,9 @@ docker compose -f docker-compose.prod.yml logs -f
 git pull
 docker compose -f docker-compose.prod.yml up -d --build
 
+# Run migrations manually inside running API container (optional)
+docker compose -f docker-compose.prod.yml exec content-pool-api npm run migration:run:dist
+
 # Backup database
 docker exec content-pool-db pg_dump -U content_pool content_pool > backup.sql
 

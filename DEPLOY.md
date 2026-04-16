@@ -51,6 +51,12 @@ Use migrations as the only schema-change mechanism in production.
   - keep the same values (`false` / `true`)
   - deploy new image and verify logs for successful migration run
 
+Optional manual migration commands (inside API container):
+
+```bash
+docker compose -f docker-compose.server.yml exec content-pool-api npm run migration:run:dist
+docker compose -f docker-compose.server.yml exec content-pool-api npm run migration:revert:dist
+```
 
 ## 4. Adjust Keycloak client redirect/web origins
 

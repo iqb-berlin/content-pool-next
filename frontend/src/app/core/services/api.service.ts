@@ -16,6 +16,7 @@ import {
   Credential,
   FileUploadResponse,
   IndexSyncReport,
+  ItemViewPreferences,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -169,6 +170,24 @@ export class ApiService {
     return this.http.get<UnitViewData>(`${this.API}/view/acp/${acpId}/units/${unitId}`);
   }
   getViewItems(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/items`); }
+  getViewItemPreferences(acpId: string, viewId = 'item-list'): Observable<ItemViewPreferences> {
+    return this.http.get<ItemViewPreferences>(
+      `${this.API}/view/acp/${acpId}/items/preferences?viewId=${encodeURIComponent(viewId)}`,
+    );
+  }
+  saveViewItemPreferences(
+    acpId: string,
+    data: ItemViewPreferences,
+    viewId = 'item-list',
+  ): Observable<ItemViewPreferences> {
+    return this.http.put<ItemViewPreferences>(
+      `${this.API}/view/acp/${acpId}/items/preferences`,
+      {
+        viewId,
+        ...data,
+      },
+    );
+  }
   getViewSequences(acpId: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`); }
   getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
     return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);

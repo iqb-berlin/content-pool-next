@@ -408,6 +408,30 @@ describe('ApiService', () => {
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/items');
     });
 
+    it('should get view item preferences', () => {
+      httpClientMock.get.mockReturnValue(of({ ui: {}, tags: {} }));
+
+      service.getViewItemPreferences('acp1', 'item-explorer').subscribe(result => {
+        expect(result).toEqual({ ui: {}, tags: {} });
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/items/preferences?viewId=item-explorer');
+    });
+
+    it('should save view item preferences', () => {
+      const payload = { ui: { filterText: 'abc' }, tags: { item1: ['A'] } };
+      httpClientMock.put.mockReturnValue(of(payload));
+
+      service.saveViewItemPreferences('acp1', payload, 'item-list').subscribe(result => {
+        expect(result).toEqual(payload);
+      });
+
+      expect(httpClientMock.put).toHaveBeenCalledWith('/api/view/acp/acp1/items/preferences', {
+        viewId: 'item-list',
+        ...payload,
+      });
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

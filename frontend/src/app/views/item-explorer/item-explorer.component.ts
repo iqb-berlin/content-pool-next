@@ -1229,6 +1229,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
+  useServerPreferences = false;
+
+  private readonly preferenceViewId = 'item-explorer';
+  private readonly serverPreferenceDebounceMs = 250;
+  private pendingServerUiPreferences: Record<string, unknown> = {};
+  private pendingServerTagPreferences: Record<string, string[]> = {};
+  private serverSaveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // File Upload
   showUploadReport = false;
@@ -1355,15 +1362,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
-      this.persistUserPreferences = !!fc.persistUserPreferences && this.authService.isLoggedIn;
+      this.persistUserPreferences = !!fc.persistUserPreferences;
+      this.useServerPreferences = this.persistUserPreferences && this.authService.isLoggedIn;
       
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
-      this.loadUiPreferences();
-
-      if (this.enableTags && this.items.length) {
-        this.loadPersistedTags();
-      }
+      this.loadPreferences();
     });
 
     this.reloadItems();
@@ -1384,17 +1388,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       if (this.enableTags) {
         this.loadPersistedTags();
       }
-      this.applyFilter(); // re-apply current filters and sort
+      this.applyFilter(false); // re-apply current filters and sort
     });
   }
 
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
+    if (this.serverSaveTimeout) {
+      clearTimeout(this.serverSaveTimeout);
+      this.serverSaveTimeout = null;
+    }
   }
 
   // --- Filtering ---
-  applyFilter() {
+  applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
 
     this.filteredItems = this.items.filter(item => {
@@ -1435,8 +1443,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return true;
     });
 
-    this.applySort();
-    this.saveUiPreferences();
+    this.applySort(false);
+    if (shouldPersist) {
+      this.saveUiPreferences();
+    }
   }
 
   // --- Sorting ---
@@ -1462,7 +1472,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.applySort();
   }
 
-  private applySort() {
+  private applySort(shouldPersist = true) {
     this.filteredItems.sort((a, b) => {
       let aVal: any = '';
       let bVal: any = '';
@@ -1489,7 +1499,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
 
-    this.saveUiPreferences();
+    if (shouldPersist) {
+      this.saveUiPreferences();
+    }
   }
 
   // --- CSV Upload Handling ---
@@ -1837,6 +1849,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.itemTags[uuid].includes(tag)) {
       this.itemTags[uuid].push(tag);
       this.saveTags();
+      this.applyFilter(false);
     }
     (event.target as HTMLSelectElement).value = '';
   }
@@ -1845,6 +1858,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (this.itemTags[uuid]) {
       this.itemTags[uuid] = this.itemTags[uuid].filter(t => t !== tag);
       this.saveTags();
+      this.applyFilter(false);
     }
   }
 
@@ -1856,51 +1870,56 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.itemTags[uuid].includes(tag)) {
       this.itemTags[uuid].push(tag);
       this.saveTags();
+      this.applyFilter(false);
     }
     input.value = '';
   }
 
   private saveTags() {
-    if (this.persistUserPreferences) {
-      localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(this.itemTags || {}));
-      this.applyFilter();
+    const normalizedTags = this.normalizeTags(this.itemTags);
+    this.itemTags = normalizedTags;
+
+    if (!this.persistUserPreferences) {
       return;
     }
 
-    this.api.saveItemTags(this.acpId, this.itemTags).subscribe({
-      next: (savedTags) => {
-        this.itemTags = savedTags || {};
-        this.applyFilter();
-      },
-      error: (err) => {
-        console.error('Failed to persist item tags', err);
-      },
-    });
+    if (this.useServerPreferences) {
+      this.pendingServerTagPreferences = normalizedTags;
+      this.scheduleServerPreferenceSave();
+      return;
+    }
+
+    localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(normalizedTags));
   }
 
   private loadPersistedTags() {
-    if (this.persistUserPreferences) {
-      const raw = localStorage.getItem(this.getTagPreferencesKey());
-      if (raw) {
-        try {
-          this.itemTags = JSON.parse(raw) || {};
-        } catch {
-          this.itemTags = {};
-        }
-      }
-      this.applyFilter();
+    if (!this.persistUserPreferences) {
+      this.applyFilter(false);
       return;
     }
 
-    this.api.getItemTags(this.acpId).subscribe({
-      next: (tags) => {
-        this.itemTags = tags || this.itemTags;
-        this.applyFilter();
-      },
-      error: (err) => {
-        console.error('Failed to load item tags', err);
-      },
-    });
+    if (this.useServerPreferences) {
+      this.api.getViewItemPreferences(this.acpId, this.preferenceViewId).subscribe({
+        next: (preferences) => {
+          this.itemTags = this.normalizeTags(preferences?.tags);
+          this.pendingServerTagPreferences = this.normalizeTags(this.itemTags);
+          this.applyFilter(false);
+        },
+        error: (err) => {
+          console.error('Failed to load persisted item tags from server', err);
+          this.itemTags = {};
+          this.applyFilter(false);
+        },
+      });
+      return;
+    }
+
+    const raw = localStorage.getItem(this.getTagPreferencesKey());
+    if (raw) {
+      this.itemTags = this.normalizeTags(this.parseJsonObject(raw));
+    }
+
+    this.applyFilter(false);
   }
 
   private hydrateItemTagsFromItems() {
@@ -2151,34 +2170,162 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private loadUiPreferences() {
-    if (!this.persistUserPreferences) return;
-
     const raw = localStorage.getItem(this.getUiPreferencesKey());
     if (!raw) return;
 
-    try {
-      const prefs = JSON.parse(raw);
-      this.filterText = typeof prefs.filterText === 'string' ? prefs.filterText : this.filterText;
-      this.sortField = typeof prefs.sortField === 'string' ? prefs.sortField : this.sortField;
-      this.sortIsMeta = typeof prefs.sortIsMeta === 'boolean' ? prefs.sortIsMeta : this.sortIsMeta;
-      this.sortDir = prefs.sortDir === 'desc' ? 'desc' : 'asc';
-      this.columnFilters =
-        prefs.columnFilters && typeof prefs.columnFilters === 'object' ? prefs.columnFilters : {};
-    } catch {
-      // ignore malformed preference payloads
-    }
+    this.applyUiPreferences(this.parseJsonObject(raw));
   }
 
   private saveUiPreferences() {
-    if (!this.persistUserPreferences) return;
+    if (!this.persistUserPreferences) {
+      return;
+    }
 
-    const prefs = {
+    const ui = this.buildUiPreferences();
+    if (this.useServerPreferences) {
+      this.pendingServerUiPreferences = ui;
+      this.scheduleServerPreferenceSave();
+      return;
+    }
+
+    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(ui));
+  }
+
+  private loadPreferences() {
+    if (!this.persistUserPreferences) {
+      return;
+    }
+
+    if (this.useServerPreferences) {
+      this.api.getViewItemPreferences(this.acpId, this.preferenceViewId).subscribe({
+        next: (preferences) => {
+          this.applyUiPreferences(preferences?.ui);
+          this.itemTags = this.normalizeTags(preferences?.tags);
+          this.pendingServerUiPreferences = this.buildUiPreferences();
+          this.pendingServerTagPreferences = this.normalizeTags(this.itemTags);
+          this.applyFilter(false);
+        },
+        error: () => {
+          this.loadUiPreferences();
+          if (this.enableTags) {
+            this.loadPersistedTags();
+          }
+          this.applyFilter(false);
+        },
+      });
+      return;
+    }
+
+    this.loadUiPreferences();
+    if (this.enableTags) {
+      this.loadPersistedTags();
+    }
+    this.applyFilter(false);
+  }
+
+  private scheduleServerPreferenceSave() {
+    if (this.serverSaveTimeout) {
+      clearTimeout(this.serverSaveTimeout);
+    }
+
+    this.serverSaveTimeout = setTimeout(() => {
+      this.serverSaveTimeout = null;
+      this.api.saveViewItemPreferences(
+        this.acpId,
+        {
+          ui: this.pendingServerUiPreferences,
+          tags: this.pendingServerTagPreferences,
+        },
+        this.preferenceViewId,
+      ).subscribe({
+        next: (savedPreferences) => {
+          this.pendingServerUiPreferences = this.isRecord(savedPreferences?.ui)
+            ? savedPreferences.ui
+            : this.pendingServerUiPreferences;
+          this.pendingServerTagPreferences = this.normalizeTags(savedPreferences?.tags);
+          this.itemTags = this.pendingServerTagPreferences;
+        },
+        error: (err) => {
+          console.error('Failed to persist item explorer preferences', err);
+        },
+      });
+    }, this.serverPreferenceDebounceMs);
+  }
+
+  private buildUiPreferences(): Record<string, unknown> {
+    return {
       filterText: this.filterText,
       sortField: this.sortField,
       sortIsMeta: this.sortIsMeta,
       sortDir: this.sortDir,
       columnFilters: this.columnFilters,
     };
-    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(prefs));
+  }
+
+  private applyUiPreferences(rawUi: unknown) {
+    if (!this.isRecord(rawUi)) return;
+
+    const filterText = rawUi['filterText'];
+    const sortField = rawUi['sortField'];
+    const sortIsMeta = rawUi['sortIsMeta'];
+    const sortDir = rawUi['sortDir'];
+    const columnFilters = rawUi['columnFilters'];
+
+    if (typeof filterText === 'string') {
+      this.filterText = filterText;
+    }
+
+    if (typeof sortField === 'string') {
+      this.sortField = sortField;
+    }
+
+    if (typeof sortIsMeta === 'boolean') {
+      this.sortIsMeta = sortIsMeta;
+    }
+
+    this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
+    this.columnFilters = this.isRecord(columnFilters)
+      ? Object.fromEntries(
+        Object.entries(columnFilters)
+          .map(([key, value]) => [key, typeof value === 'string' ? value : '']),
+      )
+      : {};
+  }
+
+  private parseJsonObject(raw: string): Record<string, unknown> {
+    try {
+      const parsed = JSON.parse(raw);
+      return this.isRecord(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private normalizeTags(rawTags: unknown): Record<string, string[]> {
+    if (!this.isRecord(rawTags)) {
+      return {};
+    }
+
+    const tags: Record<string, string[]> = {};
+    for (const [itemId, values] of Object.entries(rawTags)) {
+      const normalizedItemId = String(itemId || '').trim();
+      if (!normalizedItemId || !Array.isArray(values)) continue;
+
+      const normalizedValues = Array.from(new Set(
+        values
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ));
+
+      if (normalizedValues.length) {
+        tags[normalizedItemId] = normalizedValues;
+      }
+    }
+
+    return tags;
+  }
+
+  private isRecord(value: unknown): value is Record<string, any> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 }

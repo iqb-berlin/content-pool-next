@@ -200,6 +200,11 @@ export interface FileDependency {
   downloadUrl: string;
 }
 
+export interface ItemViewPreferences {
+  ui?: Record<string, unknown>;
+  tags?: Record<string, string[]>;
+}
+
 export interface TaskSequence {
   id: string;
   name: any;

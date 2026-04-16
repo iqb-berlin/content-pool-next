@@ -5,11 +5,12 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
+import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
 
 @Component({
   selector: 'app-unit-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, FormsModule],
+  imports: [RouterLink, BreadcrumbComponent, FormsModule, CommentDialogComponent],
   template: `
     @if (unit) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -139,6 +140,14 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
     } @else {
       <div class="empty-state"><h3>Lade Aufgabe...</h3></div>
     }
+
+    <app-comment-dialog
+      [open]="commentOpen"
+      [targetType]="'UNIT'"
+      [targetId]="unitId"
+      (submitted)="onCommentSubmitted($event)"
+      (closed)="commentOpen = false">
+    </app-comment-dialog>
   `,
   styles: [`
     .unit-header {
@@ -236,6 +245,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   showMetadataToggle = false;
   showCommentBtn = false;
   showDownloadBtn = false;
+  commentOpen = false;
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
@@ -388,8 +398,15 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   }
 
   openComment() {
-    // TODO: Open comment dialog
-    console.log('Open comment dialog for unit', this.unitId);
+    this.commentOpen = true;
+  }
+
+  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
+    this.api.createComment(this.acpId, event).subscribe({
+      next: () => {
+        this.commentOpen = false;
+      },
+    });
   }
 
   downloadUnit() {

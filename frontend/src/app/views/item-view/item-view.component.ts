@@ -7,11 +7,12 @@ import { VoudService } from '../../core/services/voud.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.component';
+import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
 
 @Component({
   selector: 'app-item-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, MetadataPanelComponent, FormsModule],
+  imports: [RouterLink, BreadcrumbComponent, MetadataPanelComponent, FormsModule, CommentDialogComponent],
   template: `
     @if (unit && item) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -24,6 +25,9 @@ import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.compone
             <option value="on">Print: Ein</option>
             <option value="on-with-ids">Print: Ein + IDs</option>
           </select>
+          @if (showCommentBtn) {
+            <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
+          }
           <a [routerLink]="['/view', acpId, 'items']" class="btn btn-outline btn-sm">← Zur Item-Liste</a>
         </div>
       </div>
@@ -61,6 +65,14 @@ import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.compone
     } @else if (!loading) {
       <div class="empty-state"><h3>Item nicht gefunden</h3></div>
     }
+
+    <app-comment-dialog
+      [open]="commentOpen"
+      [targetType]="'ITEM'"
+      [targetId]="item?.itemId || item?.id || itemId"
+      (submitted)="onCommentSubmitted($event)"
+      (closed)="commentOpen = false">
+    </app-comment-dialog>
   `,
   styles: [`
     .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
@@ -91,6 +103,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   loading = true;
   playerHeight = '100%';
   printMode: 'off' | 'on' | 'on-with-ids' = 'off';
+  showCommentBtn = false;
+  commentOpen = false;
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
@@ -107,6 +121,11 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     this.itemId = this.route.snapshot.paramMap.get('itemId') || '';
 
     window.addEventListener('message', this.messageHandler);
+
+    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+      const fc = data?.featureConfig || {};
+      this.showCommentBtn = !!(fc.enableCommenting && fc.commentTargets?.includes('ITEM'));
+    });
 
     this.api.getViewItems(this.acpId).subscribe(items => {
       this.item = items.find((i: any) => i.itemId === this.itemId || i.id === this.itemId);
@@ -207,6 +226,18 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
   private sendToPlayer(msg: any) {
     this.playerFrame?.nativeElement?.contentWindow?.postMessage(msg, '*');
+  }
+
+  openComment() {
+    this.commentOpen = true;
+  }
+
+  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
+    this.api.createComment(this.acpId, event).subscribe({
+      next: () => {
+        this.commentOpen = false;
+      },
+    });
   }
 
   private startAutoResize() {

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ViewsService } from './views.service';
-import { Acp, AcpAccessConfig, AcpFile, AppSettings } from '../database/entities';
+import { Acp, AcpAccessConfig, AcpFile, AppSettings, AcpItemPreference } from '../database/entities';
 
 describe('ViewsService', () => {
   let service: ViewsService;
@@ -9,6 +9,7 @@ describe('ViewsService', () => {
   let accessConfigRepository: { findOne: jest.Mock };
   let fileRepository: { find: jest.Mock };
   let settingsRepository: { findOne: jest.Mock };
+  let itemPreferenceRepository: { findOne: jest.Mock; create: jest.Mock; save: jest.Mock };
 
   beforeEach(async () => {
     acpRepository = { findOne: jest.fn() };
@@ -28,6 +29,7 @@ describe('ViewsService', () => {
         { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepository },
         { provide: getRepositoryToken(AcpFile), useValue: fileRepository },
         { provide: getRepositoryToken(AppSettings), useValue: settingsRepository },
+        { provide: getRepositoryToken(AcpItemPreference), useValue: itemPreferenceRepository },
       ],
     }).compile();
 

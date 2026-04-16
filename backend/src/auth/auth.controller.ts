@@ -129,7 +129,8 @@ export class AuthController {
       throw new UnauthorizedException('OIDC is not configured');
     }
 
-    // Validate the ID token and get updated user info (this updates isAppAdmin in DB)
+    // Validate the ID token and sync OIDC-derived user information.
+    // OIDC admin role can elevate users to app admin but does not remove locally granted app-admin rights.
     const userInfo = await this.oidcValidationService.validateIdToken(syncDto.idToken);
     
     // Check that the token belongs to the current user

@@ -81,33 +81,55 @@ export class OidcValidationService {
         throw new UnauthorizedException('Invalid OIDC token: missing sub claim');
       }
 
+      const baseUsername = preferredUsername || email?.split('@')[0] || `oidc_${sub.substring(0, 8)}`;
+
       let user = await this.userRepository.findOne({
         where: { oidcSub: sub },
         relations: ['acpRoles', 'acpRoles.acp'],
       });
 
       if (!user) {
-        const baseUsername = preferredUsername || email?.split('@')[0] || `oidc_${sub.substring(0, 8)}`;
-        let username = baseUsername;
-        let counter = 1;
-
-        while (await this.userRepository.findOne({ where: { username } })) {
-          username = `${baseUsername}_${counter}`;
-          counter++;
-        }
-
-        user = this.userRepository.create({
-          username,
-          displayName: name || preferredUsername || username,
-          oidcSub: sub,
-          passwordHash: '',
-          isAppAdmin: isKeycloakAdmin,
+        // If a local account with the same username already exists and is not linked yet,
+        // bind this OIDC identity to that account to avoid duplicate users/role drift.
+        const existingByUsername = await this.userRepository.findOne({
+          where: { username: baseUsername },
+          relations: ['acpRoles', 'acpRoles.acp'],
         });
 
-        await this.userRepository.save(user);
-      } else if (user.isAppAdmin !== isKeycloakAdmin) {
-        user.isAppAdmin = isKeycloakAdmin;
-        await this.userRepository.save(user);
+        if (existingByUsername && !existingByUsername.oidcSub) {
+          existingByUsername.oidcSub = sub;
+          existingByUsername.isAppAdmin = existingByUsername.isAppAdmin || isKeycloakAdmin;
+          if (!existingByUsername.displayName && (name || preferredUsername)) {
+            existingByUsername.displayName = name || preferredUsername;
+          }
+          user = await this.userRepository.save(existingByUsername);
+        } else {
+          let username = baseUsername;
+          let counter = 1;
+
+          while (await this.userRepository.findOne({ where: { username } })) {
+            username = `${baseUsername}_${counter}`;
+            counter++;
+          }
+
+          user = this.userRepository.create({
+            username,
+            displayName: name || preferredUsername || username,
+            oidcSub: sub,
+            passwordHash: '',
+            isAppAdmin: isKeycloakAdmin,
+          });
+
+          await this.userRepository.save(user);
+        }
+      } else {
+        // Keycloak admin role can elevate rights, but must not remove
+        // app-admin rights that were granted inside ContentPool.
+        const shouldBeAppAdmin = user.isAppAdmin || isKeycloakAdmin;
+        if (user.isAppAdmin !== shouldBeAppAdmin) {
+          user.isAppAdmin = shouldBeAppAdmin;
+          await this.userRepository.save(user);
+        }
       }
 
       return {

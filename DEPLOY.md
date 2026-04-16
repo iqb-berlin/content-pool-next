@@ -106,6 +106,22 @@ Expected:
 
 - `content-pool-nginx`, `content-pool-api`, `content-pool-db`, `keycloak`, `keycloak-db` are `Up`
 - `GET /api/auth/oidc-config` returns `"enabled": true`
+- `GET /api/health/live` and `GET /api/health/ready` return `200`
+
+## 7a. Monitoring baseline
+
+Monitoring for the prototype release is based on health probes and log observation:
+
+- Compose health checks:
+  - `content-pool-api` via `/api/health/live`
+  - nginx/frontend via `/health`
+  - databases via `pg_isready`
+  - Keycloak via local TCP probe
+- Runtime checks:
+  - `./scripts/check-health.sh ...` for full stack status and exit code
+- Error observation:
+  - `docker compose ... logs --since 15m content-pool-api keycloak`
+  - alerting can be attached by scheduling `check-health.sh` and notifying on non-zero exit
 
 ## 8. Access Keycloak Admin securely
 
@@ -149,3 +165,7 @@ mkdir -p backups
 docker exec content-pool-db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/contentpool_$(date +%F_%H-%M-%S).sql
 docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > backups/keycloak_$(date +%F_%H-%M-%S).sql
 ```
+
+## 12. Go/No-Go release checklist
+
+Use [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before tagging or deploying a release candidate.

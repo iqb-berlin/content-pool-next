@@ -7,6 +7,7 @@ ENV="${1:-dev}"
 KEYCLOAK_URL="${2:-http://localhost:8080}"
 API_URL="${3:-http://localhost:3000/api}"
 FRONTEND_URL="${4:-http://localhost:4201}"
+FAILURES=0
 
 echo "=== ContentPool Health Check ==="
 echo "Environment: $ENV"
@@ -25,11 +26,12 @@ check_url() {
 
     if curl -s -o /dev/null -w "%{http_code}" "$url" | grep -q "200\|301\|302"; then
         echo -e "${GREEN}OK${NC}"
-        return 0
     else
         echo -e "${RED}FAILED${NC}"
-        return 1
+        FAILURES=$((FAILURES + 1))
     fi
+
+    return 0
 }
 
 if [[ "$KEYCLOAK_URL" == *"/realms/"* ]]; then
@@ -39,13 +41,15 @@ else
 fi
 
 # Check Keycloak
-check_url "Keycloak" "$KEYCLOAK_HEALTH_URL" || true
+check_url "Keycloak discovery" "$KEYCLOAK_HEALTH_URL"
 
 # Check Backend API
-check_url "API" "${API_URL%/}/auth/oidc-config" || true
+check_url "API liveness" "${API_URL%/}/health/live"
+check_url "API readiness" "${API_URL%/}/health/ready"
+check_url "API OIDC config" "${API_URL%/}/auth/oidc-config"
 
 # Check Frontend
-check_url "Frontend" "${FRONTEND_URL%/}/" || true
+check_url "Frontend" "${FRONTEND_URL%/}/"
 
 echo ""
 echo "=== Docker Container Status ==="
@@ -59,4 +63,9 @@ else
 fi
 
 echo ""
-echo "=== Health Check Complete ==="
+if [ "$FAILURES" -gt 0 ]; then
+    echo -e "=== Health Check Complete: ${RED}${FAILURES} check(s) failed${NC} ==="
+    exit 1
+fi
+
+echo -e "=== Health Check Complete: ${GREEN}all checks passed${NC} ==="

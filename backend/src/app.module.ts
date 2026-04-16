@@ -12,6 +12,7 @@ import { ItemsModule } from './items/items.module';
 import { AdminModule } from './admin/admin.module';
 import { ValidationModule } from './validation/validation.module';
 import { ServerApiModule } from './api/server-api.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { ServerApiModule } from './api/server-api.module';
     AdminModule,
     ValidationModule,
     ServerApiModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

@@ -121,6 +121,12 @@ services:
       SEED_DEFAULT_ADMIN: ${SEED_DEFAULT_ADMIN:-false}
     volumes:
       - uploads:/app/uploads
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
     # Kein Port nach außen – läuft hinter Nginx
     networks:
@@ -132,6 +138,12 @@ services:
       context: ./frontend
       dockerfile: Dockerfile.prod
     container_name: content-pool-web
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
     # Kein Port nach außen – läuft hinter Nginx
     networks:
@@ -150,6 +162,12 @@ services:
       - content-pool-api
       - content-pool-web
       - keycloak
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     networks:
       - app-network
       - keycloak-network

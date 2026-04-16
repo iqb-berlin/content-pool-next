@@ -166,12 +166,22 @@ docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs content-pool-api
 docker compose -f docker-compose.prod.yml logs content-pool-db
 
+# Backend health (liveness/readiness)
+curl -fsS http://localhost/api/health/live
+curl -fsS http://localhost/api/health/ready
+
 # Access database directly
 docker exec -it content-pool-db psql -U content_pool -d content_pool
 
 # Test nginx configuration
 docker exec content-pool-nginx nginx -t
 ```
+
+### Release Readiness
+
+- Deployment and migration runbook: [DEPLOY.md](DEPLOY.md)
+- Go/No-Go checklist: [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)
+- Health check helper: `./scripts/check-health.sh`
 
 ## Project Structure
 

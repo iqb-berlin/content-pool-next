@@ -186,5 +186,32 @@ describe('AcpService', () => {
       expect(accessConfigRepo.create).toHaveBeenCalled();
       expect(accessConfigRepo.save).toHaveBeenCalled();
     });
+
+    it('normalizes legacy metadata column key on update', async () => {
+      acpRepo.findOne.mockResolvedValue(mockAcp);
+      accessConfigRepo.findOne.mockResolvedValue({
+        acpId: 'acp-1',
+        accessModel: AccessModel.PUBLIC,
+        featureConfig: {},
+      });
+
+      await service.updateAccessConfig('acp-1', {
+        accessModel: 'PUBLIC',
+        featureConfig: {
+          itemListMetadataColumns: ['col-1', 'col-2'],
+        },
+      });
+
+      expect(accessConfigRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          featureConfig: expect.objectContaining({
+            metadataColumns: {
+              visible: ['col-1', 'col-2'],
+              order: ['col-1', 'col-2'],
+            },
+          }),
+        }),
+      );
+    });
   });
 });

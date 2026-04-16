@@ -464,7 +464,7 @@ The ACP-Manager can enable/disable these features for read-only access:
 | `enableCommenting` | Enable comments on units/items/sequences |
 | `commentTargets` | Which entities can be commented: `UNIT`, `ITEM`, `TASK_SEQUENCE` |
 | `enableItemList` | Generate and display item list |
-| `itemListMetadataColumns` | Which metadata to include in item list |
+| `metadataColumns` | Metadata column config for item list (`visible`, `order`) |
 | `enableItemClick` | Navigate to item on click |
 | `enableItemListFilter` | Allow filtering the item list |
 | `enableItemListSort` | Allow sorting the item list |

@@ -18,7 +18,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       <app-breadcrumb [items]="breadcrumbs" />
 
       <div class="item-header">
-        <h1>Item: {{ item.name || item.id }}</h1>
+        <h1>Item: {{ item.name || item.itemId || item.id }}</h1>
         <div class="item-actions">
           <select class="btn btn-outline btn-sm" [(ngModel)]="printMode" (change)="onPrintModeChange()">
             <option value="off">Print: Aus</option>
@@ -52,14 +52,24 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               </div>
             }
           </div>
-          <div class="item-highlight-info card">
-            <span class="badge badge-info">📍 Item-Position</span>
-            <p>Dieses Item befindet sich in der Aufgabe <strong>{{ unit.name }}</strong>.</p>
+          <div class="item-highlight-info card" [class.focus-ok]="highlightApplied">
+            <span class="badge" [class.badge-success]="highlightApplied" [class.badge-info]="!highlightApplied">
+              {{ highlightApplied ? '✅ Fokus aktiv' : '🎯 Fokus wird gesetzt' }}
+            </span>
+            <p>
+              Dieses Item befindet sich in der Aufgabe <strong>{{ unit.name }}</strong>
+              @if (highlightItemId) {
+                (<code>{{ highlightItemId }}</code>)
+              }.
+            </p>
+            @if (focusWarning) {
+              <p class="focus-warning">{{ focusWarning }}</p>
+            }
           </div>
         </div>
 
         <div class="meta-area">
-          <app-metadata-panel [unit]="unit" [highlightItemId]="item.id"></app-metadata-panel>
+          <app-metadata-panel [unit]="unit" [highlightItemId]="highlightItemId"></app-metadata-panel>
         </div>
       </div>
     } @else if (!loading) {
@@ -83,8 +93,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     .player-container.print-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; border: none; }
     .player-iframe { width: 100%; min-height: 550px; border: none; display: block; }
     .player-iframe.print-mode { min-height: 1000px; height: auto; }
-    .item-highlight-info { margin-top: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; }
+    .item-highlight-info { margin-top: 12px; padding: 12px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
     .item-highlight-info p { margin: 0; font-size: 0.9rem; color: var(--color-text-secondary); }
+    .item-highlight-info.focus-ok { border-left: 4px solid var(--color-success); background: rgba(39,174,96,0.05); }
+    .focus-warning { color: #a76d00; font-size: 0.82rem; }
     @media (max-width: 900px) {
       .item-layout { grid-template-columns: 1fr; }
       .item-header { flex-direction: column; gap: 12px; align-items: flex-start; }
@@ -105,6 +117,15 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   printMode: 'off' | 'on' | 'on-with-ids' = 'off';
   showCommentBtn = false;
   commentOpen = false;
+  highlightItemId = '';
+  highlightApplied = false;
+  focusWarning = '';
+
+  private definitionContent: string | null = null;
+  private playerFrameReady = false;
+  private unitLoadToken = 0;
+  private startSessionCounter = 0;
+  private focusRetryTimer: any = null;
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
@@ -124,94 +145,70 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
     this.api.getAcpStartPage(this.acpId).subscribe(data => {
       const fc = data?.featureConfig || {};
-      this.showCommentBtn = !!(fc.enableCommenting && fc.commentTargets?.includes('ITEM'));
+      const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
+      this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('ITEM'));
     });
 
     this.api.getViewItems(this.acpId).subscribe(items => {
       this.item = items.find((i: any) => i.itemId === this.itemId || i.id === this.itemId);
-      if (this.item) {
-        this.api.getViewUnit(this.acpId, this.item.unitId).subscribe(u => {
-          this.unit = u;
-          this.breadcrumbs = [
-            { label: 'ContentPool', route: ['/'] },
-            { label: 'ACP', route: ['/view', this.acpId] },
-            { label: 'Items', route: ['/view', this.acpId, 'items'] },
-            { label: this.item.name || this.item.id },
-          ];
-
-          // Map dependency URLs with tokens
-          u.dependencies = u.dependencies?.map(d => ({
-            ...d,
-            downloadUrl: this.api.appendAuthToken(d.downloadUrl)
-          }));
-
-          const playerDep = u.dependencies?.find(d => d.type === 'PLAYER' || d.type === 'player');
-          if (playerDep) {
-            fetch(playerDep.downloadUrl)
-              .then(res => res.text())
-              .then(html => {
-                this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
-              });
-          }
-          this.loading = false;
-        });
-      } else {
+      if (!this.item) {
         this.loading = false;
+        return;
       }
+
+      this.api.getViewUnit(this.acpId, this.item.unitId).subscribe(u => {
+        this.unit = u;
+        this.highlightItemId = this.resolveHighlightItemId(u, this.itemId, this.item?.itemId);
+        this.breadcrumbs = [
+          { label: 'ContentPool', route: ['/'] },
+          { label: 'ACP', route: ['/view', this.acpId] },
+          { label: 'Items', route: ['/view', this.acpId, 'items'] },
+          { label: this.item.name || this.item.itemId || this.item.id },
+        ];
+
+        u.dependencies = (u.dependencies || []).map(d => ({
+          ...d,
+          downloadUrl: this.api.appendAuthToken(d.downloadUrl)
+        }));
+
+        this.loading = false;
+        this.currentlyLoadingUnit();
+        const token = ++this.unitLoadToken;
+        this.loadPlayerHtml(u.dependencies || [], token);
+        this.loadDefinition(u.dependencies || [], token);
+      });
     });
   }
 
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
+    this.clearFocusRetryTimer();
   }
 
   onPlayerLoaded() {
     if (!this.unit || !this.playerFrame?.nativeElement?.contentWindow) return;
-
-    const definitionDep = this.unit.dependencies?.find(d =>
-      d.type === 'UNIT_DEFINITION' || d.type === 'unitDefinition' || d.type === 'definition'
-    );
-
-    if (definitionDep) {
-      fetch(definitionDep.downloadUrl)
-        .then(res => res.text())
-        .then(definition => {
-          const startPage = this.voudService.getStartPage(definition, this.item?.variableId || '');
-          this.sendToPlayer({
-            type: 'vopStartCommand',
-            sessionId: `review-item-${this.itemId}`,
-            unitDefinition: definition,
-            unitState: { dataParts: {} },
-            playerConfig: {
-              stateReportPolicy: 'none',
-              pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
-              printMode: this.printMode,
-              logPolicy: 'disabled',
-              startPage: startPage !== undefined ? startPage.toString() : undefined,
-              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
-            },
-          });
-          if (this.printMode === 'off') {
-            this.playerHeight = '100%';
-            this.stopAutoResize();
-          } else {
-            this.playerHeight = '2000px';
-            this.startAutoResize();
-          }
-        });
-    }
+    this.playerFrameReady = true;
+    this.startPlayerIfReady();
   }
 
   onPrintModeChange() {
     const src = this.playerSrcDoc;
+    if (!src) return;
+    this.playerFrameReady = false;
     this.playerSrcDoc = null;
+    this.highlightApplied = false;
+    this.focusWarning = '';
+    this.clearFocusRetryTimer();
     setTimeout(() => {
       this.playerSrcDoc = src;
     }, 50);
   }
 
   private onPlayerMessage(event: MessageEvent) {
+    const frameWindow = this.playerFrame?.nativeElement?.contentWindow;
+    if (frameWindow && event.source !== frameWindow) return;
+
     const msg = event.data;
     if (!msg || typeof msg !== 'object') return;
 
@@ -238,6 +235,259 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         this.commentOpen = false;
       },
     });
+  }
+
+  private currentlyLoadingUnit() {
+    this.playerFrameReady = false;
+    this.definitionContent = null;
+    this.highlightApplied = false;
+    this.focusWarning = '';
+    this.playerHeight = '100%';
+    this.clearFocusRetryTimer();
+  }
+
+  private loadPlayerHtml(dependencies: any[], token: number) {
+    const playerDep = dependencies.find((d: any) => String(d?.type || '').toLowerCase() === 'player');
+    if (!playerDep?.downloadUrl) {
+      this.playerSrcDoc = null;
+      return;
+    }
+
+    fetch(playerDep.downloadUrl)
+      .then(res => res.text())
+      .then(html => {
+        if (token !== this.unitLoadToken) return;
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.playerSrcDoc = null;
+      });
+  }
+
+  private loadDefinition(dependencies: any[], token: number) {
+    const definitionDep = dependencies.find((d: any) => {
+      const type = String(d?.type || '').toLowerCase();
+      return type === 'unit_definition' || type === 'unitdefinition' || type === 'definition';
+    });
+
+    if (!definitionDep?.downloadUrl) {
+      this.definitionContent = null;
+      return;
+    }
+
+    fetch(definitionDep.downloadUrl)
+      .then(res => res.text())
+      .then(definition => {
+        if (token !== this.unitLoadToken) return;
+        this.definitionContent = definition;
+        this.startPlayerIfReady();
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.definitionContent = null;
+      });
+  }
+
+  private startPlayerIfReady() {
+    if (!this.playerFrameReady || !this.definitionContent || !this.unit || !this.item) return;
+
+    const variableRef = this.item.sourceVariable || this.item.variableId || '';
+    const startPage = variableRef ? this.voudService.getStartPage(this.definitionContent, variableRef) : undefined;
+
+    this.startSessionCounter += 1;
+    this.sendToPlayer({
+      type: 'vopStartCommand',
+      sessionId: `review-item-${this.itemId}-${this.startSessionCounter}`,
+      unitDefinition: this.definitionContent,
+      unitState: { dataParts: {} },
+      playerConfig: {
+        stateReportPolicy: 'none',
+        pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
+        printMode: this.printMode,
+        logPolicy: 'disabled',
+        startPage: startPage !== undefined ? startPage.toString() : undefined,
+        enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
+      },
+    });
+
+    if (this.printMode === 'off') {
+      this.playerHeight = '100%';
+      this.stopAutoResize();
+    } else {
+      this.playerHeight = '2000px';
+      this.startAutoResize();
+    }
+
+    this.schedulePlayerFocus();
+  }
+
+  private schedulePlayerFocus() {
+    this.highlightApplied = false;
+    this.focusWarning = '';
+    this.clearFocusRetryTimer();
+
+    let attempts = 0;
+    const maxAttempts = 16;
+
+    const run = () => {
+      attempts += 1;
+      const focused = this.tryFocusItemInPlayer();
+      if (focused || attempts >= maxAttempts) {
+        if (!focused) {
+          this.focusWarning = 'Automatischer Fokus im Player war nicht eindeutig möglich, Metadaten-Highlight bleibt aktiv.';
+        }
+        return;
+      }
+      this.focusRetryTimer = setTimeout(run, 250);
+    };
+
+    this.focusRetryTimer = setTimeout(run, 180);
+  }
+
+  private tryFocusItemInPlayer(): boolean {
+    const frame = this.playerFrame?.nativeElement;
+    const doc = frame?.contentDocument || frame?.contentWindow?.document;
+    if (!doc || !doc.body) return false;
+
+    this.ensureFocusStyle(doc);
+
+    for (const selector of this.getFocusSelectors()) {
+      const target = doc.querySelector(selector) as HTMLElement | null;
+      if (target) {
+        this.applyFocus(doc, target);
+        return true;
+      }
+    }
+
+    const textTarget = this.findElementByText(doc, [
+      this.item?.name,
+      this.highlightItemId,
+      this.item?.sourceVariable,
+      this.item?.variableId,
+    ]);
+    if (textTarget) {
+      this.applyFocus(doc, textTarget);
+      return true;
+    }
+
+    return false;
+  }
+
+  private getFocusSelectors(): string[] {
+    const selectors: string[] = [];
+
+    const itemId = this.escapeSelectorValue(this.highlightItemId);
+    if (itemId) {
+      selectors.push(
+        `[data-item-id="${itemId}"]`,
+        `[data-itemid="${itemId}"]`,
+        `[data-id="${itemId}"]`,
+        `[id="${itemId}"]`,
+      );
+    }
+
+    const variableRef = this.escapeSelectorValue(this.item?.sourceVariable || this.item?.variableId || '');
+    if (variableRef) {
+      selectors.push(
+        `[data-variable-id="${variableRef}"]`,
+        `[data-variable="${variableRef}"]`,
+        `[data-ref="${variableRef}"]`,
+        `[data-source-variable="${variableRef}"]`,
+        `[name="${variableRef}"]`,
+        `[id="${variableRef}"]`,
+      );
+    }
+
+    return Array.from(new Set(selectors));
+  }
+
+  private findElementByText(doc: Document, candidates: Array<string | undefined>): HTMLElement | null {
+    const needles = candidates
+      .map(v => (v || '').trim().toLowerCase())
+      .filter(v => v.length > 1);
+
+    if (!needles.length) return null;
+
+    const nodes = Array.from(doc.querySelectorAll<HTMLElement>('label, span, div, p, li, button'));
+    const maxScan = Math.min(nodes.length, 3000);
+
+    for (let i = 0; i < maxScan; i++) {
+      const node = nodes[i];
+      const text = (node.textContent || '').trim().toLowerCase();
+      if (!text) continue;
+      if (needles.some(n => text === n || text.includes(n))) {
+        return node;
+      }
+    }
+
+    return null;
+  }
+
+  private applyFocus(doc: Document, target: HTMLElement) {
+    doc.querySelectorAll('.cp-item-focus-highlight').forEach(el => el.classList.remove('cp-item-focus-highlight'));
+    target.classList.add('cp-item-focus-highlight');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      // ignore focus errors for non-focusable elements
+    }
+
+    this.highlightApplied = true;
+    this.focusWarning = '';
+  }
+
+  private ensureFocusStyle(doc: Document) {
+    if (doc.getElementById('cp-item-focus-style')) return;
+
+    const style = doc.createElement('style');
+    style.id = 'cp-item-focus-style';
+    style.textContent = `
+      .cp-item-focus-highlight {
+        outline: 3px solid #e67e22 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 4px rgba(230, 126, 34, 0.25) !important;
+        border-radius: 4px !important;
+        transition: box-shadow 0.2s ease;
+      }
+    `;
+    doc.head?.appendChild(style);
+  }
+
+  private escapeSelectorValue(value: string): string {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  private resolveHighlightItemId(unit: UnitViewData, routeItemId: string, listedItemId?: string): string {
+    const candidates = [routeItemId, listedItemId].filter((v): v is string => !!v && v.length > 0);
+
+    for (const unitItem of unit.items || []) {
+      const unitItemId = typeof unitItem?.id === 'string' ? unitItem.id : '';
+      if (!unitItemId) continue;
+
+      const withPrefix = unitItem.useUnitAliasAsPrefix !== false
+        ? `${unit.id}_${unitItemId}`
+        : unitItemId;
+
+      if (candidates.includes(unitItemId) || candidates.includes(withPrefix)) {
+        return unitItemId;
+      }
+    }
+
+    const prefix = `${unit.id}_`;
+    if (routeItemId.startsWith(prefix)) {
+      return routeItemId.slice(prefix.length);
+    }
+
+    return routeItemId;
+  }
+
+  private clearFocusRetryTimer() {
+    if (this.focusRetryTimer) {
+      clearTimeout(this.focusRetryTimer);
+      this.focusRetryTimer = null;
+    }
   }
 
   private startAutoResize() {

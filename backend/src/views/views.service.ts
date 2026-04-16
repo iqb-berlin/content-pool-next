@@ -8,6 +8,7 @@ import {
   getIndexUnits,
   toRuntimeAcpIndex,
 } from '../acp/acp-index.utils';
+import { normalizeFeatureConfig } from '../acp/feature-config.utils';
 
 @Injectable()
 export class ViewsService {
@@ -119,7 +120,7 @@ export class ViewsService {
       where: { acpId },
     });
 
-    const featureConfig = (config?.featureConfig || {}) as Record<string, unknown>;
+    const featureConfig = normalizeFeatureConfig(config?.featureConfig || {});
     const index = toRuntimeAcpIndex(acp.acpIndex);
 
     // Extract units from ACP-Index

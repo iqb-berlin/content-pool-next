@@ -34,6 +34,7 @@ import {
   normalizeIndexForStorage,
   toRuntimeAcpIndex,
 } from './acp-index.utils';
+import { normalizeFeatureConfig } from './feature-config.utils';
 
 @Injectable()
 export class AcpService {
@@ -207,10 +208,20 @@ export class AcpService {
 
   // Access configuration
   async getAccessConfig(acpId: string): Promise<AcpAccessConfig | null> {
-    return this.accessConfigRepository.findOne({
+    const config = await this.accessConfigRepository.findOne({
       where: { acpId },
       relations: ['credentials'],
     });
+
+    if (!config) return null;
+
+    const normalizedFeatureConfig = normalizeFeatureConfig(config.featureConfig || {});
+    if (JSON.stringify(config.featureConfig || {}) !== JSON.stringify(normalizedFeatureConfig)) {
+      config.featureConfig = normalizedFeatureConfig;
+      return this.accessConfigRepository.save(config);
+    }
+
+    return config;
   }
 
   async updateAccessConfig(acpId: string, dto: UpdateAccessConfigDto): Promise<AcpAccessConfig> {
@@ -242,7 +253,7 @@ export class AcpService {
     if (config) {
       config.accessModel = dto.accessModel as AccessModel;
       if (dto.allowRegistered !== undefined) config.allowRegistered = dto.allowRegistered;
-      if (dto.featureConfig) config.featureConfig = dto.featureConfig;
+      if (dto.featureConfig) config.featureConfig = normalizeFeatureConfig(dto.featureConfig);
       config.validFrom =
         dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom ? new Date(dto.validFrom) : undefined;
       config.validUntil =
@@ -252,7 +263,7 @@ export class AcpService {
         acpId,
         accessModel: dto.accessModel as AccessModel,
         allowRegistered: dto.allowRegistered || false,
-        featureConfig: dto.featureConfig || {},
+        featureConfig: normalizeFeatureConfig(dto.featureConfig || {}),
         validFrom:
           dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom
             ? new Date(dto.validFrom)
@@ -274,13 +285,13 @@ export class AcpService {
     }
 
     const currentConfig = config.featureConfig || {};
-
-    currentConfig.metadataColumns = {
+    const normalizedConfig = normalizeFeatureConfig(currentConfig);
+    normalizedConfig.metadataColumns = {
       visible: dto.visibleColumns,
       order: dto.columnOrder || dto.visibleColumns
     };
 
-    config.featureConfig = currentConfig;
+    config.featureConfig = normalizedConfig;
     return this.accessConfigRepository.save(config);
   }
 

@@ -120,4 +120,29 @@ describe('ViewsService', () => {
     expect(sequenceIds.filter((id: string) => id === 'mod-1')).toHaveLength(1);
     expect(sequenceIds).toEqual(expect.arrayContaining(['mod-1', 'mod-2']));
   });
+
+  it('exposes canonical metadataColumns when legacy key is stored', async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: 'acp-1',
+      name: 'ACP',
+      description: 'Demo',
+      acpIndex: {
+        assessmentParts: [],
+      },
+    });
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        itemListMetadataColumns: ['metaA', 'metaB'],
+      },
+    });
+
+    const start = await service.getAcpStartPage('acp-1');
+    expect(start.featureConfig).toMatchObject({
+      metadataColumns: {
+        visible: ['metaA', 'metaB'],
+        order: ['metaA', 'metaB'],
+      },
+    });
+    expect(start.featureConfig.itemListMetadataColumns).toBeUndefined();
+  });
 });

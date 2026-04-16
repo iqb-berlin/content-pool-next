@@ -16,6 +16,7 @@ import {
   getIndexUnits,
   toRuntimeAcpIndex,
 } from '../acp/acp-index.utils';
+import { normalizeFeatureConfig } from '../acp/feature-config.utils';
 
 @Injectable()
 export class FilesService {
@@ -219,7 +220,7 @@ export class FilesService {
 
   async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
     const config = await this.accessConfigRepository.findOne({ where: { acpId } });
-    return (config?.featureConfig || {}) as Record<string, any>;
+    return normalizeFeatureConfig(config?.featureConfig || {}) as Record<string, any>;
   }
 
   async isUnitDependencyFile(acpId: string, fileName: string): Promise<boolean> {

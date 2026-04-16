@@ -122,6 +122,11 @@ export interface Credential {
   username: string;
 }
 
+export interface MetadataColumnsConfig {
+  visible?: string[];
+  order?: string[];
+}
+
 export interface FeatureConfig {
   allowIndexDownload?: boolean;
   allowUnitDownload?: boolean;
@@ -135,6 +140,8 @@ export interface FeatureConfig {
   enableCommenting?: boolean;
   commentTargets?: string[];
   enableItemList?: boolean;
+  metadataColumns?: MetadataColumnsConfig;
+  // Legacy key (read-only compatibility)
   itemListMetadataColumns?: string[];
   enableItemClick?: boolean;
   enableItemListFilter?: boolean;

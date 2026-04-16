@@ -1358,7 +1358,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.persistUserPreferences = !!fc.persistUserPreferences && this.authService.isLoggedIn;
       
       // Load metadata column settings
-      this.metadataSettings = fc.metadataColumns || { visible: [], order: [] };
+      this.metadataSettings = this.resolveMetadataSettings(fc);
       this.loadUiPreferences();
 
       if (this.enableTags && this.items.length) {
@@ -2082,7 +2082,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         this.showColumnManager = false;
         // Refresh to get updated settings
         this.api.getAcpStartPage(this.acpId).subscribe(data => {
-          this.metadataSettings = data?.featureConfig?.metadataColumns || { visible: [], order: [] };
+          this.metadataSettings = this.resolveMetadataSettings(data?.featureConfig || {});
           console.log('Refreshed settings:', this.metadataSettings);
         });
       },
@@ -2114,6 +2114,30 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   resetToDefault() {
     this.metadataSettings = { visible: [], order: [] };
     this.columns = this.filterVisibleColumns(this.allColumns);
+  }
+
+  private resolveMetadataSettings(featureConfig: Record<string, any>): MetadataSettings {
+    const metadataColumns = featureConfig?.['metadataColumns'];
+    if (metadataColumns && typeof metadataColumns === 'object') {
+      const visible = Array.isArray(metadataColumns.visible)
+        ? metadataColumns.visible.filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [];
+      const order = Array.isArray(metadataColumns.order)
+        ? metadataColumns.order.filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [];
+
+      return {
+        visible: visible.length ? visible : order,
+        order: order.length ? order : visible,
+      };
+    }
+
+    const legacyColumns = featureConfig?.['itemListMetadataColumns'];
+    const legacy = Array.isArray(legacyColumns)
+      ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
+      : [];
+
+    return { visible: legacy, order: legacy };
   }
 
   private getUiPreferencesKey(): string {

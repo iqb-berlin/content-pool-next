@@ -130,7 +130,7 @@ Below, each task block is designed for an AI coding agent: it specifies exact fi
 #### [MODIFY] [item-list.component.ts](file:///Users/julian/dev/iqb/plan/frontend/src/app/views/item-list/)
 
 - Fetch items from `/api/view/acp/:acpId/items`
-- Display as a data table with configurable metadata columns (from `itemListMetadataColumns` feature config)
+- Display as a data table with configurable metadata columns (from `metadataColumns` feature config)
 - **Sort**: Clickable column headers, toggle asc/desc/none
 - **Filter**: Text search per column, combined filter bar
 - **Tags**: If `enableItemListTags` is true:
@@ -247,7 +247,7 @@ Below, each task block is designed for an AI coding agent: it specifies exact fi
   - **Unit View**: enableUnitView, showMetadata, showRichText, showCodingScheme
   - **Navigation**: enableUnitListNavigation, enableSequenceNavigation
   - **Commenting**: enableCommenting, commentTargets (checkboxes: UNIT, ITEM, TASK_SEQUENCE)
-  - **Item List**: enableItemList, itemListMetadataColumns (multi-select), enableItemClick, enableItemListFilter, enableItemListSort, enableItemListTags, availableTags (editable list), persistUserPreferences
+  - **Item List**: enableItemList, metadataColumns (visible/order), enableItemClick, enableItemListFilter, enableItemListSort, enableItemListTags, availableTags (editable list), persistUserPreferences
 
 **Acceptance criteria**:
 - Mutual exclusion of Public and Credentials models is enforced

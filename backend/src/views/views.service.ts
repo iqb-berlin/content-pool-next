@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Acp, AcpAccessConfig, AccessModel, AcpFile, AppSettings } from '../database/entities';
+import {
+  Acp,
+  AcpAccessConfig,
+  AccessModel,
+  AcpFile,
+  AppSettings,
+  AcpItemPreference,
+} from '../database/entities';
 import {
   findUnitInIndex,
   getAssessmentParts,
@@ -9,6 +16,17 @@ import {
   toRuntimeAcpIndex,
 } from '../acp/acp-index.utils';
 import { normalizeFeatureConfig } from '../acp/feature-config.utils';
+
+export interface ItemPreferencesPayload {
+  [key: string]: unknown;
+  ui: Record<string, unknown>;
+  tags: Record<string, string[]>;
+}
+
+interface PreferenceIdentity {
+  userId?: string;
+  credentialUsername?: string;
+}
 
 @Injectable()
 export class ViewsService {
@@ -21,6 +39,8 @@ export class ViewsService {
     private readonly fileRepository: Repository<AcpFile>,
     @InjectRepository(AppSettings)
     private readonly settingsRepository: Repository<AppSettings>,
+    @InjectRepository(AcpItemPreference)
+    private readonly itemPreferenceRepository: Repository<AcpItemPreference>,
   ) {}
 
   /**
@@ -296,6 +316,50 @@ export class ViewsService {
     return null;
   }
 
+  async getItemPreferences(
+    acpId: string,
+    user: any,
+    viewId?: string,
+  ): Promise<ItemPreferencesPayload> {
+    const identity = this.resolvePreferenceIdentity(user);
+    if (!identity) {
+      return { ui: {}, tags: {} };
+    }
+
+    const normalizedViewId = this.normalizeViewId(viewId);
+    const record = await this.findPreferenceRecord(acpId, normalizedViewId, identity);
+    return this.normalizeItemPreferences(record?.preferences);
+  }
+
+  async saveItemPreferences(
+    acpId: string,
+    user: any,
+    preferences: Partial<ItemPreferencesPayload>,
+    viewId?: string,
+  ): Promise<ItemPreferencesPayload> {
+    const normalized = this.normalizeItemPreferences(preferences);
+    const identity = this.resolvePreferenceIdentity(user);
+    if (!identity) {
+      return normalized;
+    }
+
+    const normalizedViewId = this.normalizeViewId(viewId);
+    let record = await this.findPreferenceRecord(acpId, normalizedViewId, identity);
+
+    if (!record) {
+      record = this.itemPreferenceRepository.create({
+        acpId,
+        viewId: normalizedViewId,
+        userId: identity.userId || null,
+        credentialUsername: identity.credentialUsername || null,
+      });
+    }
+
+    record.preferences = normalized;
+    await this.itemPreferenceRepository.save(record);
+    return normalized;
+  }
+
   private getModuleReferenceId(moduleRef: unknown): string | null {
     if (typeof moduleRef === 'string' && moduleRef.trim().length > 0) {
       return moduleRef.trim();
@@ -310,5 +374,101 @@ export class ViewsService {
       }
     }
     return null;
+  }
+
+  private normalizeViewId(viewId?: string): string {
+    const normalized = (viewId || '').trim();
+    return normalized.length > 0 ? normalized.slice(0, 120) : 'item-list';
+  }
+
+  private resolvePreferenceIdentity(user: any): PreferenceIdentity | null {
+    if (!user || typeof user !== 'object') {
+      return null;
+    }
+
+    if (user.type === 'credential' && typeof user.username === 'string') {
+      const credentialUsername = user.username.trim();
+      if (credentialUsername.length > 0) {
+        return { credentialUsername };
+      }
+    }
+
+    if (typeof user.sub === 'string' && user.sub.trim().length > 0) {
+      return { userId: user.sub.trim() };
+    }
+
+    return null;
+  }
+
+  private async findPreferenceRecord(
+    acpId: string,
+    viewId: string,
+    identity: PreferenceIdentity,
+  ): Promise<AcpItemPreference | null> {
+    if (identity.userId) {
+      return this.itemPreferenceRepository.findOne({
+        where: {
+          acpId,
+          viewId,
+          userId: identity.userId,
+        },
+      });
+    }
+
+    if (identity.credentialUsername) {
+      return this.itemPreferenceRepository.findOne({
+        where: {
+          acpId,
+          viewId,
+          credentialUsername: identity.credentialUsername,
+        },
+      });
+    }
+
+    return null;
+  }
+
+  private normalizeItemPreferences(raw: unknown): ItemPreferencesPayload {
+    const payload = this.isRecord(raw) ? raw : {};
+    const ui = this.isRecord(payload.ui) ? payload.ui : {};
+    return {
+      ui,
+      tags: this.normalizeTags(payload.tags),
+    };
+  }
+
+  private normalizeTags(rawTags: unknown): Record<string, string[]> {
+    if (!this.isRecord(rawTags)) {
+      return {};
+    }
+
+    const tags: Record<string, string[]> = {};
+
+    for (const [itemKey, values] of Object.entries(rawTags)) {
+      const normalizedItemKey = String(itemKey || '').trim();
+      if (!normalizedItemKey) {
+        continue;
+      }
+
+      if (!Array.isArray(values)) {
+        continue;
+      }
+
+      const normalizedValues = Array.from(new Set(
+        values
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ));
+
+      if (normalizedValues.length) {
+        tags[normalizedItemKey] = normalizedValues;
+      }
+    }
+
+    return tags;
+  }
+
+  private isRecord(value: unknown): value is Record<string, any> {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
   }
 }

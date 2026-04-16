@@ -1,16 +1,48 @@
 import {
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Param,
+  Put,
+  Query,
   Request,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
+import { IsObject, IsOptional, IsString } from 'class-validator';
 import { Response } from 'express';
 import { ViewsService } from './views.service';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
+
+class SaveItemPreferencesDto {
+  @ApiPropertyOptional({ description: 'Preference scope/view id', example: 'item-list' })
+  @IsOptional()
+  @IsString()
+  viewId?: string;
+
+  @ApiPropertyOptional({
+    description: 'View specific UI state',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  ui?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Item tags keyed by item identifier',
+    type: 'object',
+    additionalProperties: {
+      type: 'array',
+      items: { type: 'string' },
+    },
+  })
+  @IsOptional()
+  @IsObject()
+  tags?: Record<string, string[]>;
+}
 
 @ApiTags('Public Views')
 @Controller('view')
@@ -91,6 +123,45 @@ export class ViewsController {
     return this.viewsService.getItemList(acpId);
   }
 
+  @Get('acp/:acpId/items/preferences')
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: 'Get persisted user preferences for item views' })
+  async getItemPreferences(
+    @Param('acpId') acpId: string,
+    @Request() req: any,
+    @Query('viewId') viewId?: string,
+  ) {
+    if (!(await this.isPreferencePersistenceEnabled(acpId))) {
+      return { ui: {}, tags: {} };
+    }
+
+    return this.viewsService.getItemPreferences(acpId, req?.user, viewId);
+  }
+
+  @Put('acp/:acpId/items/preferences')
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: 'Save persisted user preferences for item views' })
+  @ApiBody({ type: SaveItemPreferencesDto })
+  async saveItemPreferences(
+    @Param('acpId') acpId: string,
+    @Body() dto: SaveItemPreferencesDto,
+    @Request() req: any,
+  ) {
+    if (!(await this.isPreferencePersistenceEnabled(acpId))) {
+      return { ui: {}, tags: {} };
+    }
+
+    return this.viewsService.saveItemPreferences(
+      acpId,
+      req?.user,
+      {
+        ui: dto.ui,
+        tags: dto.tags,
+      },
+      dto.viewId,
+    );
+  }
+
   @Get('acp/:acpId/sequences')
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: 'List task sequences for an ACP' })
@@ -135,5 +206,11 @@ export class ViewsController {
       return defaultWhenUnset;
     }
     return Boolean(value);
+  }
+
+  private async isPreferencePersistenceEnabled(acpId: string): Promise<boolean> {
+    const data = await this.viewsService.getAcpStartPage(acpId);
+    const featureConfig = (data?.featureConfig || {}) as Record<string, unknown>;
+    return Boolean(featureConfig.persistUserPreferences);
   }
 }

@@ -15,6 +15,11 @@ describe('ViewsService', () => {
     accessConfigRepository = { findOne: jest.fn() };
     fileRepository = { find: jest.fn() };
     settingsRepository = { findOne: jest.fn() };
+    itemPreferenceRepository = {
+      findOne: jest.fn(),
+      create: jest.fn().mockImplementation((value) => value),
+      save: jest.fn().mockImplementation(async (value) => value),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -144,5 +149,72 @@ describe('ViewsService', () => {
       },
     });
     expect(start.featureConfig.itemListMetadataColumns).toBeUndefined();
+  });
+
+  it('returns empty item preferences when no authenticated identity is available', async () => {
+    const prefs = await service.getItemPreferences('acp-1', null, 'item-list');
+    expect(prefs).toEqual({ ui: {}, tags: {} });
+    expect(itemPreferenceRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it('loads normalized item preferences for authenticated users', async () => {
+    itemPreferenceRepository.findOne.mockResolvedValue({
+      preferences: {
+        ui: {
+          filterText: 'abc',
+          sortDir: 'asc',
+        },
+        tags: {
+          item1: ['alpha', 'alpha', ' beta '],
+          item2: [],
+        },
+      },
+    });
+
+    const prefs = await service.getItemPreferences('acp-1', { sub: 'user-1', type: 'user' }, 'item-list');
+    expect(prefs).toEqual({
+      ui: {
+        filterText: 'abc',
+        sortDir: 'asc',
+      },
+      tags: {
+        item1: ['alpha', 'beta'],
+      },
+    });
+  });
+
+  it('saves preferences scoped by credential username', async () => {
+    itemPreferenceRepository.findOne.mockResolvedValue(null);
+
+    const saved = await service.saveItemPreferences(
+      'acp-1',
+      { type: 'credential', username: 'reader-a' },
+      {
+        ui: {
+          filterText: 'xyz',
+        },
+        tags: {
+          item1: ['tag1', 'tag1', 'tag2'],
+        },
+      },
+      'item-explorer',
+    );
+
+    expect(saved).toEqual({
+      ui: {
+        filterText: 'xyz',
+      },
+      tags: {
+        item1: ['tag1', 'tag2'],
+      },
+    });
+    expect(itemPreferenceRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acpId: 'acp-1',
+        viewId: 'item-explorer',
+        userId: null,
+        credentialUsername: 'reader-a',
+      }),
+    );
   });
 });

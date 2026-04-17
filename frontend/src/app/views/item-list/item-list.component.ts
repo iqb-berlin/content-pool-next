@@ -145,7 +145,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.breadcrumbs = [
-      { label: 'ContentPool', route: ['/'] },
+      { label: 'Assessment Content Pool', route: ['/'] },
       { label: 'ACP', route: ['/view', this.acpId] },
       { label: 'Item-Liste' },
     ];

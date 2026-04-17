@@ -361,7 +361,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     this.api.getViewUnit(this.acpId, this.unitId).subscribe(u => {
       this.unit = u;
       this.breadcrumbs = [
-        { label: 'ContentPool', route: ['/'] },
+        { label: 'Assessment Content Pool', route: ['/'] },
         { label: 'ACP', route: ['/view', this.acpId] },
         { label: u.name },
       ];

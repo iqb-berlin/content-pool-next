@@ -188,7 +188,7 @@ export class TaskSequenceComponent implements OnInit {
       this.currentIndex = 0;
       this.unitListOpen = false;
       this.breadcrumbs = [
-        { label: 'ContentPool', route: ['/'] },
+        { label: 'Assessment Content Pool', route: ['/'] },
         { label: 'ACP', route: ['/view', this.acpId] },
         { label: this.sequence.name || 'Aufgabenfolge' },
       ];

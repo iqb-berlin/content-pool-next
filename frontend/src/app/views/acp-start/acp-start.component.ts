@@ -221,7 +221,7 @@ export class AcpStartComponent implements OnInit {
       this.data = d;
       this.fc = d?.featureConfig || {};
       this.breadcrumbs = [
-        { label: 'ContentPool', route: ['/'] },
+        { label: 'Assessment Content Pool', route: ['/'] },
         { label: d?.name || 'ACP' },
       ];
 

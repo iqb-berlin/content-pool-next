@@ -160,7 +160,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         this.unit = u;
         this.highlightItemId = this.resolveHighlightItemId(u, this.itemId, this.item?.itemId);
         this.breadcrumbs = [
-          { label: 'ContentPool', route: ['/'] },
+          { label: 'Assessment Content Pool', route: ['/'] },
           { label: 'ACP', route: ['/view', this.acpId] },
           { label: 'Items', route: ['/view', this.acpId, 'items'] },
           { label: this.item.name || this.item.itemId || this.item.id },

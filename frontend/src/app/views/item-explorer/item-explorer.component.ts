@@ -1236,6 +1236,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private pendingServerUiPreferences: Record<string, unknown> = {};
   private pendingServerTagPreferences: Record<string, string[]> = {};
   private serverSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   // File Upload
   showUploadReport = false;
@@ -1347,7 +1348,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.breadcrumbs = [
-      { label: 'ContentPool', route: ['/'] },
+      { label: 'Assessment Content Pool', route: ['/'] },
       { label: 'ACP', route: ['/view', this.acpId] },
       { label: 'Item-Explorer' },
     ];
@@ -1395,6 +1396,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
+    this.clearFocusRetryTimer();
     if (this.serverSaveTimeout) {
       clearTimeout(this.serverSaveTimeout);
       this.serverSaveTimeout = null;
@@ -1554,6 +1556,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   resetPlayer() {
+    this.clearFocusRetryTimer();
     this.playerSrcDoc = null;
     this.unit = null;
   }
@@ -1793,11 +1796,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             this.playerHeight = '2000px';
             this.startAutoResize();
           }
+          this.schedulePlayerFocus();
         });
     }
   }
 
   onPagingModeChange() {
+    this.clearFocusRetryTimer();
     const src = this.playerSrcDoc;
     this.playerSrcDoc = null;
     setTimeout(() => {
@@ -1806,6 +1811,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private onPlayerMessage(event: MessageEvent) {
+    const frameWindow = this.playerFrame?.nativeElement?.contentWindow;
+    if (frameWindow && event.source !== frameWindow) return;
+
     const msg = event.data;
     if (!msg || typeof msg !== 'object') return;
 
@@ -1834,6 +1842,204 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.playerHeight = `${msg.height}px`;
         }
         break;
+    }
+  }
+
+  private schedulePlayerFocus() {
+    this.clearFocusRetryTimer();
+
+    let attempts = 0;
+    const maxAttempts = 16;
+
+    const run = () => {
+      attempts += 1;
+      const focused = this.tryFocusItemInPlayer();
+      if (focused || attempts >= maxAttempts) {
+        return;
+      }
+      this.focusRetryTimer = setTimeout(run, 250);
+    };
+
+    this.focusRetryTimer = setTimeout(run, 180);
+  }
+
+  private tryFocusItemInPlayer(): boolean {
+    const frame = this.playerFrame?.nativeElement;
+    const doc = frame?.contentDocument || frame?.contentWindow?.document;
+    if (!doc || !doc.body) return false;
+
+    this.ensureFocusStyle(doc);
+
+    for (const selector of this.getFocusSelectors()) {
+      const target = doc.querySelector(selector) as HTMLElement | null;
+      if (target) {
+        this.applyFocus(doc, target);
+        return true;
+      }
+    }
+
+    const selectedItem = this.selectedItem;
+    if (!selectedItem) return false;
+
+    const textTarget = this.findElementByText(doc, [
+      selectedItem.itemId,
+      selectedItem.variableId,
+      selectedItem.description,
+    ]);
+    if (textTarget) {
+      this.applyFocus(doc, textTarget);
+      return true;
+    }
+
+    return false;
+  }
+
+  private getFocusSelectors(): string[] {
+    const selectedItem = this.selectedItem;
+    if (!selectedItem) return [];
+
+    const selectors: string[] = [];
+
+    for (const itemId of this.getCandidateItemIds()) {
+      const escaped = this.escapeSelectorValue(itemId);
+      if (!escaped) continue;
+      selectors.push(
+        `[data-item-id="${escaped}"]`,
+        `[data-itemid="${escaped}"]`,
+        `[data-id="${escaped}"]`,
+        `[id="${escaped}"]`,
+      );
+    }
+
+    const variableRef = this.escapeSelectorValue(selectedItem.variableId || '');
+    if (variableRef) {
+      selectors.push(
+        `[data-variable-id="${variableRef}"]`,
+        `[data-variable="${variableRef}"]`,
+        `[data-ref="${variableRef}"]`,
+        `[data-source-variable="${variableRef}"]`,
+        `[name="${variableRef}"]`,
+        `[id="${variableRef}"]`,
+      );
+    }
+
+    return Array.from(new Set(selectors));
+  }
+
+  private getCandidateItemIds(): string[] {
+    const selectedItem = this.selectedItem;
+    if (!selectedItem) return [];
+
+    const unitId = String(this.unit?.id || selectedItem.unitId || '').trim();
+    const selectedItemId = String(selectedItem.itemId || '').trim();
+    const resolvedItemId = this.resolveFocusItemId();
+    const withPrefix = (value: string) => unitId && value ? `${unitId}_${value}` : '';
+
+    const candidates = new Set<string>();
+    for (const candidate of [
+      resolvedItemId,
+      selectedItemId,
+      withPrefix(resolvedItemId),
+      withPrefix(selectedItemId),
+    ]) {
+      if (candidate) {
+        candidates.add(candidate);
+      }
+    }
+
+    if (unitId && selectedItemId.startsWith(`${unitId}_`)) {
+      candidates.add(selectedItemId.slice(unitId.length + 1));
+    }
+
+    return Array.from(candidates);
+  }
+
+  private resolveFocusItemId(): string {
+    const selectedItem = this.selectedItem;
+    if (!selectedItem) return '';
+
+    const selectedItemId = String(selectedItem.itemId || '').trim();
+    const unitItems = Array.isArray(this.unit?.items) ? this.unit.items : [];
+    const unitId = String(this.unit?.id || selectedItem.unitId || '').trim();
+
+    for (const unitItem of unitItems) {
+      const unitItemId = typeof unitItem?.id === 'string' ? unitItem.id : '';
+      if (!unitItemId) continue;
+
+      const prefixedId = unitItem.useUnitAliasAsPrefix !== false
+        ? `${unitId}_${unitItemId}`
+        : unitItemId;
+
+      if (selectedItemId === unitItemId || selectedItemId === prefixedId) {
+        return unitItemId;
+      }
+    }
+
+    if (unitId && selectedItemId.startsWith(`${unitId}_`)) {
+      return selectedItemId.slice(unitId.length + 1);
+    }
+
+    return selectedItemId;
+  }
+
+  private findElementByText(doc: Document, candidates: Array<string | undefined>): HTMLElement | null {
+    const needles = candidates
+      .map(value => (value || '').trim().toLowerCase())
+      .filter(value => value.length > 1);
+
+    if (!needles.length) return null;
+
+    const nodes = Array.from(doc.querySelectorAll<HTMLElement>('label, span, div, p, li, button'));
+    const maxScan = Math.min(nodes.length, 3000);
+
+    for (let i = 0; i < maxScan; i += 1) {
+      const node = nodes[i];
+      const text = (node.textContent || '').trim().toLowerCase();
+      if (!text) continue;
+      if (needles.some(needle => text === needle || text.includes(needle))) {
+        return node;
+      }
+    }
+
+    return null;
+  }
+
+  private applyFocus(doc: Document, target: HTMLElement) {
+    doc.querySelectorAll('.cp-item-focus-highlight').forEach(el => el.classList.remove('cp-item-focus-highlight'));
+    target.classList.add('cp-item-focus-highlight');
+    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      // Ignore focus errors for non-focusable elements.
+    }
+  }
+
+  private ensureFocusStyle(doc: Document) {
+    if (doc.getElementById('cp-item-focus-style')) return;
+
+    const style = doc.createElement('style');
+    style.id = 'cp-item-focus-style';
+    style.textContent = `
+      .cp-item-focus-highlight {
+        outline: 3px solid #e67e22 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 4px rgba(230, 126, 34, 0.25) !important;
+        border-radius: 4px !important;
+        transition: box-shadow 0.2s ease;
+      }
+    `;
+    doc.head?.appendChild(style);
+  }
+
+  private escapeSelectorValue(value: string): string {
+    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  private clearFocusRetryTimer() {
+    if (this.focusRetryTimer) {
+      clearTimeout(this.focusRetryTimer);
+      this.focusRetryTimer = null;
     }
   }
 

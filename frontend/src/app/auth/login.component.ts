@@ -156,9 +156,9 @@ export class LoginComponent implements OnInit {
 
   getSubtitle(): string {
     switch (this.forType) {
-      case 'admin': return 'IQB ContentPool - Administration';
+      case 'admin': return 'Assessment Content Pool - Administration';
       case 'acp': return 'Geschützter ACP-Zugang';
-      default: return 'IQB ContentPool';
+      default: return 'Assessment Content Pool';
     }
   }
 

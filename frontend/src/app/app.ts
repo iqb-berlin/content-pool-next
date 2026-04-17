@@ -11,10 +11,8 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
   template: `
     <header class="app-header">
       <div class="header-left">
-        @if (logoUrl) {
-          <a routerLink="/"><img [src]="logoUrl" alt="Logo" class="app-logo" /></a>
-        }
-        <a routerLink="/" class="logo">IQB ContentPool</a>
+        <a routerLink="/"><img src="assets/IQB-LogoA.png" alt="IQB Kodierbox Logo" class="app-logo" /></a>
+        <a routerLink="/" class="logo">Assessment Content Pool</a>
       </div>
       <nav>
         @if (auth.isLoggedIn && auth.isAdmin) {
@@ -50,7 +48,7 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
       box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .header-left { display: flex; align-items: center; gap: 16px; }
-    .app-logo { height: 44px; width: auto; object-fit: contain; filter: drop-shadow(0 0 2px rgba(0,0,0,0.2)); }
+    .app-logo { height: 40px; width: auto; object-fit: contain; }
     .logo { color: white; text-decoration: none; font-size: 1.25rem; font-weight: 600; }
     nav { display: flex; align-items: center; gap: 16px; }
     nav a { color: rgba(255,255,255,0.85); text-decoration: none; font-size: 0.9rem; }
@@ -71,10 +69,8 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
   `]
 })
 export class AppComponent implements OnInit, OnDestroy {
-  logoUrl: string | null = 'assets/brandmark-violet.svg';
   private readonly settingsUpdatedListener = (event: Event) => {
     const customEvent = event as CustomEvent<{
-      logoUrl?: string | null;
       theme?: Record<string, unknown>;
       language?: string;
     }>;
@@ -83,7 +79,6 @@ export class AppComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.logoUrl = detail.logoUrl || 'assets/brandmark-violet.svg';
     applyTheme(detail.theme);
     applyLanguage(detail.language);
   };
@@ -98,7 +93,6 @@ export class AppComponent implements OnInit, OnDestroy {
     window.addEventListener('cp-settings-updated', this.settingsUpdatedListener as EventListener);
 
     this.api.getPublicSettings().subscribe(settings => {
-      this.logoUrl = settings.logoUrl || 'assets/brandmark-violet.svg';
       applyTheme(settings.theme);
       applyLanguage(settings.language);
     });

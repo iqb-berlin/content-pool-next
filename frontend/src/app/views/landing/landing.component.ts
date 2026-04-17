@@ -15,10 +15,7 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
     <div class="landing">
       <!-- Hero -->
       <section class="hero">
-        @if (logoUrl) {
-          <img [src]="logoUrl" alt="Logo" class="hero-logo" />
-        }
-        <h1>IQB ContentPool</h1>
+        <h1>Assessment Content Pool</h1>
         <p class="hero-sub">Assessment Content Packages für Lernstandserhebungen</p>
       </section>
 
@@ -175,11 +172,6 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
       background: linear-gradient(135deg, rgba(26,82,118,0.06) 0%, rgba(41,128,185,0.08) 100%);
       border-radius: var(--radius);
       margin-bottom: 32px;
-    }
-    .hero-logo {
-      height: 64px;
-      margin-bottom: 16px;
-      object-fit: contain;
     }
     .hero h1 {
       font-size: 2.5rem;
@@ -377,7 +369,6 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
 })
 export class LandingComponent implements OnInit {
   acps: PublicAcp[] = [];
-  logoUrl: string | null = 'assets/logo-violet.svg';
   landingHtml: SafeHtml | null = null;
   imprintHtml: SafeHtml | null = null;
   privacyHtml: SafeHtml | null = null;
@@ -425,7 +416,6 @@ export class LandingComponent implements OnInit {
       acps: acpsRequest,
     }).subscribe(({ settings, acps }) => {
       this.acps = acps as PublicAcp[];
-      this.logoUrl = settings.logoUrl || 'assets/logo-violet.svg';
       if (settings.landingPageHtml) {
         this.landingHtml = this.sanitizer.bypassSecurityTrustHtml(settings.landingPageHtml);
       }

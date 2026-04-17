@@ -6,6 +6,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   UploadedFiles,
   UseGuards,
@@ -61,6 +62,18 @@ class UpdateIndexDto {
   @ApiProperty({ description: 'ACP index payload', type: 'object', additionalProperties: true })
   @IsObject()
   acpIndex!: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'Optimistic concurrency check (ISO timestamp)' })
+  @IsOptional()
+  @IsString()
+  expectedUpdatedAt?: string;
+}
+
+class ReplaceCodingSchemeDto {
+  @ApiPropertyOptional({ description: 'Snapshot changelog entry for the coding scheme replacement' })
+  @IsOptional()
+  @IsString()
+  changelog?: string;
 
   @ApiPropertyOptional({ description: 'Optimistic concurrency check (ISO timestamp)' })
   @IsOptional()
@@ -188,6 +201,46 @@ export class ServerApiController {
     @Query('conflictStrategy') conflictStrategy?: string,
   ) {
     return this.serverApiService.uploadFiles(acpId, files, conflictStrategy);
+  }
+
+  @Post('acp/:acpId/coding-schemes/replace')
+  @ServerApiScopes('files.write')
+  @ServerApiAudit('acp.coding-schemes.replace', 'file')
+  @ApiOperation({ summary: 'Replace existing .vocs coding schemes and create a new ACP snapshot version' })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        files: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          description: 'Existing .vocs files that should be replaced by filename',
+        },
+        changelog: {
+          type: 'string',
+          description: 'Optional changelog entry for the generated snapshot',
+        },
+        expectedUpdatedAt: {
+          type: 'string',
+          description: 'Optional optimistic concurrency timestamp (ISO)',
+        },
+      },
+      required: ['files'],
+    },
+  })
+  @UseInterceptors(FilesInterceptor('files', 100))
+  async replaceCodingSchemes(
+    @Param('acpId') acpId: string,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Body() body: ReplaceCodingSchemeDto,
+    @Req() req: any,
+  ) {
+    return this.serverApiService.replaceCodingSchemeFiles(acpId, files, {
+      changelog: body.changelog,
+      expectedUpdatedAt: body.expectedUpdatedAt,
+      sourceClientId: req?.serverApiClient?.id,
+    });
   }
 
   @Post('acp/import')

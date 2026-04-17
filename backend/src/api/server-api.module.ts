@@ -8,9 +8,10 @@ import { ServerApiAuthService } from './server-api-auth.service';
 import { ServerApiAuthGuard } from './server-api-auth.guard';
 import { ServerApiAuditService } from './server-api-audit.service';
 import { ServerApiAuditInterceptor } from './server-api-audit.interceptor';
+import { SnapshotsModule } from '../snapshots/snapshots.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Acp, AcpFile, ServerApiAuditLog]), FilesModule],
+  imports: [TypeOrmModule.forFeature([Acp, AcpFile, ServerApiAuditLog]), FilesModule, SnapshotsModule],
   controllers: [ServerApiController],
   providers: [
     ServerApiService,

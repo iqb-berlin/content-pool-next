@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Acp, AcpFile } from '../database/entities';
 import { FilesService } from '../files/files.service';
+import { SnapshotsService } from '../snapshots/snapshots.service';
 
 export type ConflictStrategy = 'reject' | 'overwrite' | 'merge';
 export type IndexUpdateStrategy = 'overwrite' | 'merge';
@@ -21,6 +22,12 @@ export interface ServerImportAcpPayload {
   expectedUpdatedAt?: string;
 }
 
+export interface ReplaceCodingSchemeOptions {
+  changelog?: string;
+  expectedUpdatedAt?: string;
+  sourceClientId?: string;
+}
+
 @Injectable()
 export class ServerApiService {
   constructor(
@@ -29,6 +36,7 @@ export class ServerApiService {
     @InjectRepository(AcpFile)
     private readonly fileRepository: Repository<AcpFile>,
     private readonly filesService: FilesService,
+    private readonly snapshotsService: SnapshotsService,
   ) {}
 
   /**
@@ -167,6 +175,121 @@ export class ServerApiService {
     }
 
     return uploaded.map(file => this.toTransferFileMeta(file));
+  }
+
+  async replaceCodingSchemeFiles(
+    acpId: string,
+    files: Express.Multer.File[],
+    options: ReplaceCodingSchemeOptions = {},
+  ): Promise<{
+      acpId: string;
+      packageId: string;
+      updatedAt: string;
+      replacedFiles: Array<{
+        id: string;
+        originalName: string;
+        fileType?: string;
+        fileSize: number;
+        checksum?: string;
+        uploadedAt: string;
+        downloadUrl: string;
+      }>;
+      snapshot: {
+        id: string;
+        versionNumber: number;
+        changelog?: string;
+        createdAt: string;
+      };
+    }> {
+    if (!files?.length) {
+      throw new BadRequestException('At least one file is required');
+    }
+
+    const acp = await this.getAcpOrFail(acpId);
+    this.assertExpectedUpdatedAt(acp, options.expectedUpdatedAt);
+
+    const existingFiles = await this.fileRepository.find({ where: { acpId } });
+    const existingByLowerName = new Map<string, AcpFile[]>();
+    for (const existing of existingFiles) {
+      const key = existing.originalName.toLowerCase();
+      const bucket = existingByLowerName.get(key) || [];
+      bucket.push(existing);
+      existingByLowerName.set(key, bucket);
+    }
+
+    const seenIncoming = new Set<string>();
+    const replacementPlan: Array<{
+      incoming: Express.Multer.File;
+      matches: AcpFile[];
+      canonicalName: string;
+    }> = [];
+
+    for (const incoming of files) {
+      const incomingName = String(incoming?.originalname || '').trim();
+      if (!incomingName) {
+        throw new BadRequestException('All files must include a filename');
+      }
+      if (!this.isVocsFileName(incomingName)) {
+        throw new BadRequestException(
+          `Only coding scheme files (.vocs) can be replaced here: ${incomingName}`,
+        );
+      }
+
+      const lookupKey = incomingName.toLowerCase();
+      if (seenIncoming.has(lookupKey)) {
+        throw new BadRequestException(`Duplicate coding scheme in request: ${incomingName}`);
+      }
+      seenIncoming.add(lookupKey);
+
+      const matches = existingByLowerName.get(lookupKey) || [];
+      if (!matches.length) {
+        throw new NotFoundException(
+          `Coding scheme "${incomingName}" does not exist in ACP and cannot be replaced`,
+        );
+      }
+
+      replacementPlan.push({
+        incoming,
+        matches,
+        canonicalName: matches[0].originalName,
+      });
+    }
+
+    const replacedFiles: AcpFile[] = [];
+    for (const plan of replacementPlan) {
+      for (const existing of plan.matches) {
+        await this.filesService.deleteForAcp(acpId, existing.id);
+      }
+
+      const uploadPayload = {
+        ...plan.incoming,
+        originalname: plan.canonicalName,
+      } as Express.Multer.File;
+      const saved = await this.filesService.upload(acpId, uploadPayload);
+      replacedFiles.push(saved);
+    }
+
+    const resolvedChangelog = this.resolveCodingSchemeChangelog(
+      options.changelog,
+      replacedFiles.map((file) => file.originalName),
+      options.sourceClientId,
+    );
+    const snapshot = await this.snapshotsService.create(acpId, resolvedChangelog);
+    acp.updatedAt = new Date();
+    const savedAcp = await this.acpRepository.save(acp);
+
+    return {
+      acpId: savedAcp.id,
+      packageId: savedAcp.packageId,
+      updatedAt: savedAcp.updatedAt.toISOString(),
+      replacedFiles: replacedFiles.map((file) => this.toTransferFileMeta(file)),
+      snapshot: {
+        id: snapshot.id,
+        versionNumber: snapshot.versionNumber,
+        changelog: snapshot.changelog,
+        createdAt: snapshot.createdAt.toISOString(),
+      },
+    };
   }
 
   /**
@@ -328,5 +451,24 @@ export class ServerApiService {
 
   private isRecord(value: unknown): value is Record<string, any> {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  }
+
+  private isVocsFileName(fileName: string): boolean {
+    return fileName.trim().toLowerCase().endsWith('.vocs');
+  }
+
+  private resolveCodingSchemeChangelog(
+    changelogInput: string | undefined,
+    fileNames: string[],
+    sourceClientId?: string,
+  ): string {
+    const explicit = (changelogInput || '').trim();
+    if (explicit) {
+      return explicit;
+    }
+
+    const fileList = fileNames.length ? fileNames.join(', ') : 'unknown .vocs';
+    const sourceSuffix = sourceClientId ? ` via ${sourceClientId}` : '';
+    return `Kodierschema ersetzt${sourceSuffix}: ${fileList}`;
   }
 }

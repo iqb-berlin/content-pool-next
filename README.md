@@ -250,6 +250,7 @@ Authentication is token-based for integrations (`X-Server-Token: <token>` or `Au
 - `GET /api/server/acp/:acpId/files/:fileId`: File metadata
 - `GET /api/server/acp/:acpId/files/:fileId/download`: Download one file
 - `POST /api/server/acp/:acpId/files/upload`: Upload one or more files (multipart)
+- `POST /api/server/acp/:acpId/coding-schemes/replace`: Replace existing `.vocs` files and automatically create a new snapshot version with changelog
 - `GET /api/server/audit`: Read integration audit log entries (scope required)
 
 ### Conflict Strategy
@@ -262,7 +263,11 @@ Authentication is token-based for integrations (`X-Server-Token: <token>` or `Au
   - `strategy=overwrite` (default) or `strategy=merge`
 - File upload (`POST /api/server/acp/:acpId/files/upload`):
   - `conflictStrategy=keep-both` (default), `overwrite`, or `reject`
-- Optimistic concurrency is supported via `expectedUpdatedAt` (ISO timestamp) for ACP/index updates.
+- Coding scheme replacement (`POST /api/server/acp/:acpId/coding-schemes/replace`):
+  - replaces existing `.vocs` by filename (case-insensitive)
+  - rejects unknown/non-existing `.vocs` (strict replace semantics)
+  - creates a new snapshot version and stores the provided `changelog` (or auto-generated text)
+- Optimistic concurrency is supported via `expectedUpdatedAt` (ISO timestamp) for ACP/index updates and coding-scheme replacement.
 
 ### Integration Scopes
 

@@ -56,7 +56,8 @@ services:
       keycloak-db:
         condition: service_healthy
     volumes:
-      - ./keycloak:/opt/keycloak/data/import:ro
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080'"]
       interval: 10s

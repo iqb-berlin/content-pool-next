@@ -4,6 +4,11 @@ export class CreateAcpItemPreferences1760640000000 implements MigrationInterface
   name = 'CreateAcpItemPreferences1760640000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const hasPreferencesTable = await queryRunner.hasTable('acp_item_preferences');
+    if (hasPreferencesTable) {
+      return;
+    }
+
     await queryRunner.query(`
       CREATE TABLE "acp_item_preferences" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -44,6 +49,11 @@ export class CreateAcpItemPreferences1760640000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    const hasPreferencesTable = await queryRunner.hasTable('acp_item_preferences');
+    if (!hasPreferencesTable) {
+      return;
+    }
+
     await queryRunner.query('DROP INDEX "public"."IDX_acp_item_preferences_lookup_credential"');
     await queryRunner.query('DROP INDEX "public"."IDX_acp_item_preferences_lookup_user"');
 

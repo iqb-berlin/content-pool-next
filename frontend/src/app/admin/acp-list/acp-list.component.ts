@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { Acp } from '../../core/models/api.models';
 
 @Component({
@@ -10,11 +11,13 @@ import { Acp } from '../../core/models/api.models';
   imports: [FormsModule, RouterLink],
   template: `
     <div class="page-header">
-      <h1>Assessment Content Packages</h1>
-      <button class="btn btn-primary" (click)="showCreate = !showCreate">+ ACP anlegen</button>
+      <h1>{{ auth.isAdmin ? 'Assessment Content Packages' : 'Meine ACP-Pakete' }}</h1>
+      @if (auth.isAdmin) {
+        <button class="btn btn-primary" (click)="showCreate = !showCreate">+ ACP anlegen</button>
+      }
     </div>
 
-    @if (showCreate) {
+    @if (showCreate && auth.isAdmin) {
       <div class="card">
         <h3>Neues ACP anlegen</h3>
         <form (ngSubmit)="createAcp()">
@@ -50,26 +53,36 @@ import { Acp } from '../../core/models/api.models';
             <tr>
               <td><code>{{ acp.packageId }}</code></td>
               <td>
-                @if (editingId === acp.id) {
+                @if (editingId === acp.id && canRename(acp)) {
                   <input [(ngModel)]="editName" (keyup.enter)="saveRename(acp)" (keyup.escape)="cancelRename()" class="input-sm">
                   <button class="btn btn-sm btn-primary" (click)="saveRename(acp)" style="margin-left:4px">Speichern</button>
                   <button class="btn btn-sm btn-outline" (click)="cancelRename()" style="margin-left:4px">Abbrechen</button>
                 } @else {
                   {{ acp.name }}
-                  <button class="btn btn-sm btn-link" (click)="startRename(acp)" style="margin-left:8px" title="Umbenennen">✏️</button>
+                  @if (canRename(acp)) {
+                    <button class="btn btn-sm btn-link" (click)="startRename(acp)" style="margin-left:8px" title="Umbenennen">✏️</button>
+                  }
                 }
               </td>
               <td>{{ acp.description || '–' }}</td>
               <td>
-                <a [routerLink]="['/manage', acp.id]" class="btn btn-sm btn-outline">Verwalten</a>
-                <button class="btn btn-sm btn-danger" (click)="deleteAcp(acp)" style="margin-left:8px">Löschen</button>
+                @if (canManage(acp)) {
+                  <a [routerLink]="['/manage', acp.id]" class="btn btn-sm btn-outline">Verwalten</a>
+                } @else {
+                  <span class="text-muted">Keine Verwaltungsrechte</span>
+                }
+                @if (auth.isAdmin) {
+                  <button class="btn btn-sm btn-danger" (click)="deleteAcp(acp)" style="margin-left:8px">Löschen</button>
+                }
               </td>
             </tr>
           }
         </tbody>
       </table>
       @if (!acps.length) {
-        <div class="empty-state"><h3>Keine ACPs vorhanden</h3></div>
+        <div class="empty-state">
+          <h3>{{ auth.isAdmin ? 'Keine ACPs vorhanden' : 'Keine zugewiesenen ACP-Pakete vorhanden' }}</h3>
+        </div>
       }
     </div>
   `
@@ -82,7 +95,10 @@ export class AcpListComponent implements OnInit {
   editingId: string | null = null;
   editName = '';
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    public auth: AuthService
+  ) {}
 
   ngOnInit() { this.load(); }
 
@@ -94,6 +110,7 @@ export class AcpListComponent implements OnInit {
   }
 
   createAcp() {
+    if (!this.auth.isAdmin) return;
     this.api.createAcp(this.newAcp).subscribe({
       next: () => { this.showCreate = false; this.newAcp = { packageId: '', name: '', description: '' }; this.load(); },
       error: err => this.error = err.error?.message || 'Fehler beim Anlegen'
@@ -101,12 +118,22 @@ export class AcpListComponent implements OnInit {
   }
 
   deleteAcp(acp: Acp) {
+    if (!this.auth.isAdmin) return;
     if (confirm(`ACP "${acp.name}" wirklich löschen?`)) {
       this.api.deleteAcp(acp.id).subscribe({ next: () => this.load() });
     }
   }
 
+  canManage(acp: Acp): boolean {
+    return this.auth.isAdmin || this.auth.hasAcpRole(acp.id, 'ACP_MANAGER');
+  }
+
+  canRename(acp: Acp): boolean {
+    return this.canManage(acp);
+  }
+
   startRename(acp: Acp) {
+    if (!this.canRename(acp)) return;
     this.editingId = acp.id;
     this.editName = acp.name;
   }
@@ -117,6 +144,7 @@ export class AcpListComponent implements OnInit {
   }
 
   saveRename(acp: Acp) {
+    if (!this.canRename(acp)) return;
     if (!this.editName.trim()) {
       this.error = 'Name darf nicht leer sein';
       return;

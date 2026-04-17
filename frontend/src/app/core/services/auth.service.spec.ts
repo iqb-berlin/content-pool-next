@@ -88,6 +88,44 @@ describe('AuthService', () => {
     });
   });
 
+  describe('hasManagedAcps', () => {
+    it('should return false when no user loaded', () => {
+      expect(service.hasManagedAcps).toBe(false);
+    });
+
+    it('should return true for app admin', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.get.mockReturnValue(of({ ...mockUserProfile, isAppAdmin: true, acpRoles: [] }));
+      service.loadProfile();
+
+      expect(service.hasManagedAcps).toBe(true);
+    });
+
+    it('should return true when user manages at least one ACP', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.get.mockReturnValue(of({
+        ...mockUserProfile,
+        isAppAdmin: false,
+        acpRoles: [{ acpId: 'acp1', role: 'ACP_MANAGER' as const }]
+      }));
+      service.loadProfile();
+
+      expect(service.hasManagedAcps).toBe(true);
+    });
+
+    it('should safely return false when acpRoles are missing', () => {
+      localStorage.setItem('cp_token', 'test-token');
+      httpClientMock.get.mockReturnValue(of({
+        ...mockUserProfile,
+        isAppAdmin: false,
+        acpRoles: undefined,
+      }));
+      service.loadProfile();
+
+      expect(service.hasManagedAcps).toBe(false);
+    });
+  });
+
   describe('currentUser', () => {
     it('should return null when no user loaded', () => {
       expect(service.currentUser).toBeNull();

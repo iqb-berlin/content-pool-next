@@ -45,6 +45,13 @@ export class AuthService {
     return this.currentUserSubject.value?.isAppAdmin ?? false;
   }
 
+  get hasManagedAcps(): boolean {
+    const user = this.currentUserSubject.value;
+    if (!user) return false;
+    if (user.isAppAdmin) return true;
+    return (user.acpRoles || []).some((role) => role.role === 'ACP_MANAGER');
+  }
+
   get isOidcUser(): boolean {
     return localStorage.getItem(this.AUTH_TYPE_KEY) === 'oidc';
   }
@@ -261,7 +268,10 @@ export class AuthService {
       tap((res) => {
         localStorage.setItem(this.tokenKey, res.accessToken);
       }),
-      map((res) => res.user as UserProfile),
+      map((res) => ({
+        ...(res.user as UserProfile),
+        acpRoles: (res.user as UserProfile).acpRoles || [],
+      })),
     );
   }
 
@@ -269,7 +279,7 @@ export class AuthService {
     const user = this.currentUserSubject.value;
     if (!user) return false;
     if (user.isAppAdmin) return true;
-    return user.acpRoles.some((r) => r.acpId === acpId && r.role === role);
+    return (user.acpRoles || []).some((r) => r.acpId === acpId && r.role === role);
   }
 
   private async redirectToOidcAuthorization(

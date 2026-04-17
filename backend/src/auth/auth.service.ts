@@ -187,6 +187,7 @@ export class AuthService {
         username: userInfo.username,
         displayName: userInfo.displayName || userInfo.username,
         isAppAdmin: userInfo.isAppAdmin,
+        acpRoles: userInfo.acpRoles || [],
       },
     };
   }

@@ -7,6 +7,7 @@ export const routes: Routes = [
   { path: 'login', loadComponent: () => import('./auth/login.component').then(m => m.LoginComponent) },
   { path: 'auth/callback', loadComponent: () => import('./auth/oidc-callback.component').then(m => m.OidcCallbackComponent) },
   { path: 'credential-login/:acpId', loadComponent: () => import('./auth/credential-login.component').then(m => m.CredentialLoginComponent) },
+  { path: 'acps', canActivate: [authGuard], loadComponent: () => import('./admin/acp-list/acp-list.component').then(m => m.AcpListComponent) },
 
   // Admin routes
   {

@@ -19,7 +19,11 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
       <nav>
         @if (auth.isLoggedIn && auth.isAdmin) {
           <a routerLink="/admin/users">Nutzer</a>
-          <a routerLink="/admin/acp">ACPs</a>
+        }
+        @if (auth.isLoggedIn && auth.hasManagedAcps) {
+          <a routerLink="/acps">ACPs</a>
+        }
+        @if (auth.isLoggedIn && auth.isAdmin) {
           <a routerLink="/admin/settings">Einstellungen</a>
         }
         @if (auth.isLoggedIn) {

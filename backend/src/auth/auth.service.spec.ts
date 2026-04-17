@@ -136,4 +136,24 @@ describe('AuthService', () => {
       await expect(service.getProfile('bad-id')).rejects.toThrow(UnauthorizedException);
     });
   });
+
+  describe('generateTokenForOidcUser', () => {
+    it('should include ACP roles in returned user payload', async () => {
+      const result = await service.generateTokenForOidcUser({
+        sub: 'user-1',
+        username: 'testuser',
+        displayName: 'Test User',
+        isAppAdmin: false,
+        acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }],
+      });
+
+      expect(result.accessToken).toBe('mock-jwt-token');
+      expect(result.user).toMatchObject({
+        id: 'user-1',
+        username: 'testuser',
+        isAppAdmin: false,
+        acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }],
+      });
+    });
+  });
 });

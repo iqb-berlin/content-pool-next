@@ -453,7 +453,86 @@ describe('ApiService', () => {
     });
   });
 
+  describe('Item Explorer shared state', () => {
+    it('should fetch shared explorer state', () => {
+      httpClientMock.get.mockReturnValue(of({ status: 'CLEAN', version: 1 }));
+
+      service.getItemExplorerState('acp1').subscribe(result => {
+        expect((result as any).version).toBe(1);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state');
+    });
+
+    it('should patch explorer draft', () => {
+      const payload = { changeType: 'UI_STATE_CHANGED', patch: { ui: { filterText: 'x' } }, baseVersion: 4 };
+      httpClientMock.patch.mockReturnValue(of({ status: 'DIRTY', version: 5 }));
+
+      service.patchItemExplorerDraft('acp1', payload).subscribe(result => {
+        expect((result as any).status).toBe('DIRTY');
+      });
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith('/api/acp/acp1/item-explorer/draft', payload);
+    });
+
+    it('should save explorer draft', () => {
+      httpClientMock.post.mockReturnValue(of({ status: 'CLEAN', version: 6 }));
+
+      service.saveItemExplorerDraft('acp1', 5).subscribe(result => {
+        expect((result as any).version).toBe(6);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/item-explorer/draft/save', { baseVersion: 5 });
+    });
+
+    it('should discard explorer draft', () => {
+      httpClientMock.post.mockReturnValue(of({ status: 'CLEAN', version: 6 }));
+
+      service.discardItemExplorerDraft('acp1', 5).subscribe(result => {
+        expect((result as any).status).toBe('CLEAN');
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/item-explorer/draft/discard', { baseVersion: 5 });
+    });
+
+    it('should fetch explorer change history', () => {
+      httpClientMock.get.mockReturnValue(of([]));
+
+      service.getItemExplorerChanges('acp1', 200).subscribe(result => {
+        expect(result).toEqual([]);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/item-explorer/changes?limit=200');
+    });
+  });
+
   describe('Items', () => {
+    it('should upload empirical difficulties in draft mode with baseVersion', () => {
+      httpClientMock.post.mockReturnValue(of({ updated: 0, failed: [], successes: [] }));
+
+      const file = new File(['item;est\nx;1'], 'data.csv', { type: 'text/csv' });
+      service.uploadEmpiricalDifficulties('acp1', file, { draft: true, baseVersion: 12 }).subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/upload-empirical-difficulty?draft=true&baseVersion=12',
+        expect.any(FormData),
+      );
+    });
+
+    it('should clear empirical difficulties in draft mode with baseVersion', () => {
+      httpClientMock.delete.mockReturnValue(of({ success: true }));
+
+      service.clearEmpiricalDifficulties('acp1', { draft: true, baseVersion: 9 }).subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.delete).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/empirical-difficulty?draft=true&baseVersion=9',
+      );
+    });
+
     it('should save response state', () => {
       const responseData = { value: 'test' };
       httpClientMock.post.mockReturnValue(of({}));

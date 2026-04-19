@@ -15,6 +15,7 @@ import { IsObject, IsOptional, IsString } from 'class-validator';
 import { Response } from 'express';
 import { ViewsService } from './views.service';
 import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
+import { ItemExplorerStateService } from '../item-explorer/item-explorer-state.service';
 
 class SaveItemPreferencesDto {
   @ApiPropertyOptional({ description: 'Preference scope/view id', example: 'item-list' })
@@ -47,7 +48,10 @@ class SaveItemPreferencesDto {
 @ApiTags('Public Views')
 @Controller('view')
 export class ViewsController {
-  constructor(private readonly viewsService: ViewsService) {}
+  constructor(
+    private readonly viewsService: ViewsService,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
+  ) {}
 
   @Get('settings')
   @ApiOperation({ summary: 'Get public app settings (theme, logo, legal pages)' })
@@ -121,6 +125,14 @@ export class ViewsController {
     }
 
     return this.viewsService.getItemList(acpId);
+  }
+
+  @Get('acp/:acpId/item-explorer/state')
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: 'Get shared Item Explorer state for ACP' })
+  async getItemExplorerState(@Param('acpId') acpId: string, @Request() req: any) {
+    const canEdit = req?.acpAccessLevel === 'MANAGER' || req?.acpAccessLevel === 'ADMIN';
+    return this.itemExplorerStateService.getStateForViewer(acpId, canEdit);
   }
 
   @Get('acp/:acpId/items/preferences')

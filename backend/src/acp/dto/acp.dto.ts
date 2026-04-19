@@ -9,6 +9,8 @@ import {
   ValidateNested,
   MinLength,
   Matches,
+  IsInt,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -150,6 +152,50 @@ export class CreateSnapshotDto {
   @IsString()
   @IsOptional()
   changelog?: string;
+}
+
+export class ItemExplorerMetadataColumnsDto {
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  visible?: string[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  order?: string[];
+}
+
+export class PatchItemExplorerDraftDto {
+  @ApiPropertyOptional({ description: 'Optimistic lock base version' })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  baseVersion?: number;
+
+  @ApiProperty({ description: 'Change type for audit log' })
+  @IsString()
+  @IsNotEmpty()
+  changeType!: string;
+
+  @ApiPropertyOptional({
+    description: 'Partial draft patch',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsObject()
+  @IsOptional()
+  patch?: Record<string, unknown>;
+}
+
+export class VersionedItemExplorerActionDto {
+  @ApiPropertyOptional({ description: 'Optimistic lock base version' })
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  baseVersion?: number;
 }
 
 export class CredentialResponseDto {

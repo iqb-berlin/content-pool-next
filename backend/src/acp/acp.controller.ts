@@ -27,10 +27,13 @@ import {
   UpdateMetadataColumnsDto,
   CreateCredentialDto,
   UpdateCredentialDto,
+  PatchItemExplorerDraftDto,
+  VersionedItemExplorerActionDto,
 } from './dto/acp.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
+import { ItemExplorerStateService } from '../item-explorer/item-explorer-state.service';
 
 @ApiTags('ACP Management')
 @Controller('acp')
@@ -39,7 +42,10 @@ import { Roles } from '../auth/roles.decorator';
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);
   
-  constructor(private readonly acpService: AcpService) {}
+  constructor(
+    private readonly acpService: AcpService,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all ACPs accessible to the current user' })
@@ -252,5 +258,66 @@ export class AcpController {
       this.logger.error(`Failed to update metadata columns for ACP ${id}: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  @Patch(':id/item-explorer/draft')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Patch Item Explorer draft state (ACP Manager or Admin)' })
+  async patchItemExplorerDraft(
+    @Param('id') id: string,
+    @Body() dto: PatchItemExplorerDraftDto,
+    @Request() req: any,
+  ) {
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, id);
+    return this.itemExplorerStateService.patchDraft(id, (dto.patch || {}) as any, {
+      actor,
+      changeType: dto.changeType,
+      baseVersion: dto.baseVersion,
+    });
+  }
+
+  @Post(':id/item-explorer/draft/save')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Publish Item Explorer draft state' })
+  async saveItemExplorerDraft(
+    @Param('id') id: string,
+    @Body() dto: VersionedItemExplorerActionDto,
+    @Request() req: any,
+  ) {
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, id);
+    return this.itemExplorerStateService.saveDraft(id, {
+      actor,
+      baseVersion: dto.baseVersion,
+    });
+  }
+
+  @Post(':id/item-explorer/draft/discard')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Discard Item Explorer draft state and reset to published' })
+  async discardItemExplorerDraft(
+    @Param('id') id: string,
+    @Body() dto: VersionedItemExplorerActionDto,
+    @Request() req: any,
+  ) {
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, id);
+    return this.itemExplorerStateService.discardDraft(id, {
+      actor,
+      baseVersion: dto.baseVersion,
+    });
+  }
+
+  @Get(':id/item-explorer/changes')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'List Item Explorer change log entries' })
+  async getItemExplorerChanges(
+    @Param('id') id: string,
+    @Query('limit') limit?: string,
+  ) {
+    const parsedLimit = parseInt(limit || '', 10);
+    return this.itemExplorerStateService.listChanges(id, Number.isNaN(parsedLimit) ? 100 : parsedLimit);
   }
 }

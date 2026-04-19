@@ -39,7 +39,40 @@ export class AcpAccessGuard implements CanActivate {
       throw new NotFoundException('ACP ID not found in request');
     }
 
-    // Check public access
+    // Try to resolve user from JWT even if no JwtAuthGuard is attached.
+    // This keeps ACP routes compatible with optional-auth scenarios.
+    if (!request.user) {
+      request.user = await this.resolveUserFromRequestToken(request);
+    }
+    const user = request.user;
+
+    if (user) {
+      // App Admin has full access
+      if (user.isAppAdmin) {
+        request.acpAccessLevel = 'ADMIN';
+        return true;
+      }
+
+      // Credential-based access
+      console.log('Checking credential access:', { userType: user.type, userAcpId: user.acpId, requestedAcpId: acpId, match: user.acpId === acpId });
+      if (user.type === 'credential' && user.acpId === acpId) {
+        request.acpAccessLevel = 'CREDENTIAL';
+        return true;
+      }
+
+      // User role-based access (local users and OIDC users)
+      if (user.type === 'user' || user.type === 'oidc') {
+        const role = await this.acpUserRoleRepository.findOne({
+          where: { userId: user.sub, acpId },
+        });
+        if (role) {
+          request.acpAccessLevel = role.role === AcpRole.ACP_MANAGER ? 'MANAGER' : 'READ_ONLY';
+          return true;
+        }
+      }
+    }
+
+    // Public access is a fallback (anonymous or authenticated users without ACP role).
     const publicConfig = await this.accessConfigRepository.findOne({
       where: { acpId, accessModel: AccessModel.PUBLIC },
     });
@@ -48,40 +81,9 @@ export class AcpAccessGuard implements CanActivate {
       return true;
     }
 
-    // For non-public ACPs, try to resolve user from JWT even if no JwtAuthGuard is attached.
-    // This keeps ACP routes compatible with optional-auth scenarios.
-    if (!request.user) {
-      request.user = await this.resolveUserFromRequestToken(request);
-    }
-    const user = request.user;
-
-    // Remaining checks require authentication
+    // For non-public ACPs, authentication is required.
     if (!user) {
       throw new ForbiddenException('Authentication required');
-    }
-
-    // App Admin has full access
-    if (user.isAppAdmin) {
-      request.acpAccessLevel = 'ADMIN';
-      return true;
-    }
-
-    // Credential-based access
-    console.log('Checking credential access:', { userType: user.type, userAcpId: user.acpId, requestedAcpId: acpId, match: user.acpId === acpId });
-    if (user.type === 'credential' && user.acpId === acpId) {
-      request.acpAccessLevel = 'CREDENTIAL';
-      return true;
-    }
-
-    // User role-based access
-    if (user.type === 'user') {
-      const role = await this.acpUserRoleRepository.findOne({
-        where: { userId: user.sub, acpId },
-      });
-      if (role) {
-        request.acpAccessLevel = role.role === AcpRole.ACP_MANAGER ? 'MANAGER' : 'READ_ONLY';
-        return true;
-      }
     }
 
     throw new ForbiddenException('No access to this ACP');

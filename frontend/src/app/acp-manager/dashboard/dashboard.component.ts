@@ -5,13 +5,17 @@ import { JsonPipe } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { Acp } from '../../core/models/api.models';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [FormsModule, RouterLink, JsonPipe],
+  imports: [FormsModule, RouterLink, JsonPipe, AcpManagerContextComponent, ConfirmDialogComponent],
   template: `
     @if (acp) {
+      <app-acp-manager-context />
+
       <div class="page-header">
         <div class="header-main">
           @if (editingName) {
@@ -20,18 +24,15 @@ import { Acp } from '../../core/models/api.models';
             <button class="btn btn-outline btn-sm" (click)="cancelEditName()">Abbrechen</button>
           } @else {
             <h1>{{ acp.name }}</h1>
-            @if (myRole === 'ACP_MANAGER') {
+            @if (canEditName) {
               <button class="btn btn-sm btn-link" (click)="startEditName()" title="Umbenennen">✏️</button>
             }
-          }
-          <span class="badge badge-info">{{ acp.packageId }}</span>
-          @if (myRole) {
-            <span class="badge badge-success" style="margin-left:8px">{{ myRoleLabel }}</span>
           }
         </div>
       </div>
 
       @if (error) { <div class="alert alert-error">{{ error }}</div> }
+      @if (indexSuccessMessage) { <div class="alert alert-success">{{ indexSuccessMessage }}</div> }
 
       <div class="grid">
         <a [routerLink]="['/manage', acp.id, 'files']" class="card link-card">
@@ -63,6 +64,7 @@ import { Acp } from '../../core/models/api.models';
             Importieren
             <input type="file" accept=".json" (change)="importIndex($event)" hidden>
           </label>
+          <button class="btn btn-danger" (click)="openDeleteIndexDialog()">Index löschen</button>
         </div>
         @if (showIndex) {
           <pre class="json-view">{{ acp.acpIndex | json }}</pre>
@@ -88,6 +90,22 @@ import { Acp } from '../../core/models/api.models';
           <button class="btn btn-primary btn-sm" (click)="assignRole()">Zuweisen</button>
         </div>
       </div>
+
+      <app-confirm-dialog
+        [open]="showDeleteIndexDialog"
+        title="ACP-Index löschen"
+        message="Der aktuelle ACP-Index wird auf den Standardzustand zurückgesetzt."
+        [details]="[
+          'Diese Aktion betrifft den gesamten Index (inkl. Struktur und Metadaten).',
+          'Dateien bleiben erhalten, können aber im Index fehlen, bis erneut synchronisiert/importiert wird.'
+        ]"
+        [error]="deleteIndexError"
+        [busy]="deletingIndex"
+        busyLabel="Index wird gelöscht..."
+        confirmLabel="Index löschen"
+        confirmVariant="danger"
+        (confirmed)="confirmDeleteIndex()"
+        (cancelled)="closeDeleteIndexDialog()" />
     }
   `,
   styles: [`
@@ -112,13 +130,13 @@ export class DashboardComponent implements OnInit {
   editingName = false;
   editName = '';
   error = '';
+  indexSuccessMessage = '';
+  showDeleteIndexDialog = false;
+  deletingIndex = false;
+  deleteIndexError = '';
 
-  get myRoleLabel(): string {
-    switch (this.myRole) {
-      case 'ACP_MANAGER': return 'Manager';
-      case 'READ_ONLY': return 'Gast';
-      default: return 'Zugriff gewährt';
-    }
+  get canEditName(): boolean {
+    return this.auth.isAdmin || this.myRole === 'ACP_MANAGER';
   }
 
   constructor(
@@ -149,28 +167,75 @@ export class DashboardComponent implements OnInit {
   importIndex(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file || !this.acp) return;
+    this.indexSuccessMessage = '';
+    this.error = '';
     const reader = new FileReader();
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result as string);
         this.api.importAcpIndex(this.acp!.id, data).subscribe({
-          next: idx => { this.acp!.acpIndex = idx; }
+          next: idx => {
+            this.acp!.acpIndex = idx;
+            this.error = '';
+            this.indexSuccessMessage = 'ACP-Index wurde importiert.';
+          }
         });
-      } catch { alert('Ungültige JSON-Datei'); }
+      } catch {
+        this.error = 'Ungültige JSON-Datei';
+      }
     };
     reader.readAsText(file);
   }
 
+  openDeleteIndexDialog() {
+    this.showDeleteIndexDialog = true;
+    this.deleteIndexError = '';
+  }
+
+  closeDeleteIndexDialog() {
+    if (this.deletingIndex) return;
+    this.showDeleteIndexDialog = false;
+    this.deleteIndexError = '';
+  }
+
+  confirmDeleteIndex() {
+    if (!this.acp || this.deletingIndex) return;
+    this.deletingIndex = true;
+    this.deleteIndexError = '';
+    this.indexSuccessMessage = '';
+
+    this.api.deleteAcpIndex(this.acp.id).subscribe({
+      next: (idx) => {
+        this.acp!.acpIndex = idx;
+        this.indexSuccessMessage = 'ACP-Index wurde auf den Standardzustand zurückgesetzt.';
+        this.deletingIndex = false;
+        this.showDeleteIndexDialog = false;
+      },
+      error: (err) => {
+        this.deletingIndex = false;
+        this.deleteIndexError = err?.error?.message || 'Fehler beim Löschen des ACP-Index.';
+      },
+    });
+  }
+
   assignRole() {
     if (!this.acp || !this.selectedUserId) return;
+    this.error = '';
     this.api.assignAcpRole(this.acp.id, { userId: this.selectedUserId, role: this.selectedRole })
-      .subscribe(() => this.api.getAcpRoles(this.acp!.id).subscribe(r => this.roles = r));
+      .subscribe({
+        next: () => this.api.getAcpRoles(this.acp!.id).subscribe(r => this.roles = r),
+        error: err => this.error = this.mapRoleError(err, 'Die Rolle konnte nicht zugewiesen werden.')
+      });
   }
 
   removeRole(userId: string) {
     if (!this.acp) return;
+    this.error = '';
     this.api.removeAcpRole(this.acp.id, userId)
-      .subscribe(() => this.api.getAcpRoles(this.acp!.id).subscribe(r => this.roles = r));
+      .subscribe({
+        next: () => this.api.getAcpRoles(this.acp!.id).subscribe(r => this.roles = r),
+        error: err => this.error = this.mapRoleError(err, 'Die Rolle konnte nicht entfernt werden.')
+      });
   }
 
   startEditName() {
@@ -190,5 +255,23 @@ export class DashboardComponent implements OnInit {
       next: acp => { this.acp = acp; this.editingName = false; },
       error: err => this.error = err.error?.message || 'Fehler beim Speichern'
     });
+  }
+
+  private mapRoleError(err: any, fallback: string): string {
+    const message = err?.error?.message || '';
+
+    if (typeof message === 'string' && message.includes('At least one ACP_MANAGER must remain assigned')) {
+      return 'Mindestens ein ACP-Manager muss zugewiesen bleiben. Bitte zuerst einer anderen Person die Manager-Rolle geben.';
+    }
+
+    if (typeof message === 'string' && message.includes('Only Application Admins can remove ACP_MANAGER role')) {
+      return 'Nur App-Admins dürfen ACP-Manager-Rollen entfernen.';
+    }
+
+    if (typeof message === 'string' && message.includes('Only Application Admins can assign ACP_MANAGER role')) {
+      return 'Nur App-Admins dürfen ACP-Manager-Rollen zuweisen.';
+    }
+
+    return message || fallback;
   }
 }

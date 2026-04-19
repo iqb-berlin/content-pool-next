@@ -152,6 +152,21 @@ export class AcpService {
     return toRuntimeAcpIndex(saved.acpIndex);
   }
 
+  async deleteIndex(id: string): Promise<Record<string, unknown>> {
+    const acp = await this.findById(id);
+
+    // Reset to default ACP index shape from settings + ACP fallback fields.
+    let defaultIndex: Record<string, unknown> = {};
+    const settings = await this.settingsRepository.findOne({ where: {} });
+    if (settings?.defaultAcpIndex) {
+      defaultIndex = { ...settings.defaultAcpIndex };
+    }
+
+    acp.acpIndex = this.prepareIndexForSave(acp, {}, defaultIndex);
+    const saved = await this.acpRepository.save(acp);
+    return toRuntimeAcpIndex(saved.acpIndex);
+  }
+
   // Role management
   async assignRole(acpId: string, dto: AssignRoleDto): Promise<AcpUserRole> {
     await this.findById(acpId);

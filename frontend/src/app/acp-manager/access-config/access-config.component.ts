@@ -3,12 +3,15 @@ import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { AccessConfig, FeatureConfig, Credential } from '../../core/models/api.models';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 
 @Component({
   selector: 'app-access-config',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, AcpManagerContextComponent],
   template: `
+    <app-acp-manager-context />
+
     <div class="page-header"><h1>Zugriffskonfiguration</h1></div>
 
     <!-- Access Model -->

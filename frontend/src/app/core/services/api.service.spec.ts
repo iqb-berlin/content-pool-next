@@ -246,6 +246,16 @@ describe('ApiService', () => {
 
       expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/index/import', importData);
     });
+
+    it('should delete ACP index', () => {
+      httpClientMock.delete.mockReturnValue(of({}));
+
+      service.deleteAcpIndex('acp1').subscribe(result => {
+        expect(result).toEqual({});
+      });
+
+      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/index');
+    });
   });
 
   describe('ACP Roles', () => {

@@ -113,6 +113,14 @@ export class AcpController {
     return this.acpService.importIndex(id, index);
   }
 
+  @Delete(':id/index')
+  @UseGuards(RolesGuard)
+  @Roles('ACP_MANAGER')
+  @ApiOperation({ summary: 'Reset ACP-Index to defaults' })
+  async deleteIndex(@Param('id') id: string) {
+    return this.acpService.deleteIndex(id);
+  }
+
   @Get(':id/index/export')
   @UseGuards(RolesGuard)
   @Roles('ACP_MANAGER')

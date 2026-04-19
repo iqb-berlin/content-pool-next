@@ -11,3 +11,5 @@ export { AppSettings } from './app-settings.entity';
 export { ItemResponseState } from './item-response-state.entity';
 export { AcpItemPreference } from './acp-item-preference.entity';
 export { ServerApiAuditLog } from './server-api-audit-log.entity';
+export { AcpItemExplorerState, ItemExplorerDraftStatus } from './acp-item-explorer-state.entity';
+export { AcpItemExplorerChangeLog } from './acp-item-explorer-change-log.entity';

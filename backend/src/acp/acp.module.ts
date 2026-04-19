@@ -11,6 +11,7 @@ import {
   User,
 } from '../database/entities';
 import { AuthModule } from '../auth/auth.module';
+import { ItemExplorerModule } from '../item-explorer/item-explorer.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { AuthModule } from '../auth/auth.module';
       User,
     ]),
     AuthModule,
+    ItemExplorerModule,
   ],
   controllers: [AcpController],
   providers: [AcpService],

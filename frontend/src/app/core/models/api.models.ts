@@ -205,6 +205,48 @@ export interface ItemViewPreferences {
   tags?: Record<string, string[]>;
 }
 
+export interface ItemExplorerMetadataColumns {
+  visible?: string[];
+  order?: string[];
+}
+
+export interface ItemExplorerSharedState {
+  ui?: Record<string, unknown>;
+  tags?: Record<string, string[]>;
+  metadataColumns?: ItemExplorerMetadataColumns;
+  itemOrder?: string[];
+  itemProperties?: Record<string, Record<string, unknown>>;
+}
+
+export interface ItemExplorerStateEnvelope {
+  status: 'CLEAN' | 'DIRTY';
+  version: number;
+  publishedVersion: number;
+  canEdit: boolean;
+  canPublish: boolean;
+  updatedAt: string;
+  updatedByUsername?: string | null;
+  updatedByRole?: string | null;
+  activeState: ItemExplorerSharedState;
+  publishedState: ItemExplorerSharedState;
+  draftState: ItemExplorerSharedState;
+}
+
+export interface ItemExplorerChangeLogEntry {
+  id: string;
+  acpId: string;
+  changeType: string;
+  beforeState: Record<string, unknown>;
+  afterState: Record<string, unknown>;
+  diff: Record<string, unknown>;
+  draftVersion?: number | null;
+  publishedVersion?: number | null;
+  actorUserId?: string | null;
+  actorUsername?: string | null;
+  actorRole?: string | null;
+  createdAt: string;
+}
+
 export interface TaskSequence {
   id: string;
   name: any;

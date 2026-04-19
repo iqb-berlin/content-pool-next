@@ -17,6 +17,9 @@ import {
   FileUploadResponse,
   IndexSyncReport,
   ItemViewPreferences,
+  ItemExplorerStateEnvelope,
+  ItemExplorerChangeLogEntry,
+  ItemExplorerSharedState,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -200,15 +203,82 @@ export class ApiService {
     return `${this.API}/view/acp/${acpId}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
 
-  // Items
-  uploadEmpiricalDifficulties(acpId: string, file: File): Observable<{ updated: number, failed: any[], successes: any[] }> {
-    const formData = new FormData();
-    formData.append('file', file);
-    return this.http.post<{ updated: number, failed: any[], successes: any[] }>(`${this.API}/acp/${acpId}/items/upload-empirical-difficulty`, formData);
+  getItemExplorerState(acpId: string): Observable<ItemExplorerStateEnvelope> {
+    return this.http.get<ItemExplorerStateEnvelope>(`${this.API}/view/acp/${acpId}/item-explorer/state`);
   }
 
-  clearEmpiricalDifficulties(acpId: string): Observable<void> {
-    return this.http.delete<void>(`${this.API}/acp/${acpId}/items/empirical-difficulty`);
+  patchItemExplorerDraft(
+    acpId: string,
+    data: {
+      changeType: string;
+      patch: ItemExplorerSharedState | Record<string, unknown>;
+      baseVersion?: number;
+    },
+  ): Observable<ItemExplorerStateEnvelope> {
+    return this.http.patch<ItemExplorerStateEnvelope>(`${this.API}/acp/${acpId}/item-explorer/draft`, data);
+  }
+
+  saveItemExplorerDraft(
+    acpId: string,
+    baseVersion?: number,
+  ): Observable<ItemExplorerStateEnvelope> {
+    return this.http.post<ItemExplorerStateEnvelope>(`${this.API}/acp/${acpId}/item-explorer/draft/save`, {
+      baseVersion,
+    });
+  }
+
+  discardItemExplorerDraft(
+    acpId: string,
+    baseVersion?: number,
+  ): Observable<ItemExplorerStateEnvelope> {
+    return this.http.post<ItemExplorerStateEnvelope>(`${this.API}/acp/${acpId}/item-explorer/draft/discard`, {
+      baseVersion,
+    });
+  }
+
+  getItemExplorerChanges(acpId: string, limit = 100): Observable<ItemExplorerChangeLogEntry[]> {
+    return this.http.get<ItemExplorerChangeLogEntry[]>(
+      `${this.API}/acp/${acpId}/item-explorer/changes?limit=${encodeURIComponent(String(limit))}`,
+    );
+  }
+
+  // Items
+  uploadEmpiricalDifficulties(
+    acpId: string,
+    file: File,
+    options?: { draft?: boolean; baseVersion?: number },
+  ): Observable<{ updated: number, failed: any[], successes: any[], explorerState?: ItemExplorerStateEnvelope }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const query: string[] = [];
+    if (options?.draft) {
+      query.push('draft=true');
+    }
+    if (typeof options?.baseVersion === 'number') {
+      query.push(`baseVersion=${encodeURIComponent(String(options.baseVersion))}`);
+    }
+    const queryString = query.length ? `?${query.join('&')}` : '';
+    return this.http.post<{ updated: number, failed: any[], successes: any[], explorerState?: ItemExplorerStateEnvelope }>(
+      `${this.API}/acp/${acpId}/items/upload-empirical-difficulty${queryString}`,
+      formData,
+    );
+  }
+
+  clearEmpiricalDifficulties(
+    acpId: string,
+    options?: { draft?: boolean; baseVersion?: number },
+  ): Observable<{ success: boolean; explorerState?: ItemExplorerStateEnvelope }> {
+    const query: string[] = [];
+    if (options?.draft) {
+      query.push('draft=true');
+    }
+    if (typeof options?.baseVersion === 'number') {
+      query.push(`baseVersion=${encodeURIComponent(String(options.baseVersion))}`);
+    }
+    const queryString = query.length ? `?${query.join('&')}` : '';
+    return this.http.delete<{ success: boolean; explorerState?: ItemExplorerStateEnvelope }>(
+      `${this.API}/acp/${acpId}/items/empirical-difficulty${queryString}`,
+    );
   }
 
   getItemTags(acpId: string): Observable<Record<string, string[]>> {

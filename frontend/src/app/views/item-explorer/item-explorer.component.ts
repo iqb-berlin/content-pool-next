@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { Component, OnInit, OnDestroy, ViewChild, ElementRef, HostListener } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
@@ -9,6 +9,8 @@ import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
+import { firstValueFrom } from 'rxjs';
+import { ItemExplorerChangeLogEntry, ItemExplorerSharedState, ItemExplorerStateEnvelope } from '../../core/models/api.models';
 
 interface MetadataColumn {
   id: string;
@@ -33,6 +35,8 @@ interface MetadataSettings {
   order: string[];
 }
 
+type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
+
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
@@ -44,7 +48,7 @@ interface MetadataSettings {
       <h1>Item-Explorer</h1>
       <div class="header-actions">
         <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
-        @if (isAcpManager) {
+        @if (canEditExplorer) {
           <input type="file" #csvUploadInput style="display: none" accept=".csv" (change)="onCsvFileSelected($event)">
           <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
             📄 Item-Schwierigkeiten (CSV) hochladen
@@ -54,6 +58,39 @@ interface MetadataSettings {
           </button>
           <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
             👁️ Spalten verwalten
+          </button>
+          <button class="btn btn-outline btn-sm" (click)="enableManualOrderMode()" [class.btn-primary]="sortField === '__manual__'">
+            ↕️ Reihenfolge
+          </button>
+          <button class="btn btn-outline btn-sm" [disabled]="!selectedItem || sortField !== '__manual__'" (click)="moveSelectedItem(-1)">
+            ↑
+          </button>
+          <button class="btn btn-outline btn-sm" [disabled]="!selectedItem || sortField !== '__manual__'" (click)="moveSelectedItem(1)">
+            ↓
+          </button>
+          <button class="btn btn-outline btn-sm" (click)="showHistory()">
+            🕒 Änderungsverlauf
+          </button>
+        }
+      </div>
+    </div>
+
+    <div class="card explorer-status-bar">
+      <div class="status-main">
+        <strong>Status:</strong>
+        <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{ explorerStatusLabel }}</span>
+        <span class="status-meta">v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span>
+        @if (lastExplorerChangeInfo) {
+          <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
+        }
+      </div>
+      <div class="status-actions">
+        @if (canPublishExplorer) {
+          <button class="btn btn-primary btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="openSavePreviewDialog()">
+            💾 Speichern
+          </button>
+          <button class="btn btn-outline btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="discardExplorerDraft()">
+            ↩️ Verwerfen
           </button>
         }
       </div>
@@ -134,23 +171,25 @@ interface MetadataSettings {
                   @if (enableTags) {
                     <td class="tags-cell" (click)="$event.stopPropagation()">
                       @for (tag of (itemTags[item.uuid || (item.unitId + '_' + item.itemId)] || []); track tag) {
-                        <span class="badge badge-info tag-badge" (click)="removeItemTag(item.uuid, tag)">{{ tag }} ✕</span>
+                        <span class="badge badge-info tag-badge" (click)="removeItemTag(item.uuid, tag)">{{ tag }} @if (canEditExplorer) { ✕ }</span>
                       }
-                      <div class="tag-add-container">
-                        @if (availableTags.length > 0) {
-                          <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
-                            <option value="">+Tag</option>
-                            @for (tag of availableTags; track tag) {
-                              <option [value]="tag">{{ tag }}</option>
-                            }
-                          </select>
-                        }
-                        <input type="text"
-                               class="tag-input-inline"
-                               placeholder="Neu..."
-                               (keydown.enter)="addCustomTag(item.uuid, $event)"
-                               (blur)="addCustomTag(item.uuid, $event)">
-                      </div>
+                      @if (canEditExplorer) {
+                        <div class="tag-add-container">
+                          @if (availableTags.length > 0) {
+                            <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
+                              <option value="">+Tag</option>
+                              @for (tag of availableTags; track tag) {
+                                <option [value]="tag">{{ tag }}</option>
+                              }
+                            </select>
+                          }
+                          <input type="text"
+                                 class="tag-input-inline"
+                                 placeholder="Neu..."
+                                 (keydown.enter)="addCustomTag(item.uuid, $event)"
+                                 (blur)="addCustomTag(item.uuid, $event)">
+                        </div>
+                      }
                     </td>
                   }
                 </tr>
@@ -207,7 +246,7 @@ interface MetadataSettings {
             </select>
             <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
             <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
-            @if (isAcpManager) {
+            @if (canEditExplorer) {
               <button class="btn btn-outline btn-sm" (click)="saveCurrentResponseState()" title="Aktuellen Zustand speichern">💾 Zustand speichern</button>
               <button class="btn btn-outline btn-sm" (click)="resetResponseState()" title="Zustand zurücksetzen" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);">🗑️ Zustand löschen</button>
               <button class="btn btn-outline btn-sm" (click)="loadAllResponseStates()" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
@@ -643,6 +682,105 @@ interface MetadataSettings {
         </div>
       </div>
     }
+
+    <!-- OVERLAY: Explorer Change History -->
+    @if (showHistoryOverlay) {
+      <div class="overlay-backdrop" (click)="showHistoryOverlay = false">
+        <div class="overlay-dialog" style="max-width: 980px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background:var(--color-primary)">🕒</span>
+              <div>
+                <h2>Änderungsverlauf</h2>
+                <small>Wer hat wann was geändert</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="showHistoryOverlay = false">✕</button>
+          </div>
+          <div class="overlay-content">
+            <div class="column-manager-toolbar">
+              <input class="filter-input" [(ngModel)]="historyFilterUser" placeholder="Nach Nutzer filtern...">
+              <input class="filter-input" [(ngModel)]="historyFilterType" placeholder="Nach Aktion filtern...">
+              <input class="filter-input" type="date" [(ngModel)]="historyFilterFrom" title="Von Datum">
+              <input class="filter-input" type="date" [(ngModel)]="historyFilterTo" title="Bis Datum">
+              <button class="btn btn-outline btn-sm" (click)="showHistory()">Aktualisieren</button>
+              <button class="btn btn-outline btn-sm" [disabled]="filteredHistoryEntries.length === 0" (click)="exportHistoryCsv()">Export CSV</button>
+            </div>
+            @if (historyLoading) {
+              <div class="empty-state">
+                <div class="spinner"></div>
+                <p>Verlauf wird geladen...</p>
+              </div>
+            } @else if (historyError) {
+              <div class="empty-state">
+                <p>{{ historyError }}</p>
+              </div>
+            } @else if (filteredHistoryEntries.length === 0) {
+              <div class="empty-state">
+                <p>Keine Änderungen gefunden.</p>
+              </div>
+            } @else {
+              <div class="state-list">
+                @for (entry of filteredHistoryEntries; track entry.id) {
+                  <div class="state-item">
+                    <div class="state-header">
+                      <strong>{{ entry.changeType }}</strong>
+                      <span class="unit-badge">{{ entry.actorRole || 'unbekannt' }}</span>
+                      <span>{{ entry.actorUsername || 'unbekannt' }}</span>
+                      <span class="date">{{ entry.createdAt | date:'short' }}</span>
+                    </div>
+                    <pre class="json-view">{{ entry.diff | json }}</pre>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- OVERLAY: Save Draft Preview -->
+    @if (showSavePreviewDialog) {
+      <div class="overlay-backdrop" (click)="cancelSavePreviewDialog()">
+        <div class="overlay-dialog" style="max-width: 700px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header">
+            <div class="drawer-title">
+              <span class="drawer-icon" style="background:var(--color-primary)">📝</span>
+              <div>
+                <h2>Änderungsübersicht vor Speichern</h2>
+                <small>Diese Änderungen werden veröffentlicht</small>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-outline" (click)="cancelSavePreviewDialog()">✕</button>
+          </div>
+          <div class="overlay-content">
+            @if (draftPreviewSummary.length === 0) {
+              <div class="empty-state">
+                <p>Keine Unterschiede zum veröffentlichten Stand gefunden.</p>
+              </div>
+            } @else {
+              <div class="state-list">
+                @for (entry of draftPreviewSummary; track entry.label) {
+                  <div class="state-item">
+                    <div class="state-header">
+                      <strong>{{ entry.label }}</strong>
+                    </div>
+                    <p>{{ entry.detail }}</p>
+                  </div>
+                }
+              </div>
+            }
+            <div class="column-manager-footer" style="margin-top: 20px;">
+              <span class="selection-info">Draft v{{ explorerVersion }} → Publish v{{ explorerPublishedVersion + 1 }}</span>
+              <div class="footer-actions">
+                <button class="btn btn-outline" (click)="cancelSavePreviewDialog()">Abbrechen</button>
+                <button class="btn btn-primary" (click)="confirmSaveExplorerDraft()">Veröffentlichen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     :host {
@@ -665,6 +803,63 @@ interface MetadataSettings {
       display: flex; align-items: center; gap: 16px;
     }
     .item-count { font-size: 0.85rem; color: var(--color-text-secondary); }
+    .explorer-status-bar {
+      margin-bottom: 12px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .status-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      font-size: 0.85rem;
+    }
+    .status-meta {
+      color: var(--color-text-secondary);
+      font-size: 0.8rem;
+    }
+    .status-pill {
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+    .status-clean {
+      color: #1e8449;
+      background: rgba(39, 174, 96, 0.12);
+      border-color: rgba(39, 174, 96, 0.4);
+    }
+    .status-saved {
+      color: #117a65;
+      background: rgba(26, 188, 156, 0.18);
+      border-color: rgba(26, 188, 156, 0.45);
+    }
+    .status-dirty {
+      color: #b9770e;
+      background: rgba(241, 196, 15, 0.2);
+      border-color: rgba(241, 196, 15, 0.5);
+    }
+    .status-saving {
+      color: #1f618d;
+      background: rgba(52, 152, 219, 0.2);
+      border-color: rgba(52, 152, 219, 0.5);
+    }
+    .status-error {
+      color: #922b21;
+      background: rgba(231, 76, 60, 0.18);
+      border-color: rgba(231, 76, 60, 0.45);
+    }
+    .status-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
     /* Table panel */
     .table-panel {
@@ -1231,11 +1426,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   persistUserPreferences = false;
   useServerPreferences = false;
 
-  private readonly preferenceViewId = 'item-explorer';
-  private readonly serverPreferenceDebounceMs = 250;
-  private pendingServerUiPreferences: Record<string, unknown> = {};
-  private pendingServerTagPreferences: Record<string, string[]> = {};
-  private serverSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly draftPatchDebounceMs = 250;
+  private draftPatchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private pendingDraftPatch: Record<string, unknown> | null = null;
+  private pendingDraftChangeType = 'UI_UPDATE';
+  private suppressDraftPatch = false;
+  private saveStatusResetTimeout: ReturnType<typeof setTimeout> | null = null;
   private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   // File Upload
@@ -1247,10 +1443,34 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // Metadata column management
   isAcpManager = false;
+  canEditExplorer = false;
+  canPublishExplorer = false;
   showColumnManager = false;
   allColumns: MetadataColumn[] = [];
   metadataSettings: MetadataSettings = { visible: [], order: [] };
   columnFilterText = '';
+  itemOrder: string[] = [];
+
+  // Shared draft state
+  explorerUiStatus: ExplorerUiStatus = 'CLEAN';
+  explorerVersion = 1;
+  explorerPublishedVersion = 1;
+  lastExplorerChangeInfo = '';
+  latestExplorerState: ItemExplorerStateEnvelope | null = null;
+
+  // History
+  showHistoryOverlay = false;
+  historyLoading = false;
+  historyError = '';
+  historyEntries: ItemExplorerChangeLogEntry[] = [];
+  historyFilterUser = '';
+  historyFilterType = '';
+  historyFilterFrom = '';
+  historyFilterTo = '';
+
+  // Save preview
+  showSavePreviewDialog = false;
+  draftPreviewSummary: Array<{ label: string; detail: string }> = [];
 
   // Coding scheme display filtering
   codingSearchText = '';
@@ -1334,11 +1554,44 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
+  get explorerStatusLabel(): string {
+    switch (this.explorerUiStatus) {
+      case 'DIRTY':
+        return 'Ungespeichert';
+      case 'SAVING':
+        return 'Speichern läuft';
+      case 'SAVED':
+        return 'Gespeichert';
+      case 'ERROR':
+        return 'Fehler';
+      default:
+        return 'Unverändert';
+    }
+  }
+
+  get filteredHistoryEntries(): ItemExplorerChangeLogEntry[] {
+    const userNeedle = this.historyFilterUser.trim().toLowerCase();
+    const typeNeedle = this.historyFilterType.trim().toLowerCase();
+    const fromDate = this.historyFilterFrom ? new Date(`${this.historyFilterFrom}T00:00:00`) : null;
+    const toDate = this.historyFilterTo ? new Date(`${this.historyFilterTo}T23:59:59.999`) : null;
+    return this.historyEntries.filter((entry) => {
+      const user = (entry.actorUsername || '').toLowerCase();
+      const type = (entry.changeType || '').toLowerCase();
+      const matchesUser = !userNeedle || user.includes(userNeedle);
+      const matchesType = !typeNeedle || type.includes(typeNeedle);
+      const entryDate = new Date(entry.createdAt);
+      const matchesFrom = !fromDate || entryDate >= fromDate;
+      const matchesTo = !toDate || entryDate <= toDate;
+      return matchesUser && matchesType && matchesFrom && matchesTo;
+    });
+  }
+
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
 
   constructor(
     private route: ActivatedRoute,
+    private router: Router,
     private api: ApiService,
     public sanitizer: DomSanitizer,
     private voudService: VoudService,
@@ -1363,12 +1616,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
-      this.persistUserPreferences = !!fc.persistUserPreferences;
-      this.useServerPreferences = this.persistUserPreferences && this.authService.isLoggedIn;
+      // Explorer uses ACP-shared draft/published state instead of per-user preferences.
+      this.persistUserPreferences = false;
+      this.useServerPreferences = false;
       
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
-      this.loadPreferences();
+      this.loadSharedExplorerState();
     });
 
     this.reloadItems();
@@ -1382,13 +1636,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.items = result.items || [];
       this.hydrateItemTagsFromItems();
+      this.applyExplorerStateToItems();
       this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
       this.filteredItems = [...this.items];
       this.unitMetadataCache = result.unitMetadata || {};
       this.codingSchemeCache = result.codingSchemes || {};
-      if (this.enableTags) {
-        this.loadPersistedTags();
-      }
       this.applyFilter(false); // re-apply current filters and sort
     });
   }
@@ -1397,10 +1649,30 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
     this.clearFocusRetryTimer();
-    if (this.serverSaveTimeout) {
-      clearTimeout(this.serverSaveTimeout);
-      this.serverSaveTimeout = null;
+    if (this.draftPatchTimeout) {
+      clearTimeout(this.draftPatchTimeout);
+      this.draftPatchTimeout = null;
     }
+    if (this.saveStatusResetTimeout) {
+      clearTimeout(this.saveStatusResetTimeout);
+      this.saveStatusResetTimeout = null;
+    }
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  handleBeforeUnload(event: BeforeUnloadEvent) {
+    if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
+      return;
+    }
+    event.preventDefault();
+    event.returnValue = true;
+  }
+
+  canDeactivate(): boolean | Promise<boolean> {
+    if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
+      return true;
+    }
+    return this.confirmLeaveWithUnsavedChanges();
   }
 
   // --- Filtering ---
@@ -1475,6 +1747,20 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private applySort(shouldPersist = true) {
+    if (this.sortField === '__manual__') {
+      const rank = new Map<string, number>();
+      this.itemOrder.forEach((entry, idx) => rank.set(entry, idx));
+      this.filteredItems.sort((a, b) => {
+        const posA = rank.has(a.uuid) ? (rank.get(a.uuid) as number) : Number.MAX_SAFE_INTEGER;
+        const posB = rank.has(b.uuid) ? (rank.get(b.uuid) as number) : Number.MAX_SAFE_INTEGER;
+        return posA - posB;
+      });
+      if (shouldPersist) {
+        this.saveUiPreferences();
+      }
+      return;
+    }
+
     this.filteredItems.sort((a, b) => {
       let aVal: any = '';
       let bVal: any = '';
@@ -1513,17 +1799,28 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const file = input.files[0];
 
     this.isUploading = true;
-    this.api.uploadEmpiricalDifficulties(this.acpId, file).subscribe({
+    this.api.uploadEmpiricalDifficulties(this.acpId, file, {
+      draft: true,
+      baseVersion: this.explorerVersion,
+    }).subscribe({
       next: (result) => {
         this.isUploading = false;
         this.uploadResult = result;
         this.showUploadReport = true;
-        // The list will reload when they close the dialog (handled in template)
+        if (result.explorerState) {
+          this.applySharedExplorerEnvelope(result.explorerState, true);
+        }
+        this.reloadItems();
       },
       error: (err) => {
         console.error(err);
         this.isUploading = false;
-        this.errorMessage = err.error?.message || 'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
+        if (err?.status === 409) {
+          this.errorMessage = 'Konflikt beim Speichern des Entwurfs. Bitte neu laden.';
+          this.loadSharedExplorerState();
+        } else {
+          this.errorMessage = err.error?.message || 'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
+        }
         this.showErrorDialog = true;
       }
     });
@@ -1533,12 +1830,23 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   clearEmpiricalDifficulties() {
     if (confirm('Bist du sicher, dass du alle empirischen Itemschwierigkeiten für diesen ACP löschen möchtest? Dies betrifft alle Items.')) {
-      this.api.clearEmpiricalDifficulties(this.acpId).subscribe({
-        next: () => {
+      this.api.clearEmpiricalDifficulties(this.acpId, {
+        draft: true,
+        baseVersion: this.explorerVersion,
+      }).subscribe({
+        next: (result) => {
+          if (result.explorerState) {
+            this.applySharedExplorerEnvelope(result.explorerState, true);
+          }
           this.reloadItems();
         },
         error: (err) => {
           console.error(err);
+          if (err?.status === 409) {
+            alert('Konflikt beim Speichern des Entwurfs. Bitte neu laden.');
+            this.loadSharedExplorerState();
+            return;
+          }
           alert('Fehler beim Löschen der Itemschwierigkeiten.');
         }
       });
@@ -2049,6 +2357,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Tags ---
   addItemTag(uuid: string, event: Event) {
+    if (!this.canEditExplorer) return;
     const tag = (event.target as HTMLSelectElement).value;
     if (!tag) return;
     if (!this.itemTags[uuid]) this.itemTags[uuid] = [];
@@ -2061,6 +2370,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   removeItemTag(uuid: string, tag: string) {
+    if (!this.canEditExplorer) return;
     if (this.itemTags[uuid]) {
       this.itemTags[uuid] = this.itemTags[uuid].filter(t => t !== tag);
       this.saveTags();
@@ -2069,6 +2379,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   addCustomTag(uuid: string, event: any) {
+    if (!this.canEditExplorer) return;
     const input = event.target as HTMLInputElement;
     const tag = input.value.trim();
     if (!tag) return;
@@ -2084,47 +2395,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private saveTags() {
     const normalizedTags = this.normalizeTags(this.itemTags);
     this.itemTags = normalizedTags;
-
-    if (!this.persistUserPreferences) {
+    if (!this.canEditExplorer) {
       return;
     }
-
-    if (this.useServerPreferences) {
-      this.pendingServerTagPreferences = normalizedTags;
-      this.scheduleServerPreferenceSave();
-      return;
-    }
-
-    localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(normalizedTags));
+    this.queueDraftPatch('TAGS_CHANGED', { tags: normalizedTags });
   }
 
   private loadPersistedTags() {
-    if (!this.persistUserPreferences) {
-      this.applyFilter(false);
-      return;
-    }
-
-    if (this.useServerPreferences) {
-      this.api.getViewItemPreferences(this.acpId, this.preferenceViewId).subscribe({
-        next: (preferences) => {
-          this.itemTags = this.normalizeTags(preferences?.tags);
-          this.pendingServerTagPreferences = this.normalizeTags(this.itemTags);
-          this.applyFilter(false);
-        },
-        error: (err) => {
-          console.error('Failed to load persisted item tags from server', err);
-          this.itemTags = {};
-          this.applyFilter(false);
-        },
-      });
-      return;
-    }
-
-    const raw = localStorage.getItem(this.getTagPreferencesKey());
-    if (raw) {
-      this.itemTags = this.normalizeTags(this.parseJsonObject(raw));
-    }
-
+    // Explorer uses shared ACP state; tags are loaded through loadSharedExplorerState().
     this.applyFilter(false);
   }
 
@@ -2218,14 +2496,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Metadata Column Management ---
   checkUserRole() {
-    // Use AuthService to properly check ACP Manager role
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
-    
-    console.log('Role check result:', {
-      acpId: this.acpId,
-      isAcpManager: this.isAcpManager,
-      currentUser: this.authService.currentUser
-    });
+    this.canEditExplorer = this.isAcpManager || this.authService.isAdmin;
+    this.canPublishExplorer = this.canEditExplorer;
   }
 
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
@@ -2290,50 +2563,45 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
   }
 
-  saveMetadataSettings() {
-    console.log('Saving metadata settings:', {
-      acpId: this.acpId,
-      visibleColumns: this.metadataSettings.visible,
-      columnOrder: this.metadataSettings.order,
-      currentUser: this.authService.currentUser
-    });
+  enableManualOrderMode() {
+    this.sortField = '__manual__';
+    this.sortIsMeta = false;
+    this.sortDir = 'asc';
+    if (!this.itemOrder.length) {
+      this.itemOrder = this.items.map((item) => item.uuid);
+    }
+    this.applySort();
+  }
 
-    this.api.updateMetadataColumns(this.acpId, {
-      visibleColumns: this.metadataSettings.visible,
-      columnOrder: this.metadataSettings.order
-    }).subscribe({
-      next: (response) => {
-        console.log('Save successful!', response);
-        this.showColumnManager = false;
-        // Refresh to get updated settings
-        this.api.getAcpStartPage(this.acpId).subscribe(data => {
-          this.metadataSettings = this.resolveMetadataSettings(data?.featureConfig || {});
-          console.log('Refreshed settings:', this.metadataSettings);
-        });
+  moveSelectedItem(delta: number) {
+    if (!this.canEditExplorer || !this.selectedItem || this.sortField !== '__manual__') {
+      return;
+    }
+    if (!this.itemOrder.length) {
+      this.itemOrder = this.items.map((item) => item.uuid);
+    }
+    const currentIndex = this.itemOrder.indexOf(this.selectedItem.uuid);
+    if (currentIndex === -1) {
+      return;
+    }
+    const targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= this.itemOrder.length) {
+      return;
+    }
+    [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [this.itemOrder[targetIndex], this.itemOrder[currentIndex]];
+    this.applySort(false);
+    this.queueDraftPatch('ITEM_ORDER_CHANGED', { itemOrder: [...this.itemOrder] }, true);
+  }
+
+  saveMetadataSettings() {
+    this.columns = this.filterVisibleColumns(this.allColumns);
+    this.showColumnManager = false;
+    this.queueDraftPatch('METADATA_COLUMNS_CHANGED', {
+      metadataColumns: {
+        visible: [...this.metadataSettings.visible],
+        order: [...this.metadataSettings.order],
       },
-      error: (error) => {
-        console.error('Save failed with error:', {
-          status: error.status,
-          statusText: error.statusText,
-          message: error.message,
-          errorDetails: error.error,
-          url: error.url
-        });
-        
-        let errorMessage = 'Fehler beim Speichern: ';
-        if (error.status === 403) {
-          errorMessage += 'Zugang verweigert - Sie haben keine Berechtigung für diese Aktion.';
-        } else if (error.status === 401) {
-          errorMessage += 'Nicht autorisiert - Bitte melden Sie sich an.';
-        } else if (error.error?.message) {
-          errorMessage += error.error.message;
-        } else {
-          errorMessage += error.message || JSON.stringify(error);
-        }
-        
-        alert(errorMessage);
-      }
-    });
+    }, true);
   }
 
   resetToDefault() {
@@ -2363,99 +2631,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       : [];
 
     return { visible: legacy, order: legacy };
-  }
-
-  private getUiPreferencesKey(): string {
-    const userId = this.authService.currentUser?.id || 'anonymous';
-    return `cp:item-explorer:prefs:${this.acpId}:${userId}`;
-  }
-
-  private getTagPreferencesKey(): string {
-    const userId = this.authService.currentUser?.id || 'anonymous';
-    return `cp:item-explorer:tags:${this.acpId}:${userId}`;
-  }
-
-  private loadUiPreferences() {
-    const raw = localStorage.getItem(this.getUiPreferencesKey());
-    if (!raw) return;
-
-    this.applyUiPreferences(this.parseJsonObject(raw));
-  }
-
-  private saveUiPreferences() {
-    if (!this.persistUserPreferences) {
-      return;
-    }
-
-    const ui = this.buildUiPreferences();
-    if (this.useServerPreferences) {
-      this.pendingServerUiPreferences = ui;
-      this.scheduleServerPreferenceSave();
-      return;
-    }
-
-    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(ui));
-  }
-
-  private loadPreferences() {
-    if (!this.persistUserPreferences) {
-      return;
-    }
-
-    if (this.useServerPreferences) {
-      this.api.getViewItemPreferences(this.acpId, this.preferenceViewId).subscribe({
-        next: (preferences) => {
-          this.applyUiPreferences(preferences?.ui);
-          this.itemTags = this.normalizeTags(preferences?.tags);
-          this.pendingServerUiPreferences = this.buildUiPreferences();
-          this.pendingServerTagPreferences = this.normalizeTags(this.itemTags);
-          this.applyFilter(false);
-        },
-        error: () => {
-          this.loadUiPreferences();
-          if (this.enableTags) {
-            this.loadPersistedTags();
-          }
-          this.applyFilter(false);
-        },
-      });
-      return;
-    }
-
-    this.loadUiPreferences();
-    if (this.enableTags) {
-      this.loadPersistedTags();
-    }
-    this.applyFilter(false);
-  }
-
-  private scheduleServerPreferenceSave() {
-    if (this.serverSaveTimeout) {
-      clearTimeout(this.serverSaveTimeout);
-    }
-
-    this.serverSaveTimeout = setTimeout(() => {
-      this.serverSaveTimeout = null;
-      this.api.saveViewItemPreferences(
-        this.acpId,
-        {
-          ui: this.pendingServerUiPreferences,
-          tags: this.pendingServerTagPreferences,
-        },
-        this.preferenceViewId,
-      ).subscribe({
-        next: (savedPreferences) => {
-          this.pendingServerUiPreferences = this.isRecord(savedPreferences?.ui)
-            ? savedPreferences.ui
-            : this.pendingServerUiPreferences;
-          this.pendingServerTagPreferences = this.normalizeTags(savedPreferences?.tags);
-          this.itemTags = this.pendingServerTagPreferences;
-        },
-        error: (err) => {
-          console.error('Failed to persist item explorer preferences', err);
-        },
-      });
-    }, this.serverPreferenceDebounceMs);
   }
 
   private buildUiPreferences(): Record<string, unknown> {
@@ -2498,12 +2673,469 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       : {};
   }
 
-  private parseJsonObject(raw: string): Record<string, unknown> {
+  private saveUiPreferences() {
+    if (!this.canEditExplorer || this.suppressDraftPatch) {
+      return;
+    }
+    this.queueDraftPatch('UI_STATE_CHANGED', {
+      ui: this.buildUiPreferences(),
+    });
+  }
+
+  private async confirmLeaveWithUnsavedChanges(): Promise<boolean> {
+    const saveFirst = window.confirm(
+      'Es gibt ungespeicherte Explorer-Änderungen.\n\nOK: Speichern\nAbbrechen: weitere Optionen',
+    );
+    if (saveFirst) {
+      return this.saveExplorerDraft(true);
+    }
+
+    const discard = window.confirm(
+      'Änderungen nicht speichern.\n\nOK: Verwerfen\nAbbrechen: Auf der Seite bleiben',
+    );
+    if (!discard) {
+      return false;
+    }
+
+    return this.discardExplorerDraft(true);
+  }
+
+  private async loadSharedExplorerState(): Promise<void> {
     try {
-      const parsed = JSON.parse(raw);
-      return this.isRecord(parsed) ? parsed : {};
-    } catch {
-      return {};
+      const envelope = await firstValueFrom(this.api.getItemExplorerState(this.acpId));
+      this.applySharedExplorerEnvelope(envelope);
+    } catch (error) {
+      console.error('Failed to load shared explorer state', error);
+      this.explorerUiStatus = 'ERROR';
+    }
+  }
+
+  private applySharedExplorerEnvelope(
+    envelope: ItemExplorerStateEnvelope,
+    markSaved = false,
+  ) {
+    this.latestExplorerState = envelope;
+    this.explorerVersion = envelope.version;
+    this.explorerPublishedVersion = envelope.publishedVersion;
+    this.canEditExplorer = envelope.canEdit;
+    this.canPublishExplorer = envelope.canPublish;
+
+    const roleLabel = envelope.updatedByRole ? ` (${envelope.updatedByRole})` : '';
+    const username = envelope.updatedByUsername || 'unbekannt';
+    this.lastExplorerChangeInfo = `${username}${roleLabel} · ${new Date(envelope.updatedAt).toLocaleString()}`;
+
+    const activeState = this.isRecord(envelope.activeState) ? envelope.activeState : {};
+    this.suppressDraftPatch = true;
+    try {
+      this.applyUiPreferences((activeState as ItemExplorerSharedState).ui);
+      this.itemTags = this.normalizeTags((activeState as ItemExplorerSharedState).tags);
+      this.metadataSettings = this.resolveMetadataSettings({
+        metadataColumns: (activeState as ItemExplorerSharedState).metadataColumns,
+      });
+      this.columns = this.filterVisibleColumns(this.allColumns);
+      this.itemOrder = Array.isArray((activeState as ItemExplorerSharedState).itemOrder)
+        ? (activeState as ItemExplorerSharedState).itemOrder!
+          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : [];
+    } finally {
+      this.suppressDraftPatch = false;
+    }
+
+    this.applyExplorerStateToItems();
+
+    if (envelope.status === 'DIRTY') {
+      this.explorerUiStatus = 'DIRTY';
+      return;
+    }
+    if (markSaved) {
+      this.explorerUiStatus = 'SAVED';
+      if (this.saveStatusResetTimeout) {
+        clearTimeout(this.saveStatusResetTimeout);
+      }
+      this.saveStatusResetTimeout = setTimeout(() => {
+        this.saveStatusResetTimeout = null;
+        if (!this.hasPendingDraftChanges()) {
+          this.explorerUiStatus = 'CLEAN';
+        }
+      }, 1800);
+      return;
+    }
+    this.explorerUiStatus = 'CLEAN';
+  }
+
+  private applyExplorerStateToItems() {
+    const activeState = this.latestExplorerState?.activeState;
+    if (!activeState || this.items.length === 0) {
+      return;
+    }
+
+    const itemProperties = this.isRecord(activeState.itemProperties)
+      ? activeState.itemProperties as Record<string, Record<string, unknown>>
+      : {};
+    const stateTags = this.normalizeTags(activeState.tags);
+
+    for (const item of this.items) {
+      const keys = this.getItemStateKeys(item);
+      const itemProps = this.getItemPropsForKeys(itemProperties, keys);
+
+      const empiricalDifficultyRaw = itemProps?.['empiricalDifficulty'];
+      if (empiricalDifficultyRaw === undefined || empiricalDifficultyRaw === null) {
+        delete item.empiricalDifficulty;
+      } else {
+        const parsed = Number(empiricalDifficultyRaw);
+        if (Number.isFinite(parsed)) {
+          item.empiricalDifficulty = parsed;
+        } else {
+          delete item.empiricalDifficulty;
+        }
+      }
+
+      const tagsFromState = this.getTagsForKeys(stateTags, keys);
+      if (tagsFromState.length) {
+        item.tags = tagsFromState;
+      } else if (Array.isArray(itemProps?.['tags'])) {
+        item.tags = this.normalizeTagValues(itemProps['tags']);
+      } else if (!Array.isArray(item.tags)) {
+        item.tags = [];
+      }
+    }
+
+    this.hydrateItemTagsFromItems();
+    if (Object.keys(stateTags).length) {
+      this.itemTags = stateTags;
+    }
+
+    if (!this.itemOrder.length) {
+      this.itemOrder = this.items.map((item) => item.uuid);
+    } else {
+      const existing = new Set(this.items.map((item) => item.uuid));
+      const filteredOrder = this.itemOrder.filter((entry) => existing.has(entry));
+      const missing = this.items
+        .map((item) => item.uuid)
+        .filter((entry) => !filteredOrder.includes(entry));
+      this.itemOrder = [...filteredOrder, ...missing];
+    }
+
+    this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
+    this.applyFilter(false);
+  }
+
+  private getItemStateKeys(item: ExplorerItem): string[] {
+    const keys = new Set<string>();
+    const resolvedItemId = item.itemId?.startsWith(`${item.unitId}_`)
+      ? item.itemId
+      : `${item.unitId}_${item.itemId}`;
+
+    for (const candidate of [item.uuid, resolvedItemId, item.itemId]) {
+      const key = String(candidate || '').trim();
+      if (key) {
+        keys.add(key);
+      }
+    }
+    return Array.from(keys);
+  }
+
+  private getItemPropsForKeys(
+    itemProperties: Record<string, Record<string, unknown>>,
+    keys: string[],
+  ): Record<string, unknown> | null {
+    for (const key of keys) {
+      if (this.isRecord(itemProperties[key])) {
+        return itemProperties[key];
+      }
+    }
+    return null;
+  }
+
+  private getTagsForKeys(tagsMap: Record<string, string[]>, keys: string[]): string[] {
+    for (const key of keys) {
+      const tags = tagsMap[key];
+      if (Array.isArray(tags) && tags.length) {
+        return this.normalizeTagValues(tags);
+      }
+    }
+    return [];
+  }
+
+  private normalizeTagValues(values: unknown[]): string[] {
+    return Array.from(new Set(
+      values
+        .map((value) => String(value || '').trim())
+        .filter((value) => value.length > 0),
+    ));
+  }
+
+  hasPendingDraftChanges(): boolean {
+    return Boolean(this.pendingDraftPatch)
+      || this.latestExplorerState?.status === 'DIRTY'
+      || this.explorerUiStatus === 'DIRTY';
+  }
+
+  openSavePreviewDialog() {
+    if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
+      return;
+    }
+    this.draftPreviewSummary = this.buildDraftPreviewSummary();
+    this.showSavePreviewDialog = true;
+  }
+
+  cancelSavePreviewDialog() {
+    this.showSavePreviewDialog = false;
+  }
+
+  confirmSaveExplorerDraft() {
+    this.showSavePreviewDialog = false;
+    void this.saveExplorerDraft(true);
+  }
+
+  async saveExplorerDraft(force = false): Promise<boolean> {
+    if (!this.canPublishExplorer) {
+      return false;
+    }
+    if (!force) {
+      this.openSavePreviewDialog();
+      return false;
+    }
+
+    const flushed = await this.flushDraftPatch();
+    if (!flushed) {
+      return false;
+    }
+
+    this.explorerUiStatus = 'SAVING';
+    try {
+      const envelope = await firstValueFrom(
+        this.api.saveItemExplorerDraft(this.acpId, this.explorerVersion),
+      );
+      this.applySharedExplorerEnvelope(envelope, true);
+      this.reloadItems();
+      return true;
+    } catch (error: any) {
+      console.error('Failed to save draft', error);
+      this.explorerUiStatus = 'ERROR';
+      if (error?.status === 409) {
+        alert('Konflikt beim Speichern. Der Explorer wurde zwischenzeitlich geändert.');
+        await this.loadSharedExplorerState();
+      }
+      return false;
+    }
+  }
+
+  async discardExplorerDraft(skipConfirm = false): Promise<boolean> {
+    if (!this.canPublishExplorer) {
+      return false;
+    }
+    if (!skipConfirm) {
+      const confirmed = window.confirm('Entwurfsänderungen verwerfen?');
+      if (!confirmed) {
+        return false;
+      }
+    }
+
+    if (this.draftPatchTimeout) {
+      clearTimeout(this.draftPatchTimeout);
+      this.draftPatchTimeout = null;
+    }
+    this.pendingDraftPatch = null;
+    this.pendingDraftChangeType = 'UI_UPDATE';
+    this.showSavePreviewDialog = false;
+
+    this.explorerUiStatus = 'SAVING';
+    try {
+      const envelope = await firstValueFrom(
+        this.api.discardItemExplorerDraft(this.acpId, this.explorerVersion),
+      );
+      this.applySharedExplorerEnvelope(envelope, true);
+      this.reloadItems();
+      return true;
+    } catch (error: any) {
+      console.error('Failed to discard draft', error);
+      this.explorerUiStatus = 'ERROR';
+      if (error?.status === 409) {
+        alert('Konflikt beim Verwerfen. Bitte Status neu laden.');
+        await this.loadSharedExplorerState();
+      }
+      return false;
+    }
+  }
+
+  showHistory() {
+    this.showHistoryOverlay = true;
+    this.historyLoading = true;
+    this.historyError = '';
+    this.api.getItemExplorerChanges(this.acpId, 300).subscribe({
+      next: (entries) => {
+        this.historyEntries = entries || [];
+        this.historyLoading = false;
+      },
+      error: (error) => {
+        console.error('Failed to load history', error);
+        this.historyLoading = false;
+        this.historyError = 'Änderungsverlauf konnte nicht geladen werden.';
+      },
+    });
+  }
+
+  exportHistoryCsv() {
+    if (!this.filteredHistoryEntries.length) {
+      return;
+    }
+
+    const escapeCsv = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = [
+      ['Zeit', 'Nutzer', 'Rolle', 'Aktion', 'Draft-Version', 'Published-Version', 'Diff'],
+      ...this.filteredHistoryEntries.map((entry) => ([
+        new Date(entry.createdAt).toISOString(),
+        entry.actorUsername || '',
+        entry.actorRole || '',
+        entry.changeType || '',
+        entry.draftVersion ?? '',
+        entry.publishedVersion ?? '',
+        JSON.stringify(entry.diff || {}),
+      ])),
+    ];
+
+    const content = rows
+      .map((row) => row.map((cell) => escapeCsv(cell)).join(';'))
+      .join('\n');
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `item-explorer-history-${this.acpId}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
+
+  private buildDraftPreviewSummary(): Array<{ label: string; detail: string }> {
+    const draft = this.latestExplorerState?.draftState;
+    const published = this.latestExplorerState?.publishedState;
+    if (!draft || !published) {
+      return [];
+    }
+
+    const summary: Array<{ label: string; detail: string }> = [];
+
+    if (JSON.stringify(draft.ui || {}) !== JSON.stringify(published.ui || {})) {
+      summary.push({
+        label: 'Filter/Sortierung',
+        detail: 'Globale Filter-, Sortier- oder Spaltenfilter-Einstellungen wurden geändert.',
+      });
+    }
+    if (JSON.stringify(draft.metadataColumns || {}) !== JSON.stringify(published.metadataColumns || {})) {
+      summary.push({
+        label: 'Metadaten-Spalten',
+        detail: 'Sichtbarkeit oder Reihenfolge der Metadaten-Spalten wurde angepasst.',
+      });
+    }
+    if (JSON.stringify(draft.itemOrder || []) !== JSON.stringify(published.itemOrder || [])) {
+      summary.push({
+        label: 'Item-Reihenfolge',
+        detail: `Manuelle Reihenfolge mit ${Array.isArray(draft.itemOrder) ? draft.itemOrder.length : 0} Positionen wurde geändert.`,
+      });
+    }
+    if (JSON.stringify(draft.tags || {}) !== JSON.stringify(published.tags || {})) {
+      summary.push({
+        label: 'Tags',
+        detail: 'Tag-Zuordnungen für Items wurden verändert.',
+      });
+    }
+    if (JSON.stringify(draft.itemProperties || {}) !== JSON.stringify(published.itemProperties || {})) {
+      const draftCount = this.isRecord(draft.itemProperties) ? Object.keys(draft.itemProperties).length : 0;
+      const publishedCount = this.isRecord(published.itemProperties) ? Object.keys(published.itemProperties).length : 0;
+      summary.push({
+        label: 'Item-Werte',
+        detail: `Item-Eigenschaften (z.B. empirische Schwierigkeit) geändert: ${publishedCount} → ${draftCount} Einträge.`,
+      });
+    }
+
+    return summary;
+  }
+
+  private queueDraftPatch(
+    changeType: string,
+    patch: Record<string, unknown>,
+    flushImmediately = false,
+  ) {
+    if (!this.canEditExplorer || this.suppressDraftPatch) {
+      return;
+    }
+
+    this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
+    this.pendingDraftChangeType = changeType;
+    this.explorerUiStatus = 'DIRTY';
+
+    if (this.draftPatchTimeout) {
+      clearTimeout(this.draftPatchTimeout);
+      this.draftPatchTimeout = null;
+    }
+
+    if (flushImmediately) {
+      void this.flushDraftPatch();
+      return;
+    }
+
+    this.draftPatchTimeout = setTimeout(() => {
+      this.draftPatchTimeout = null;
+      void this.flushDraftPatch();
+    }, this.draftPatchDebounceMs);
+  }
+
+  private mergeDraftPatches(
+    current: Record<string, unknown> | null,
+    incoming: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = { ...(current || {}) };
+    for (const [key, value] of Object.entries(incoming || {})) {
+      if (key === 'ui' && this.isRecord(value) && this.isRecord(merged['ui'])) {
+        merged['ui'] = {
+          ...merged['ui'],
+          ...value,
+        };
+      } else {
+        merged[key] = value;
+      }
+    }
+    return merged;
+  }
+
+  private async flushDraftPatch(): Promise<boolean> {
+    if (!this.canEditExplorer || !this.pendingDraftPatch) {
+      return true;
+    }
+
+    if (this.draftPatchTimeout) {
+      clearTimeout(this.draftPatchTimeout);
+      this.draftPatchTimeout = null;
+    }
+
+    const patch = this.pendingDraftPatch;
+    const changeType = this.pendingDraftChangeType;
+    this.pendingDraftPatch = null;
+    this.pendingDraftChangeType = 'UI_UPDATE';
+
+    this.explorerUiStatus = 'SAVING';
+    try {
+      const envelope = await firstValueFrom(this.api.patchItemExplorerDraft(this.acpId, {
+        changeType,
+        patch: patch as ItemExplorerSharedState,
+        baseVersion: this.explorerVersion,
+      }));
+      this.applySharedExplorerEnvelope(envelope);
+      return true;
+    } catch (error: any) {
+      console.error('Failed to patch draft', error);
+      this.explorerUiStatus = 'ERROR';
+      if (error?.status === 409) {
+        alert('Konflikt beim Aktualisieren des Drafts. Der Explorer wird neu geladen.');
+        await this.loadSharedExplorerState();
+        return false;
+      }
+      this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
+      this.pendingDraftChangeType = changeType;
+      return false;
     }
   }
 

@@ -2,11 +2,12 @@ import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { User } from '../../core/models/api.models';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 
 @Component({
   selector: 'app-users',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, ConfirmDialogComponent],
   template: `
     <div class="page-header">
       <h1>Nutzerverwaltung</h1>
@@ -73,7 +74,7 @@ import { User } from '../../core/models/api.models';
                 <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
                   {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
                 </button>
-                <button class="btn btn-sm btn-danger" (click)="deleteUser(user)" style="margin-left:8px">Löschen
+                <button class="btn btn-sm btn-danger" (click)="openDeleteUserDialog(user)" style="margin-left:8px">Löschen
                 </button>
               </td>
             </tr>
@@ -84,6 +85,19 @@ import { User } from '../../core/models/api.models';
         <div class="empty-state"><h3>Keine Nutzer vorhanden</h3></div>
       }
     </div>
+
+    <app-confirm-dialog
+      [open]="deleteDialogOpen"
+      [title]="deleteDialogTitle"
+      [message]="deleteDialogMessage"
+      [details]="deleteDialogDetails"
+      [error]="deleteDialogError"
+      [busy]="deleteDialogBusy"
+      busyLabel="Lösche Nutzer..."
+      confirmLabel="Nutzer löschen"
+      confirmVariant="danger"
+      (confirmed)="confirmDeleteUser()"
+      (cancelled)="closeDeleteUserDialog()" />
   `
 })
 export class UsersComponent implements OnInit {
@@ -91,6 +105,10 @@ export class UsersComponent implements OnInit {
   showCreate = false;
   error = '';
   newUser = { username: '', password: '', displayName: '' };
+  deleteDialogOpen = false;
+  deleteDialogBusy = false;
+  deleteDialogError = '';
+  deleteDialogUser: User | null = null;
 
   constructor(private api: ApiService) {}
 
@@ -120,9 +138,62 @@ export class UsersComponent implements OnInit {
     this.api.setAppAdmin(user.id, !user.isAppAdmin).subscribe({ next: () => this.load() });
   }
 
-  deleteUser(user: User) {
-    if (confirm(`Nutzer "${user.username}" wirklich löschen?`)) {
-      this.api.deleteUser(user.id).subscribe({ next: () => this.load() });
+  get deleteDialogTitle(): string {
+    if (!this.deleteDialogUser) return 'Nutzer löschen';
+    return `Nutzer "${this.deleteDialogUser.username}" löschen`;
+  }
+
+  get deleteDialogMessage(): string {
+    return 'Der Benutzerzugang wird dauerhaft entfernt.';
+  }
+
+  get deleteDialogDetails(): string[] {
+    return [
+      'Diese Aktion kann nicht rückgängig gemacht werden.',
+      'Falls die Person letzter ACP-Manager in einem ACP ist, wird das Löschen verhindert.',
+    ];
+  }
+
+  openDeleteUserDialog(user: User) {
+    this.deleteDialogUser = user;
+    this.deleteDialogError = '';
+    this.deleteDialogBusy = false;
+    this.deleteDialogOpen = true;
+  }
+
+  closeDeleteUserDialog() {
+    if (this.deleteDialogBusy) return;
+    this.deleteDialogOpen = false;
+    this.deleteDialogError = '';
+    this.deleteDialogUser = null;
+  }
+
+  confirmDeleteUser() {
+    if (!this.deleteDialogUser || this.deleteDialogBusy) return;
+    this.deleteDialogBusy = true;
+    this.deleteDialogError = '';
+
+    this.api.deleteUser(this.deleteDialogUser.id).subscribe({
+      next: () => {
+        this.deleteDialogBusy = false;
+        this.deleteDialogOpen = false;
+        this.deleteDialogUser = null;
+        this.load();
+      },
+      error: (err) => {
+        this.deleteDialogBusy = false;
+        this.deleteDialogError = this.mapDeleteError(err);
+      },
+    });
+  }
+
+  private mapDeleteError(err: any): string {
+    const message = String(err?.error?.message || '');
+
+    if (message.includes('would have no ACP_MANAGER')) {
+      return 'Löschen nicht möglich: Diese Person ist in mindestens einem ACP der letzte ACP-Manager.';
     }
+
+    return message || 'Fehler beim Löschen des Nutzers.';
   }
 }

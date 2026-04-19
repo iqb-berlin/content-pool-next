@@ -56,14 +56,21 @@ describe('UsersComponent', () => {
     expect(component.error).toContain('erforderlich');
   });
 
-  it('deletes user when confirmed', () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('opens delete dialog with selected user', () => {
     const component = new UsersComponent(api as any);
+    component.openDeleteUserDialog({ id: 'u1', username: 'alice', isAppAdmin: false });
 
-    component.deleteUser({ id: 'u1', username: 'alice', isAppAdmin: false });
+    expect(component.deleteDialogOpen).toBe(true);
+    expect(component.deleteDialogUser?.id).toBe('u1');
+  });
 
-    expect(confirmSpy).toHaveBeenCalled();
+  it('deletes user after dialog confirmation', () => {
+    const component = new UsersComponent(api as any);
+    component.openDeleteUserDialog({ id: 'u1', username: 'alice', isAppAdmin: false });
+    component.confirmDeleteUser();
+
     expect(api.deleteUser).toHaveBeenCalledWith('u1');
+    expect(component.deleteDialogOpen).toBe(false);
   });
 
   it('surfaces load error', () => {

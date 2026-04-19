@@ -4,16 +4,24 @@ import { FormsModule } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { AcpSnapshot, SnapshotCurrentDiff } from '../../core/models/api.models';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 
 @Component({
   selector: 'app-snapshots',
   standalone: true,
-  imports: [FormsModule, DatePipe],
+  imports: [FormsModule, DatePipe, AcpManagerContextComponent, ConfirmDialogComponent],
   template: `
+    <app-acp-manager-context />
+
     <div class="page-header">
       <h1>Snapshots</h1>
       <button class="btn btn-primary" (click)="showCreate = !showCreate">+ Snapshot erstellen</button>
     </div>
+
+    @if (actionSuccess) {
+      <div class="alert alert-success">{{ actionSuccess }}</div>
+    }
 
     @if (showCreate) {
       <div class="card">
@@ -43,8 +51,8 @@ import { AcpSnapshot, SnapshotCurrentDiff } from '../../core/models/api.models';
                 <button class="btn btn-sm btn-outline" (click)="previewDiff(snap)">
                   {{ loadingDiffSnapshotId === snap.id ? 'Lade…' : 'Diff zum aktuellen Stand' }}
                 </button>
-                <button class="btn btn-sm btn-outline" (click)="restore(snap)">Wiederherstellen</button>
-                <button class="btn btn-sm btn-danger" (click)="deleteSnapshot(snap)">Löschen</button>
+                <button class="btn btn-sm btn-outline" (click)="openRestoreDialog(snap)">Wiederherstellen</button>
+                <button class="btn btn-sm btn-danger" (click)="openDeleteDialog(snap)">Löschen</button>
               </td>
             </tr>
           }
@@ -81,6 +89,19 @@ import { AcpSnapshot, SnapshotCurrentDiff } from '../../core/models/api.models';
         <p style="color:#b00020;"><strong>Diff konnte nicht geladen werden:</strong> {{ diffError }}</p>
       </div>
     }
+
+    <app-confirm-dialog
+      [open]="actionDialogOpen"
+      [title]="actionDialogTitle"
+      [message]="actionDialogMessage"
+      [details]="actionDialogDetails"
+      [error]="actionDialogError"
+      [busy]="actionDialogBusy"
+      busyLabel="Bitte warten..."
+      [confirmLabel]="actionDialogConfirmLabel"
+      [confirmVariant]="actionDialogKind === 'delete' ? 'danger' : 'primary'"
+      (confirmed)="confirmActionDialog()"
+      (cancelled)="closeActionDialog()" />
   `
 })
 export class SnapshotsComponent implements OnInit {
@@ -92,6 +113,12 @@ export class SnapshotsComponent implements OnInit {
   diffPreviewSnapshotVersion: number | null = null;
   diffError = '';
   loadingDiffSnapshotId: string | null = null;
+  actionDialogOpen = false;
+  actionDialogKind: 'restore' | 'delete' = 'restore';
+  actionDialogSnapshot: AcpSnapshot | null = null;
+  actionDialogBusy = false;
+  actionDialogError = '';
+  actionSuccess = '';
 
   constructor(private route: ActivatedRoute, private api: ApiService) {}
 
@@ -105,12 +132,14 @@ export class SnapshotsComponent implements OnInit {
   }
 
   create() {
+    this.actionSuccess = '';
     this.api.createSnapshot(this.acpId, this.changelog).subscribe({
       next: () => { this.showCreate = false; this.changelog = ''; this.load(); }
     });
   }
 
   previewDiff(snap: AcpSnapshot) {
+    this.actionSuccess = '';
     this.loadingDiffSnapshotId = snap.id;
     this.diffError = '';
     this.api.getSnapshotCurrentDiff(this.acpId, snap.id).subscribe({
@@ -128,32 +157,96 @@ export class SnapshotsComponent implements OnInit {
     });
   }
 
-  restore(snap: AcpSnapshot) {
-    if (confirm(`Version v${snap.versionNumber} wiederherstellen?`)) {
-      this.api.restoreSnapshot(this.acpId, snap.id).subscribe(() => {
-        alert('ACP-Index wurde wiederhergestellt.');
-        this.load();
-      });
-    }
+  get actionDialogTitle(): string {
+    if (!this.actionDialogSnapshot) return 'Bestätigen';
+    return this.actionDialogKind === 'restore'
+      ? `Snapshot v${this.actionDialogSnapshot.versionNumber} wiederherstellen`
+      : `Snapshot v${this.actionDialogSnapshot.versionNumber} löschen`;
   }
 
-  deleteSnapshot(snap: AcpSnapshot) {
-    if (!confirm(`Snapshot v${snap.versionNumber} wirklich löschen?`)) {
+  get actionDialogMessage(): string {
+    if (this.actionDialogKind === 'restore') {
+      return 'Der aktuelle ACP-Stand wird durch die Daten dieses Snapshots ersetzt.';
+    }
+    return 'Dieser Snapshot wird dauerhaft entfernt.';
+  }
+
+  get actionDialogDetails(): string[] {
+    if (this.actionDialogKind === 'restore') {
+      return [
+        'ACP-Index und zugehörige Dateien werden auf diesen Versionsstand zurückgesetzt.',
+        'Nicht gespeicherte aktuelle Änderungen gehen dabei verloren.',
+      ];
+    }
+    return ['Die Löschung kann nicht rückgängig gemacht werden.'];
+  }
+
+  get actionDialogConfirmLabel(): string {
+    return this.actionDialogKind === 'restore' ? 'Wiederherstellen' : 'Snapshot löschen';
+  }
+
+  openRestoreDialog(snap: AcpSnapshot) {
+    this.actionDialogKind = 'restore';
+    this.actionDialogSnapshot = snap;
+    this.actionDialogError = '';
+    this.actionDialogBusy = false;
+    this.actionDialogOpen = true;
+    this.actionSuccess = '';
+  }
+
+  openDeleteDialog(snap: AcpSnapshot) {
+    this.actionDialogKind = 'delete';
+    this.actionDialogSnapshot = snap;
+    this.actionDialogError = '';
+    this.actionDialogBusy = false;
+    this.actionDialogOpen = true;
+    this.actionSuccess = '';
+  }
+
+  closeActionDialog() {
+    if (this.actionDialogBusy) return;
+    this.actionDialogOpen = false;
+    this.actionDialogError = '';
+    this.actionDialogSnapshot = null;
+  }
+
+  confirmActionDialog() {
+    if (this.actionDialogBusy || !this.actionDialogSnapshot) return;
+    const snapshot = this.actionDialogSnapshot;
+    this.actionDialogBusy = true;
+    this.actionDialogError = '';
+
+    if (this.actionDialogKind === 'restore') {
+      this.api.restoreSnapshot(this.acpId, snapshot.id).subscribe({
+        next: () => {
+          this.actionDialogBusy = false;
+          this.actionDialogOpen = false;
+          this.actionSuccess = `Snapshot v${snapshot.versionNumber} wurde wiederhergestellt.`;
+          this.load();
+        },
+        error: (err) => {
+          this.actionDialogBusy = false;
+          this.actionDialogError = err?.error?.message || 'Unbekannter Fehler beim Wiederherstellen.';
+        },
+      });
       return;
     }
 
-    this.api.deleteSnapshot(this.acpId, snap.id).subscribe({
+    this.api.deleteSnapshot(this.acpId, snapshot.id).subscribe({
       next: () => {
-        if (this.diffPreview?.snapshotId === snap.id) {
+        if (this.diffPreview?.snapshotId === snapshot.id) {
           this.diffPreview = null;
           this.diffPreviewSnapshotVersion = null;
           this.diffError = '';
         }
+        this.actionDialogBusy = false;
+        this.actionDialogOpen = false;
+        this.actionSuccess = `Snapshot v${snapshot.versionNumber} wurde gelöscht.`;
         this.load();
       },
       error: (err) => {
-        const message = err?.error?.message || 'Unbekannter Fehler';
-        this.diffError = message;
+        this.actionDialogBusy = false;
+        this.actionDialogError = err?.error?.message || 'Unbekannter Fehler beim Löschen.';
       },
     });
   }

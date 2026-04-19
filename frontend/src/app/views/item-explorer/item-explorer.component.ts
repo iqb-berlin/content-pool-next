@@ -8,6 +8,7 @@ import { VoudService } from '../../core/services/voud.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
+import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 import { firstValueFrom } from 'rxjs';
 import { ItemExplorerChangeLogEntry, ItemExplorerSharedState, ItemExplorerStateEnvelope } from '../../core/models/api.models';
@@ -40,7 +41,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
-  imports: [FormsModule, CommonModule, BreadcrumbComponent, SplitPaneComponent],
+  imports: [FormsModule, CommonModule, BreadcrumbComponent, SplitPaneComponent, ConfirmDialogComponent],
   template: `
     <app-breadcrumb [items]="breadcrumbs" />
 
@@ -53,7 +54,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
             📄 Item-Schwierigkeiten (CSV) hochladen
           </button>
-          <button class="btn btn-outline btn-sm" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);" (click)="clearEmpiricalDifficulties()" title="Alle Itemschwierigkeiten löschen">
+          <button class="btn btn-outline btn-sm" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);" (click)="openClearEmpiricalDifficultiesDialog()" title="Alle Itemschwierigkeiten löschen">
             🗑️ Werte bereinigen
           </button>
           <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
@@ -89,12 +90,86 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           <button class="btn btn-primary btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="openSavePreviewDialog()">
             💾 Speichern
           </button>
-          <button class="btn btn-outline btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="discardExplorerDraft()">
+          <button class="btn btn-outline btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="openDiscardExplorerDraftDialog()">
             ↩️ Verwerfen
           </button>
         }
       </div>
     </div>
+
+    @if (lastDraftOperationError) {
+      <div class="alert alert-error" style="margin-bottom: 12px;">
+        {{ lastDraftOperationError }}
+      </div>
+    }
+
+    <app-confirm-dialog
+      [open]="showClearEmpiricalDifficultiesDialog"
+      title="Werte bereinigen"
+      message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
+      [details]="[
+        'Die Änderungen betreffen alle Items im aktuellen ACP.',
+        'Veröffentlicht wird erst nach anschließendem Speichern.'
+      ]"
+      [error]="clearEmpiricalDifficultiesError"
+      [busy]="clearEmpiricalDifficultiesBusy"
+      busyLabel="Bereinige Werte..."
+      confirmLabel="Alle Werte entfernen"
+      confirmVariant="danger"
+      (confirmed)="confirmClearEmpiricalDifficulties()"
+      (cancelled)="closeClearEmpiricalDifficultiesDialog()" />
+
+    <app-confirm-dialog
+      [open]="showDiscardDraftDialog"
+      title="Änderungen verwerfen"
+      message="Die aktuellen Entwurfsänderungen im Item-Explorer werden verworfen."
+      [details]="[
+        'Nicht veröffentlichte Änderungen gehen verloren.',
+        'Der veröffentlichte Stand bleibt unverändert.'
+      ]"
+      [error]="discardDraftDialogError"
+      [busy]="discardDraftDialogBusy"
+      busyLabel="Verwerfe Änderungen..."
+      confirmLabel="Änderungen verwerfen"
+      confirmVariant="danger"
+      (confirmed)="confirmDiscardDraftDialog()"
+      (cancelled)="closeDiscardDraftDialog()" />
+
+    @if (showLeaveWithChangesDialog) {
+      <div class="overlay-backdrop" (click)="leaveWithChangesDialogState === 'idle' && stayOnPage()">
+        <div class="overlay-dialog" style="max-width: 560px;" (click)="$event.stopPropagation()">
+          <div class="overlay-header" [style.border-top]="leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'">
+            <h2 style="display: flex; align-items: center; gap: 8px;">
+              <span>⚠️</span> Ungespeicherte Änderungen
+            </h2>
+          </div>
+          <div class="overlay-content" style="padding: 24px;">
+            <p>Es gibt ungespeicherte Explorer-Änderungen. Wie möchten Sie fortfahren?</p>
+            <ul style="margin: 10px 0 14px 18px; color: var(--color-text-secondary);">
+              <li><strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite verlassen</li>
+              <li><strong>Nicht speichern:</strong> Änderungen verwerfen und Seite verlassen</li>
+              <li><strong>Bleiben:</strong> Auf der aktuellen Seite bleiben</li>
+            </ul>
+
+            @if (leaveWithChangesDialogError) {
+              <div class="alert alert-error" style="margin-bottom: 14px;">{{ leaveWithChangesDialogError }}</div>
+            }
+
+            <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+              <button class="btn btn-outline" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="stayOnPage()">
+                Bleiben
+              </button>
+              <button class="btn btn-danger" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="discardAndLeave()">
+                Nicht speichern
+              </button>
+              <button class="btn btn-primary" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="saveAndLeave()">
+                Speichern & Weiter
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
 
     <app-split-pane [initialLeftPercent]="45" [minLeftPx]="350" [minRightPx]="400">
       <!-- LEFT: Table -->
@@ -1471,6 +1546,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // Save preview
   showSavePreviewDialog = false;
   draftPreviewSummary: Array<{ label: string; detail: string }> = [];
+  lastDraftOperationError = '';
+
+  // Draft / destructive dialogs
+  showDiscardDraftDialog = false;
+  discardDraftDialogBusy = false;
+  discardDraftDialogError = '';
+  showClearEmpiricalDifficultiesDialog = false;
+  clearEmpiricalDifficultiesBusy = false;
+  clearEmpiricalDifficultiesError = '';
+
+  // Leave with pending changes dialog
+  showLeaveWithChangesDialog = false;
+  leaveWithChangesDialogState: 'idle' | 'saving' | 'discarding' = 'idle';
+  leaveWithChangesDialogError = '';
+  private leaveWithChangesResolver: ((value: boolean) => void) | null = null;
 
   // Coding scheme display filtering
   codingSearchText = '';
@@ -1828,29 +1918,49 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     input.value = ''; // reset input
   }
 
-  clearEmpiricalDifficulties() {
-    if (confirm('Bist du sicher, dass du alle empirischen Itemschwierigkeiten für diesen ACP löschen möchtest? Dies betrifft alle Items.')) {
-      this.api.clearEmpiricalDifficulties(this.acpId, {
-        draft: true,
-        baseVersion: this.explorerVersion,
-      }).subscribe({
-        next: (result) => {
-          if (result.explorerState) {
-            this.applySharedExplorerEnvelope(result.explorerState, true);
-          }
-          this.reloadItems();
-        },
-        error: (err) => {
-          console.error(err);
-          if (err?.status === 409) {
-            alert('Konflikt beim Speichern des Entwurfs. Bitte neu laden.');
-            this.loadSharedExplorerState();
-            return;
-          }
-          alert('Fehler beim Löschen der Itemschwierigkeiten.');
+  openClearEmpiricalDifficultiesDialog() {
+    this.showClearEmpiricalDifficultiesDialog = true;
+    this.clearEmpiricalDifficultiesBusy = false;
+    this.clearEmpiricalDifficultiesError = '';
+  }
+
+  closeClearEmpiricalDifficultiesDialog() {
+    if (this.clearEmpiricalDifficultiesBusy) return;
+    this.showClearEmpiricalDifficultiesDialog = false;
+    this.clearEmpiricalDifficultiesError = '';
+  }
+
+  confirmClearEmpiricalDifficulties() {
+    if (this.clearEmpiricalDifficultiesBusy) return;
+    this.clearEmpiricalDifficultiesBusy = true;
+    this.clearEmpiricalDifficultiesError = '';
+    this.lastDraftOperationError = '';
+
+    this.api.clearEmpiricalDifficulties(this.acpId, {
+      draft: true,
+      baseVersion: this.explorerVersion,
+    }).subscribe({
+      next: (result) => {
+        if (result.explorerState) {
+          this.applySharedExplorerEnvelope(result.explorerState, true);
         }
-      });
-    }
+        this.reloadItems();
+        this.clearEmpiricalDifficultiesBusy = false;
+        this.showClearEmpiricalDifficultiesDialog = false;
+      },
+      error: (err) => {
+        console.error(err);
+        this.clearEmpiricalDifficultiesBusy = false;
+        if (err?.status === 409) {
+          this.clearEmpiricalDifficultiesError = 'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
+          this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
+          void this.loadSharedExplorerState();
+          return;
+        }
+        this.clearEmpiricalDifficultiesError = err?.error?.message || 'Fehler beim Löschen der Itemschwierigkeiten.';
+        this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
+      }
+    });
   }
 
   getSortIndicator(field: string): string {
@@ -2683,21 +2793,57 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private async confirmLeaveWithUnsavedChanges(): Promise<boolean> {
-    const saveFirst = window.confirm(
-      'Es gibt ungespeicherte Explorer-Änderungen.\n\nOK: Speichern\nAbbrechen: weitere Optionen',
-    );
-    if (saveFirst) {
-      return this.saveExplorerDraft(true);
-    }
-
-    const discard = window.confirm(
-      'Änderungen nicht speichern.\n\nOK: Verwerfen\nAbbrechen: Auf der Seite bleiben',
-    );
-    if (!discard) {
+    if (this.leaveWithChangesResolver) {
       return false;
     }
 
-    return this.discardExplorerDraft(true);
+    this.showLeaveWithChangesDialog = true;
+    this.leaveWithChangesDialogState = 'idle';
+    this.leaveWithChangesDialogError = '';
+
+    return new Promise<boolean>((resolve) => {
+      this.leaveWithChangesResolver = resolve;
+    });
+  }
+
+  stayOnPage() {
+    if (this.leaveWithChangesDialogState !== 'idle') return;
+    this.resolveLeaveWithChangesDialog(false);
+  }
+
+  async saveAndLeave() {
+    if (this.leaveWithChangesDialogState !== 'idle') return;
+    this.leaveWithChangesDialogState = 'saving';
+    this.leaveWithChangesDialogError = '';
+    const saved = await this.saveExplorerDraft(true);
+    if (saved) {
+      this.resolveLeaveWithChangesDialog(true);
+      return;
+    }
+    this.leaveWithChangesDialogState = 'idle';
+    this.leaveWithChangesDialogError = this.lastDraftOperationError || 'Speichern fehlgeschlagen.';
+  }
+
+  async discardAndLeave() {
+    if (this.leaveWithChangesDialogState !== 'idle') return;
+    this.leaveWithChangesDialogState = 'discarding';
+    this.leaveWithChangesDialogError = '';
+    const discarded = await this.discardExplorerDraft(true);
+    if (discarded) {
+      this.resolveLeaveWithChangesDialog(true);
+      return;
+    }
+    this.leaveWithChangesDialogState = 'idle';
+    this.leaveWithChangesDialogError = this.lastDraftOperationError || 'Verwerfen fehlgeschlagen.';
+  }
+
+  private resolveLeaveWithChangesDialog(result: boolean) {
+    const resolver = this.leaveWithChangesResolver;
+    this.leaveWithChangesResolver = null;
+    this.showLeaveWithChangesDialog = false;
+    this.leaveWithChangesDialogState = 'idle';
+    this.leaveWithChangesDialogError = '';
+    resolver?.(result);
   }
 
   private async loadSharedExplorerState(): Promise<void> {
@@ -2714,6 +2860,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     envelope: ItemExplorerStateEnvelope,
     markSaved = false,
   ) {
+    this.lastDraftOperationError = '';
     this.latestExplorerState = envelope;
     this.explorerVersion = envelope.version;
     this.explorerPublishedVersion = envelope.publishedVersion;
@@ -2888,6 +3035,34 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     void this.saveExplorerDraft(true);
   }
 
+  openDiscardExplorerDraftDialog() {
+    if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
+      return;
+    }
+    this.showDiscardDraftDialog = true;
+    this.discardDraftDialogBusy = false;
+    this.discardDraftDialogError = '';
+  }
+
+  closeDiscardDraftDialog() {
+    if (this.discardDraftDialogBusy) return;
+    this.showDiscardDraftDialog = false;
+    this.discardDraftDialogError = '';
+  }
+
+  async confirmDiscardDraftDialog() {
+    if (this.discardDraftDialogBusy) return;
+    this.discardDraftDialogBusy = true;
+    this.discardDraftDialogError = '';
+    const discarded = await this.discardExplorerDraft(true);
+    this.discardDraftDialogBusy = false;
+    if (discarded) {
+      this.showDiscardDraftDialog = false;
+      return;
+    }
+    this.discardDraftDialogError = this.lastDraftOperationError || 'Entwurfsänderungen konnten nicht verworfen werden.';
+  }
+
   async saveExplorerDraft(force = false): Promise<boolean> {
     if (!this.canPublishExplorer) {
       return false;
@@ -2902,6 +3077,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return false;
     }
 
+    this.lastDraftOperationError = '';
     this.explorerUiStatus = 'SAVING';
     try {
       const envelope = await firstValueFrom(
@@ -2909,12 +3085,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       );
       this.applySharedExplorerEnvelope(envelope, true);
       this.reloadItems();
+      this.lastDraftOperationError = '';
       return true;
     } catch (error: any) {
       console.error('Failed to save draft', error);
       this.explorerUiStatus = 'ERROR';
+      this.lastDraftOperationError = this.extractDraftErrorMessage(
+        error,
+        'Fehler beim Speichern der Änderungen.',
+      );
       if (error?.status === 409) {
-        alert('Konflikt beim Speichern. Der Explorer wurde zwischenzeitlich geändert.');
         await this.loadSharedExplorerState();
       }
       return false;
@@ -2926,10 +3106,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return false;
     }
     if (!skipConfirm) {
-      const confirmed = window.confirm('Entwurfsänderungen verwerfen?');
-      if (!confirmed) {
-        return false;
-      }
+      this.openDiscardExplorerDraftDialog();
+      return false;
     }
 
     if (this.draftPatchTimeout) {
@@ -2939,6 +3117,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.pendingDraftPatch = null;
     this.pendingDraftChangeType = 'UI_UPDATE';
     this.showSavePreviewDialog = false;
+    this.lastDraftOperationError = '';
 
     this.explorerUiStatus = 'SAVING';
     try {
@@ -2947,16 +3126,28 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       );
       this.applySharedExplorerEnvelope(envelope, true);
       this.reloadItems();
+      this.lastDraftOperationError = '';
       return true;
     } catch (error: any) {
       console.error('Failed to discard draft', error);
       this.explorerUiStatus = 'ERROR';
+      this.lastDraftOperationError = this.extractDraftErrorMessage(
+        error,
+        'Fehler beim Verwerfen der Änderungen.',
+      );
       if (error?.status === 409) {
-        alert('Konflikt beim Verwerfen. Bitte Status neu laden.');
         await this.loadSharedExplorerState();
       }
       return false;
     }
+  }
+
+  private extractDraftErrorMessage(error: any, fallback: string): string {
+    if (error?.status === 409) {
+      return 'Konflikt erkannt: Der Explorer wurde zwischenzeitlich geändert. Status wurde neu geladen.';
+    }
+    const message = String(error?.error?.message || '');
+    return message || fallback;
   }
 
   showHistory() {
@@ -3129,10 +3320,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       console.error('Failed to patch draft', error);
       this.explorerUiStatus = 'ERROR';
       if (error?.status === 409) {
-        alert('Konflikt beim Aktualisieren des Drafts. Der Explorer wird neu geladen.');
+        this.lastDraftOperationError = 'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
         await this.loadSharedExplorerState();
         return false;
       }
+      this.lastDraftOperationError = this.extractDraftErrorMessage(
+        error,
+        'Fehler beim Aktualisieren des Entwurfs.',
+      );
       this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
       this.pendingDraftChangeType = changeType;
       return false;

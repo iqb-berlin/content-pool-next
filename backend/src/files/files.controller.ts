@@ -15,7 +15,13 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiConsumes,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { FilesService } from './files.service';
 import { UnitParserService } from './unit-parser.service';
 import { ValidationService } from '../validation/validation.service';
@@ -101,7 +107,16 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Validate completeness of all unit files' })
   async validateUnits(@Param('acpId') acpId: string) {
-    return this.unitParserService.validateUnitFiles(acpId);
+    const files = await this.filesService.findByAcp(acpId);
+    const [unitResults, validationRun] = await Promise.all([
+      this.unitParserService.validateUnitFiles(acpId),
+      this.validationService.autoValidateUploadedFiles(acpId, files),
+    ]);
+
+    return {
+      unitResults,
+      validationSummary: validationRun.summary,
+    };
   }
 
   @Get('item-list')
@@ -160,12 +175,22 @@ export class FilesController {
   @ApiBearerAuth()
   @UseInterceptors(FilesInterceptor('files', 100))
   @ApiConsumes('multipart/form-data')
+  @ApiQuery({
+    name: 'conflictStrategy',
+    required: false,
+    description: 'reject | overwrite | keep-both',
+  })
   @ApiOperation({ summary: 'Upload files to ACP' })
   async upload(
     @Param('acpId') acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
+    @Query('conflictStrategy') conflictStrategy?: string,
   ) {
-    const uploadedFiles = await this.filesService.uploadMultiple(acpId, files);
+    const uploadedFiles = await this.filesService.uploadMultiple(
+      acpId,
+      files,
+      conflictStrategy,
+    );
     const syncReport = await this.unitParserService.syncIndexFromFiles(acpId);
     const validationRun = await this.validationService.autoValidateUploadedFiles(
       acpId,

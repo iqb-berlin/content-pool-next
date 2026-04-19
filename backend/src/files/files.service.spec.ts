@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { FilesService } from './files.service';
 import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
 
@@ -117,6 +117,55 @@ describe('FilesService', () => {
       const result = await service.upload('acp-1', multerFile);
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
+    });
+  });
+
+  describe('uploadMultiple', () => {
+    const incoming = {
+      originalname: 'test.json',
+      mimetype: 'application/json',
+      size: 128,
+      buffer: Buffer.from('{"fresh": true}'),
+    } as Express.Multer.File;
+
+    it('should reject conflicts by default', async () => {
+      await expect(service.uploadMultiple('acp-1', [incoming])).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should overwrite existing files when strategy is overwrite', async () => {
+      const deleteSpy = jest
+        .spyOn(service, 'deleteForAcp')
+        .mockResolvedValue(undefined);
+      const uploadSpy = jest.spyOn(service, 'upload').mockResolvedValue({
+        ...mockFile,
+        id: 'new-file',
+        originalName: 'test.json',
+      } as unknown as AcpFile);
+
+      const result = await service.uploadMultiple('acp-1', [incoming], 'overwrite');
+
+      expect(deleteSpy).toHaveBeenCalledWith('acp-1', 'file-1');
+      expect(uploadSpy).toHaveBeenCalledWith('acp-1', incoming);
+      expect(result).toHaveLength(1);
+    });
+
+    it('should keep both files when strategy is keep-both', async () => {
+      const deleteSpy = jest
+        .spyOn(service, 'deleteForAcp')
+        .mockResolvedValue(undefined);
+      const uploadSpy = jest.spyOn(service, 'upload').mockResolvedValue({
+        ...mockFile,
+        id: 'new-file',
+        originalName: 'test.json',
+      } as unknown as AcpFile);
+
+      const result = await service.uploadMultiple('acp-1', [incoming], 'keep-both');
+
+      expect(deleteSpy).not.toHaveBeenCalled();
+      expect(uploadSpy).toHaveBeenCalledWith('acp-1', incoming);
+      expect(result).toHaveLength(1);
     });
   });
 

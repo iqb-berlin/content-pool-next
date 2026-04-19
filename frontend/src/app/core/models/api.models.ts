@@ -60,6 +60,8 @@ export interface IndexSyncReport {
   warnings: string[];
 }
 
+export type FileUploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
+
 export interface FileUploadResponse {
   files: AcpFile[];
   syncReport: IndexSyncReport;
@@ -73,6 +75,24 @@ export interface UploadValidationSummary {
   semanticValid: boolean;
   semanticIssueCount: number;
   timestamp: string;
+}
+
+export interface UnitFileValidationResult {
+  unitId: string;
+  unitLabel: string;
+  valid: boolean;
+  files: {
+    xml: { expected: string; found: boolean };
+    definition: { expected: string; found: boolean };
+    codingScheme: { expected: string; found: boolean };
+    metadata: { expected: string; found: boolean };
+    player: { expected: string; found: boolean; resolvedName?: string };
+  };
+}
+
+export interface ValidateUnitsResponse {
+  unitResults: UnitFileValidationResult[];
+  validationSummary: UploadValidationSummary;
 }
 
 export interface ValidationResult {

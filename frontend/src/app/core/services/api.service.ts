@@ -15,11 +15,13 @@ import {
   TaskSequence,
   Credential,
   FileUploadResponse,
+  FileUploadConflictStrategy,
   IndexSyncReport,
   ItemViewPreferences,
   ItemExplorerStateEnvelope,
   ItemExplorerChangeLogEntry,
   ItemExplorerSharedState,
+  ValidateUnitsResponse,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -57,6 +59,7 @@ export class ApiService {
   getAcpIndex(id: string): Observable<any> { return this.http.get(`${this.API}/acp/${id}/index`); }
   updateAcpIndex(id: string, data: any): Observable<any> { return this.http.put(`${this.API}/acp/${id}/index`, data); }
   importAcpIndex(id: string, data: any): Observable<any> { return this.http.post(`${this.API}/acp/${id}/index/import`, data); }
+  deleteAcpIndex(id: string): Observable<any> { return this.http.delete(`${this.API}/acp/${id}/index`); }
 
   // ACP Roles
   getAcpRoles(id: string): Observable<any[]> { return this.http.get<any[]>(`${this.API}/acp/${id}/roles`); }
@@ -94,8 +97,20 @@ export class ApiService {
 
   // Files
   getFiles(acpId: string): Observable<AcpFile[]> { return this.http.get<AcpFile[]>(`${this.API}/acp/${acpId}/files`); }
-  uploadFiles(acpId: string, formData: FormData): Observable<FileUploadResponse> {
-    return this.http.post<FileUploadResponse>(`${this.API}/acp/${acpId}/files/upload`, formData);
+  uploadFiles(
+    acpId: string,
+    formData: FormData,
+    options?: { conflictStrategy?: FileUploadConflictStrategy },
+  ): Observable<FileUploadResponse> {
+    const query: string[] = [];
+    if (options?.conflictStrategy) {
+      query.push(`conflictStrategy=${encodeURIComponent(options.conflictStrategy)}`);
+    }
+    const suffix = query.length ? `?${query.join('&')}` : '';
+    return this.http.post<FileUploadResponse>(
+      `${this.API}/acp/${acpId}/files/upload${suffix}`,
+      formData,
+    );
   }
   syncIndexFromFiles(acpId: string): Observable<IndexSyncReport> {
     return this.http.post<IndexSyncReport>(`${this.API}/acp/${acpId}/files/sync-index`, {});
@@ -113,8 +128,8 @@ export class ApiService {
     const token = localStorage.getItem('cp_token');
     return `${this.API}/acp/${acpId}/files/${fileId}/download${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
-  validateUnitFiles(acpId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.API}/acp/${acpId}/files/validate-units`);
+  validateUnitFiles(acpId: string): Observable<ValidateUnitsResponse> {
+    return this.http.get<ValidateUnitsResponse>(`${this.API}/acp/${acpId}/files/validate-units`);
   }
   getFileItemList(acpId: string): Observable<any> {
     return this.http.get(`${this.API}/acp/${acpId}/files/item-list`);

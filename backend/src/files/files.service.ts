@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -17,6 +18,8 @@ import {
   toRuntimeAcpIndex,
 } from '../acp/acp-index.utils';
 import { normalizeFeatureConfig } from '../acp/feature-config.utils';
+
+type UploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
 
 @Injectable()
 export class FilesService {
@@ -98,10 +101,76 @@ export class FilesService {
   async uploadMultiple(
     acpId: string,
     files: Express.Multer.File[],
+    conflictStrategyInput?: string,
   ): Promise<AcpFile[]> {
+    const conflictStrategy = this.resolveUploadConflictStrategy(
+      conflictStrategyInput,
+    );
+
+    if (!files?.length) {
+      throw new BadRequestException('At least one file is required');
+    }
+
+    const existingFiles = await this.findByAcp(acpId);
+    const existingByName = new Map<string, AcpFile[]>();
+    for (const existing of existingFiles) {
+      const key = this.normalizeFileName(existing.originalName);
+      if (!key) {
+        continue;
+      }
+      const bucket = existingByName.get(key) || [];
+      bucket.push(existing);
+      existingByName.set(key, bucket);
+    }
+
+    const seenIncomingNames = new Set<string>();
+    const conflicts = new Set<string>();
+    for (const incoming of files) {
+      const incomingName = String(incoming?.originalname || '').trim();
+      const key = this.normalizeFileName(incomingName);
+      if (!key) {
+        throw new BadRequestException('All files must include a filename');
+      }
+
+      if (existingByName.has(key) || seenIncomingNames.has(key)) {
+        conflicts.add(incomingName);
+      }
+      seenIncomingNames.add(key);
+    }
+
+    if (conflictStrategy === 'reject' && conflicts.size > 0) {
+      throw new ConflictException({
+        message:
+          'File conflicts detected. Resolve duplicates by skipping or uploading with conflictStrategy=overwrite.',
+        conflicts: Array.from(conflicts).sort((a, b) => a.localeCompare(b)),
+      });
+    }
+
     const results: AcpFile[] = [];
+
     for (const file of files) {
+      const key = this.normalizeFileName(file.originalname);
+      if (!key) {
+        throw new BadRequestException('All files must include a filename');
+      }
+
+      if (conflictStrategy === 'overwrite') {
+        const matches = existingByName.get(key) || [];
+        for (const match of matches) {
+          await this.deleteForAcp(acpId, match.id);
+        }
+        existingByName.delete(key);
+      }
+
       results.push(await this.upload(acpId, file));
+
+      if (conflictStrategy === 'keep-both') {
+        const bucket = existingByName.get(key) || [];
+        bucket.push(results[results.length - 1]);
+        existingByName.set(key, bucket);
+      } else {
+        existingByName.set(key, [results[results.length - 1]]);
+      }
     }
     return results;
   }
@@ -313,5 +382,21 @@ export class FilesService {
     });
 
     return buffer as Buffer;
+  }
+
+  private resolveUploadConflictStrategy(
+    conflictStrategyInput?: string,
+  ): UploadConflictStrategy {
+    const strategy = (conflictStrategyInput || 'reject').trim().toLowerCase();
+    if (strategy === 'reject' || strategy === 'overwrite' || strategy === 'keep-both') {
+      return strategy;
+    }
+    throw new BadRequestException(
+      'Invalid conflictStrategy. Expected one of: reject, overwrite, keep-both',
+    );
+  }
+
+  private normalizeFileName(fileName: string): string {
+    return String(fileName || '').trim().toLowerCase();
   }
 }

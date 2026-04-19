@@ -1,0 +1,574 @@
+# IQB ContentPool Next - GitLab CI/CD
+# Repository is hosted on GitHub and executed in GitLab CI (external PR pipelines).
+
+stages:
+  - ".pre"
+  - build
+  - test
+  - test-db
+  - test-units
+  - lint
+  - audit
+  - build-images
+  - scan-images
+
+image: ${BASE_NODE_IMAGE}
+
+variables:
+  BASE_NODE_IMAGE: node:22-bookworm-slim
+  DOCKER_IMAGE: docker:27
+  DOCKER_SERVICE: docker:27-dind
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DAEMON_OPTIONS: "--mtu=${DOCKER_SERVICE_MTU}"
+  DOCKER_SERVICE_MTU: "1392"
+  TRIVY_IMAGE: aquasec/trivy:latest
+
+  GHCR_REGISTRY: ghcr.io
+  GHCR_ORG: iqb-berlin
+  BACKEND_IMAGE_NAME: "${GHCR_REGISTRY}/${GHCR_ORG}/content-pool-backend"
+  FRONTEND_IMAGE_NAME: "${GHCR_REGISTRY}/${GHCR_ORG}/content-pool-frontend"
+
+  PRERELEASE_SCRIPT_REGEX: ^v?(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))(-((alpha|beta|rc)((\.)?([1-9][0-9]*))?))$
+  PRERELEASE_RULES_REGEX: /^v?(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))\.(0|([1-9][0-9]*))(-((alpha|beta|rc)((\.)?([1-9][0-9]*))?))$/
+  RELEASE_SCRIPT_REGEX: ^v?((0|([1-9][0-9]*)))\.((0|([1-9][0-9]*)))\.((0|([1-9][0-9]*)))$
+  RELEASE_RULES_REGEX: /^v?((0|([1-9][0-9]*)))\.((0|([1-9][0-9]*)))\.((0|([1-9][0-9]*)))$/
+
+.default_rules:
+  rules:
+    - if: $CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME == "develop"
+    - if: $CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_BRANCH &&
+        $CI_COMMIT_BRANCH != "master" &&
+        $CI_COMMIT_BRANCH != "develop" &&
+        $CI_PIPELINE_SOURCE != "external_pull_request_event"
+    - if: $CI_COMMIT_TAG
+      when: never
+
+.default_db_rules:
+  rules:
+    - if: $CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME == "develop"
+    - if: $CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_BRANCH &&
+        $CI_COMMIT_BRANCH != "master" &&
+        $CI_COMMIT_BRANCH != "develop" &&
+        $CI_PIPELINE_SOURCE != "external_pull_request_event"
+      changes:
+        - backend/src/database/**/*
+        - backend/package.json
+        - backend/package-lock.json
+    - if: $CI_COMMIT_TAG
+      when: never
+
+.master_pr_rules:
+  rules:
+    - if: $CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME == "master"
+    - if: $CI_COMMIT_TAG
+      when: never
+
+.develop_commit_rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH &&
+        $CI_COMMIT_BRANCH == "develop" &&
+        $CI_PIPELINE_SOURCE != "external_pull_request_event"
+    - if: $CI_COMMIT_TAG
+      when: never
+
+.master_commit_rules:
+  rules:
+    - if: $CI_COMMIT_BRANCH &&
+        $CI_COMMIT_BRANCH == "master" &&
+        $CI_PIPELINE_SOURCE != "external_pull_request_event"
+    - if: $CI_COMMIT_TAG
+      when: never
+
+.pre-release_rules:
+  rules:
+    - if: "$CI_COMMIT_TAG =~ $PRERELEASE_RULES_REGEX"
+
+.release_rules:
+  rules:
+    - if: "$CI_COMMIT_TAG =~ $RELEASE_RULES_REGEX"
+
+.backend_node_job:
+  image: ${BASE_NODE_IMAGE}
+  before_script:
+    - cd backend
+    - npm ci --cache .npm --prefer-offline --no-fund
+
+.frontend_node_job:
+  image: ${BASE_NODE_IMAGE}
+  before_script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline --no-fund
+
+.docker_job:
+  image: ${DOCKER_IMAGE}
+  services:
+    - name: ${DOCKER_SERVICE}
+      variables:
+        HEALTHCHECK_TCP_PORT: "2375"
+      entrypoint: [ "sh", "-c", "dockerd-entrypoint.sh ${DOCKER_DAEMON_OPTIONS}" ]
+      alias: docker
+  before_script:
+    - docker --version
+    - until docker info > /dev/null 2>&1; do echo "waiting for docker daemon..." && sleep 1; done
+    - |
+      if [ -z "${GHCR_USERNAME}" ] || [ -z "${GHCR_TOKEN}" ]; then
+        echo "GHCR_USERNAME and GHCR_TOKEN CI/CD variables are required."
+        exit 1
+      fi
+    - echo "${GHCR_TOKEN}" | docker login -u "${GHCR_USERNAME}" --password-stdin ${GHCR_REGISTRY}
+  after_script:
+    - docker logout ${GHCR_REGISTRY}
+
+check-config:
+  stage: ".pre"
+  interruptible: true
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "external_pull_request_event"
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "CI_PIPELINE_SOURCE=${CI_PIPELINE_SOURCE}"
+    - echo "CI_DEFAULT_BRANCH=${CI_DEFAULT_BRANCH}"
+    - echo "CI_COMMIT_BRANCH=${CI_COMMIT_BRANCH}"
+    - echo "CI_COMMIT_TAG=${CI_COMMIT_TAG}"
+    - echo "CI_COMMIT_SHA=${CI_COMMIT_SHA}"
+    - echo "CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME=${CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_NAME}"
+    - echo "CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME=${CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_NAME}"
+    - echo "CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_SHA=${CI_EXTERNAL_PULL_REQUEST_SOURCE_BRANCH_SHA}"
+    - echo "CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_SHA=${CI_EXTERNAL_PULL_REQUEST_TARGET_BRANCH_SHA}"
+
+check-pre-release-rules:
+  stage: .pre
+  interruptible: true
+  allow_failure: true
+  rules:
+    - !reference [ .pre-release_rules, rules ]
+  script:
+    - echo ${PRERELEASE_SCRIPT_REGEX}
+    - if [[ ${CI_COMMIT_TAG} =~ ${PRERELEASE_SCRIPT_REGEX} ]]; then echo "${CI_COMMIT_TAG} is a valid pre-release tag."; else echo "${CI_COMMIT_TAG} is not a valid pre-release tag!"; fi
+
+check-release-rules:
+  stage: .pre
+  interruptible: true
+  allow_failure: true
+  rules:
+    - !reference [ .release_rules, rules ]
+  script:
+    - echo ${RELEASE_SCRIPT_REGEX}
+    - if [[ ${CI_COMMIT_TAG} =~ ${RELEASE_SCRIPT_REGEX} ]]; then echo "${CI_COMMIT_TAG} is a valid release tag."; else echo "${CI_COMMIT_TAG} is not a valid release tag!"; fi
+
+install-backend-dependencies:
+  stage: build
+  interruptible: true
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs: []
+  cache:
+    key:
+      files:
+        - backend/package-lock.json
+    paths:
+      - backend/node_modules
+      - backend/.npm/
+  script:
+    - cd backend
+    - npm ci --cache .npm --prefer-offline --no-fund
+  artifacts:
+    paths:
+      - backend/node_modules
+
+install-frontend-dependencies:
+  stage: build
+  interruptible: true
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs: []
+  cache:
+    key:
+      files:
+        - frontend/package-lock.json
+    paths:
+      - frontend/node_modules
+      - frontend/.npm/
+  script:
+    - cd frontend
+    - npm ci --cache .npm --prefer-offline --no-fund
+  artifacts:
+    paths:
+      - frontend/node_modules
+
+build-backend-app:
+  stage: build
+  interruptible: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - backend/dist
+
+build-frontend-app:
+  stage: build
+  interruptible: true
+  extends: .frontend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-frontend-dependencies
+  script:
+    - npm run build -- --configuration production
+  artifacts:
+    paths:
+      - frontend/dist
+
+test-db-migrations:
+  stage: test-db
+  interruptible: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_db_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  services:
+    - name: postgres:16-alpine
+      alias: db
+  variables:
+    DB_HOST: db
+    DB_PORT: "5432"
+    DB_USERNAME: contentpool
+    DB_PASSWORD: contentpool_dev
+    DB_DATABASE: contentpool
+  script:
+    - npm run migration:run
+    - npm run migration:revert
+
+test-backend:
+  stage: test-units
+  interruptible: true
+  allow_failure: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  script:
+    - npm run test -- --runInBand
+
+test-backend-e2e:
+  stage: test-units
+  interruptible: true
+  allow_failure: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  services:
+    - name: postgres:16-alpine
+      alias: db
+  variables:
+    NODE_ENV: test
+    DB_HOST: db
+    DB_PORT: "5432"
+    DB_USERNAME: contentpool
+    DB_PASSWORD: contentpool_dev
+    DB_DATABASE: contentpool
+    DB_SYNCHRONIZE: "true"
+    DB_RUN_MIGRATIONS: "false"
+    JWT_SECRET: ci-test-secret-at-least-32-characters
+    CORS_ORIGIN: http://localhost:4200
+  script:
+    - npm run test:e2e
+
+test-frontend:
+  stage: test-units
+  interruptible: true
+  allow_failure: true
+  extends: .frontend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-frontend-dependencies
+  script:
+    - npm run test -- --run
+
+lint-backend:
+  stage: lint
+  interruptible: true
+  allow_failure: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  script:
+    - npm run lint
+    - npx prettier --check "src/**/*.ts" "test/**/*.ts"
+
+lint-frontend:
+  stage: lint
+  interruptible: true
+  allow_failure: true
+  extends: .frontend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-frontend-dependencies
+  script:
+    - npx prettier --check "src/**/*.{ts,html,scss}"
+
+audit-backend:
+  stage: audit
+  interruptible: true
+  allow_failure: true
+  extends: .backend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-backend-dependencies
+  script:
+    - npm audit --audit-level critical
+
+audit-frontend:
+  stage: audit
+  interruptible: true
+  allow_failure: true
+  extends: .frontend_node_job
+  rules:
+    - !reference [ .default_rules, rules ]
+  needs:
+    - install-frontend-dependencies
+  script:
+    - npm audit --audit-level critical
+
+build-master-pr-backend-image:
+  stage: build-images
+  extends: .docker_job
+  interruptible: true
+  rules:
+    - !reference [ .master_pr_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file backend/Dockerfile.prod --tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}_test backend
+    - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}_test
+
+build-master-pr-frontend-image:
+  stage: build-images
+  extends: .docker_job
+  interruptible: true
+  rules:
+    - !reference [ .master_pr_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file frontend/Dockerfile.prod --tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}_test frontend
+    - docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}_test
+
+build-develop-commit-backend-image:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .develop_commit_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file backend/Dockerfile.prod --tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} --tag ${BACKEND_IMAGE_NAME}:develop backend
+    - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${BACKEND_IMAGE_NAME}:develop
+
+build-develop-commit-frontend-image:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .develop_commit_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file frontend/Dockerfile.prod --tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} --tag ${FRONTEND_IMAGE_NAME}:develop frontend
+    - docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${FRONTEND_IMAGE_NAME}:develop
+
+build-master-commit-backend-image:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .master_commit_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file backend/Dockerfile.prod --tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} --tag ${BACKEND_IMAGE_NAME}:master --tag ${BACKEND_IMAGE_NAME}:latest backend
+    - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${BACKEND_IMAGE_NAME}:master
+    - docker push ${BACKEND_IMAGE_NAME}:latest
+
+build-master-commit-frontend-image:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .master_commit_rules, rules ]
+  script:
+    - docker build --progress plain --pull --file frontend/Dockerfile.prod --tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} --tag ${FRONTEND_IMAGE_NAME}:master --tag ${FRONTEND_IMAGE_NAME}:latest frontend
+    - docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker push ${FRONTEND_IMAGE_NAME}:master
+    - docker push ${FRONTEND_IMAGE_NAME}:latest
+
+scan-develop-commit-backend-image:
+  stage: scan-images
+  allow_failure: true
+  rules:
+    - !reference [ .develop_commit_rules, rules ]
+  needs:
+    - build-develop-commit-backend-image
+  image:
+    name: ${TRIVY_IMAGE}
+    entrypoint: [ "" ]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: "${GHCR_USERNAME}"
+    TRIVY_PASSWORD: "${GHCR_TOKEN}"
+    TRIVY_AUTH_URL: "${GHCR_REGISTRY}"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ".trivycache/"
+    FULL_IMAGE_NAME: "${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+  script:
+    - trivy --version
+    - trivy clean --scan-cache
+    - trivy image --download-db-only --no-progress
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln --format template --template "@/contrib/gitlab.tpl" --output "${CI_PROJECT_DIR}/gl-container-scanning-report.json" "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 1 --timeout 30m --scanners vuln --ignore-unfixed --severity CRITICAL "${FULL_IMAGE_NAME}"
+  cache:
+    paths:
+      - .trivycache/
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+scan-develop-commit-frontend-image:
+  stage: scan-images
+  allow_failure: true
+  rules:
+    - !reference [ .develop_commit_rules, rules ]
+  needs:
+    - build-develop-commit-frontend-image
+  image:
+    name: ${TRIVY_IMAGE}
+    entrypoint: [ "" ]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: "${GHCR_USERNAME}"
+    TRIVY_PASSWORD: "${GHCR_TOKEN}"
+    TRIVY_AUTH_URL: "${GHCR_REGISTRY}"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ".trivycache/"
+    FULL_IMAGE_NAME: "${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+  script:
+    - trivy --version
+    - trivy clean --scan-cache
+    - trivy image --download-db-only --no-progress
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln --format template --template "@/contrib/gitlab.tpl" --output "${CI_PROJECT_DIR}/gl-container-scanning-report.json" "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 1 --timeout 30m --scanners vuln --ignore-unfixed --severity CRITICAL "${FULL_IMAGE_NAME}"
+  cache:
+    paths:
+      - .trivycache/
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+scan-master-commit-backend-image:
+  stage: scan-images
+  allow_failure: true
+  rules:
+    - !reference [ .master_commit_rules, rules ]
+  needs:
+    - build-master-commit-backend-image
+  image:
+    name: ${TRIVY_IMAGE}
+    entrypoint: [ "" ]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: "${GHCR_USERNAME}"
+    TRIVY_PASSWORD: "${GHCR_TOKEN}"
+    TRIVY_AUTH_URL: "${GHCR_REGISTRY}"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ".trivycache/"
+    FULL_IMAGE_NAME: "${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+  script:
+    - trivy --version
+    - trivy clean --scan-cache
+    - trivy image --download-db-only --no-progress
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln --format template --template "@/contrib/gitlab.tpl" --output "${CI_PROJECT_DIR}/gl-container-scanning-report.json" "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 1 --timeout 30m --scanners vuln --ignore-unfixed --severity CRITICAL "${FULL_IMAGE_NAME}"
+  cache:
+    paths:
+      - .trivycache/
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+scan-master-commit-frontend-image:
+  stage: scan-images
+  allow_failure: true
+  rules:
+    - !reference [ .master_commit_rules, rules ]
+  needs:
+    - build-master-commit-frontend-image
+  image:
+    name: ${TRIVY_IMAGE}
+    entrypoint: [ "" ]
+  variables:
+    GIT_STRATEGY: none
+    TRIVY_USERNAME: "${GHCR_USERNAME}"
+    TRIVY_PASSWORD: "${GHCR_TOKEN}"
+    TRIVY_AUTH_URL: "${GHCR_REGISTRY}"
+    TRIVY_NO_PROGRESS: "true"
+    TRIVY_CACHE_DIR: ".trivycache/"
+    FULL_IMAGE_NAME: "${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+  script:
+    - trivy --version
+    - trivy clean --scan-cache
+    - trivy image --download-db-only --no-progress
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln --format template --template "@/contrib/gitlab.tpl" --output "${CI_PROJECT_DIR}/gl-container-scanning-report.json" "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 0 --timeout 30m --scanners vuln "${FULL_IMAGE_NAME}"
+    - trivy image --exit-code 1 --timeout 30m --scanners vuln --ignore-unfixed --severity CRITICAL "${FULL_IMAGE_NAME}"
+  cache:
+    paths:
+      - .trivycache/
+  artifacts:
+    when: always
+    reports:
+      container_scanning: gl-container-scanning-report.json
+
+build-pre-release:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .pre-release_rules, rules ]
+  script:
+    - docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+
+build-release:
+  stage: build-images
+  extends: .docker_job
+  rules:
+    - !reference [ .release_rules, rules ]
+  script:
+    - docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:latest
+    - docker tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${FRONTEND_IMAGE_NAME}:latest
+    - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
+    - docker push ${BACKEND_IMAGE_NAME}:latest
+    - docker push ${FRONTEND_IMAGE_NAME}:latest

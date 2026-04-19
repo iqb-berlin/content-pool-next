@@ -160,6 +160,41 @@ describe('AcpService', () => {
     });
   });
 
+  describe('deleteIndex', () => {
+    it('should reset index using configured defaults', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
+      settingsRepo.findOne.mockResolvedValue({
+        defaultAcpIndex: {
+          assessmentParts: [
+            {
+              id: 'part-1',
+            },
+          ],
+        },
+      });
+
+      const result = await service.deleteIndex('acp-1');
+
+      expect(settingsRepo.findOne).toHaveBeenCalledWith({ where: {} });
+      expect(acpRepo.save).toHaveBeenCalled();
+      expect((result as any).packageId).toBe('test-pkg');
+      expect((result as any).assessmentParts).toHaveLength(1);
+    });
+
+    it('should reset index with ACP fallbacks when no defaults are configured', async () => {
+      acpRepo.findOne.mockResolvedValue({ ...mockAcp });
+      acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
+      settingsRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.deleteIndex('acp-1');
+
+      expect((result as any).packageId).toBe('test-pkg');
+      expect((result as any).version).toBe('0.5.0');
+      expect((result as any).status).toBe('IN_DEVELOPMENT');
+    });
+  });
+
   describe('assignRole', () => {
     it('should create new role assignment', async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);

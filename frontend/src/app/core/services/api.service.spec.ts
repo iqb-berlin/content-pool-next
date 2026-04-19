@@ -201,6 +201,42 @@ describe('ApiService', () => {
       expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/files/file1');
     });
 
+    it('should upload files without conflict strategy query', () => {
+      const formData = new FormData();
+      httpClientMock.post.mockReturnValue(of({ files: [], syncReport: { unitsAdded: 0, unitsUpdated: 0, dependenciesLinked: 0, warnings: [] } }));
+
+      service.uploadFiles('acp1', formData).subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/upload', formData);
+    });
+
+    it('should upload files with conflict strategy query', () => {
+      const formData = new FormData();
+      httpClientMock.post.mockReturnValue(of({ files: [], syncReport: { unitsAdded: 0, unitsUpdated: 0, dependenciesLinked: 0, warnings: [] } }));
+
+      service.uploadFiles('acp1', formData, { conflictStrategy: 'overwrite' }).subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/upload?conflictStrategy=overwrite',
+        formData,
+      );
+    });
+
+    it('should validate unit files', () => {
+      const response = { unitResults: [], validationSummary: { runId: 'r1', validFiles: 0, invalidFiles: 0, totalIssues: 0, durationMs: 1, timestamp: new Date().toISOString() } };
+      httpClientMock.get.mockReturnValue(of(response));
+
+      service.validateUnitFiles('acp1').subscribe(result => {
+        expect(result).toEqual(response);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/files/validate-units');
+    });
+
     it('should get file download URL with token', () => {
       localStorage.setItem('cp_token', 'test-token');
       const url = service.getFileDownloadUrl('acp1', 'file1');
@@ -255,6 +291,22 @@ describe('ApiService', () => {
       });
 
       expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/index');
+    });
+
+    it('should build index export URL with auth token', () => {
+      localStorage.setItem('cp_token', 'token+1');
+
+      const url = service.getIndexExportUrl('acp1');
+
+      expect(url).toBe('/api/acp/acp1/index/export?auth_token=token%2B1');
+    });
+
+    it('should build index export URL without auth token', () => {
+      localStorage.removeItem('cp_token');
+
+      const url = service.getIndexExportUrl('acp1');
+
+      expect(url).toBe('/api/acp/acp1/index/export');
     });
   });
 

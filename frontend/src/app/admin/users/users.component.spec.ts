@@ -73,6 +73,43 @@ describe('UsersComponent', () => {
     expect(component.deleteDialogOpen).toBe(false);
   });
 
+  it('does not close delete dialog while busy', () => {
+    const component = new UsersComponent(api as any);
+    component.openDeleteUserDialog({ id: 'u1', username: 'alice', isAppAdmin: false });
+    component.deleteDialogBusy = true;
+
+    component.closeDeleteUserDialog();
+
+    expect(component.deleteDialogOpen).toBe(true);
+    expect(component.deleteDialogUser?.id).toBe('u1');
+  });
+
+  it('closes delete dialog and clears state when not busy', () => {
+    const component = new UsersComponent(api as any);
+    component.openDeleteUserDialog({ id: 'u1', username: 'alice', isAppAdmin: false });
+    component.deleteDialogError = 'Fehler';
+
+    component.closeDeleteUserDialog();
+
+    expect(component.deleteDialogOpen).toBe(false);
+    expect(component.deleteDialogUser).toBeNull();
+    expect(component.deleteDialogError).toBe('');
+  });
+
+  it('maps manager-protection error when deleting user fails', () => {
+    api.deleteUser.mockReturnValue(
+      throwError(() => ({ error: { message: 'would have no ACP_MANAGER' } })),
+    );
+    const component = new UsersComponent(api as any);
+    component.openDeleteUserDialog({ id: 'u1', username: 'alice', isAppAdmin: false });
+
+    component.confirmDeleteUser();
+
+    expect(component.deleteDialogBusy).toBe(false);
+    expect(component.deleteDialogError).toContain('letzte ACP-Manager');
+    expect(component.deleteDialogOpen).toBe(true);
+  });
+
   it('surfaces load error', () => {
     api.getUsers.mockReturnValue(throwError(() => ({ error: { message: 'Fehler' } })));
 

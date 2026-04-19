@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { FilesService } from './files.service';
 import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
 
@@ -166,6 +170,29 @@ describe('FilesService', () => {
       expect(deleteSpy).not.toHaveBeenCalled();
       expect(uploadSpy).toHaveBeenCalledWith('acp-1', incoming);
       expect(result).toHaveLength(1);
+    });
+
+    it('should reject invalid conflict strategy', async () => {
+      await expect(
+        service.uploadMultiple('acp-1', [incoming], 'invalid-strategy'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should require at least one file', async () => {
+      await expect(service.uploadMultiple('acp-1', [])).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('should reject files without filename', async () => {
+      const invalidFile = {
+        ...incoming,
+        originalname: '   ',
+      } as Express.Multer.File;
+
+      await expect(service.uploadMultiple('acp-1', [invalidFile])).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

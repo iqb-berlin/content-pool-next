@@ -437,9 +437,48 @@ describe('ApiService', () => {
 
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/comments/export');
     });
+
+    it('should create comments and export XLSX comments', () => {
+      const created = { id: 'c1', targetType: 'ITEM', targetId: 'item1', commentText: 'hello' } as any;
+      const blob = new Blob(['xlsx'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      httpClientMock.post.mockReturnValue(of(created));
+      httpClientMock.get.mockReturnValue(of(blob));
+
+      service.createComment('acp1', { targetType: 'ITEM', targetId: 'item1', commentText: 'hello' }).subscribe(result => {
+        expect(result).toEqual(created);
+      });
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/comments', {
+        targetType: 'ITEM',
+        targetId: 'item1',
+        commentText: 'hello',
+      });
+
+      service.exportCommentsXlsx('acp1').subscribe(result => {
+        expect(result).toEqual(blob);
+      });
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/comments/export.xlsx', { responseType: 'blob' });
+    });
   });
 
   describe('Public Views', () => {
+    it('should get public settings and public ACP list', () => {
+      const publicSettings = { language: 'de' };
+      const publicAcps = [{ id: 'acp1', name: 'Public ACP' }];
+      httpClientMock.get
+        .mockReturnValueOnce(of(publicSettings))
+        .mockReturnValueOnce(of(publicAcps));
+
+      service.getPublicSettings().subscribe(result => {
+        expect(result).toEqual(publicSettings);
+      });
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(1, '/api/view/settings');
+
+      service.getPublicAcps().subscribe(result => {
+        expect(result).toEqual(publicAcps);
+      });
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(2, '/api/view/acp');
+    });
+
     it('should get ACP start page', () => {
       httpClientMock.get.mockReturnValue(of({}));
 
@@ -448,6 +487,16 @@ describe('ApiService', () => {
       });
 
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1');
+    });
+
+    it('should get view units', () => {
+      httpClientMock.get.mockReturnValue(of([{ id: 'unit1' }]));
+
+      service.getViewUnits('acp1').subscribe(result => {
+        expect(result).toEqual([{ id: 'unit1' }]);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/units');
     });
 
     it('should get view unit', () => {
@@ -512,6 +561,21 @@ describe('ApiService', () => {
       });
 
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/sequences/seq1');
+    });
+
+    it('should get view index and build export URL with/without token', () => {
+      httpClientMock.get.mockReturnValue(of({ assessmentParts: [] }));
+
+      service.getViewIndex('acp1').subscribe(result => {
+        expect(result).toEqual({ assessmentParts: [] });
+      });
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/index');
+
+      localStorage.setItem('cp_token', 'token+view');
+      expect(service.getViewIndexExportUrl('acp1')).toBe('/api/view/acp/acp1/index/export?auth_token=token%2Bview');
+
+      localStorage.removeItem('cp_token');
+      expect(service.getViewIndexExportUrl('acp1')).toBe('/api/view/acp/acp1/index/export');
     });
   });
 
@@ -645,6 +709,23 @@ describe('ApiService', () => {
       });
 
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/items/response-state/all');
+    });
+
+    it('should get and save item tags', () => {
+      httpClientMock.get.mockReturnValue(of({ item1: ['A'] }));
+      httpClientMock.put.mockReturnValue(of({ item1: ['A', 'B'] }));
+
+      service.getItemTags('acp1').subscribe(result => {
+        expect(result).toEqual({ item1: ['A'] });
+      });
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/items/tags');
+
+      service.saveItemTags('acp1', { item1: ['A', 'B'] }).subscribe(result => {
+        expect(result).toEqual({ item1: ['A', 'B'] });
+      });
+      expect(httpClientMock.put).toHaveBeenCalledWith('/api/acp/acp1/items/tags', {
+        tags: { item1: ['A', 'B'] },
+      });
     });
   });
 

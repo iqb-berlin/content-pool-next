@@ -70,6 +70,75 @@ describe('ValidationService', () => {
       expect(result.issues.some(i => i.path === 'packageId')).toBe(true);
       expect(result.issues.some(i => i.path === 'status')).toBe(true);
     });
+
+    it('should reject XML files that do not start with markup', async () => {
+      const file = { originalName: 'unit.xml' } as AcpFile;
+      const result = await service.validateFile(file, Buffer.from('not-xml'));
+
+      expect(result.valid).toBe(false);
+      expect(result.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: 'File does not appear to be valid XML' }),
+        ]),
+      );
+    });
+
+    it('can skip persistence when requested', async () => {
+      const file = { originalName: 'unit.xml', validationResult: null } as unknown as AcpFile;
+      const result = await service.validateFile(file, Buffer.from('<root/>'), false);
+
+      expect(result.valid).toBe(true);
+      expect(fileRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('validates nested ACP index schema structure errors', async () => {
+      const file = { originalName: 'acp-index.json' } as AcpFile;
+      const buffer = Buffer.from(JSON.stringify({
+        packageId: 'pkg-1',
+        version: '0.5.0',
+        status: 'IN_DEVELOPMENT',
+        assessmentParts: [
+          null,
+          {
+            bookletModules: {},
+            instruments: {},
+          },
+          {
+            bookletModules: [{ id: '', units: {} }],
+            instruments: [
+              {
+                testcenterBooklet: [
+                  { modules: {} },
+                  { modules: [{}] },
+                ],
+              },
+            ],
+          },
+        ],
+      }));
+
+      const result = await service.validateFile(file, buffer);
+      const issuePaths = result.issues.map((i) => i.path);
+
+      expect(result.valid).toBe(false);
+      expect(issuePaths).toEqual(expect.arrayContaining([
+        'assessmentParts[0]',
+        'assessmentParts[1].bookletModules',
+        'assessmentParts[1].instruments',
+        'assessmentParts[2].bookletModules[0].id',
+        'assessmentParts[2].bookletModules[0].units',
+        'assessmentParts[2].instruments[0].testcenterBooklet[0].modules',
+        'assessmentParts[2].instruments[0].testcenterBooklet[1].modules[0]',
+      ]));
+    });
+
+    it('skips schema validation for unrelated JSON files', async () => {
+      const file = { originalName: 'any.json' } as AcpFile;
+      const buffer = Buffer.from(JSON.stringify({ foo: 'bar' }));
+      const result = await service.validateFile(file, buffer);
+
+      expect(result).toEqual(expect.objectContaining({ valid: true, issues: [] }));
+    });
   });
 
   describe('validateAcpConsistency', () => {
@@ -236,6 +305,50 @@ describe('ValidationService', () => {
       expect(fileRepo.save).toHaveBeenCalledWith(expect.arrayContaining([
         expect.objectContaining({ id: 'file-1' }),
       ]));
+    });
+
+    it('returns an empty summary when no files are provided', async () => {
+      const result = await service.autoValidateUploadedFiles('acp-1', []);
+
+      expect(result.files).toEqual([]);
+      expect(result.summary).toEqual(
+        expect.objectContaining({
+          totalFiles: 0,
+          validFiles: 0,
+          invalidFiles: 0,
+          semanticValid: true,
+          semanticIssueCount: 0,
+        }),
+      );
+    });
+
+    it('creates file-level errors when uploaded files are missing on disk', async () => {
+      const readFileMock = fs.readFile as jest.Mock;
+      readFileMock.mockRejectedValue(new Error('missing'));
+
+      acpRepo.findOne.mockResolvedValue({
+        id: 'acp-1',
+        acpIndex: { assessmentParts: [] },
+      });
+      fileRepo.find.mockResolvedValue([]);
+
+      const uploadedFile = {
+        id: 'file-2',
+        acpId: 'acp-1',
+        filePath: '/tmp/missing.json',
+        originalName: 'missing.json',
+      } as AcpFile;
+
+      const result = await service.autoValidateUploadedFiles('acp-1', [uploadedFile]);
+
+      expect(result.files[0].validationResult).toEqual(
+        expect.objectContaining({
+          issues: expect.arrayContaining([
+            expect.objectContaining({ message: 'File is missing on disk and could not be validated' }),
+          ]),
+        }),
+      );
+      expect(result.summary.invalidFiles).toBe(1);
     });
   });
 });

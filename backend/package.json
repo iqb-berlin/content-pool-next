@@ -87,7 +87,8 @@
       "!**/main.ts",
       "!**/config/*.ts",
       "!**/database/data-source.ts",
-      "!**/database/migrations/*.ts"
+      "!**/database/migrations/*.ts",
+      "!**/files/unit-parser.service.ts"
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"

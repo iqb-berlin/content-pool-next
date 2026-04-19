@@ -6,6 +6,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
+import * as fs from 'fs/promises';
 import { FilesService } from './files.service';
 import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
 
@@ -107,6 +108,11 @@ describe('FilesService', () => {
       repo.findOne.mockResolvedValue(null);
       await expect(service.findById('bad')).rejects.toThrow(NotFoundException);
     });
+
+    it('should throw when ACP-scoped lookup does not match ACP', async () => {
+      repo.findOne.mockResolvedValue({ ...mockFile, acpId: 'other-acp' });
+      await expect(service.findByIdForAcp('acp-1', 'file-1')).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('upload', () => {
@@ -202,6 +208,20 @@ describe('FilesService', () => {
       expect(result.buffer).toBeDefined();
       expect(result.file.originalName).toBe('test.json');
     });
+
+    it('should fail when file is missing on disk', async () => {
+      (fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('missing'));
+      await expect(service.download('file-1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should download ACP-scoped file and fail on missing disk file', async () => {
+      await expect(service.downloadForAcp('acp-1', 'file-1')).resolves.toEqual(
+        expect.objectContaining({ file: expect.objectContaining({ id: 'file-1' }) }),
+      );
+
+      (fs.readFile as jest.Mock).mockRejectedValueOnce(new Error('missing'));
+      await expect(service.downloadForAcp('acp-1', 'file-1')).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe('delete', () => {
@@ -209,6 +229,31 @@ describe('FilesService', () => {
       repo.findOne.mockResolvedValue(mockFile);
       await service.delete('file-1');
       expect(repo.remove).toHaveBeenCalledWith(mockFile);
+    });
+
+    it('should ignore unlink errors during delete operations', async () => {
+      (fs.unlink as jest.Mock).mockRejectedValueOnce(new Error('gone'));
+      await expect(service.delete('file-1')).resolves.toBeUndefined();
+      expect(repo.remove).toHaveBeenCalledWith(mockFile);
+    });
+
+    it('should delete by ACP and remove all files', async () => {
+      await expect(service.deleteForAcp('acp-1', 'file-1')).resolves.toBeUndefined();
+      expect(repo.remove).toHaveBeenCalledWith(mockFile);
+
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: 'file-1', filePath: '/x/1' },
+        { ...mockFile, id: 'file-2', filePath: '/x/2' },
+      ]);
+      (fs.unlink as jest.Mock)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('missing'));
+
+      await expect(service.deleteAll('acp-1')).resolves.toBeUndefined();
+      expect(repo.remove).toHaveBeenCalledWith([
+        expect.objectContaining({ id: 'file-1' }),
+        expect.objectContaining({ id: 'file-2' }),
+      ]);
     });
   });
 
@@ -218,6 +263,16 @@ describe('FilesService', () => {
       repo.findOne.mockResolvedValue({ ...mockFile });
       await service.updateValidationResult('file-1', result);
       expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ validationResult: result }));
+    });
+
+    it('returns validation results via generic and ACP-scoped APIs', async () => {
+      repo.findOne.mockResolvedValue({
+        ...mockFile,
+        validationResult: { valid: true },
+      });
+
+      await expect(service.getValidationResult('file-1')).resolves.toEqual({ valid: true });
+      await expect(service.getValidationResultForAcp('acp-1', 'file-1')).resolves.toEqual({ valid: true });
     });
   });
 
@@ -230,6 +285,11 @@ describe('FilesService', () => {
       const result = await service.createUnitZip('acp-1', 'unit-1');
       expect(result.fileName).toBe('acp-acp-1-unit-unit-1.zip');
       expect(result.buffer.length).toBeGreaterThan(0);
+    });
+
+    it('should throw when unit has no files', async () => {
+      repo.find.mockResolvedValue([]);
+      await expect(service.createUnitZip('acp-1', 'unit-1')).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -248,6 +308,36 @@ describe('FilesService', () => {
 
     it('should throw when sequence does not exist', async () => {
       await expect(service.createSequenceZip('acp-1', 'unknown-seq')).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw when sequence exists but no files are available', async () => {
+      repo.find.mockResolvedValue([]);
+      await expect(service.createSequenceZip('acp-1', 'seq-1')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('feature config and dependency checks', () => {
+    it('returns normalized feature config', async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        featureConfig: {
+          itemListMetadataColumns: ['metaA'],
+        },
+      });
+
+      await expect(service.getFeatureConfig('acp-1')).resolves.toEqual(
+        expect.objectContaining({
+          metadataColumns: {
+            visible: ['metaA'],
+            order: ['metaA'],
+          },
+        }),
+      );
+    });
+
+    it('detects dependency files from ACP index', async () => {
+      await expect(service.isUnitDependencyFile('acp-1', 'unit-1.xml')).resolves.toBe(true);
+      await expect(service.isUnitDependencyFile('acp-1', 'test.json')).resolves.toBe(true);
+      await expect(service.isUnitDependencyFile('acp-1', 'missing.json')).resolves.toBe(false);
     });
   });
 });

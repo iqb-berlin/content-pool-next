@@ -50,4 +50,55 @@ describe('ServerApiAuthService', () => {
     expect(client?.scopes.length).toBeGreaterThan(0);
     expect(service.validateToken('wrong')).toBeNull();
   });
+
+  it('ignores malformed JSON token config and still allows legacy fallback', () => {
+    const config = {
+      get: jest.fn().mockImplementation((key: string, fallback?: string) => {
+        if (key === 'SERVER_API_TOKENS') {
+          return '{broken-json';
+        }
+        if (key === 'SERVER_API_KEY') {
+          return 'legacy-fallback-token';
+        }
+        return fallback;
+      }),
+    } as unknown as ConfigService;
+
+    const service = new ServerApiAuthService(config);
+
+    expect(service.validateToken('legacy-fallback-token')).toEqual(
+      expect.objectContaining({ id: 'legacy' }),
+    );
+  });
+
+  it('filters invalid token entries, deduplicates scopes and applies defaults', () => {
+    const config = {
+      get: jest.fn().mockImplementation((key: string, fallback?: string) => {
+        if (key === 'SERVER_API_TOKENS') {
+          return JSON.stringify([
+            null,
+            { id: '', token: 'missing-id' },
+            { id: 'missing-token', token: '' },
+            { id: 'default-scope', token: 'token-a', scopes: [] },
+            { id: 'custom-scope', token: 'token-b', scopes: ['files.read', 'files.read', '  files.write  '] },
+          ]);
+        }
+        return fallback;
+      }),
+    } as unknown as ConfigService;
+
+    const service = new ServerApiAuthService(config);
+
+    expect(service.validateToken('token-a')).toEqual(
+      expect.objectContaining({
+        id: 'default-scope',
+        scopes: expect.arrayContaining(['acp.read', 'transfer.read', 'audit.read']),
+      }),
+    );
+    expect(service.validateToken('token-b')).toEqual({
+      id: 'custom-scope',
+      scopes: ['files.read', 'files.write'],
+    });
+    expect(service.hasScopes(['x'], [])).toBe(true);
+  });
 });

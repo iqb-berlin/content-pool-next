@@ -167,6 +167,7 @@ export interface FeatureConfig {
   enableItemListFilter?: boolean;
   enableItemListSort?: boolean;
   enableItemListTags?: boolean;
+  showAudioVideoCodingVariables?: boolean;
   availableTags?: string[];
   persistUserPreferences?: boolean;
 }

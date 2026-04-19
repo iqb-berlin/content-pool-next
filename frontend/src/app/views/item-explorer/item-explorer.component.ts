@@ -1497,6 +1497,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // Tags
   enableTags = false;
   availableTags: string[] = [];
+  showAudioVideoCodingVariables = true;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
   useServerPreferences = false;
@@ -1584,6 +1585,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.currentCodingSchemeAsText) return [];
     
     let list = [...this.currentCodingSchemeAsText];
+
+    if (!this.showAudioVideoCodingVariables) {
+      list = list.filter(c => !this.isAudioVideoCodingVariable(c));
+    }
     
     // Search
     if (this.codingSearchText) {
@@ -1602,6 +1607,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
     });
+  }
+
+  private isAudioVideoCodingVariable(coding: CodingAsText): boolean {
+    const id = coding.id?.toLowerCase() || '';
+    const label = coding.label?.toLowerCase() || '';
+    return id.includes('audio') || id.includes('video') || label.includes('audio') || label.includes('video');
   }
 
   toggleCodingSort(field: 'id' | 'label') {
@@ -1706,6 +1717,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
+      this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;

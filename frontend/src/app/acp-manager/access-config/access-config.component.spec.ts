@@ -1,0 +1,87 @@
+import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { of } from 'rxjs';
+import { AccessConfigComponent } from './access-config.component';
+
+describe('AccessConfigComponent', () => {
+  let api: {
+    getAccessConfig: ReturnType<typeof vi.fn>;
+    getCredentials: ReturnType<typeof vi.fn>;
+    updateAccessConfig: ReturnType<typeof vi.fn>;
+  };
+
+  const route = {
+    parent: {
+      snapshot: {
+        paramMap: {
+          get: vi.fn().mockReturnValue('acp-1'),
+        },
+      },
+    },
+  };
+
+  beforeEach(() => {
+    api = {
+      getAccessConfig: vi.fn().mockReturnValue(
+        of({
+          accessModel: 'PUBLIC',
+          allowRegistered: false,
+          featureConfig: {},
+        }),
+      ),
+      getCredentials: vi.fn().mockReturnValue(of([])),
+      updateAccessConfig: vi.fn().mockReturnValue(of({})),
+    };
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('defaults showAudioVideoCodingVariables to true when flag is missing', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(true);
+  });
+
+  it('keeps explicit false for showAudioVideoCodingVariables', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: {
+          showAudioVideoCodingVariables: false,
+        },
+      }),
+    );
+
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(false);
+  });
+
+  it('persists showAudioVideoCodingVariables when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      showAudioVideoCodingVariables: false,
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          showAudioVideoCodingVariables: false,
+        }),
+      }),
+    );
+  });
+});

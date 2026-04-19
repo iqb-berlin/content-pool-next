@@ -259,6 +259,10 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <span>{{ feat.label }}</span>
           </label>
         }
+        <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]">
+          <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
+        </label>
 
         @if (featureConfig['enableItemListTags']) {
           <div class="indent-section">
@@ -394,6 +398,7 @@ export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
+  readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
 
   acpId = '';
   accessModel = 'PUBLIC';
@@ -513,6 +518,7 @@ export class AccessConfigComponent implements OnInit {
           this.accessModel = config.accessModel;
           this.allowRegistered = config.allowRegistered || false;
           this.featureConfig = config.featureConfig || {};
+          this.applyFeatureConfigDefaults();
           this.validFrom = this.toDateTimeLocalString(config.validFrom);
           this.validUntil = this.toDateTimeLocalString(config.validUntil);
           this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
@@ -590,6 +596,7 @@ export class AccessConfigComponent implements OnInit {
   }
 
   saveFeatures() {
+    this.applyFeatureConfigDefaults();
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
     this.api.updateAccessConfig(this.acpId, {
@@ -602,6 +609,11 @@ export class AccessConfigComponent implements OnInit {
         setTimeout(() => this.featuresSaved = false, 3000);
       }
     });
+  }
+
+  private applyFeatureConfigDefaults() {
+    const value = this.featureConfig[this.showAudioVideoCodingVariablesKey];
+    this.featureConfig[this.showAudioVideoCodingVariablesKey] = value !== false;
   }
 
   toggleCommentTarget(target: string) {

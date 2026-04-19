@@ -328,28 +328,6 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             }
           </div>
 
-          <!-- Info Card -->
-          <div class="info-card card">
-            <div class="info-row">
-              <span class="info-label">Aufgabe:</span>
-              <strong>{{ selectedItem.unitLabel }}</strong> <code>({{ selectedItem.unitId }})</code>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Item-ID:</span>
-              <code><span class="unit-id">{{ selectedItem.unitId }}</span><span class="item-id">{{ selectedItem.itemId }}</span></code>
-            </div>
-            <div class="info-row">
-              <span class="info-label">Variable:</span>
-              <code>{{ selectedItem.variableId || '–' }}</code>
-            </div>
-            @if (selectedItem.description) {
-              <div class="info-row">
-                <span class="info-label">Beschreibung:</span>
-                {{ selectedItem.description }}
-              </div>
-            }
-          </div>
-
         } @else {
           <div class="empty-state preview-empty">
             <div style="font-size:3rem;margin-bottom:16px">👈</div>
@@ -1112,12 +1090,6 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       display: flex; gap: 8px; padding: 10px 0;
       justify-content: center;
     }
-
-    .info-card {
-      font-size: 0.85rem; padding: 12px 16px;
-    }
-    .info-row { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
-    .info-label { color: var(--color-text-secondary); min-width: 80px; }
 
     .preview-empty {
       height: 100%; display: flex; flex-direction: column;

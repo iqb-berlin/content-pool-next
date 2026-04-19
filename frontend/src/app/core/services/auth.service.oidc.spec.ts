@@ -1,0 +1,303 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { firstValueFrom, of, throwError } from 'rxjs';
+import type { LoginResponse, OidcConfig, UserProfile } from '../models/api.models';
+import { AuthService } from './auth.service';
+
+describe('AuthService OIDC and Crypto Paths', () => {
+  let service: AuthService;
+  let httpClientMock: {
+    post: ReturnType<typeof vi.fn>;
+    get: ReturnType<typeof vi.fn>;
+  };
+
+  const profile: UserProfile = {
+    id: 'u-1',
+    username: 'julian',
+    displayName: 'Julian',
+    isAppAdmin: false,
+    acpRoles: [],
+  };
+
+  const oidcConfig: OidcConfig = {
+    enabled: true,
+    issuerUrl: 'https://id.example.com',
+    clientId: 'client-web',
+    redirectUri: 'http://localhost:4200/auth/callback',
+    scope: 'openid profile email',
+  };
+
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+
+    class BroadcastChannelMock {
+      onmessage: ((event: MessageEvent) => void) | null = null;
+      postMessage = vi.fn();
+    }
+
+    vi.stubGlobal('BroadcastChannel', BroadcastChannelMock);
+    vi.stubGlobal('btoa', (input: string) => Buffer.from(input, 'binary').toString('base64'));
+    vi.stubGlobal('TextEncoder', TextEncoder);
+
+    const subtleDigest = vi.fn().mockImplementation(async (_algo: string, data: ArrayBuffer) => {
+      const bytes = new Uint8Array(data);
+      const out = new Uint8Array(32);
+      for (let i = 0; i < out.length; i++) {
+        out[i] = bytes[i % Math.max(bytes.length, 1)] ^ 0xaa;
+      }
+      return out.buffer;
+    });
+
+    vi.stubGlobal('crypto', {
+      subtle: {
+        digest: subtleDigest,
+      },
+      getRandomValues: (arr: Uint8Array) => {
+        for (let i = 0; i < arr.length; i++) arr[i] = (i * 17 + 13) % 256;
+        return arr;
+      },
+    });
+
+    httpClientMock = {
+      get: vi.fn().mockReturnValue(of(oidcConfig)),
+      post: vi.fn().mockImplementation((url: string) => {
+        if (url === '/api/auth/oidc-callback') {
+          return of({
+            accessToken: 'app-jwt',
+            user: profile,
+          } as LoginResponse);
+        }
+        if (url === '/api/auth/sync-oidc-roles') {
+          return of({
+            accessToken: 'refreshed-jwt',
+            user: profile,
+          } as LoginResponse);
+        }
+        return of({});
+      }),
+    };
+
+    service = new AuthService(httpClientMock as any);
+  });
+
+  it('builds OIDC config and context endpoints', () => {
+    service.getOidcConfig().subscribe();
+    service.getAuthContext().subscribe();
+    service.getAuthContext('admin').subscribe();
+
+    expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/oidc-config');
+    expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/context');
+    expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/context?type=admin');
+  });
+
+  it('marks OIDC users from auth type flag', () => {
+    expect(service.isOidcUser).toBe(false);
+    localStorage.setItem('cp_auth_type', 'oidc');
+    expect(service.isOidcUser).toBe(true);
+  });
+
+  it('stores redirect target on initiateOidcLogin and noops when config disabled', () => {
+    httpClientMock.get.mockReturnValueOnce(of({ ...oidcConfig, enabled: false }));
+    service.initiateOidcLogin('/admin');
+
+    expect(sessionStorage.getItem('oidc_redirect_url')).toBe('/admin');
+  });
+
+  it('rejects authorization code flow for invalid state', async () => {
+    await expect(
+      firstValueFrom(service.handleOidcAuthorizationCode('code-1', null)),
+    ).rejects.toThrow('Ungültiger OIDC-State');
+  });
+
+  it('rejects authorization code flow when verifier is missing', async () => {
+    sessionStorage.setItem('oidc_state', 'state-1');
+
+    await expect(
+      firstValueFrom(service.handleOidcAuthorizationCode('code-1', 'state-1')),
+    ).rejects.toThrow('PKCE-Verifier fehlt');
+  });
+
+  it('rejects authorization code flow when OIDC config is incomplete', async () => {
+    sessionStorage.setItem('oidc_state', 'state-1');
+    sessionStorage.setItem('oidc_code_verifier', 'verifier-1');
+    httpClientMock.get.mockReturnValueOnce(of({ ...oidcConfig, enabled: false }));
+
+    await expect(
+      firstValueFrom(service.handleOidcAuthorizationCode('code-1', 'state-1')),
+    ).rejects.toThrow('OIDC ist nicht konfiguriert');
+  });
+
+  it('rejects authorization code flow when token response has no usable token', async () => {
+    sessionStorage.setItem('oidc_state', 'state-1');
+    sessionStorage.setItem('oidc_code_verifier', 'verifier-1');
+    httpClientMock.get.mockReturnValueOnce(of(oidcConfig));
+    httpClientMock.post.mockImplementation((url: string) => {
+      if (url.includes('/protocol/openid-connect/token')) {
+        return of({} as any);
+      }
+      return of({ accessToken: 'ignored', user: profile } as LoginResponse);
+    });
+
+    await expect(
+      firstValueFrom(service.handleOidcAuthorizationCode('code-1', 'state-1')),
+    ).rejects.toThrow('Kein Token aus OIDC-Antwort erhalten');
+  });
+
+  it('completes authorization code flow and stores app + OIDC tokens', async () => {
+    sessionStorage.setItem('oidc_state', 'state-1');
+    sessionStorage.setItem('oidc_code_verifier', 'verifier-1');
+    httpClientMock.get.mockReturnValueOnce(of(oidcConfig));
+    httpClientMock.post.mockImplementation((url: string) => {
+      if (url.includes('/protocol/openid-connect/token')) {
+        return of({
+          access_token: 'oidc-access',
+          id_token: 'oidc-id',
+        });
+      }
+      if (url === '/api/auth/oidc-callback') {
+        return of({
+          accessToken: 'app-jwt',
+          user: profile,
+        } as LoginResponse);
+      }
+      return of({});
+    });
+    const loadProfileSpy = vi.spyOn(service, 'loadProfile').mockImplementation(() => undefined);
+
+    const result = await firstValueFrom(service.handleOidcAuthorizationCode('code-1', 'state-1'));
+
+    expect(result).toEqual({ accessToken: 'app-jwt', user: profile });
+    expect(localStorage.getItem('cp_token')).toBe('app-jwt');
+    expect(localStorage.getItem('cp_oidc_access_token')).toBe('oidc-access');
+    expect(localStorage.getItem('cp_oidc_id_token')).toBe('oidc-id');
+    expect(localStorage.getItem('cp_auth_type')).toBe('oidc');
+    expect(sessionStorage.getItem('oidc_state')).toBeNull();
+    expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
+    expect(loadProfileSpy).toHaveBeenCalled();
+  });
+
+  it('supports direct oidc callback and id-token fallback persistence', async () => {
+    const loadProfileSpy = vi.spyOn(service, 'loadProfile').mockImplementation(() => undefined);
+
+    const result = await firstValueFrom(service.handleOidcCallback('id-token-only'));
+
+    expect(result).toEqual({ accessToken: 'app-jwt', user: profile });
+    expect(localStorage.getItem('cp_oidc_id_token')).toBe('id-token-only');
+    expect(localStorage.getItem('cp_auth_type')).toBe('oidc');
+    expect(loadProfileSpy).toHaveBeenCalled();
+  });
+
+  it('does not trigger password flow for non-oidc users', () => {
+    const getOidcSpy = vi.spyOn(service, 'getOidcConfig');
+    localStorage.removeItem('cp_auth_type');
+
+    service.changePassword();
+
+    expect(getOidcSpy).not.toHaveBeenCalled();
+  });
+
+  it('prepares password-change flow for oidc users', () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    sessionStorage.removeItem('oidc_redirect_url');
+    httpClientMock.get.mockReturnValue(of(oidcConfig));
+
+    service.changePassword();
+
+    expect(sessionStorage.getItem('oidc_redirect_url')).toBe(
+      window.location.pathname + window.location.search,
+    );
+  });
+
+  it('loads profile using OIDC sync path', () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_id_token', 'id-token');
+    const syncSpy = vi.spyOn(service, 'syncOidcRoles').mockReturnValue(of(profile));
+
+    service.loadProfile();
+
+    expect(syncSpy).toHaveBeenCalledWith('id-token');
+    expect(service.currentUser).toEqual(profile);
+  });
+
+  it('logs out on OIDC sync failure during profile load', () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_id_token', 'id-token');
+    vi.spyOn(service, 'syncOidcRoles').mockReturnValue(
+      throwError(() => new Error('sync failed')),
+    );
+    const logoutSpy = vi.spyOn(service, 'logout').mockImplementation(() => undefined);
+
+    service.loadProfile();
+
+    expect(logoutSpy).toHaveBeenCalled();
+  });
+
+  it('syncOidcRoles refreshes app token and normalizes missing acpRoles', async () => {
+    httpClientMock.post.mockReturnValueOnce(
+      of({
+        accessToken: 'new-jwt',
+        user: {
+          ...profile,
+          acpRoles: undefined,
+        },
+      } as LoginResponse),
+    );
+
+    const result = await firstValueFrom(service.syncOidcRoles('id-token'));
+
+    expect(localStorage.getItem('cp_token')).toBe('new-jwt');
+    expect(result.acpRoles).toEqual([]);
+  });
+
+  it('handles OIDC logout branch and clears local/session state without broadcast', () => {
+    localStorage.setItem('cp_token', 'jwt');
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_id_token', 'id-token');
+    localStorage.setItem('cp_oidc_access_token', 'access-token');
+    sessionStorage.setItem('oidc_redirect_url', '/admin');
+    sessionStorage.setItem('oidc_state', 'state-x');
+    sessionStorage.setItem('oidc_code_verifier', 'verifier-x');
+    const redirectSpy = vi
+      .spyOn(service as any, 'redirectToKeycloakLogout')
+      .mockImplementation(() => undefined);
+
+    service.logout(false);
+
+    expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/logout', {});
+    expect(redirectSpy).toHaveBeenCalledWith('id-token');
+    expect(localStorage.getItem('cp_token')).toBeNull();
+    expect(localStorage.getItem('cp_oidc_id_token')).toBeNull();
+    expect(localStorage.getItem('cp_oidc_access_token')).toBeNull();
+    expect(localStorage.getItem('cp_auth_type')).toBeNull();
+    expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
+    expect(sessionStorage.getItem('oidc_state')).toBeNull();
+    expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
+  });
+
+  it('exercises base64url, sha256 and challenge generation (subtle + fallback)', async () => {
+    const base64 = (service as any).base64UrlEncode(new Uint8Array([251, 255, 254]));
+    expect(base64).toBe('-__-');
+
+    const hash = (service as any).sha256(new TextEncoder().encode('abc'));
+    const hashHex = Array.from(hash)
+      .map((b: number) => b.toString(16).padStart(2, '0'))
+      .join('');
+    expect(hashHex).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
+
+    const challengeWithSubtle = await (service as any).generateCodeChallenge('verifier-subtle');
+    expect(challengeWithSubtle).toMatch(/^[A-Za-z0-9_-]+$/);
+
+    vi.stubGlobal('crypto', {
+      getRandomValues: (arr: Uint8Array) => arr.fill(1),
+    });
+    const challengeFallback = await (service as any).generateCodeChallenge('verifier-fallback');
+    expect(challengeFallback).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it('generates random values via crypto.getRandomValues', () => {
+    const value = (service as any).generateRandomValue(16);
+    expect(value).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+});

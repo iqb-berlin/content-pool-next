@@ -1,5 +1,6 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import {
@@ -20,10 +21,13 @@ interface UploadConflictEntry {
   decision?: UploadConflictDecision;
 }
 
+type FileValidationState = 'ok' | 'error' | 'unchecked';
+type FileValidationFilter = 'all' | FileValidationState;
+
 @Component({
   selector: 'app-files',
   standalone: true,
-  imports: [AcpManagerContextComponent, ConfirmDialogComponent],
+  imports: [FormsModule, AcpManagerContextComponent, ConfirmDialogComponent],
   template: `
     <app-acp-manager-context />
 
@@ -125,6 +129,35 @@ interface UploadConflictEntry {
       </div>
     }
 
+    <div class="card filter-card">
+      <div class="filter-toolbar">
+        <input
+          class="filter-input"
+          [(ngModel)]="searchQuery"
+          (input)="applyFilters()"
+          placeholder="🔎 Nach Dateiname suchen..." />
+        <select class="filter-select" [(ngModel)]="selectedFileType" (change)="applyFilters()">
+          <option [value]="FILE_TYPE_FILTER_ALL">Alle Typen</option>
+          @for (fileType of availableFileTypes; track fileType) {
+            <option [value]="fileType">{{ fileType }}</option>
+          }
+          @if (hasFilesWithoutType) {
+            <option [value]="FILE_TYPE_FILTER_NONE">Ohne Typ</option>
+          }
+        </select>
+        <select class="filter-select" [(ngModel)]="selectedValidationFilter" (change)="applyFilters()">
+          <option value="all">Alle Prüfzustände</option>
+          <option value="ok">OK</option>
+          <option value="error">Fehler</option>
+          <option value="unchecked">Nicht geprüft</option>
+        </select>
+        <button class="btn btn-outline btn-sm" (click)="resetFilters()" [disabled]="!hasActiveFilters()">
+          Filter zurücksetzen
+        </button>
+      </div>
+      <div class="filter-summary">{{ filteredFiles.length }} von {{ files.length }} Dateien</div>
+    </div>
+
     <div class="card">
       <table class="table">
         <thead>
@@ -137,7 +170,7 @@ interface UploadConflictEntry {
           </tr>
         </thead>
         <tbody>
-          @for (file of files; track file.id) {
+          @for (file of filteredFiles; track file.id) {
             <tr>
               <td>{{ file.originalName }}</td>
               <td>{{ file.fileType || '–' }}</td>
@@ -176,6 +209,8 @@ interface UploadConflictEntry {
       </table>
       @if (!files.length) {
         <div class="empty-state"><h3>Keine Dateien vorhanden</h3></div>
+      } @else if (!filteredFiles.length) {
+        <div class="empty-state"><h3>Keine Treffer für die aktuellen Filter</h3></div>
       }
     </div>
 
@@ -262,6 +297,36 @@ interface UploadConflictEntry {
     .file-validation-issue.issue-error .issue-tag { background: rgba(231,76,60,0.15); color: #a93226; }
     .file-validation-issue.issue-warning .issue-tag { background: rgba(243,156,18,0.18); color: #9c640c; }
     .file-validation-issue.issue-info .issue-tag { background: rgba(52,152,219,0.16); color: #1f618d; }
+    .filter-card { margin-bottom: 16px; }
+    .filter-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .filter-input {
+      flex: 1 1 280px;
+      min-width: 220px;
+      padding: 8px 12px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    .filter-select {
+      min-width: 180px;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 0.85rem;
+      background: #fff;
+    }
+    .filter-summary {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+    }
 
     .overlay-backdrop {
       position: fixed;
@@ -323,8 +388,15 @@ interface UploadConflictEntry {
   `]
 })
 export class FilesComponent implements OnInit {
+  readonly FILE_TYPE_FILTER_ALL = 'all';
+  readonly FILE_TYPE_FILTER_NONE = '__no_type__';
+
   acpId = '';
   files: AcpFile[] = [];
+  filteredFiles: AcpFile[] = [];
+  searchQuery = '';
+  selectedFileType = this.FILE_TYPE_FILTER_ALL;
+  selectedValidationFilter: FileValidationFilter = 'all';
   uploading = false;
   uploadProgress = '';
   uploadError: string | null = null;
@@ -351,7 +423,76 @@ export class FilesComponent implements OnInit {
   }
 
   load() {
-    this.api.getFiles(this.acpId).subscribe((f) => (this.files = f));
+    this.api.getFiles(this.acpId).subscribe((f) => {
+      this.files = f;
+      this.applyFilters();
+    });
+  }
+
+  get availableFileTypes(): string[] {
+    const byNormalized = new Map<string, string>();
+    for (const file of this.files) {
+      const rawType = String(file.fileType || '').trim();
+      if (!rawType) {
+        continue;
+      }
+      const key = this.normalizeText(rawType);
+      if (!byNormalized.has(key)) {
+        byNormalized.set(key, rawType);
+      }
+    }
+    return Array.from(byNormalized.values()).sort((a, b) =>
+      a.localeCompare(b, 'de', { sensitivity: 'base' }),
+    );
+  }
+
+  get hasFilesWithoutType(): boolean {
+    return this.files.some((file) => !String(file.fileType || '').trim());
+  }
+
+  hasActiveFilters(): boolean {
+    return (
+      this.searchQuery.trim().length > 0 ||
+      this.selectedFileType !== this.FILE_TYPE_FILTER_ALL ||
+      this.selectedValidationFilter !== 'all'
+    );
+  }
+
+  applyFilters() {
+    const search = this.normalizeText(this.searchQuery);
+    const selectedType = this.selectedFileType;
+
+    this.filteredFiles = this.files.filter((file) => {
+      if (search && !this.normalizeText(file.originalName).includes(search)) {
+        return false;
+      }
+
+      if (selectedType === this.FILE_TYPE_FILTER_NONE) {
+        if (String(file.fileType || '').trim()) {
+          return false;
+        }
+      } else if (selectedType !== this.FILE_TYPE_FILTER_ALL) {
+        if (this.normalizeText(file.fileType) !== this.normalizeText(selectedType)) {
+          return false;
+        }
+      }
+
+      if (this.selectedValidationFilter !== 'all') {
+        const state = this.getValidationState(file);
+        if (state !== this.selectedValidationFilter) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }
+
+  resetFilters() {
+    this.searchQuery = '';
+    this.selectedFileType = this.FILE_TYPE_FILTER_ALL;
+    this.selectedValidationFilter = 'all';
+    this.applyFilters();
   }
 
   async upload(event: Event) {
@@ -692,6 +833,17 @@ export class FilesComponent implements OnInit {
 
   private normalizeFileName(fileName: string): string {
     return String(fileName || '').trim().toLowerCase();
+  }
+
+  private getValidationState(file: AcpFile): FileValidationState {
+    if (!file.validationResult) {
+      return 'unchecked';
+    }
+    return file.validationResult.valid ? 'ok' : 'error';
+  }
+
+  private normalizeText(value: string | null | undefined): string {
+    return String(value || '').trim().toLowerCase();
   }
 
   private getUploadErrorMessage(error: unknown): string {

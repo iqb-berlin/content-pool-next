@@ -8,6 +8,7 @@ import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { IsObject } from 'class-validator';
+import { ItemExplorerStateService } from '../item-explorer/item-explorer-state.service';
 
 class SaveItemTagsDto {
   @ApiProperty({
@@ -25,6 +26,7 @@ export class ItemsController {
   constructor(
     private readonly itemsService: ItemsService,
     private readonly stateService: ItemResponseStateService,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
   ) {}
 
   @Get()
@@ -101,8 +103,42 @@ export class ItemsController {
   async uploadEmpiricalDifficulties(
     @Param('acpId') acpId: string,
     @UploadedFile() file: Express.Multer.File,
+    @Query('draft') draft?: string,
+    @Query('baseVersion') baseVersion?: string,
+    @Request() req?: any,
   ) {
-    return this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer);
+    const draftMode = draft === 'true';
+    const parsedBaseVersion = parseInt(baseVersion || '', 10);
+
+    if (!draftMode) {
+      return this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer);
+    }
+
+    const currentState = await this.itemExplorerStateService.getStateForViewer(acpId, true);
+    const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer, {
+      persist: false,
+      itemPropertiesOverride: currentState.draftState.itemProperties,
+    });
+
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
+    const explorerState = await this.itemExplorerStateService.patchDraft(
+      acpId,
+      {
+        itemProperties: uploadResult.nextItemProperties as Record<string, Record<string, unknown>>,
+      },
+      {
+        actor,
+        changeType: 'CSV_UPLOAD_EMPIRICAL_DIFFICULTY',
+        baseVersion: Number.isNaN(parsedBaseVersion) ? undefined : parsedBaseVersion,
+      },
+    );
+
+    return {
+      updated: uploadResult.updated,
+      failed: uploadResult.failed,
+      successes: uploadResult.successes,
+      explorerState,
+    };
   }
 
   @Delete('empirical-difficulty')
@@ -110,8 +146,42 @@ export class ItemsController {
   @Roles('ACP_MANAGER')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Clear all empirical difficulties for an ACP' })
-  async clearEmpiricalDifficulties(@Param('acpId') acpId: string) {
-    return this.itemsService.clearEmpiricalDifficulties(acpId);
+  async clearEmpiricalDifficulties(
+    @Param('acpId') acpId: string,
+    @Query('draft') draft?: string,
+    @Query('baseVersion') baseVersion?: string,
+    @Request() req?: any,
+  ) {
+    const draftMode = draft === 'true';
+    const parsedBaseVersion = parseInt(baseVersion || '', 10);
+
+    if (!draftMode) {
+      return this.itemsService.clearEmpiricalDifficulties(acpId);
+    }
+
+    const currentState = await this.itemExplorerStateService.getStateForViewer(acpId, true);
+    const clearResult = await this.itemsService.clearEmpiricalDifficulties(acpId, {
+      persist: false,
+      itemPropertiesOverride: currentState.draftState.itemProperties,
+    });
+
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
+    const explorerState = await this.itemExplorerStateService.patchDraft(
+      acpId,
+      {
+        itemProperties: clearResult.nextItemProperties as Record<string, Record<string, unknown>>,
+      },
+      {
+        actor,
+        changeType: 'CLEAR_EMPIRICAL_DIFFICULTY',
+        baseVersion: Number.isNaN(parsedBaseVersion) ? undefined : parsedBaseVersion,
+      },
+    );
+
+    return {
+      success: true,
+      explorerState,
+    };
   }
 
   @Get('response-state/all')

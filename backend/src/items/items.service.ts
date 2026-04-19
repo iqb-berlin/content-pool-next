@@ -104,7 +104,14 @@ export class ItemsService {
   /**
    * Upload empirical item difficulties from a CSV buffer.
    */
-  async uploadEmpiricalDifficulties(acpId: string, fileBuffer: Buffer) {
+  async uploadEmpiricalDifficulties(
+    acpId: string,
+    fileBuffer: Buffer,
+    options: {
+      persist?: boolean;
+      itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+    } = {},
+  ) {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) throw new NotFoundException('ACP not found');
 
@@ -129,7 +136,7 @@ export class ItemsService {
     let updatedCount = 0;
 
     // Copy existing prop configurations
-    const props = acp.itemProperties || {};
+    const props = this.cloneItemProperties(options.itemPropertiesOverride || acp.itemProperties || {});
     let isUpdated = false;
 
     // Normalization helper handles variable separators
@@ -176,22 +183,28 @@ export class ItemsService {
       }
     }
 
-    if (isUpdated) {
+    if (isUpdated && options.persist !== false) {
       acp.itemProperties = props;
       await this.acpRepository.save(acp);
     }
 
-    return { updated: updatedCount, failed, successes };
+    return { updated: updatedCount, failed, successes, nextItemProperties: props };
   }
 
   /**
    * Clears all empirical item difficulties from the database
    */
-  async clearEmpiricalDifficulties(acpId: string) {
+  async clearEmpiricalDifficulties(
+    acpId: string,
+    options: {
+      persist?: boolean;
+      itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+    } = {},
+  ) {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) throw new NotFoundException('ACP not found');
 
-    const props = acp.itemProperties || {};
+    const props = this.cloneItemProperties(options.itemPropertiesOverride || acp.itemProperties || {});
     let isUpdated = false;
 
     for (const key of Object.keys(props)) {
@@ -201,12 +214,12 @@ export class ItemsService {
       }
     }
 
-    if (isUpdated) {
+    if (isUpdated && options.persist !== false) {
       acp.itemProperties = props;
       await this.acpRepository.save(acp);
     }
 
-    return { success: true };
+    return { success: true, nextItemProperties: props };
   }
 
   async getItemTags(acpId: string): Promise<Record<string, string[]>> {
@@ -282,5 +295,11 @@ export class ItemsService {
       .map((v) => String(v || '').trim())
       .filter((v) => v.length > 0);
     return Array.from(new Set(clean));
+  }
+
+  private cloneItemProperties(
+    source: Record<string, Record<string, unknown>>,
+  ): Record<string, Record<string, unknown>> {
+    return JSON.parse(JSON.stringify(source || {}));
   }
 }

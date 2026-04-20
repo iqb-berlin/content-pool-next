@@ -1,0 +1,617 @@
+{
+  "generatedAt": "2026-04-20T06:31:09.560Z",
+  "acpId": "15b3303e-e6b7-4641-88ac-542a47bd5ee8",
+  "summary": {
+    "acpId": "15b3303e-e6b7-4641-88ac-542a47bd5ee8",
+    "unitsScanned": 4,
+    "totalItems": 45,
+    "noMappedVariable": 13,
+    "foundByAlias": 31,
+    "foundById": 1,
+    "notFound": 0,
+    "unitSummaries": [
+      {
+        "unitId": "DHB001",
+        "totalItems": 10,
+        "noMappedVariable": 2,
+        "foundByAlias": 8,
+        "foundById": 0,
+        "notFound": 0,
+        "aliasEntries": 65,
+        "idEntries": 64
+      },
+      {
+        "unitId": "DHB002",
+        "totalItems": 11,
+        "noMappedVariable": 3,
+        "foundByAlias": 7,
+        "foundById": 1,
+        "notFound": 0,
+        "aliasEntries": 73,
+        "idEntries": 72
+      },
+      {
+        "unitId": "DHB003",
+        "totalItems": 13,
+        "noMappedVariable": 5,
+        "foundByAlias": 8,
+        "foundById": 0,
+        "notFound": 0,
+        "aliasEntries": 68,
+        "idEntries": 68
+      },
+      {
+        "unitId": "DHB004",
+        "totalItems": 11,
+        "noMappedVariable": 3,
+        "foundByAlias": 8,
+        "foundById": 0,
+        "notFound": 0,
+        "aliasEntries": 66,
+        "idEntries": 66
+      }
+    ],
+    "fileProblems": []
+  },
+  "rows": [
+    {
+      "unitId": "DHB001",
+      "itemId": "01",
+      "mappedVariable": "01",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[1].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "02",
+      "mappedVariable": "02",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[2].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "03",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "04",
+      "mappedVariable": "05",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[5].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "05",
+      "mappedVariable": "06",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[6].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "06",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "07",
+      "mappedVariable": "03",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[3].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "08",
+      "mappedVariable": "04",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[4].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "09",
+      "mappedVariable": "07",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[7].sections[1].elements[0].alias"
+      ]
+    },
+    {
+      "unitId": "DHB001",
+      "itemId": "10",
+      "mappedVariable": "08",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[8].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "01",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "02",
+      "mappedVariable": "03",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[3].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "03",
+      "mappedVariable": "04",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[4].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "04",
+      "mappedVariable": "05",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[5].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "05",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "06",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "07",
+      "mappedVariable": "08",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[8].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "08",
+      "mappedVariable": "01",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[1].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "09",
+      "mappedVariable": "02",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ID",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[3].sections[1].elements[2].id"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "10",
+      "mappedVariable": "06",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[6].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB002",
+      "itemId": "11",
+      "mappedVariable": "07",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[7].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "01",
+      "mappedVariable": "01",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[1].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "02",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "03",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "04",
+      "mappedVariable": "02",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[2].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "05",
+      "mappedVariable": "03",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[3].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "06",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "07",
+      "mappedVariable": "04",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[4].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "08",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "09",
+      "mappedVariable": "05",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[5].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "10",
+      "mappedVariable": "06",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[6].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "11",
+      "mappedVariable": "07",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[7].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "12",
+      "mappedVariable": "08",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[8].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB003",
+      "itemId": "13",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "01",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "02",
+      "mappedVariable": "02",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[2].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "03",
+      "mappedVariable": "04",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[4].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "04",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "05",
+      "mappedVariable": "06",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[6].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "06",
+      "mappedVariable": "",
+      "verdict": "NO_MAPPED_VARIABLE",
+      "searchOrder": "alias->id",
+      "matchedIn": null,
+      "matchMode": null,
+      "matchCount": 0,
+      "samplePaths": []
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "07",
+      "mappedVariable": "08",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[8].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "08",
+      "mappedVariable": "01",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[1].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "09",
+      "mappedVariable": "03",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[3].sections[1].elements[2].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "10",
+      "mappedVariable": "05",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[5].sections[1].elements[1].alias"
+      ]
+    },
+    {
+      "unitId": "DHB004",
+      "itemId": "11",
+      "mappedVariable": "07",
+      "verdict": "FOUND",
+      "searchOrder": "alias->id",
+      "matchedIn": "ALIAS",
+      "matchMode": "exact",
+      "matchCount": 1,
+      "samplePaths": [
+        "pages[7].sections[1].elements[2].alias"
+      ]
+    }
+  ]
+}

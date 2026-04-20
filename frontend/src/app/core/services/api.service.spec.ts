@@ -673,21 +673,21 @@ describe('ApiService', () => {
     it('should get response state', () => {
       httpClientMock.get.mockReturnValue(of({ state: {} }));
 
-      service.getResponseState('acp1', 'item1').subscribe(result => {
+      service.getResponseState('acp1', 'item1', 'unit1').subscribe(result => {
         expect(result).toEqual({ state: {} });
       });
 
-      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/items/item1/response-state');
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/items/item1/response-state?unitId=unit1');
     });
 
     it('should delete response state', () => {
       httpClientMock.delete.mockReturnValue(of({}));
 
-      service.deleteResponseState('acp1', 'item1').subscribe(() => {
+      service.deleteResponseState('acp1', 'item1', 'unit1').subscribe(() => {
         expect(true).toBe(true);
       });
 
-      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/items/item1/response-state');
+      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/items/item1/response-state?unitId=unit1');
     });
 
     it('should get response state with fallback', () => {

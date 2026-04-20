@@ -34,7 +34,7 @@ describe('ItemResponseStateService', () => {
       id: 'state-1',
       acpId: 'acp-1',
       itemId: 'item-1',
-      unitId: 'unit-old',
+      unitId: 'unit-1',
       responseData: { old: true },
     });
 
@@ -48,6 +48,9 @@ describe('ItemResponseStateService', () => {
       }),
     );
     expect(result).toEqual(expect.objectContaining({ id: 'state-1' }));
+    expect(stateRepository.findOne).toHaveBeenCalledWith({
+      where: { acpId: 'acp-1', itemId: 'item-1', unitId: 'unit-1' },
+    });
   });
 
   it('creates new state records when none exist', async () => {
@@ -132,15 +135,15 @@ describe('ItemResponseStateService', () => {
 
   it('gets, deletes and lists states with manager checks', async () => {
     stateRepository.findOne.mockResolvedValue({ id: 'state-1' });
-    await expect(service.getResponseState('acp-1', 'item-1')).resolves.toEqual({ id: 'state-1' });
+    await expect(service.getResponseState('acp-1', 'item-1', 'unit-1')).resolves.toEqual({ id: 'state-1' });
 
-    await expect(service.deleteResponseState('acp-1', 'item-1', false)).rejects.toThrow(ForbiddenException);
+    await expect(service.deleteResponseState('acp-1', 'item-1', 'unit-1', false)).rejects.toThrow(ForbiddenException);
 
     stateRepository.delete.mockResolvedValue({ affected: 1 });
-    await expect(service.deleteResponseState('acp-1', 'item-1', true)).resolves.toEqual({ success: true });
+    await expect(service.deleteResponseState('acp-1', 'item-1', 'unit-1', true)).resolves.toEqual({ success: true });
 
     stateRepository.delete.mockResolvedValue({ affected: 0 });
-    await expect(service.deleteResponseState('acp-1', 'item-2', true)).resolves.toEqual({ success: false });
+    await expect(service.deleteResponseState('acp-1', 'item-2', 'unit-2', true)).resolves.toEqual({ success: false });
 
     await expect(service.getAllStatesForAcp('acp-1', false)).rejects.toThrow(ForbiddenException);
 

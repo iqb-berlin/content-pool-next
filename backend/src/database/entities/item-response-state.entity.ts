@@ -8,8 +8,8 @@ import {
 } from 'typeorm';
 
 @Entity('item_response_states')
-@Index(['acpId', 'itemId'], { unique: true })
-@Index(['acpId', 'unitId'])
+@Index('IDX_item_response_states_acp_unit_item_unique', ['acpId', 'unitId', 'itemId'], { unique: true })
+@Index('IDX_item_response_states_acp_unit', ['acpId', 'unitId'])
 export class ItemResponseState {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

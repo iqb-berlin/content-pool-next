@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody, ApiProperty } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ItemsService } from './items.service';
@@ -218,8 +218,12 @@ export class ItemsController {
   async getResponseState(
     @Param('acpId') acpId: string,
     @Param('itemId') itemId: string,
+    @Query('unitId') unitId?: string,
   ) {
-    const state = await this.stateService.getResponseState(acpId, itemId);
+    if (!unitId) {
+      throw new BadRequestException('Query parameter "unitId" is required.');
+    }
+    const state = await this.stateService.getResponseState(acpId, itemId, unitId);
     return state || { state: null };
   }
 
@@ -247,8 +251,12 @@ export class ItemsController {
   async deleteResponseState(
     @Param('acpId') acpId: string,
     @Param('itemId') itemId: string,
+    @Query('unitId') unitId: string | undefined,
     @Request() _req: any,
   ) {
-    return this.stateService.deleteResponseState(acpId, itemId, true);
+    if (!unitId) {
+      throw new BadRequestException('Query parameter "unitId" is required.');
+    }
+    return this.stateService.deleteResponseState(acpId, itemId, unitId, true);
   }
 }

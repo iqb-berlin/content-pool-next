@@ -264,12 +264,13 @@ describe('ItemsController', () => {
   });
 
   it('returns existing response state and fallback null when missing', async () => {
-    await expect(controller.getResponseState('acp-1', 'item-1')).resolves.toEqual({
+    await expect(controller.getResponseState('acp-1', 'item-1', 'unit-1')).resolves.toEqual({
       state: { value: 1 },
     });
+    expect(stateService.getResponseState).toHaveBeenCalledWith('acp-1', 'item-1', 'unit-1');
 
     stateService.getResponseState.mockResolvedValueOnce(null);
-    await expect(controller.getResponseState('acp-1', 'item-2')).resolves.toEqual({
+    await expect(controller.getResponseState('acp-1', 'item-2', 'unit-1')).resolves.toEqual({
       state: null,
     });
   });
@@ -291,11 +292,23 @@ describe('ItemsController', () => {
     );
   });
 
+  it('rejects direct response-state read without unitId', async () => {
+    await expect(controller.getResponseState('acp-1', 'item-1', undefined)).rejects.toThrow(
+      'Query parameter "unitId" is required.',
+    );
+  });
+
   it('deletes response state', async () => {
     await expect(
-      controller.deleteResponseState('acp-1', 'item-1', {} as any),
+      controller.deleteResponseState('acp-1', 'item-1', 'unit-1', {} as any),
     ).resolves.toEqual({ success: true });
 
-    expect(stateService.deleteResponseState).toHaveBeenCalledWith('acp-1', 'item-1', true);
+    expect(stateService.deleteResponseState).toHaveBeenCalledWith('acp-1', 'item-1', 'unit-1', true);
+  });
+
+  it('rejects response-state delete without unitId', async () => {
+    await expect(
+      controller.deleteResponseState('acp-1', 'item-1', undefined, {} as any),
+    ).rejects.toThrow('Query parameter "unitId" is required.');
   });
 });

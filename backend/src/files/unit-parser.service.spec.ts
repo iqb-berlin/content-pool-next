@@ -229,4 +229,35 @@ describe('UnitParserService', () => {
     const saved = acpRepo.save.mock.calls[0][0];
     expect(saved.acpIndex.assessmentParts[0].units[0].dependencies).toEqual([]);
   });
+
+  it('uses sourceVariable as fallback when variableId is missing in VOMD items', async () => {
+    const vomdWithSourceVariable = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: 'i2',
+          description: 'Item 2',
+          sourceVariable: 'SRC_VAR_2',
+          profiles: [],
+        },
+      ],
+    });
+
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === '/tmp/u1.xml') return xmlContent;
+      if (path === '/tmp/u1.vomd') return vomdWithSourceVariable;
+      if (path === '/tmp/u1.vocs') return '{}';
+      return '';
+    });
+
+    const result = await service.getItemListFromFiles('acp-1');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        itemId: 'i2',
+        variableId: 'SRC_VAR_2',
+        sourceVariable: 'SRC_VAR_2',
+      }),
+    );
+  });
 });

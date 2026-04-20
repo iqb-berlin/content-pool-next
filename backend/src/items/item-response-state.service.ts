@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ItemResponseState } from '../database/entities';
@@ -27,13 +27,12 @@ export class ItemResponseStateService {
 
     // Check if state already exists
     let state = await this.stateRepository.findOne({
-      where: { acpId, itemId },
+      where: { acpId, itemId, unitId },
     });
 
     if (state) {
       // Update existing
       state.responseData = responseData;
-      state.unitId = unitId;
     } else {
       // Create new
       state = this.stateRepository.create({
@@ -53,9 +52,10 @@ export class ItemResponseStateService {
   async getResponseState(
     acpId: string,
     itemId: string,
+    unitId: string,
   ): Promise<ItemResponseState | null> {
     return this.stateRepository.findOne({
-      where: { acpId, itemId },
+      where: { acpId, itemId, unitId },
     });
   }
 
@@ -70,7 +70,7 @@ export class ItemResponseStateService {
     itemList: { itemId: string; unitId: string }[],
   ): Promise<{ state: ItemResponseState | null; isFallback: boolean; fallbackItemId?: string }> {
     // First try to get direct state
-    const directState = await this.getResponseState(acpId, itemId);
+    const directState = await this.getResponseState(acpId, itemId, unitId);
     if (directState) {
       return { state: directState, isFallback: false };
     }
@@ -85,7 +85,7 @@ export class ItemResponseStateService {
     for (let i = currentIndex - 1; i >= 0; i--) {
       const prevItem = itemList[i];
       if (prevItem.unitId === unitId) {
-        const prevState = await this.getResponseState(acpId, prevItem.itemId);
+        const prevState = await this.getResponseState(acpId, prevItem.itemId, prevItem.unitId);
         if (prevState) {
           return {
             state: prevState,
@@ -106,13 +106,14 @@ export class ItemResponseStateService {
   async deleteResponseState(
     acpId: string,
     itemId: string,
+    unitId: string,
     userIsManager: boolean,
   ): Promise<{ success: boolean }> {
     if (!userIsManager) {
       throw new ForbiddenException('Only ACP managers can delete response states');
     }
 
-    const result = await this.stateRepository.delete({ acpId, itemId });
+    const result = await this.stateRepository.delete({ acpId, itemId, unitId });
     return { success: result.affected !== undefined && result.affected !== null && result.affected > 0 };
   }
 

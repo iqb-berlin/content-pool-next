@@ -44,6 +44,7 @@ export interface VomdItemData {
   unitLabel: string;
   description: string;
   variableId: string;
+  sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   tags?: string[];
@@ -555,13 +556,16 @@ export class UnitParserService {
              resolvedItemId = `${parsed.unitId}_${item.id}`;
           }
 
+          const sourceVariable = item.sourceVariable || item.variableId || item.variableReadOnlyId || '';
+
           items.push({
             itemId: item.id,
             uuid: item.uuid || `${parsed.unitId}_${item.id}`,
             unitId: parsed.unitId,
             unitLabel: parsed.unitLabel,
             description: item.description || '',
-            variableId: item.variableId || item.variableReadOnlyId || '',
+            variableId: sourceVariable,
+            sourceVariable: sourceVariable || undefined,
             metadata,
             empiricalDifficulty: (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
             tags:
@@ -854,7 +858,7 @@ export class UnitParserService {
       parsedItems.push({
         id: item.id,
         name: item.description || item.id,
-        sourceVariable: item.variableId || item.variableReadOnlyId || undefined,
+        sourceVariable: item.sourceVariable || item.variableId || item.variableReadOnlyId || undefined,
         metadata,
         useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
       });

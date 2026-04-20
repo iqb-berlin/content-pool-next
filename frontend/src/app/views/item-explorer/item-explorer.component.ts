@@ -26,6 +26,7 @@ interface ExplorerItem {
   unitLabel: string;
   description: string;
   variableId: string;
+  sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   tags?: string[];
@@ -2115,7 +2116,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.confirmDialogState = 'deleting';
 
-    this.api.deleteResponseState(this.acpId, this.selectedItem.itemId).subscribe({
+    this.api.deleteResponseState(this.acpId, this.selectedItem.itemId, this.selectedItem.unitId).subscribe({
       next: () => {
         this.hasResponseState = false;
         this.isFallbackState = false;
@@ -2167,7 +2168,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       fetch(definitionDep.downloadUrl)
         .then(res => res.text())
         .then(definition => {
-          const startPage = this.voudService.getStartPage(definition, this.selectedItem?.variableId || '');
+          const startPage = this.voudService.getStartPage(
+            definition,
+            this.resolveVariableRef(this.selectedItem),
+          );
           
           // Prepare unitState with saved response data
           const unitState: any = { dataParts: {} };
@@ -2283,9 +2287,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const selectedItem = this.selectedItem;
     if (!selectedItem) return false;
 
+    const variableRef = this.resolveVariableRef(selectedItem);
     const textTarget = this.findElementByText(doc, [
       selectedItem.itemId,
-      selectedItem.variableId,
+      variableRef,
       selectedItem.description,
     ]);
     if (textTarget) {
@@ -2313,7 +2318,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       );
     }
 
-    const variableRef = this.escapeSelectorValue(selectedItem.variableId || '');
+    const variableRef = this.escapeSelectorValue(this.resolveVariableRef(selectedItem));
     if (variableRef) {
       selectors.push(
         `[data-variable-id="${variableRef}"]`,
@@ -2326,6 +2331,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     return Array.from(new Set(selectors));
+  }
+
+  private resolveVariableRef(item?: ExplorerItem | null): string {
+    if (!item) return '';
+    return String(item.sourceVariable || item.variableId || '').trim();
   }
 
   private getCandidateItemIds(): string[] {

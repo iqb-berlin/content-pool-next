@@ -309,12 +309,16 @@ export class ApiService {
     return this.http.post(`${this.API}/acp/${acpId}/items/${itemId}/response-state`, { unitId, responseData });
   }
 
-  getResponseState(acpId: string, itemId: string): Observable<any> {
-    return this.http.get(`${this.API}/acp/${acpId}/items/${itemId}/response-state`);
+  getResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
+    return this.http.get(
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
+    );
   }
 
-  deleteResponseState(acpId: string, itemId: string): Observable<any> {
-    return this.http.delete(`${this.API}/acp/${acpId}/items/${itemId}/response-state`);
+  deleteResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
+    return this.http.delete(
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
+    );
   }
 
   getResponseStateWithFallback(

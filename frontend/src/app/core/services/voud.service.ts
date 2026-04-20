@@ -88,11 +88,20 @@ export class VoudService {
    * Returns the 0-based index or undefined if not found.
    */
   getStartPage(definition: string, variableId: string): number | undefined {
-    if (!variableId) return undefined;
+    const target = String(variableId || '').trim();
+    if (!target) return undefined;
     try {
       const { variablePages } = this.prepareDefinition(definition);
-      const match = variablePages.find(p => p.variable_ref === variableId);
-      return match ? match.variable_page : undefined;
+      const exactMatch = variablePages.find((p) => String(p.variable_ref || '').trim() === target);
+      if (exactMatch) {
+        return exactMatch.variable_page;
+      }
+
+      const targetLower = target.toLowerCase();
+      const normalizedMatch = variablePages.find(
+        (p) => String(p.variable_ref || '').trim().toLowerCase() === targetLower,
+      );
+      return normalizedMatch ? normalizedMatch.variable_page : undefined;
     } catch (e) {
       console.error('Error calculating start page from VOUD:', e);
       return undefined;

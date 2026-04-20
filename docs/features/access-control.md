@@ -1,0 +1,217 @@
+# Access Control
+
+## Overview
+
+ContentPool has a layered access model. Access is not decided by one flag alone. The
+effective permissions for a request depend on:
+
+1. authentication method,
+2. global app-admin status,
+3. ACP-specific roles,
+4. ACP access model,
+5. ACP feature flags.
+
+This gives the application a lot of flexibility without requiring completely separate
+codepaths for public, managed, and restricted content.
+
+## Supported Authentication Methods
+
+### Local username/password
+
+Endpoint:
+
+- `/api/auth/login`
+
+Use case:
+
+- internal users managed directly inside the application.
+
+### OIDC login
+
+Endpoints:
+
+- `/api/auth/oidc-config`
+- `/api/auth/oidc-callback`
+- `/api/auth/sync-oidc-roles`
+
+Use case:
+
+- administrators and users managed through Keycloak.
+
+Important behavior:
+
+- the frontend performs PKCE-based authorization code flow,
+- the backend validates the returned ID token,
+- the backend then issues its own JWT for application use.
+
+### ACP credential login
+
+Endpoint:
+
+- `/api/auth/credential-login`
+
+Use case:
+
+- ACP-specific viewer access when the access model is `CREDENTIALS_LIST`.
+
+Important behavior:
+
+- credentials are stored per ACP access config,
+- credential users are not normal application users,
+- their access token is only valid for the associated ACP.
+
+## Role Model
+
+### Global role
+
+- `APP_ADMIN`
+
+App admins can:
+
+- access admin settings,
+- manage users,
+- create and delete ACPs,
+- manage any ACP,
+- bypass most ACP-level restrictions.
+
+### ACP-level roles
+
+- `ACP_MANAGER`
+- `READ_ONLY`
+
+`ACP_MANAGER` allows write access to manager functionality for a specific ACP.
+`READ_ONLY` grants authenticated access to that ACP without management rights.
+
+## ACP Access Models
+
+Each ACP also has an access configuration.
+
+### `PUBLIC`
+
+The ACP is viewable without login. Feature flags still determine what anonymous viewers
+can do inside the read-only UI.
+
+### `REGISTERED`
+
+The ACP requires an authenticated user with appropriate rights. In practice this is used
+with local or OIDC-backed users.
+
+### `CREDENTIALS_LIST`
+
+The ACP requires ACP-specific viewer credentials. Managers configure and maintain the
+username/password list through the ACP access settings.
+
+## Who Decides Access?
+
+### Backend authority
+
+The backend is the final authority. `AcpAccessGuard` can grant access when:
+
+1. the current user is an app admin,
+2. the current user holds an ACP role,
+3. the current token is a credential token for the ACP,
+4. the ACP is public.
+
+If none of those conditions apply, the request is rejected.
+
+### Frontend guidance
+
+Angular guards guide the user into the right flow:
+
+- `adminGuard`
+- `authGuard`
+- `acpManagerGuard`
+- `acpViewGuard`
+
+They improve UX, but they do not replace backend authorization.
+
+## Feature Flags
+
+Feature flags are stored in `AcpAccessConfig.featureConfig` and mainly affect non-manager viewers.
+
+Important supported flags include:
+
+- `allowIndexDownload`
+- `allowUnitDownload`
+- `allowFileDownload`
+- `enableUnitView`
+- `enableSequenceNavigation`
+- `enableItemList`
+- `enableItemClick`
+- `enableItemListFilter`
+- `enableItemListSort`
+- `enableItemListTags`
+- `enableCommenting`
+- `commentTargets`
+- `showMetadata`
+- `showRichText`
+- `showCodingScheme`
+- `metadataColumns`
+- `availableTags`
+- `persistUserPreferences`
+- `showAudioVideoCodingVariables`
+
+Managers and app admins generally bypass these restrictions so they can inspect and
+maintain ACP content even when public-facing features are disabled.
+
+## Metadata Columns and Legacy Compatibility
+
+The backend normalizes metadata-column configuration so newer `metadataColumns` values
+and legacy `itemListMetadataColumns` data can coexist safely.
+
+That matters for:
+
+- item list column visibility,
+- item explorer column order,
+- backward compatibility with older ACP configuration payloads.
+
+## Credential Security Rules
+
+ACP credential passwords have strong validation:
+
+- minimum 12 characters,
+- at least one uppercase letter,
+- at least one lowercase letter,
+- at least one digit,
+- at least one special character.
+
+Credential login is also rate limited through environment variables.
+
+## Admin-Specific OIDC Enforcement
+
+The admin controller is protected by:
+
+- `JwtAuthGuard`
+- `OidcAuthGuard`
+- `RolesGuard`
+
+That means normal local logins are not enough for admin-only configuration areas. The
+application expects administration to happen through OIDC-backed accounts.
+
+## Access Outcome Matrix
+
+| User type | Can open public ACP | Can open registered ACP | Can manage ACP | Can use admin UI |
+| --- | --- | --- | --- | --- |
+| Anonymous visitor | Yes | No | No | No |
+| Credential viewer | Only linked ACP | Only linked ACP if configured that way | No | No |
+| Local user with `READ_ONLY` | Yes | Yes for assigned ACP | No | No |
+| Local or OIDC user with `ACP_MANAGER` | Yes | Yes for assigned ACP | Yes for assigned ACP | No |
+| OIDC app admin | Yes | Yes | Yes | Yes |
+
+## Access UX on the Frontend
+
+When access is missing or expired, the frontend redirects users to `/access` with a
+reason code. The UI can distinguish between:
+
+- login required,
+- insufficient rights,
+- feature disabled,
+- session expired.
+
+That makes access failures more understandable than a raw 401 or 403.
+
+## Related Documents
+
+- [ACP Workflows](acp-workflows.md)
+- [Item Explorer](item-explorer.md)
+- [Backend Architecture](../architecture/backend.md)

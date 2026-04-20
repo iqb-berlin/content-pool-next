@@ -1,0 +1,69 @@
+# IQB ContentPool Documentation
+
+This folder contains the main project documentation for the ContentPool application.
+The repository is a split Angular frontend and NestJS backend that manages Assessment
+Content Packages (ACPs), their files, access rules, review workflows, and external
+transfer APIs.
+
+## Start Here
+
+If you are new to the project, read the documentation in this order:
+
+1. [Architecture Overview](architecture/overview.md)
+2. [Getting Started](development/getting-started.md)
+3. [Access Control](features/access-control.md)
+4. [ACP Workflows](features/acp-workflows.md)
+5. [Deployment](operations/deployment.md)
+
+## Documentation Map
+
+### Architecture
+
+- [Architecture Overview](architecture/overview.md)
+  High-level system layout, request flows, deployment shape, and repository structure.
+- [Backend Architecture](architecture/backend.md)
+  NestJS bootstrap, modules, guards, persistence boundaries, and backend conventions.
+- [Frontend Architecture](architecture/frontend.md)
+  Angular routing, application shell, authentication flow, and client-side service model.
+- [Data Model](architecture/data-model.md)
+  Core entities, relationships, JSONB usage, and what lives in the database versus the filesystem.
+
+### Development
+
+- [Getting Started](development/getting-started.md)
+  Local setup, Docker and manual startup, ports, and common development commands.
+- [Configuration](development/configuration.md)
+  Environment variables, safe defaults, OIDC setup, migration toggles, and configuration boundaries.
+- [Testing and Quality](development/testing-and-quality.md)
+  Automated test commands, manual verification flows, and release-quality checks.
+
+### Features
+
+- [Access Control](features/access-control.md)
+  Authentication methods, access models, roles, feature flags, and route/guard behavior.
+- [ACP Workflows](features/acp-workflows.md)
+  How ACPs are created, populated, configured, versioned, and reviewed.
+- [Item Explorer](features/item-explorer.md)
+  Shared draft state, publish/discard flow, metadata columns, tags, and empirical difficulty workflows.
+- [Integrations and API](features/integrations-and-api.md)
+  Public view endpoints, management endpoints, server-to-server API tokens, scopes, and transfer workflows.
+
+### Operations
+
+- [Deployment](operations/deployment.md)
+  Development, production, and server-image deployment modes.
+- [Monitoring and Maintenance](operations/monitoring-and-maintenance.md)
+  Health checks, backups, upgrades, observability, and routine operator tasks.
+
+## Existing Root-Level Runbooks
+
+Several operational documents already exist at the repository root and remain useful:
+
+- [`/Users/julian/iqb-dev/content-pool-next/DEPLOY.md`](../DEPLOY.md)
+- [`/Users/julian/iqb-dev/content-pool-next/KEYCLOAK_SETUP.md`](../KEYCLOAK_SETUP.md)
+- [`/Users/julian/iqb-dev/content-pool-next/GITLAB_SETUP.md`](../GITLAB_SETUP.md)
+- [`/Users/julian/iqb-dev/content-pool-next/RELEASE_CHECKLIST.md`](../RELEASE_CHECKLIST.md)
+
+The files in `docs/` are intended to be the main navigable knowledge base for the
+application. The root-level documents are still helpful as focused runbooks for
+deployment, identity provider setup, and release readiness.

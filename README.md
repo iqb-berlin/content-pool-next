@@ -2,12 +2,24 @@
 
 Web application for managing **Assessment Content Packages (ACPs)** — bundles of data required to conduct and evaluate educational assessments.
 
+## Documentation
+
+Comprehensive project documentation now lives in [`docs/`](docs/README.md).
+
+Recommended entry points:
+
+- [`docs/README.md`](docs/README.md) for the full documentation map
+- [`docs/architecture/overview.md`](docs/architecture/overview.md) for the system overview
+- [`docs/development/getting-started.md`](docs/development/getting-started.md) for local setup
+- [`docs/features/acp-workflows.md`](docs/features/acp-workflows.md) for product workflows
+- [`docs/operations/deployment.md`](docs/operations/deployment.md) for runtime and deployment guidance
+
 ## Architecture
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Angular 19, SCSS, standalone components |
-| Backend | NestJS, TypeORM, JWT auth |
+| Frontend | Angular 21, standalone components |
+| Backend | NestJS 11, TypeORM, JWT auth |
 | Database | PostgreSQL 16 |
 | Deployment | Docker Compose, nginx reverse proxy |
 
@@ -19,6 +31,9 @@ Web application for managing **Assessment Content Packages (ACPs)** — bundles 
 # Setup and start everything
 make dev-setup  # First time only - install dependencies
 make dev        # Start all services (PostgreSQL, Keycloak, Backend, Frontend)
+# → Frontend at http://localhost:4201
+# → Backend API at http://localhost:3000/api
+# → Keycloak at http://localhost:8080
 
 # Useful commands
 make help              # Show all available commands
@@ -37,16 +52,16 @@ docker compose up db -d
 
 # Backend
 cd backend
-npm install --cache /tmp/npm-cache
+npm install --legacy-peer-deps
 npm run start:dev
 # → API at http://localhost:3000/api
 # → Swagger at http://localhost:3000/api/docs
-# → Seeded local users are available (for non-admin login)
+# → In non-production, an empty database gets a seeded local user: admin / admin
 # → App-Admin login requires OIDC (development user: iqb-admin / Admin1234!)
 
 # Frontend
 cd frontend
-npm install --cache /tmp/npm-cache
+npm install --legacy-peer-deps
 npx ng serve
 # → http://localhost:4200
 ```
@@ -196,10 +211,11 @@ docker exec content-pool-nginx nginx -t
 │   │   ├── views/          # Public read-only endpoints
 │   │   ├── comments/       # CRUD, export
 │   │   ├── items/          # Item extraction, filter/sort
+│   │   ├── item-explorer/  # Shared draft/published explorer state
 │   │   ├── admin/          # App settings
 │   │   ├── validation/     # Syntactic + semantic
 │   │   ├── api/            # Server-to-server API
-│   │   └── database/       # 10 TypeORM entities
+│   │   └── database/       # Entities, migrations, data source
 │   └── test/               # E2E tests
 ├── frontend/                # Angular SPA
 │   └── src/app/
@@ -208,28 +224,33 @@ docker exec content-pool-nginx nginx -t
 │       ├── admin/          # Users, settings, ACP list
 │       ├── acp-manager/    # Dashboard, files, snapshots, access
 │       └── views/          # Landing, units, sequences, items, index
+├── docs/                    # Project documentation
 ├── nginx/                   # Reverse proxy config
 ├── docker-compose.yml       # Development
-└── docker-compose.prod.yml  # Production
+├── docker-compose.prod.yml  # Production (build from source)
+└── docker-compose.server.yml # Production (pre-built images)
 ```
 
 ## Testing
 
 ```bash
-# Backend unit tests (46 tests)
+# Backend unit tests
 cd backend && npm test
 
 # Backend E2E tests (requires running PostgreSQL)
 cd backend && npm run test:e2e
+
+# Frontend unit tests
+cd frontend && npm test
 ```
 
 ## Key Features
 
-- **3 Access Models**: Public, Registered Users, Credentials List (time-limited)
+- **3 Access Models**: Public, Registered Users, Credentials List
 - **ACP-Index Management**: JSON import/export, interactive browser
 - **File Management**: Multi-file upload, SHA-256 checksums, validation
 - **Versioning**: Snapshots with copy-on-write, restore, diff
-- **16 Feature Flags**: Per-ACP control over read-only features
+- **Configurable Feature Flags**: Per-ACP control over read-only features
 - **Verona Player Integration**: Unit display via iframe
 - **Server-to-Server API**: For Studio, Testcenter, Kodierbox integration
 

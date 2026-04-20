@@ -43,12 +43,16 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
                   "
                   [class.badge-warning]="acp.accessModel === 'ADMIN'"
                 >
-                  @if (acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST') {
+                  @if (acp.accessModel === 'PUBLIC') {
                     Öffentlich
+                  } @else if (acp.accessModel === 'CREDENTIALS_LIST') {
+                    Zugangsdaten erforderlich
+                  } @else if (acp.accessModel === 'REGISTERED') {
+                    Registriert
                   } @else if (acp.accessModel === 'ADMIN') {
                     Admin
                   } @else {
-                    Zugangsdaten erforderlich
+                    Privat
                   }
                 </span>
               </div>

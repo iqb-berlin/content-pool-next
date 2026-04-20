@@ -61,7 +61,7 @@ export class AssignRoleDto {
 }
 
 export class UpdateAccessConfigDto {
-  @ApiProperty({ enum: ["PUBLIC", "CREDENTIALS_LIST"] })
+  @ApiProperty({ enum: ["PRIVATE", "PUBLIC", "CREDENTIALS_LIST"] })
   @IsString()
   @IsNotEmpty()
   accessModel!: string;

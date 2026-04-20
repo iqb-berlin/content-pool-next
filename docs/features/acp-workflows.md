@@ -19,8 +19,11 @@ At this stage the ACP exists, but it usually still needs:
 
 - an ACP index,
 - files,
-- access configuration,
+- access configuration review,
 - role assignments.
+
+New ACPs are created with a default access configuration of `PRIVATE`, so they are not
+publicly visible until a manager changes that setting.
 
 ## 2. Configure Access
 
@@ -28,8 +31,9 @@ Before sharing the ACP, managers define how it should be exposed.
 
 Typical choices:
 
+- private setup while managers prepare content,
 - public preview for open content,
-- registered access for known internal users,
+- role-based access for known internal users,
 - ACP credential list for tightly scoped review access.
 
 This same step also controls feature flags such as:

@@ -46,6 +46,11 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(true);
   });
 
+  it('starts with PRIVATE as the default base access model', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    expect(component.accessModel).toBe('PRIVATE');
+  });
+
   it('keeps explicit false for showAudioVideoCodingVariables', () => {
     api.getAccessConfig.mockReturnValue(
       of({

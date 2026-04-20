@@ -151,6 +151,12 @@ describe("ContentPool API (e2e)", () => {
     acpId = createRes.body.id;
     expect(createRes.body.packageId).toBe(testPackageId);
 
+    const accessConfigRes = await request(server)
+      .get(`/api/acp/${acpId}/access`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(accessConfigRes.body.accessModel).toBe("PRIVATE");
+
     await request(server)
       .put(`/api/acp/${acpId}/index`)
       .set("Authorization", `Bearer ${authToken}`)

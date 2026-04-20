@@ -192,9 +192,15 @@ The backend has two overlapping authorization systems:
 
 ACP read access can also be granted through an access configuration:
 
+- `PRIVATE`
 - `PUBLIC`
 - `REGISTERED`
 - `CREDENTIALS_LIST`
+
+In current application behavior, newly created ACPs start with `PRIVATE`. The
+`REGISTERED` label is mainly used as an effective frontend state for authenticated users
+with ACP roles, while the persisted base configuration is typically `PRIVATE`, `PUBLIC`,
+or `CREDENTIALS_LIST`.
 
 The `AcpAccessGuard` considers:
 

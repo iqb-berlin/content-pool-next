@@ -120,4 +120,19 @@ describe("AcpAccessGuard", () => {
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
     expect(request.acpAccessLevel).toBe("PUBLIC");
   });
+
+  it("rejects anonymous access when ACP is PRIVATE", async () => {
+    accessConfigRepository.findOne.mockResolvedValue(null);
+
+    const request: any = {
+      params: { acpId: "acp-private" },
+      user: null,
+      headers: {},
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(
+      "Authentication required",
+    );
+  });
 });

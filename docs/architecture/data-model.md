@@ -67,7 +67,8 @@ Key fields:
 - `validFrom`
 - `validUntil`
 
-It also owns the credential list entries for `CREDENTIALS_LIST` access.
+New ACPs receive a default access-config row with `accessModel = PRIVATE`. The table also
+owns the credential list entries for `CREDENTIALS_LIST` access.
 
 ### `AcpCredential`
 
@@ -193,7 +194,7 @@ The most important relationships are:
 - one `Acp` to many `Comment`
 - one `Acp` to many `AcpUserRole`
 - one `User` to many `AcpUserRole`
-- one `Acp` to many `AcpAccessConfig` records
+- one `Acp` to one effective `AcpAccessConfig` record used by the application
 - one `AcpAccessConfig` to many `AcpCredential`
 - one `Acp` to one `AcpItemExplorerState`
 

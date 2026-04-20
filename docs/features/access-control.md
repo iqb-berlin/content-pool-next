@@ -86,6 +86,12 @@ App admins can:
 
 Each ACP also has an access configuration.
 
+### `PRIVATE`
+
+This is the default for newly created ACPs. The ACP is not listed on the public landing
+page and is not reachable anonymously. Access is limited to app admins and users with an
+explicit ACP role.
+
 ### `PUBLIC`
 
 The ACP is viewable without login. Feature flags still determine what anonymous viewers
@@ -93,8 +99,9 @@ can do inside the read-only UI.
 
 ### `REGISTERED`
 
-The ACP requires an authenticated user with appropriate rights. In practice this is used
-with local or OIDC-backed users.
+`REGISTERED` is an effective access state for authenticated users with an ACP role. It is
+used in frontend presentation logic, but newly created access configurations are stored
+with `PRIVATE`, `PUBLIC`, or `CREDENTIALS_LIST` as the base model.
 
 ### `CREDENTIALS_LIST`
 
@@ -193,7 +200,7 @@ application expects administration to happen through OIDC-backed accounts.
 | User type | Can open public ACP | Can open registered ACP | Can manage ACP | Can use admin UI |
 | --- | --- | --- | --- | --- |
 | Anonymous visitor | Yes | No | No | No |
-| Credential viewer | Only linked ACP | Only linked ACP if configured that way | No | No |
+| Credential viewer | Only linked ACP | No | No | No |
 | Local user with `READ_ONLY` | Yes | Yes for assigned ACP | No | No |
 | Local or OIDC user with `ACP_MANAGER` | Yes | Yes for assigned ACP | Yes for assigned ACP | No |
 | OIDC app admin | Yes | Yes | Yes | Yes |

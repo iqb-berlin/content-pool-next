@@ -10,6 +10,7 @@ import { Acp } from "./acp.entity";
 import { AcpCredential } from "./acp-credential.entity";
 
 export enum AccessModel {
+  PRIVATE = "PRIVATE",
   PUBLIC = "PUBLIC",
   REGISTERED = "REGISTERED",
   CREDENTIALS_LIST = "CREDENTIALS_LIST",

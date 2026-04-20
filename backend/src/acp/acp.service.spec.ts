@@ -125,6 +125,13 @@ describe("AcpService", () => {
       await service.create({ packageId: "new-pkg", name: "New" });
       expect(acpRepo.create).toHaveBeenCalled();
       expect(acpRepo.save).toHaveBeenCalled();
+      expect(accessConfigRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acpId: "new-acp",
+          accessModel: AccessModel.PRIVATE,
+          allowRegistered: false,
+        }),
+      );
     });
 
     it("should throw ConflictException for duplicate package ID", async () => {
@@ -464,10 +471,23 @@ describe("AcpService", () => {
   });
 
   describe("access config retrieval and metadata updates", () => {
-    it("returns null config and persists normalized feature config when needed", async () => {
+    it("creates a default private config when missing and persists normalized feature config when needed", async () => {
+      acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce(null);
-      await expect(service.getAccessConfig("acp-1")).resolves.toBeNull();
+      await expect(service.getAccessConfig("acp-1")).resolves.toMatchObject({
+        acpId: "acp-1",
+        accessModel: AccessModel.PRIVATE,
+        allowRegistered: false,
+      });
+      expect(accessConfigRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acpId: "acp-1",
+          accessModel: AccessModel.PRIVATE,
+          allowRegistered: false,
+        }),
+      );
 
+      acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce({
         id: "cfg-1",
         acpId: "acp-1",
@@ -489,15 +509,26 @@ describe("AcpService", () => {
       );
     });
 
-    it("updates metadata columns and rejects missing config", async () => {
+    it("updates metadata columns and creates a default config when missing", async () => {
+      acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce(null);
       await expect(
         service.updateMetadataColumns("acp-1", {
           visibleColumns: ["a"],
           columnOrder: ["a"],
         }),
-      ).rejects.toThrow(NotFoundException);
+      ).resolves.toMatchObject({
+        acpId: "acp-1",
+        accessModel: AccessModel.PRIVATE,
+        featureConfig: expect.objectContaining({
+          metadataColumns: {
+            visible: ["a"],
+            order: ["a"],
+          },
+        }),
+      });
 
+      acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce({
         acpId: "acp-1",
         featureConfig: {},

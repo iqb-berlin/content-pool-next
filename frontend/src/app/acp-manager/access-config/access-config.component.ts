@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { Credential } from '../../core/models/api.models';
+import { AccessModel, Credential } from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 
 @Component({
@@ -18,10 +18,26 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
     <div class="card">
       <h3>Zugriffsmodell</h3>
       <p class="help-text">
-        Optionen 1 und 3 schließen einander aus. Option 2 kann zusätzlich gewählt werden.
+        Optionen 1 bis 3 schließen einander als Basismodell aus. Option 4 kann zusätzlich
+        gewählt werden.
       </p>
 
       <div class="radio-group">
+        <label class="radio-option" [class.active]="accessModel === 'PRIVATE'">
+          <input
+            type="radio"
+            name="accessModel"
+            value="PRIVATE"
+            [(ngModel)]="accessModel"
+            (ngModelChange)="onAccessModelChange()"
+          />
+          <div>
+            <strong>1. Privat</strong>
+            <span class="radio-desc"
+              >Nur App-Admins und Personen mit zugewiesener ACP-Rolle haben Zugriff</span
+            >
+          </div>
+        </label>
         <label class="radio-option" [class.active]="accessModel === 'PUBLIC'">
           <input
             type="radio"
@@ -31,7 +47,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             (ngModelChange)="onAccessModelChange()"
           />
           <div>
-            <strong>1. Öffentlich (Public)</strong>
+            <strong>2. Öffentlich (Public)</strong>
             <span class="radio-desc">Jede Person hat ohne Anmeldung Zugriff</span>
           </div>
         </label>
@@ -54,14 +70,23 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
       <label class="feature-toggle" style="margin-top:12px">
         <input type="checkbox" [(ngModel)]="allowRegistered" />
-        <span><strong>2. Registrierte Nutzer</strong> — zusätzlich zu oben</span>
+        <span><strong>4. Registrierte Nutzer</strong> — zusätzlich zu oben</span>
       </label>
 
       @if (allowRegistered) {
         <div class="sub-section">
           <p class="help-text">
-            Nur Nutzer mit einer zugewiesenen Rolle (Gast, Reviewer, Manager) können auf dieses ACP
-            zugreifen.
+            Zusätzlich zu {{ getBaseAccessLabel() }} erhalten auch registrierte Nutzer mit einer
+            zugewiesenen ACP-Rolle Zugriff.
+          </p>
+        </div>
+      }
+
+      @if (accessModel === 'PRIVATE' && !allowRegistered) {
+        <div class="sub-section">
+          <p class="help-text" style="margin-bottom: 0;">
+            Neue ACPs starten standardmäßig in diesem Zustand. Das ACP erscheint nicht auf der
+            Landing-Page und ist nicht anonym erreichbar.
           </p>
         </div>
       }
@@ -659,7 +684,7 @@ export class AccessConfigComponent implements OnInit {
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
 
   acpId = '';
-  accessModel = 'PUBLIC';
+  accessModel: AccessModel = 'PRIVATE';
   allowRegistered = false;
   validFrom = '';
   validUntil = '';
@@ -784,16 +809,14 @@ export class AccessConfigComponent implements OnInit {
   loadConfig() {
     this.api.getAccessConfig(this.acpId).subscribe({
       next: (config) => {
-        if (config) {
-          this.accessModel = config.accessModel;
-          this.allowRegistered = config.allowRegistered || false;
-          this.featureConfig = config.featureConfig || {};
-          this.applyFeatureConfigDefaults();
-          this.validFrom = this.toDateTimeLocalString(config.validFrom);
-          this.validUntil = this.toDateTimeLocalString(config.validUntil);
-          this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
-          this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
-        }
+        this.accessModel = config.accessModel;
+        this.allowRegistered = config.allowRegistered || false;
+        this.featureConfig = config.featureConfig || {};
+        this.applyFeatureConfigDefaults();
+        this.validFrom = this.toDateTimeLocalString(config.validFrom);
+        this.validUntil = this.toDateTimeLocalString(config.validUntil);
+        this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
+        this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
       },
     });
   }
@@ -810,12 +833,18 @@ export class AccessConfigComponent implements OnInit {
   }
 
   onAccessModelChange() {
-    // Enforce mutual exclusion: PUBLIC and CREDENTIALS_LIST cannot coexist
+    // Enforce mutual exclusion between the three base access models.
     this.dateError = '';
     // Auto-fill validFrom with current time when switching to CREDENTIALS_LIST
     if (this.accessModel === 'CREDENTIALS_LIST' && !this.validFrom) {
       this.validFrom = this.getNowDateTimeLocal();
     }
+  }
+
+  getBaseAccessLabel(): string {
+    if (this.accessModel === 'PUBLIC') return 'der öffentlichen Freigabe';
+    if (this.accessModel === 'CREDENTIALS_LIST') return 'der Zugangsliste';
+    return 'dem privaten Zugriff';
   }
 
   validateDates(): boolean {

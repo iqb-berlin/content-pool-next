@@ -179,7 +179,7 @@ The manager UI covers:
 - ACP overview and dashboard,
 - file lifecycle operations,
 - snapshot creation and restore,
-- access model and credential management.
+- access model and credential management, including the default private state for new ACPs.
 
 ### Read-only area
 

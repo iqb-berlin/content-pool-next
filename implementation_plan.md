@@ -123,7 +123,7 @@ erDiagram
     ACP_ACCESS_CONFIG {
         uuid id PK
         uuid acp_id FK
-        string access_model "PUBLIC | REGISTERED | CREDENTIALS_LIST"
+        string access_model "PRIVATE | PUBLIC | REGISTERED | CREDENTIALS_LIST"
         jsonb feature_config
         timestamp valid_from
         timestamp valid_until
@@ -376,12 +376,13 @@ Snapshots use **copy-on-write** semantics:
 - Diff generation compares file checksums between snapshots
 
 ### 4. Access Control
-Three-tier access model:
-1. **Public**: No auth required, ACP listed on landing page
-2. **Registered User**: Standard JWT auth, role `READ_ONLY` on ACP
+Base access model with optional registered-user extension:
+1. **Private**: Default for new ACPs; only app admins and assigned ACP users can open it
+2. **Public**: No auth required, ACP listed on landing page
 3. **Credentials List**: Separate username/password pairs, time-limited (max 3 months), listed on landing page with login prompt
+4. **Registered User Extension**: Role-based access for assigned users can be combined with the base model
 
-Options 1 and 3 are mutually exclusive. Option 2 can be combined with either.
+Options 1 to 3 are mutually exclusive as the base model. Option 4 can be combined with any base model.
 
 ### 5. Verona Player Integration
 Units are displayed using a **Verona Player** loaded in an iframe. The player is loaded from the files stored in the ACP (dependency type `PLAYER`). The host application communicates with the player via the Verona API (`postMessage`).
@@ -514,7 +515,7 @@ cd backend && npm run test:cov
 ```
 
 Key test areas:
-- **Auth**: Login flows for all 3 access models, JWT validation, role guards
+- **Auth**: Login flows for private, public, credential, and role-based access paths; JWT validation; role guards
 - **ACP CRUD**: Create, read, update, delete ACPs with proper authorization
 - **File Management**: Upload, download, validation pipeline
 - **Snapshots**: Create, restore, diff generation

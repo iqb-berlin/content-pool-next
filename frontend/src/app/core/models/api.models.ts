@@ -127,10 +127,16 @@ export interface SnapshotCurrentDiff {
   unchanged: number;
 }
 
+export type AccessModel =
+  | 'PRIVATE'
+  | 'PUBLIC'
+  | 'REGISTERED'
+  | 'CREDENTIALS_LIST';
+
 export interface AccessConfig {
   id: string;
   acpId: string;
-  accessModel: 'PUBLIC' | 'REGISTERED' | 'CREDENTIALS_LIST';
+  accessModel: AccessModel;
   allowRegistered?: boolean;
   featureConfig: FeatureConfig;
   validFrom?: string;
@@ -200,7 +206,7 @@ export interface PublicAcp {
   id: string;
   name: string;
   description?: string;
-  accessModel: string;
+  accessModel: AccessModel | 'ADMIN';
   requiresLogin?: boolean;
 }
 

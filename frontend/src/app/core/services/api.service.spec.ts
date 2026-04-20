@@ -419,7 +419,7 @@ describe('ApiService', () => {
     });
 
     it('should update access config', () => {
-      const configData = { accessModel: 'REGISTERED' };
+      const configData = { accessModel: 'PRIVATE' };
       httpClientMock.put.mockReturnValue(of(configData));
 
       service.updateAccessConfig('acp1', configData).subscribe((result) => {

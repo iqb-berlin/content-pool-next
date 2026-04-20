@@ -110,7 +110,9 @@ export class AcpService {
       acpIndex: normalizedIndex,
     });
 
-    return this.acpRepository.save(acp);
+    const savedAcp = await this.acpRepository.save(acp);
+    await this.createDefaultAccessConfig(savedAcp.id);
+    return savedAcp;
   }
 
   async update(id: string, dto: UpdateAcpDto): Promise<Acp> {
@@ -239,13 +241,14 @@ export class AcpService {
   }
 
   // Access configuration
-  async getAccessConfig(acpId: string): Promise<AcpAccessConfig | null> {
-    const config = await this.accessConfigRepository.findOne({
+  async getAccessConfig(acpId: string): Promise<AcpAccessConfig> {
+    await this.findById(acpId);
+
+    const existingConfig = await this.accessConfigRepository.findOne({
       where: { acpId },
       relations: ["credentials"],
     });
-
-    if (!config) return null;
+    const config = await this.ensureAccessConfig(acpId, existingConfig);
 
     const normalizedFeatureConfig = normalizeFeatureConfig(
       config.featureConfig || {},
@@ -339,12 +342,12 @@ export class AcpService {
     acpId: string,
     dto: UpdateMetadataColumnsDto,
   ): Promise<AcpAccessConfig> {
-    const config = await this.accessConfigRepository.findOne({
+    await this.findById(acpId);
+
+    const existingConfig = await this.accessConfigRepository.findOne({
       where: { acpId },
     });
-    if (!config) {
-      throw new NotFoundException("Access configuration not found");
-    }
+    const config = await this.ensureAccessConfig(acpId, existingConfig);
 
     const currentConfig = config.featureConfig || {};
     const normalizedConfig = normalizeFeatureConfig(currentConfig);
@@ -585,6 +588,29 @@ export class AcpService {
     return this.acpUserRoleRepository.count({
       where: { acpId, role: AcpRole.ACP_MANAGER },
     });
+  }
+
+  private async ensureAccessConfig(
+    acpId: string,
+    existingConfig: AcpAccessConfig | null,
+  ): Promise<AcpAccessConfig> {
+    if (existingConfig) {
+      return existingConfig;
+    }
+
+    return this.createDefaultAccessConfig(acpId);
+  }
+
+  private async createDefaultAccessConfig(
+    acpId: string,
+  ): Promise<AcpAccessConfig> {
+    const config = this.accessConfigRepository.create({
+      acpId,
+      accessModel: AccessModel.PRIVATE,
+      allowRegistered: false,
+      featureConfig: normalizeFeatureConfig({}),
+    });
+    return this.accessConfigRepository.save(config);
   }
 
   private prepareIndexForSave(

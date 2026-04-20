@@ -20,7 +20,7 @@ export class CreateInitialSchema1740000000000 implements MigrationInterface {
       DO $$
       BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'acp_access_configs_access_model_enum') THEN
-          CREATE TYPE "acp_access_configs_access_model_enum" AS ENUM ('PUBLIC', 'REGISTERED', 'CREDENTIALS_LIST');
+          CREATE TYPE "acp_access_configs_access_model_enum" AS ENUM ('PRIVATE', 'PUBLIC', 'REGISTERED', 'CREDENTIALS_LIST');
         END IF;
       END
       $$;

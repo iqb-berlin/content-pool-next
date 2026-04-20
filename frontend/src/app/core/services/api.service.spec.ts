@@ -401,11 +401,6 @@ describe('ApiService', () => {
   });
 
   describe('Snapshots', () => {
-    const baseSnapshot = {
-      id: '1', acpId: 'acp1', versionNumber: 1, acpIndexSnapshot: {},
-      createdAt: '2024-01-01', changelog: 'Initial'
-    };
-
     it('should get snapshot diff', () => {
       httpClientMock.get.mockReturnValue(of({ changes: [] }));
 

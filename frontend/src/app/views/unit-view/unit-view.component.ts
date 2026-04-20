@@ -595,7 +595,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
             this.playerHeight = `${height}px`;
           }
         }
-      } catch (e) {
+      } catch (_e) {
         // Fallback for cross-origin or other errors
       }
     }, 500);

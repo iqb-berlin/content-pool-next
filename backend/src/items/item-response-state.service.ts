@@ -138,7 +138,7 @@ export class ItemResponseStateService {
   /**
    * Check if user is ACP manager (placeholder - actual check happens in controller).
    */
-  async checkIsManager(acpId: string, userId: string): Promise<boolean> {
+  async checkIsManager(_acpId: string, _userId: string): Promise<boolean> {
     // This is a placeholder - actual role checking should be done via AcpUserRole entity
     // The controller will handle the actual authorization check
     return false;

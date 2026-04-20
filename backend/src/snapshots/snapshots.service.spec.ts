@@ -105,7 +105,7 @@ describe('SnapshotsService', () => {
         .mockResolvedValueOnce({ versionNumber: 2 }) // latest snapshot
         .mockResolvedValueOnce({ ...mockSnapshot, id: 'new-snap', snapshotFiles: [] }); // findById after save
 
-      const result = await service.create('acp-1', 'Test changelog');
+      await service.create('acp-1', 'Test changelog');
       expect(snapshotRepo.create).toHaveBeenCalledWith(expect.objectContaining({
         versionNumber: 3,
         changelog: 'Test changelog',

@@ -100,7 +100,7 @@ describe('AcpService', () => {
   describe('create', () => {
     it('should create a new ACP', async () => {
       acpRepo.findOne.mockResolvedValueOnce(null); // packageId check
-      const result = await service.create({ packageId: 'new-pkg', name: 'New' });
+      await service.create({ packageId: 'new-pkg', name: 'New' });
       expect(acpRepo.create).toHaveBeenCalled();
       expect(acpRepo.save).toHaveBeenCalled();
     });

@@ -21,7 +21,7 @@ export class VoudService {
     let unitDefinition: any;
     try {
       unitDefinition = JSON.parse(definition);
-    } catch (e) {
+    } catch (_e) {
       // Try cleaning the content if it fails (as seen in the original script)
       const cleanedContent = definition.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
       unitDefinition = JSON.parse(cleanedContent);

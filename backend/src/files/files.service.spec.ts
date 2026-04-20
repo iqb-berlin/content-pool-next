@@ -169,7 +169,7 @@ describe('FilesService', () => {
         buffer: Buffer.from('{"test": true}'),
       } as Express.Multer.File;
 
-      const result = await service.upload('acp-1', multerFile);
+      await service.upload('acp-1', multerFile);
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
     });

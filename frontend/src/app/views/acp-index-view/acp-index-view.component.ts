@@ -322,7 +322,7 @@ export class AcpIndexViewComponent implements OnInit {
       const objectUrl = URL.createObjectURL(preparedBlob);
       window.open(objectUrl, '_blank', 'noopener');
       window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-    } catch (e) {
+    } catch (_e) {
       this.fileActionError = `Datei konnte nicht geöffnet werden (${action.fileName || action.fileId}).`;
     } finally {
       this.busyFileId = '';

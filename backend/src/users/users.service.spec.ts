@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
 import { UsersService } from './users.service';
 import { User, AcpUserRole } from '../database/entities';
 
@@ -72,7 +71,7 @@ describe('UsersService', () => {
       repo.findOne
         .mockResolvedValueOnce(null) // username check
         .mockResolvedValue({ ...mockUser, id: 'new-id' }); // findById after save
-      const result = await service.create({ username: 'jane', password: 'pass1234' });
+      await service.create({ username: 'jane', password: 'pass1234' });
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
     });
@@ -104,7 +103,7 @@ describe('UsersService', () => {
       repo.findOne
         .mockResolvedValueOnce({ ...mockUser }) // first findOne in setAppAdmin
         .mockResolvedValue({ ...mockUser, isAppAdmin: true }); // findById after save
-      const result = await service.setAppAdmin('user-1', true);
+      await service.setAppAdmin('user-1', true);
       expect(repo.save).toHaveBeenCalled();
     });
   });

@@ -1574,8 +1574,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     
     // Sort
     return list.sort((a, b) => {
-      let aVal = (this.codingSortField === 'id' ? a.id : (a.label || a.id)).toLowerCase();
-      let bVal = (this.codingSortField === 'id' ? b.id : (b.label || b.id)).toLowerCase();
+      const aVal = (this.codingSortField === 'id' ? a.id : (a.label || a.id)).toLowerCase();
+      const bVal = (this.codingSortField === 'id' ? b.id : (b.label || b.id)).toLowerCase();
       
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
@@ -2044,7 +2044,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   // --- Response State ---
-  private loadResponseStateForItem(item: ExplorerItem, index: number) {
+  private loadResponseStateForItem(item: ExplorerItem, _index: number) {
     // Build item list from filteredItems for fallback lookup
     const itemList = this.filteredItems.map(i => ({ itemId: i.itemId, unitId: i.unitId }));
 
@@ -2585,7 +2585,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             this.playerHeight = `${height}px`;
           }
         }
-      } catch (e) {
+      } catch (_e) {
         // Cross-origin restriction or other error
       }
     }, 500);

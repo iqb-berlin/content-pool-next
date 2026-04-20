@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppSettings } from '../database/entities';
@@ -28,7 +28,7 @@ export class AdminService {
   }
 
   async updateSettings(data: Partial<AppSettings>): Promise<AppSettings> {
-    let settings = await this.getSettings();
+    const settings = await this.getSettings();
     if (data.theme !== undefined) settings.theme = data.theme;
     if (data.language !== undefined) settings.language = data.language;
     if (data.logoUrl !== undefined) settings.logoUrl = data.logoUrl;

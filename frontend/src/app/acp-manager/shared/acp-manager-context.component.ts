@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { Component, DestroyRef, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Acp } from '../../core/models/api.models';
@@ -17,7 +17,7 @@ interface AcpRoleAssignment {
   imports: [RouterLink],
   template: `
     <div class="acp-context">
-      <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm">← Zur Übersicht</a>
+      <a [routerLink]="backLink" class="btn btn-outline btn-sm">{{ backLabel }}</a>
 
       <div class="context-meta">
         @if (acp) {
@@ -57,14 +57,16 @@ export class AcpManagerContextComponent implements OnInit {
   acpId = '';
   acp: Acp | null = null;
   roleLabel = 'Zugriff gewährt';
+  backLink: string[] = ['/acps'];
+  backLabel = '← Zur ACP-Liste';
 
-  private readonly destroyRef = inject(DestroyRef);
   private roleAssignments: AcpRoleAssignment[] = [];
 
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
-    private auth: AuthService
+    private auth: AuthService,
+    private destroyRef: DestroyRef
   ) {}
 
   ngOnInit() {
@@ -73,6 +75,7 @@ export class AcpManagerContextComponent implements OnInit {
       || '';
     if (!this.acpId) return;
 
+    this.setBackNavigation();
     this.updateRoleLabel();
 
     this.api.getAcp(this.acpId)
@@ -104,5 +107,17 @@ export class AcpManagerContextComponent implements OnInit {
 
     const myRole = this.roleAssignments.find((assignment) => assignment.userId === currentUser.id)?.role;
     this.roleLabel = getAcpRoleLabel(myRole, isAppAdmin);
+  }
+
+  private setBackNavigation() {
+    const currentPath = this.route.snapshot.routeConfig?.path ?? '';
+    if (!currentPath) {
+      this.backLink = ['/acps'];
+      this.backLabel = '← Zur ACP-Liste';
+      return;
+    }
+
+    this.backLink = ['/manage', this.acpId];
+    this.backLabel = '← Zur Übersicht';
   }
 }

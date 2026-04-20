@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
+import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
 
@@ -13,7 +14,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       <app-breadcrumb [items]="breadcrumbs" />
 
       <div class="acp-header">
-        <h1>{{ data.name }}</h1>
+        <div class="acp-header-main">
+          <h1>{{ data.name }}</h1>
+          @if (canManageAcp) {
+            <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm">← Zur Verwaltung</a>
+          }
+        </div>
         @if (data.description) {
           <p class="desc">{{ data.description }}</p>
         }
@@ -123,6 +129,13 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     .acp-header {
       margin-bottom: 32px;
     }
+    .acp-header-main {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
     .acp-header h1 {
       font-size: 2rem;
       font-weight: 700;
@@ -210,18 +223,30 @@ export class AcpStartComponent implements OnInit {
   data: any = null;
   fc: any = {};  // feature config
   breadcrumbs: BreadcrumbItem[] = [];
+  canManageAcp = false;
   myComments: any[] = [];
   commentOpen = false;
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(
+    private route: ActivatedRoute,
+    private api: ApiService,
+    private auth: AuthService
+  ) {}
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
+    this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
+
     this.api.getAcpStartPage(this.acpId).subscribe(d => {
       this.data = d;
       this.fc = d?.featureConfig || {};
+
+      const managerCrumb: BreadcrumbItem[] = this.canManageAcp
+        ? [{ label: 'Verwaltung', route: ['/manage', this.acpId] }]
+        : [];
       this.breadcrumbs = [
         { label: 'Assessment Content Pool', route: ['/'] },
+        ...managerCrumb,
         { label: d?.name || 'ACP' },
       ];
 

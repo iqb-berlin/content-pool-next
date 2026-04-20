@@ -89,17 +89,12 @@ export class FilesController {
   @ApiOperation({ summary: 'Delete all files for an ACP' })
   async deleteAll(@Param('acpId') acpId: string) {
     await this.filesService.deleteAll(acpId);
-    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
-    const responseStateCleanup = await this.filesService.cleanupOrphanedResponseStates(acpId);
-    const validationRun = await this.validationService.autoValidateUploadedFiles(
-      acpId,
-      await this.filesService.findByAcp(acpId),
-    );
+    const cleanupResult = await this.filesService.cleanupReferencesAfterFileMutation(acpId);
     return {
       message: 'All files deleted successfully',
-      cleanupReport,
-      responseStateCleanup,
-      validationSummary: validationRun.summary,
+      cleanupReport: cleanupResult.cleanupReport,
+      responseStateCleanup: cleanupResult.responseStateCleanup,
+      validationSummary: cleanupResult.validationSummary,
     };
   }
 
@@ -198,6 +193,14 @@ export class FilesController {
       acpId,
       uploadedFiles,
     );
+
+    const strategy = (conflictStrategy || '').trim().toLowerCase();
+    if (strategy === 'overwrite') {
+      await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
+        skipValidation: true,
+      });
+    }
+
     return {
       files: validationRun.files,
       syncReport,
@@ -248,17 +251,12 @@ export class FilesController {
   @ApiOperation({ summary: 'Delete a file' })
   async delete(@Param('acpId') acpId: string, @Param('fileId') fileId: string) {
     await this.filesService.deleteForAcp(acpId, fileId);
-    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
-    const responseStateCleanup = await this.filesService.cleanupOrphanedResponseStates(acpId);
-    const validationRun = await this.validationService.autoValidateUploadedFiles(
-      acpId,
-      await this.filesService.findByAcp(acpId),
-    );
+    const cleanupResult = await this.filesService.cleanupReferencesAfterFileMutation(acpId);
     return {
       message: 'File deleted successfully',
-      cleanupReport,
-      responseStateCleanup,
-      validationSummary: validationRun.summary,
+      cleanupReport: cleanupResult.cleanupReport,
+      responseStateCleanup: cleanupResult.responseStateCleanup,
+      validationSummary: cleanupResult.validationSummary,
     };
   }
 

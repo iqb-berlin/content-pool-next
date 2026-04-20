@@ -39,6 +39,15 @@ describe('FilesController', () => {
       uploadMultiple: jest.fn().mockResolvedValue([baseFile]),
       deleteAll: jest.fn().mockResolvedValue(undefined),
       deleteForAcp: jest.fn().mockResolvedValue(undefined),
+      cleanupReferencesAfterFileMutation: jest.fn().mockResolvedValue({
+        cleanupReport: { removed: 1 },
+        responseStateCleanup: {
+          totalStates: 2,
+          deletedStates: 1,
+          keptStates: 1,
+        },
+        validationSummary: { totalFiles: 1 },
+      }),
       cleanupOrphanedResponseStates: jest.fn().mockResolvedValue({
         totalStates: 2,
         deletedStates: 1,
@@ -187,8 +196,7 @@ describe('FilesController', () => {
     const result = await controller.deleteAll('acp-1');
 
     expect(filesService.deleteAll).toHaveBeenCalledWith('acp-1');
-    expect(unitParserService.pruneMissingDependencies).toHaveBeenCalledWith('acp-1');
-    expect(filesService.cleanupOrphanedResponseStates).toHaveBeenCalledWith('acp-1');
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith('acp-1');
     expect(result).toEqual({
       message: 'All files deleted successfully',
       cleanupReport: { removed: 1 },
@@ -268,6 +276,10 @@ describe('FilesController', () => {
       [{ originalname: 'unit-1.xml' }],
       'overwrite',
     );
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith(
+      'acp-1',
+      { skipValidation: true },
+    );
     expect(payload).toEqual({
       files: [baseFile],
       syncReport: { unitsAdded: 1, unitsUpdated: 0, dependenciesLinked: 0, warnings: [] },
@@ -335,7 +347,7 @@ describe('FilesController', () => {
     const result = await controller.delete('acp-1', 'file-1');
 
     expect(filesService.deleteForAcp).toHaveBeenCalledWith('acp-1', 'file-1');
-    expect(filesService.cleanupOrphanedResponseStates).toHaveBeenCalledWith('acp-1');
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith('acp-1');
     expect(result).toEqual({
       message: 'File deleted successfully',
       cleanupReport: { removed: 1 },

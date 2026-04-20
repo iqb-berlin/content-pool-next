@@ -69,6 +69,8 @@ export interface IndexSyncReport {
 export interface IndexDependencyCleanupReport {
   unitsUpdated: number;
   dependenciesRemoved: number;
+  bookletsUpdated: number;
+  bookletDefinitionsRemoved: number;
   indexUpdated: boolean;
 }
 
@@ -414,7 +416,7 @@ export class UnitParserService {
       }
     }
 
-    this.pruneMissingDependenciesFromParts(parts, fileNameSet);
+    this.pruneMissingReferencesFromParts(parts, fileNameSet);
 
     const nextIndex = normalizeIndexForStorage({
       ...normalizedIndex,
@@ -448,7 +450,7 @@ export class UnitParserService {
       units: Array.isArray(part?.units) ? [...part.units] : [],
     }));
 
-    const cleanup = this.pruneMissingDependenciesFromParts(parts, fileNameSet);
+    const cleanup = this.pruneMissingReferencesFromParts(parts, fileNameSet);
 
     const nextIndex = normalizeIndexForStorage({
       ...normalizedIndex,
@@ -464,6 +466,8 @@ export class UnitParserService {
     return {
       unitsUpdated: cleanup.unitsUpdated,
       dependenciesRemoved: cleanup.dependenciesRemoved,
+      bookletsUpdated: cleanup.bookletsUpdated,
+      bookletDefinitionsRemoved: cleanup.bookletDefinitionsRemoved,
       indexUpdated,
     };
   }
@@ -776,12 +780,19 @@ export class UnitParserService {
     return availableFiles.has(id);
   }
 
-  private pruneMissingDependenciesFromParts(
+  private pruneMissingReferencesFromParts(
     parts: any[],
     fileNameSet: Set<string>,
-  ): { unitsUpdated: number; dependenciesRemoved: number } {
+  ): {
+    unitsUpdated: number;
+    dependenciesRemoved: number;
+    bookletsUpdated: number;
+    bookletDefinitionsRemoved: number;
+  } {
     let unitsUpdated = 0;
     let dependenciesRemoved = 0;
+    let bookletsUpdated = 0;
+    let bookletDefinitionsRemoved = 0;
 
     for (const part of parts) {
       for (let unitIndex = 0; unitIndex < part.units.length; unitIndex++) {
@@ -803,9 +814,69 @@ export class UnitParserService {
           dependenciesRemoved += removedForUnit;
         }
       }
+
+      const sourceInstruments = Array.isArray(part?.instruments)
+        ? part.instruments
+        : [];
+      if (!sourceInstruments.length) {
+        continue;
+      }
+
+      const instruments = [...sourceInstruments];
+      let partInstrumentsChanged = false;
+
+      for (let instrumentIndex = 0; instrumentIndex < instruments.length; instrumentIndex++) {
+        const instrument = instruments[instrumentIndex];
+        const sourceBooklets = Array.isArray(instrument?.testcenterBooklet)
+          ? instrument.testcenterBooklet
+          : [];
+        if (!sourceBooklets.length) {
+          continue;
+        }
+
+        const booklets = [...sourceBooklets];
+        let instrumentChanged = false;
+
+        for (let bookletIndex = 0; bookletIndex < booklets.length; bookletIndex++) {
+          const booklet = booklets[bookletIndex];
+          if (!booklet || typeof booklet !== 'object' || Array.isArray(booklet)) {
+            continue;
+          }
+
+          const definitionId = typeof booklet.definitionId === 'string'
+            ? booklet.definitionId.trim()
+            : '';
+          if (!definitionId || fileNameSet.has(definitionId)) {
+            continue;
+          }
+
+          const { definitionId: _removed, ...bookletWithoutDefinition } = booklet;
+          booklets[bookletIndex] = bookletWithoutDefinition;
+          instrumentChanged = true;
+          bookletsUpdated++;
+          bookletDefinitionsRemoved++;
+        }
+
+        if (instrumentChanged) {
+          instruments[instrumentIndex] = {
+            ...instrument,
+            testcenterBooklet: booklets,
+          };
+          partInstrumentsChanged = true;
+        }
+      }
+
+      if (partInstrumentsChanged) {
+        part.instruments = instruments;
+      }
     }
 
-    return { unitsUpdated, dependenciesRemoved };
+    return {
+      unitsUpdated,
+      dependenciesRemoved,
+      bookletsUpdated,
+      bookletDefinitionsRemoved,
+    };
   }
 
   private async extractItemsForUnit(

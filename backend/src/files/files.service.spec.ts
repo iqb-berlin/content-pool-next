@@ -9,6 +9,7 @@ import {
 import * as fs from 'fs/promises';
 import { FilesService } from './files.service';
 import { UnitParserService } from './unit-parser.service';
+import { ValidationService } from '../validation/validation.service';
 import {
   AcpFile,
   Acp,
@@ -30,6 +31,7 @@ describe('FilesService', () => {
   let accessConfigRepo: any;
   let stateRepo: any;
   let unitParserService: any;
+  let validationService: any;
 
   const mockFile = {
     id: 'file-1',
@@ -89,11 +91,31 @@ describe('FilesService', () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
     unitParserService = {
+      pruneMissingDependencies: jest.fn().mockResolvedValue({
+        unitsUpdated: 0,
+        dependenciesRemoved: 0,
+        bookletsUpdated: 0,
+        bookletDefinitionsRemoved: 0,
+        indexUpdated: false,
+      }),
       getItemListFromFiles: jest.fn().mockResolvedValue({
         columns: [],
         items: [],
         unitMetadata: {},
         codingSchemes: {},
+      }),
+    };
+    validationService = {
+      autoValidateUploadedFiles: jest.fn().mockResolvedValue({
+        files: [mockFile],
+        summary: {
+          totalFiles: 1,
+          validFiles: 1,
+          invalidFiles: 0,
+          semanticValid: true,
+          semanticIssueCount: 0,
+          timestamp: new Date().toISOString(),
+        },
       }),
     };
 
@@ -106,6 +128,7 @@ describe('FilesService', () => {
         { provide: getRepositoryToken(ItemResponseState), useValue: stateRepo },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('./uploads') } },
         { provide: UnitParserService, useValue: unitParserService },
+        { provide: ValidationService, useValue: validationService },
       ],
     }).compile();
 
@@ -314,6 +337,47 @@ describe('FilesService', () => {
         deletedStates: 0,
         keptStates: 0,
       });
+    });
+  });
+
+  describe('cleanupReferencesAfterFileMutation', () => {
+    it('runs dependency, response state, and validation cleanup', async () => {
+      const result = await service.cleanupReferencesAfterFileMutation('acp-1');
+
+      expect(unitParserService.pruneMissingDependencies).toHaveBeenCalledWith('acp-1');
+      expect(validationService.autoValidateUploadedFiles).toHaveBeenCalledWith(
+        'acp-1',
+        expect.any(Array),
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          cleanupReport: expect.objectContaining({
+            unitsUpdated: 0,
+            dependenciesRemoved: 0,
+            bookletsUpdated: 0,
+            bookletDefinitionsRemoved: 0,
+            indexUpdated: false,
+          }),
+          responseStateCleanup: expect.objectContaining({
+            totalStates: 0,
+            deletedStates: 0,
+            keptStates: 0,
+          }),
+          validationSummary: expect.objectContaining({
+            totalFiles: 1,
+          }),
+        }),
+      );
+    });
+
+    it('can skip validation step for bulk mutation flows', async () => {
+      const result = await service.cleanupReferencesAfterFileMutation('acp-1', {
+        skipValidation: true,
+      });
+
+      expect(unitParserService.pruneMissingDependencies).toHaveBeenCalledWith('acp-1');
+      expect(validationService.autoValidateUploadedFiles).not.toHaveBeenCalled();
+      expect(result.validationSummary).toBeUndefined();
     });
   });
 

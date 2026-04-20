@@ -19,6 +19,7 @@ import {
 } from '../acp/acp-index.utils';
 import { normalizeFeatureConfig } from '../acp/feature-config.utils';
 import { UnitParserService } from './unit-parser.service';
+import { ValidationService, AutoValidationSummary } from '../validation/validation.service';
 
 type UploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
 
@@ -37,6 +38,7 @@ export class FilesService {
     private readonly itemResponseStateRepository: Repository<ItemResponseState>,
     private readonly configService: ConfigService,
     private readonly unitParserService: UnitParserService,
+    private readonly validationService: ValidationService,
   ) {
     this.storagePath = this.configService.get<string>(
       'FILE_STORAGE_PATH',
@@ -268,6 +270,46 @@ export class FilesService {
       totalStates: existingStates.length,
       deletedStates: staleStateIds.length,
       keptStates: existingStates.length - staleStateIds.length,
+    };
+  }
+
+  async cleanupReferencesAfterFileMutation(
+    acpId: string,
+    options: { skipValidation?: boolean } = {},
+  ): Promise<{
+      cleanupReport: {
+        unitsUpdated: number;
+        dependenciesRemoved: number;
+        bookletsUpdated: number;
+        bookletDefinitionsRemoved: number;
+        indexUpdated: boolean;
+      };
+      responseStateCleanup: {
+        totalStates: number;
+        deletedStates: number;
+        keptStates: number;
+      };
+      validationSummary?: AutoValidationSummary;
+    }> {
+    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
+    const responseStateCleanup = await this.cleanupOrphanedResponseStates(acpId);
+
+    if (options.skipValidation) {
+      return {
+        cleanupReport,
+        responseStateCleanup,
+      };
+    }
+
+    const validationRun = await this.validationService.autoValidateUploadedFiles(
+      acpId,
+      await this.findByAcp(acpId),
+    );
+
+    return {
+      cleanupReport,
+      responseStateCleanup,
+      validationSummary: validationRun.summary,
     };
   }
 

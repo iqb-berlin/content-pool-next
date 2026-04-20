@@ -193,6 +193,51 @@ describe('UnitParserService', () => {
     ]);
   });
 
+  it('removes stale booklet definitionId references when file is deleted', async () => {
+    fileRepo.find.mockResolvedValueOnce([
+      { id: 'f-voud', acpId: 'acp-1', originalName: 'u1.voud', filePath: '/tmp/u1.voud' },
+    ]);
+
+    acpRepo.findOne.mockResolvedValueOnce({
+      id: 'acp-1',
+      acpIndex: {
+        packageId: 'pkg-1',
+        version: '0.5.0',
+        assessmentParts: [
+          {
+            id: 'part-1',
+            units: [],
+            instruments: [
+              {
+                id: 'instrument-1',
+                testcenterBooklet: [
+                  {
+                    id: 'booklet-1',
+                    definitionId: 'booklet-1.xml',
+                    modules: ['module-1'],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const result = await service.pruneMissingDependencies('acp-1');
+
+    expect(result.bookletsUpdated).toBe(1);
+    expect(result.bookletDefinitionsRemoved).toBe(1);
+    expect(result.indexUpdated).toBe(true);
+    expect(acpRepo.save).toHaveBeenCalledTimes(1);
+
+    const saved = acpRepo.save.mock.calls[0][0];
+    expect(saved.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0]).toEqual({
+      id: 'booklet-1',
+      modules: ['module-1'],
+    });
+  });
+
   it('prunes stale dependencies during sync even when no unit XML exists', async () => {
     fileRepo.find.mockResolvedValueOnce([
       { id: 'f-player', acpId: 'acp-1', originalName: 'iqb-player-aspect-2.11.6.html', filePath: '/tmp/player.html' },

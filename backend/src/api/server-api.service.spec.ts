@@ -10,7 +10,12 @@ describe('ServerApiService', () => {
   let service: ServerApiService;
   let acpRepository: { find: jest.Mock; findOne: jest.Mock; create: jest.Mock; save: jest.Mock };
   let fileRepository: { find: jest.Mock; findOne: jest.Mock };
-  let filesService: { deleteForAcp: jest.Mock; upload: jest.Mock; downloadForAcp: jest.Mock };
+  let filesService: {
+    deleteForAcp: jest.Mock;
+    upload: jest.Mock;
+    downloadForAcp: jest.Mock;
+    cleanupReferencesAfterFileMutation: jest.Mock;
+  };
   let snapshotsService: { create: jest.Mock };
 
   beforeEach(async () => {
@@ -30,6 +35,20 @@ describe('ServerApiService', () => {
       deleteForAcp: jest.fn(),
       upload: jest.fn(),
       downloadForAcp: jest.fn(),
+      cleanupReferencesAfterFileMutation: jest.fn().mockResolvedValue({
+        cleanupReport: {
+          unitsUpdated: 0,
+          dependenciesRemoved: 0,
+          bookletsUpdated: 0,
+          bookletDefinitionsRemoved: 0,
+          indexUpdated: false,
+        },
+        responseStateCleanup: {
+          totalStates: 0,
+          deletedStates: 0,
+          keptStates: 0,
+        },
+      }),
     };
 
     snapshotsService = {
@@ -218,6 +237,10 @@ describe('ServerApiService', () => {
     expect(filesService.upload).toHaveBeenCalledWith(
       'acp-1',
       expect.objectContaining({ originalname: 'UNIT-1.VOCS' }),
+    );
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith(
+      'acp-1',
+      { skipValidation: true },
     );
     expect(snapshotsService.create).toHaveBeenCalledWith('acp-1', 'Kodierschema aktualisiert');
     expect(result.snapshot.versionNumber).toBe(7);
@@ -520,6 +543,7 @@ describe('ServerApiService', () => {
       }),
     );
     expect(filesService.deleteForAcp).not.toHaveBeenCalled();
+    expect(filesService.cleanupReferencesAfterFileMutation).not.toHaveBeenCalled();
 
     const overwrite = await service.uploadFiles(
       'acp-1',
@@ -528,6 +552,10 @@ describe('ServerApiService', () => {
     );
     expect(overwrite[0]).toEqual(expect.objectContaining({ id: 'file-new-2' }));
     expect(filesService.deleteForAcp).toHaveBeenCalledWith('acp-1', 'file-old');
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith(
+      'acp-1',
+      { skipValidation: true },
+    );
   });
 
   it('validates replacement file list details before processing', async () => {
@@ -598,6 +626,10 @@ describe('ServerApiService', () => {
     expect(snapshotsService.create).toHaveBeenCalledWith(
       'acp-1',
       'Kodierschema ersetzt via sync-agent: UNIT-1.VOCS',
+    );
+    expect(filesService.cleanupReferencesAfterFileMutation).toHaveBeenCalledWith(
+      'acp-1',
+      { skipValidation: true },
     );
   });
 

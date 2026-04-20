@@ -152,6 +152,7 @@ export class ServerApiService {
     }
 
     const uploaded: AcpFile[] = [];
+    let deletedAny = false;
 
     for (const incoming of files) {
       const existing = byName.get(incoming.originalname);
@@ -166,12 +167,19 @@ export class ServerApiService {
         if (conflictStrategy === 'overwrite') {
           await this.filesService.deleteForAcp(acpId, existing.id);
           byName.delete(incoming.originalname);
+          deletedAny = true;
         }
       }
 
       const saved = await this.filesService.upload(acpId, incoming);
       uploaded.push(saved);
       byName.set(saved.originalName, saved);
+    }
+
+    if (deletedAny) {
+      await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
+        skipValidation: true,
+      });
     }
 
     return uploaded.map(file => this.toTransferFileMeta(file));
@@ -256,9 +264,11 @@ export class ServerApiService {
     }
 
     const replacedFiles: AcpFile[] = [];
+    let deletedAny = false;
     for (const plan of replacementPlan) {
       for (const existing of plan.matches) {
         await this.filesService.deleteForAcp(acpId, existing.id);
+        deletedAny = true;
       }
 
       const uploadPayload = {
@@ -267,6 +277,12 @@ export class ServerApiService {
       } as Express.Multer.File;
       const saved = await this.filesService.upload(acpId, uploadPayload);
       replacedFiles.push(saved);
+    }
+
+    if (deletedAny) {
+      await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
+        skipValidation: true,
+      });
     }
 
     const resolvedChangelog = this.resolveCodingSchemeChangelog(

@@ -31,6 +31,7 @@ describe('AcpStartComponent', () => {
     const route = createRouteStub();
     const api = createApiStub();
     const auth = {
+      isLoggedIn: false,
       hasAcpRole: vi.fn().mockReturnValue(true),
     };
 
@@ -49,6 +50,7 @@ describe('AcpStartComponent', () => {
     const route = createRouteStub();
     const api = createApiStub();
     const auth = {
+      isLoggedIn: false,
       hasAcpRole: vi.fn().mockReturnValue(false),
     };
 
@@ -60,5 +62,53 @@ describe('AcpStartComponent', () => {
       { label: 'Assessment Content Pool', route: ['/'] },
       { label: 'ACP 1' },
     ]);
+  });
+
+  it('does not load my comments for anonymous users even when commenting is enabled', () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { enableCommenting: true },
+          units: [],
+          sequences: [],
+        }),
+      ),
+    };
+    const auth = {
+      isLoggedIn: false,
+      hasAcpRole: vi.fn().mockReturnValue(false),
+    };
+
+    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    component.ngOnInit();
+
+    expect(api.getMyComments).not.toHaveBeenCalled();
+  });
+
+  it('loads my comments for logged-in users when commenting is enabled', () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { enableCommenting: true },
+          units: [],
+          sequences: [],
+        }),
+      ),
+    };
+    const auth = {
+      isLoggedIn: true,
+      hasAcpRole: vi.fn().mockReturnValue(false),
+    };
+
+    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    component.ngOnInit();
+
+    expect(api.getMyComments).toHaveBeenCalledWith('acp-1');
   });
 });

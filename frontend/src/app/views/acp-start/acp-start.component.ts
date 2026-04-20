@@ -93,20 +93,24 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           <div class="card section-card">
             <div class="section-icon">💬</div>
             <h3>Kommentare</h3>
-            <div class="comment-actions">
-              <button class="btn btn-outline btn-sm" (click)="commentOpen = true">💬 Kommentar hinzufügen</button>
-              <button class="btn btn-outline btn-sm" (click)="exportComments()">📄 Kommentare exportieren (XLSX)</button>
-            </div>
-            @if (myComments.length > 0) {
-              <div class="my-comments">
-                <h4>Meine letzten Kommentare:</h4>
-                @for (c of myComments.slice(0, 3); track c.id) {
-                  <div class="comment-summary">
-                    <span class="badge badge-info">{{ c.targetType }}</span>
-                    <span class="comment-text">{{ c.commentText }}</span>
-                  </div>
-                }
+            @if (isLoggedIn) {
+              <div class="comment-actions">
+                <button class="btn btn-outline btn-sm" (click)="commentOpen = true">💬 Kommentar hinzufügen</button>
+                <button class="btn btn-outline btn-sm" (click)="exportComments()">📄 Kommentare exportieren (XLSX)</button>
               </div>
+              @if (myComments.length > 0) {
+                <div class="my-comments">
+                  <h4>Meine letzten Kommentare:</h4>
+                  @for (c of myComments.slice(0, 3); track c.id) {
+                    <div class="comment-summary">
+                      <span class="badge badge-info">{{ c.targetType }}</span>
+                      <span class="comment-text">{{ c.commentText }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            } @else {
+              <p class="download-info">Für Kommentare bitte anmelden.</p>
             }
           </div>
         }
@@ -233,6 +237,10 @@ export class AcpStartComponent implements OnInit {
     private auth: AuthService
   ) {}
 
+  get isLoggedIn(): boolean {
+    return this.auth.isLoggedIn;
+  }
+
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
@@ -250,7 +258,7 @@ export class AcpStartComponent implements OnInit {
         { label: d?.name || 'ACP' },
       ];
 
-      if (this.fc.enableCommenting) {
+      if (this.fc.enableCommenting && this.isLoggedIn) {
         this.loadMyComments();
       }
     });

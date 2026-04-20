@@ -498,6 +498,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       selectors.push(
         `[data-variable-id="${variableRef}"]`,
         `[data-variable="${variableRef}"]`,
+        `[data-alias="${variableRef}"]`,
         `[data-ref="${variableRef}"]`,
         `[data-source-variable="${variableRef}"]`,
         `[name="${variableRef}"]`,

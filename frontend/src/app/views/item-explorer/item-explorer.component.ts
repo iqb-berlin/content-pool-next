@@ -331,12 +331,25 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             </thead>
             <tbody>
               @for (item of filteredItems; track item.unitId + '_' + item.itemId; let i = $index) {
-                <tr [class.active]="selectedItem?.uuid === item.uuid" (click)="selectItem(item, i)">
+                <tr
+                  [class.active]="selectedItem?.uuid === item.uuid"
+                  [class.no-preview]="!canPreviewItem(item)"
+                  (click)="selectItem(item, i)"
+                >
                   <td class="sticky-col">
-                    <code
-                      ><span class="unit-id">{{ item.unitId }}</span
-                      ><span class="item-id">{{ item.itemId }}</span></code
-                    >
+                    <div class="item-id-cell">
+                      <code
+                        ><span class="unit-id">{{ item.unitId }}</span
+                        ><span class="item-id">{{ item.itemId }}</span></code
+                      >
+                      @if (showPlayerTargetInfo) {
+                        @if (getPlayerTarget(item)) {
+                          <span class="player-target-badge">Player {{ getPlayerTarget(item) }}</span>
+                        } @else {
+                          <span class="player-target-badge unmapped">Kein Player-Ziel</span>
+                        }
+                      }
+                    </div>
                   </td>
                   <td>{{ item.unitLabel }}</td>
                   @if (hasEmpiricalDifficulty) {
@@ -397,12 +410,56 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       <!-- RIGHT: Preview -->
       <div right class="preview-panel">
         @if (selectedItem) {
+          @if (showPlayerTargetInfo) {
+            <div
+              class="preview-target-info card"
+              [class.unavailable]="!canPreviewSelectedItem || !!previewUnavailableReason"
+            >
+              <div class="preview-target-header">
+                <strong>Explorer-Item</strong>
+                <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
+                @if (selectedPreviewTarget) {
+                  <span class="player-target-badge">Player {{ selectedPreviewTarget }}</span>
+                } @else {
+                  <span class="player-target-badge unmapped">Kein Player-Ziel</span>
+                }
+              </div>
+              @if (selectedPreviewTarget && !previewUnavailableReason) {
+                <p>
+                  Der Listeneintrag springt im Player zur Variable
+                  <code>{{ selectedPreviewTarget }}</code
+                  >.
+                </p>
+              } @else if (selectedPreviewTarget) {
+                <p>
+                  Für diesen Listeneintrag ist die Player-Variable
+                  <code>{{ selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht zuverlässig
+                  in der Unit-Definition aufgelöst werden.
+                </p>
+              } @else {
+                <p>
+                  Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Die Vorschau bleibt
+                  daher deaktiviert, damit nicht versehentlich das falsche Item angezeigt wird.
+                </p>
+              }
+              @if (previewUnavailableReason) {
+                <p class="preview-warning">{{ previewUnavailableMessage }}</p>
+              }
+            </div>
+          }
+
           <!-- Player -->
           <div
             class="player-container card"
             [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
           >
-            @if (playerSrcDoc) {
+            @if (previewUnavailableReason) {
+              <div class="empty-state">
+                <div style="font-size:2.5rem;margin-bottom:12px">🧭</div>
+                <h3>Keine zielgenaue Player-Vorschau</h3>
+                <p>{{ previewUnavailableMessage }}</p>
+              </div>
+            } @else if (playerSrcDoc) {
               <iframe
                 #playerFrame
                 [srcdoc]="playerSrcDoc"
@@ -453,6 +510,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               class="btn btn-outline btn-sm"
               [(ngModel)]="pagingMode"
               (change)="onPagingModeChange()"
+              [disabled]="!canPreviewSelectedItem"
             >
               <option value="buttons">Paging: Buttons</option>
               <option value="separate">Paging: Separate</option>
@@ -1477,6 +1535,31 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
         color: var(--color-text);
         font-weight: 600;
       }
+      .item-id-cell {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+      }
+      .player-target-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(52, 152, 219, 0.12);
+        color: #1f618d;
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .player-target-badge.unmapped {
+        background: rgba(243, 156, 18, 0.14);
+        color: #9c640c;
+      }
+      .explorer-table tbody tr.no-preview td {
+        background: rgba(243, 156, 18, 0.05);
+      }
 
       /* Preview panel */
       .preview-panel {
@@ -1485,6 +1568,32 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
         padding: 0 16px;
         display: flex;
         flex-direction: column;
+      }
+      .preview-target-info {
+        margin-bottom: 12px;
+        padding: 14px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .preview-target-info.unavailable {
+        border-left: 4px solid #f39c12;
+        background: rgba(243, 156, 18, 0.05);
+      }
+      .preview-target-info p {
+        margin: 0;
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
+      .preview-target-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .preview-warning {
+        color: #9c640c;
+        font-weight: 500;
       }
       .player-container {
         padding: 0;
@@ -2125,6 +2234,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   enableTags = false;
   availableTags: string[] = [];
   showAudioVideoCodingVariables = true;
+  itemExplorerPlayerTargetInfoEnabled = true;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
   useServerPreferences = false;
@@ -2136,6 +2246,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private suppressDraftPatch = false;
   private saveStatusResetTimeout: ReturnType<typeof setTimeout> | null = null;
   private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private definitionContent: string | null = null;
+  private playerFrameReady = false;
+  private responseStateReady = false;
+  private unitLoadToken = 0;
+  private startSessionCounter = 0;
 
   // File Upload
   showUploadReport = false;
@@ -2201,6 +2316,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   isFallbackState = false;
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
+  previewUnavailableReason = '';
 
   // Response State Confirmation Dialogs
   showSaveConfirmDialog = false;
@@ -2234,6 +2350,24 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
     });
+  }
+
+  get selectedPreviewTarget(): string {
+    return this.getPlayerTarget(this.selectedItem);
+  }
+
+  get showPlayerTargetInfo(): boolean {
+    return this.canEditExplorer && this.itemExplorerPlayerTargetInfoEnabled;
+  }
+
+  get canPreviewSelectedItem(): boolean {
+    return this.canPreviewItem(this.selectedItem) && !this.previewUnavailableReason;
+  }
+
+  get previewUnavailableMessage(): string {
+    if (!this.previewUnavailableReason) return '';
+    if (this.showPlayerTargetInfo) return this.previewUnavailableReason;
+    return 'Für dieses Item ist keine zielgenaue Player-Vorschau verfügbar.';
   }
 
   private isAudioVideoCodingVariable(coding: CodingAsText): boolean {
@@ -2349,6 +2483,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
       this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
+      this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
@@ -2630,6 +2765,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.clearFocusRetryTimer();
     this.playerSrcDoc = null;
     this.unit = null;
+    this.definitionContent = null;
+    this.playerFrameReady = false;
+    this.responseStateReady = false;
+    this.previewUnavailableReason = '';
   }
 
   // --- Item Selection ---
@@ -2642,11 +2781,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.currentPage = 1;
     this.totalPages = 1;
     this.loadingUnit = true;
+    const token = ++this.unitLoadToken;
 
     // Reset response state flags
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.currentResponseData = null;
+    this.previewUnavailableReason = '';
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -2675,12 +2816,20 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.currentCodingSchemeAsText = null;
     }
 
+    if (!this.canPreviewItem(item)) {
+      this.loadingUnit = false;
+      this.previewUnavailableReason =
+        'Für dieses Item ist in den Explorer-Daten keine Player-Variable hinterlegt.';
+      return;
+    }
+
     // Load response state for this item (with fallback to previous item in same unit)
-    this.loadResponseStateForItem(item, index);
+    this.loadResponseStateForItem(item, token);
 
     // Load unit view data from files (for player + dependencies)
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
       next: (u: any) => {
+        if (token !== this.unitLoadToken) return;
         this.unit = u;
         this.loadingUnit = false;
 
@@ -2692,25 +2841,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           downloadUrl: this.api.appendAuthToken(d.downloadUrl),
         }));
         u.dependencies = deps;
-
-        // Find player HTML file
-        const playerDep = deps.find((d: any) => d.type === 'PLAYER' || d.type === 'player');
-        if (playerDep) {
-          fetch(playerDep.downloadUrl)
-            .then((res) => res.text())
-            .then((html) => {
-              this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
-            });
-        }
+        this.loadPlayerHtml(deps, token);
+        this.loadDefinition(deps, token);
       },
       error: () => {
+        if (token !== this.unitLoadToken) return;
         this.loadingUnit = false;
       },
     });
   }
 
   // --- Response State ---
-  private loadResponseStateForItem(item: ExplorerItem, _index: number) {
+  private loadResponseStateForItem(item: ExplorerItem, token: number) {
     // Build item list from filteredItems for fallback lookup
     const itemList = this.filteredItems.map((i) => ({ itemId: i.itemId, unitId: i.unitId }));
 
@@ -2718,6 +2860,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       .getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList)
       .subscribe({
         next: (result) => {
+          if (token !== this.unitLoadToken) return;
           if (
             result.state &&
             result.state.responseData &&
@@ -2732,12 +2875,17 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             this.hasResponseState = false;
             this.isFallbackState = false;
           }
+          this.responseStateReady = true;
+          this.startPlayerIfReady();
         },
         error: () => {
+          if (token !== this.unitLoadToken) return;
           // On error, continue without state
           this.currentResponseData = null;
           this.hasResponseState = false;
           this.isFallbackState = false;
+          this.responseStateReady = true;
+          this.startPlayerIfReady();
         },
       });
   }
@@ -2836,66 +2984,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   onPlayerLoaded() {
     if (!this.unit || !this.playerFrame?.nativeElement?.contentWindow) return;
-
-    const definitionDep = this.unit.dependencies?.find(
-      (d: any) =>
-        d.type === 'UNIT_DEFINITION' || d.type === 'unitDefinition' || d.type === 'definition',
-    );
-
-    if (definitionDep) {
-      fetch(definitionDep.downloadUrl)
-        .then((res) => res.text())
-        .then((definition) => {
-          const startPage = this.voudService.getStartPage(
-            definition,
-            this.resolveVariableRef(this.selectedItem),
-          );
-
-          // Prepare unitState with saved response data
-          const unitState: any = { dataParts: {} };
-          if (this.hasResponseState && this.currentResponseData) {
-            unitState.dataParts = this.currentResponseData;
-          }
-
-          this.sendToPlayer({
-            type: 'vopStartCommand',
-            sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
-            unitDefinition: definition,
-            unitState: unitState,
-            playerConfig: {
-              stateReportPolicy: 'none',
-              pagingMode:
-                this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
-                  ? 'concat-scroll'
-                  : this.pagingMode,
-              printMode:
-                this.pagingMode === 'view-all'
-                  ? 'on'
-                  : this.pagingMode === 'print-ids'
-                    ? 'on-with-ids'
-                    : 'off',
-              logPolicy: 'disabled',
-              startPage: startPage !== undefined ? startPage.toString() : undefined,
-              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
-            },
-          });
-          // Reset height for fresh load (unless print mode is on)
-          if (this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids') {
-            this.playerHeight = '100%';
-            this.stopAutoResize();
-          } else {
-            // Provide a large enough initial height for print mode
-            this.playerHeight = '2000px';
-            this.startAutoResize();
-          }
-          this.schedulePlayerFocus();
-        });
-    }
+    this.playerFrameReady = true;
+    this.startPlayerIfReady();
   }
 
   onPagingModeChange() {
     this.clearFocusRetryTimer();
     const src = this.playerSrcDoc;
+    this.playerFrameReady = false;
     this.playerSrcDoc = null;
     setTimeout(() => {
       this.playerSrcDoc = src;
@@ -2987,6 +3083,111 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return false;
   }
 
+  private loadPlayerHtml(dependencies: any[], token: number) {
+    const playerDep = dependencies.find(
+      (d: any) => String(d?.type || '').toLowerCase() === 'player',
+    );
+    if (!playerDep?.downloadUrl) {
+      if (token !== this.unitLoadToken) return;
+      this.playerSrcDoc = null;
+      return;
+    }
+
+    fetch(playerDep.downloadUrl)
+      .then((res) => res.text())
+      .then((html) => {
+        if (token !== this.unitLoadToken) return;
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.playerSrcDoc = null;
+      });
+  }
+
+  private loadDefinition(dependencies: any[], token: number) {
+    const definitionDep = dependencies.find((d: any) => {
+      const type = String(d?.type || '').toLowerCase();
+      return type === 'unit_definition' || type === 'unitdefinition' || type === 'definition';
+    });
+
+    if (!definitionDep?.downloadUrl) {
+      if (token !== this.unitLoadToken) return;
+      this.definitionContent = null;
+      return;
+    }
+
+    fetch(definitionDep.downloadUrl)
+      .then((res) => res.text())
+      .then((definition) => {
+        if (token !== this.unitLoadToken) return;
+        this.definitionContent = definition;
+        this.startPlayerIfReady();
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.definitionContent = null;
+      });
+  }
+
+  private startPlayerIfReady() {
+    if (
+      !this.playerFrameReady ||
+      !this.definitionContent ||
+      !this.unit ||
+      !this.selectedItem ||
+      !this.responseStateReady
+    ) {
+      return;
+    }
+
+    const selectedItem = this.selectedItem;
+    const previewTarget = this.getPlayerTarget(selectedItem);
+    const startPage = this.voudService.getStartPage(this.definitionContent, previewTarget);
+    if (startPage === undefined) {
+      this.previewUnavailableReason =
+        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
+      return;
+    }
+    this.previewUnavailableReason = '';
+
+    this.startSessionCounter += 1;
+    this.sendToPlayer({
+      type: 'vopStartCommand',
+      sessionId: `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter}`,
+      unitDefinition: this.definitionContent,
+      unitState: {
+        dataParts:
+          this.hasResponseState && this.currentResponseData ? this.currentResponseData : {},
+      },
+      playerConfig: {
+        stateReportPolicy: 'none',
+        pagingMode:
+          this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
+            ? 'concat-scroll'
+            : this.pagingMode,
+        printMode:
+          this.pagingMode === 'view-all'
+            ? 'on'
+            : this.pagingMode === 'print-ids'
+              ? 'on-with-ids'
+              : 'off',
+        logPolicy: 'disabled',
+        startPage: startPage !== undefined ? startPage.toString() : undefined,
+        enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
+      },
+    });
+
+    if (this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids') {
+      this.playerHeight = '100%';
+      this.stopAutoResize();
+    } else {
+      this.playerHeight = '2000px';
+      this.startAutoResize();
+    }
+    this.schedulePlayerFocus();
+  }
+
   private getFocusSelectors(): string[] {
     const selectedItem = this.selectedItem;
     if (!selectedItem) return [];
@@ -3009,6 +3210,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       selectors.push(
         `[data-variable-id="${variableRef}"]`,
         `[data-variable="${variableRef}"]`,
+        `[data-alias="${variableRef}"]`,
         `[data-ref="${variableRef}"]`,
         `[data-source-variable="${variableRef}"]`,
         `[name="${variableRef}"]`,
@@ -3020,8 +3222,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private resolveVariableRef(item?: ExplorerItem | null): string {
+    return this.getPlayerTarget(item);
+  }
+
+  getPlayerTarget(item?: ExplorerItem | null): string {
     if (!item) return '';
     return String(item.sourceVariable || item.variableId || '').trim();
+  }
+
+  canPreviewItem(item?: ExplorerItem | null): boolean {
+    return this.getPlayerTarget(item).length > 0;
   }
 
   private getCandidateItemIds(): string[] {

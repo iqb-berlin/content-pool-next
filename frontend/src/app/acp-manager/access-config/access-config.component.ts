@@ -375,6 +375,15 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]" />
           <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
         </label>
+        <label class="feature-toggle">
+          <input
+            type="checkbox"
+            [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]"
+          />
+          <span>
+            Zusätzliche Player-Zuordnungsinfos im Item-Explorer anzeigen (für Manager/Admins)
+          </span>
+        </label>
 
         @if (featureConfig['enableItemListTags']) {
           <div class="indent-section">
@@ -647,6 +656,7 @@ export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
+  readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
 
   acpId = '';
   accessModel = 'PUBLIC';
@@ -874,8 +884,13 @@ export class AccessConfigComponent implements OnInit {
   }
 
   private applyFeatureConfigDefaults() {
-    const value = this.featureConfig[this.showAudioVideoCodingVariablesKey];
-    this.featureConfig[this.showAudioVideoCodingVariablesKey] = value !== false;
+    const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
+    this.featureConfig[this.showAudioVideoCodingVariablesKey] = showAudioVideoCodingVariables !== false;
+
+    const showItemExplorerPlayerTargetInfo =
+      this.featureConfig[this.showItemExplorerPlayerTargetInfoKey];
+    this.featureConfig[this.showItemExplorerPlayerTargetInfoKey] =
+      showItemExplorerPlayerTargetInfo !== false;
   }
 
   toggleCommentTarget(target: string) {

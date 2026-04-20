@@ -13,20 +13,22 @@ export interface PrepareDefinitionOutput {
 
 @Injectable({ providedIn: 'root' })
 export class VoudService {
+  private parseDefinition(definition: string): any {
+    try {
+      return JSON.parse(definition);
+    } catch (_e) {
+      // Try cleaning the content if it fails (as seen in the original script)
+      const cleanedContent = definition.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+      return JSON.parse(cleanedContent);
+    }
+  }
+
   /**
    * Processes a response definition (VOUD) to extract and structure variable page information.
    * Based on the logic from coding-box/apps/backend/src/app/utils/voud/transform.ts
    */
   prepareDefinition(definition: string): PrepareDefinitionOutput {
-    let unitDefinition: any;
-    try {
-      unitDefinition = JSON.parse(definition);
-    } catch (_e) {
-      // Try cleaning the content if it fails (as seen in the original script)
-      const cleanedContent = definition.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
-      unitDefinition = JSON.parse(cleanedContent);
-    }
-
+    const unitDefinition = this.parseDefinition(definition);
     const pages = unitDefinition.pages || [];
 
     const rawVariablePagesData = pages.map((page: any, i: number) => {
@@ -93,24 +95,33 @@ export class VoudService {
     const target = String(variableId || '').trim();
     if (!target) return undefined;
     try {
-      const { variablePages } = this.prepareDefinition(definition);
-      const exactMatch = variablePages.find((p) => String(p.variable_ref || '').trim() === target);
-      if (exactMatch) {
-        return exactMatch.variable_page;
-      }
-
+      const unitDefinition = this.parseDefinition(definition);
+      const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
       const targetLower = target.toLowerCase();
-      const normalizedMatch = variablePages.find(
-        (p) =>
-          String(p.variable_ref || '')
-            .trim()
-            .toLowerCase() === targetLower,
-      );
-      return normalizedMatch ? normalizedMatch.variable_page : undefined;
+
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        const pageRefs = this.getPageVariableRefs(pages[pageIndex]);
+        if (pageRefs.some((ref) => ref === target || ref.toLowerCase() === targetLower)) {
+          return pageIndex;
+        }
+      }
+      return undefined;
     } catch (e) {
       console.error('Error calculating start page from VOUD:', e);
       return undefined;
     }
+  }
+
+  private getPageVariableRefs(page: any): string[] {
+    const aliases = this.listSimplify(this.getDeepestElements(page, 'alias', ['visibilityRules']));
+    const ids = this.listSimplify(this.getDeepestElements(page, 'id', ['visibilityRules']));
+    return Array.from(
+      new Set(
+        [...aliases, ...ids]
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
   }
 
   private getDeepestElements(x: any, label: string, noParent: string[] = []): any[] {

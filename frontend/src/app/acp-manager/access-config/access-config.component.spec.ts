@@ -65,6 +65,34 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(false);
   });
 
+  it('defaults showItemExplorerPlayerTargetInfo to true when flag is missing', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
+  });
+
+  it('keeps explicit false for showItemExplorerPlayerTargetInfo', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: {
+          showItemExplorerPlayerTargetInfo: false,
+        },
+      }),
+    );
+
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(false);
+  });
+
   it('persists showAudioVideoCodingVariables when saving features', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
@@ -80,6 +108,26 @@ describe('AccessConfigComponent', () => {
       expect.objectContaining({
         featureConfig: expect.objectContaining({
           showAudioVideoCodingVariables: false,
+        }),
+      }),
+    );
+  });
+
+  it('persists showItemExplorerPlayerTargetInfo when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      showItemExplorerPlayerTargetInfo: false,
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          showItemExplorerPlayerTargetInfo: false,
         }),
       }),
     );

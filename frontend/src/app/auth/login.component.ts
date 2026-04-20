@@ -87,6 +87,7 @@ export class LoginComponent implements OnInit {
   loading = false;
   error = '';
   message = '';
+  nextUrl = '';
   authContext: AuthContext | null = null;
   oidcConfig: OidcConfig | null = null;
   forType: 'admin' | 'acp' | null = null;
@@ -111,6 +112,9 @@ export class LoginComponent implements OnInit {
       if (forParam === 'admin' || forParam === 'acp') {
         this.forType = forParam;
       }
+
+      const nextParam = String(params['next'] || '').trim();
+      this.nextUrl = this.normalizeNextUrl(nextParam);
 
       // Load auth context
       this.loadAuthContext();
@@ -173,7 +177,7 @@ export class LoginComponent implements OnInit {
   }
 
   loginWithOidc() {
-    this.auth.initiateOidcLogin();
+    this.auth.initiateOidcLogin(this.nextUrl || undefined);
   }
 
   onSubmit() {
@@ -181,7 +185,11 @@ export class LoginComponent implements OnInit {
     this.error = '';
     this.auth.login(this.username, this.password).subscribe({
       next: () => {
-        this.router.navigate(['/']);
+        if (this.nextUrl) {
+          this.router.navigateByUrl(this.nextUrl);
+        } else {
+          this.router.navigate(['/']);
+        }
         this.loading = false;
       },
       error: (err) => {
@@ -189,5 +197,11 @@ export class LoginComponent implements OnInit {
         this.loading = false;
       }
     });
+  }
+
+  private normalizeNextUrl(value: string): string {
+    if (!value.startsWith('/')) return '';
+    if (value.startsWith('//')) return '';
+    return value;
   }
 }

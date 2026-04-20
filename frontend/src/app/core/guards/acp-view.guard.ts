@@ -1,7 +1,8 @@
 import { inject } from '@angular/core';
-import { Router, CanActivateFn, ActivatedRouteSnapshot } from '@angular/router';
+import { CanActivateFn, ActivatedRouteSnapshot, RouterStateSnapshot } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { ApiService } from '../services/api.service';
+import { AccessService } from '../services/access.service';
 import { catchError, map, of } from 'rxjs';
 
 /**
@@ -9,13 +10,18 @@ import { catchError, map, of } from 'rxjs';
  * Public access and credential-based access (via token) are handled by the backend.
  * Registered users are also checked against their roles for the ACP.
  */
-export const acpViewGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
+export const acpViewGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
   const auth = inject(AuthService);
   const api = inject(ApiService);
-  const router = inject(Router);
+  const access = inject(AccessService);
   const acpId = route.paramMap.get('acpId');
 
-  if (!acpId) return of(false);
+  if (!acpId) {
+    return of(access.createAccessUrlTree('insufficient_rights', {
+      context: 'view',
+      nextUrl: state.url,
+    }));
+  }
 
   // If already logged in (JWT or Credential Token), we let the request through
   // and let the backend handle the fine-grained access.
@@ -27,14 +33,19 @@ export const acpViewGuard: CanActivateFn = (route: ActivatedRouteSnapshot) => {
   return api.getAcpStartPage(acpId).pipe(
     map(() => true),
     catchError((err) => {
-      // If unauthorized, check if it requires credential login or regular login
       if (err.status === 401 || err.status === 403) {
-        // We could fetch the access model here to decide whether to redirect to /login or /credential-login
-        // For simplicity, we redirect to the landing page which shows the correct login button.
-        router.navigate(['/']);
-        return of(false);
+        return of(access.createAccessUrlTree('login_required', {
+          context: 'view',
+          acpId,
+          nextUrl: state.url,
+        }));
       }
-      return of(false);
+
+      return of(access.createAccessUrlTree('insufficient_rights', {
+        context: 'view',
+        acpId,
+        nextUrl: state.url,
+      }));
     })
   );
 };

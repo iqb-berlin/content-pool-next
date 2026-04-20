@@ -74,6 +74,14 @@ export class OidcCallbackComponent implements OnInit {
   private navigateToTarget(): void {
     const redirectUrl = sessionStorage.getItem('oidc_redirect_url') || '/';
     sessionStorage.removeItem('oidc_redirect_url');
-    this.router.navigate([redirectUrl]);
+    const normalized = this.normalizeRedirectUrl(redirectUrl);
+    this.router.navigateByUrl(normalized);
+  }
+
+  private normalizeRedirectUrl(value: string): string {
+    const trimmed = String(value || '').trim();
+    if (!trimmed.startsWith('/')) return '/';
+    if (trimmed.startsWith('//')) return '/';
+    return trimmed;
   }
 }

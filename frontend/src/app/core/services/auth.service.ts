@@ -216,6 +216,10 @@ export class AuthService {
     this.performLogout(broadcast);
   }
 
+  clearSession(broadcast = true): void {
+    this.performLogout(broadcast);
+  }
+
   private redirectToKeycloakLogout(idToken: string | null): void {
     this.getOidcConfig().subscribe((config) => {
       if (!config.enabled || !config.issuerUrl || !config.clientId) return;

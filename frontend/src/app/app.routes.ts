@@ -1,10 +1,11 @@
 import { Routes } from '@angular/router';
-import { authGuard, adminGuard } from './core/guards/auth.guard';
+import { authGuard, adminGuard, acpManagerGuard } from './core/guards/auth.guard';
 import { acpViewGuard } from './core/guards/acp-view.guard';
 import { itemExplorerPendingChangesGuard } from './core/guards/item-explorer-pending-changes.guard';
 
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./views/landing/landing.component').then(m => m.LandingComponent) },
+  { path: 'access', loadComponent: () => import('./auth/access.component').then(m => m.AccessComponent) },
   { path: 'login', loadComponent: () => import('./auth/login.component').then(m => m.LoginComponent) },
   { path: 'auth/callback', loadComponent: () => import('./auth/oidc-callback.component').then(m => m.OidcCallbackComponent) },
   { path: 'credential-login/:acpId', loadComponent: () => import('./auth/credential-login.component').then(m => m.CredentialLoginComponent) },
@@ -25,7 +26,7 @@ export const routes: Routes = [
   // ACP Manager routes
   {
     path: 'manage/:acpId',
-    canActivate: [authGuard],
+    canActivate: [acpManagerGuard],
     children: [
       { path: '', loadComponent: () => import('./acp-manager/dashboard/dashboard.component').then(m => m.DashboardComponent) },
       { path: 'files', loadComponent: () => import('./acp-manager/files/files.component').then(m => m.FilesComponent) },

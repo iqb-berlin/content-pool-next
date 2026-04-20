@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as crypto from 'crypto';
-import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
+import { AcpFile, Acp, AcpAccessConfig, ItemResponseState } from '../database/entities';
 import {
   findUnitInIndex,
   getAssessmentParts,
@@ -18,6 +18,7 @@ import {
   toRuntimeAcpIndex,
 } from '../acp/acp-index.utils';
 import { normalizeFeatureConfig } from '../acp/feature-config.utils';
+import { UnitParserService } from './unit-parser.service';
 
 type UploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
 
@@ -32,7 +33,10 @@ export class FilesService {
     private readonly acpRepository: Repository<Acp>,
     @InjectRepository(AcpAccessConfig)
     private readonly accessConfigRepository: Repository<AcpAccessConfig>,
+    @InjectRepository(ItemResponseState)
+    private readonly itemResponseStateRepository: Repository<ItemResponseState>,
     private readonly configService: ConfigService,
+    private readonly unitParserService: UnitParserService,
   ) {
     this.storagePath = this.configService.get<string>(
       'FILE_STORAGE_PATH',
@@ -225,6 +229,46 @@ export class FilesService {
       }
     }
     await this.fileRepository.remove(files);
+  }
+
+  async cleanupOrphanedResponseStates(
+    acpId: string,
+  ): Promise<{ totalStates: number; deletedStates: number; keptStates: number }> {
+    const existingStates = await this.itemResponseStateRepository.find({
+      where: { acpId },
+      select: {
+        id: true,
+        unitId: true,
+        itemId: true,
+      },
+    });
+
+    if (!existingStates.length) {
+      return {
+        totalStates: 0,
+        deletedStates: 0,
+        keptStates: 0,
+      };
+    }
+
+    const fileItemList = await this.unitParserService.getItemListFromFiles(acpId);
+    const validKeys = new Set(
+      (fileItemList.items || []).map((item) => `${item.unitId}::${item.itemId}`),
+    );
+
+    const staleStateIds = existingStates
+      .filter((state) => !validKeys.has(`${state.unitId}::${state.itemId}`))
+      .map((state) => state.id);
+
+    if (staleStateIds.length) {
+      await this.itemResponseStateRepository.delete(staleStateIds);
+    }
+
+    return {
+      totalStates: existingStates.length,
+      deletedStates: staleStateIds.length,
+      keptStates: existingStates.length - staleStateIds.length,
+    };
   }
 
   async getValidationResult(id: string): Promise<Record<string, unknown> | null> {

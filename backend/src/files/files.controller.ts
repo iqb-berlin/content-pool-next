@@ -90,6 +90,7 @@ export class FilesController {
   async deleteAll(@Param('acpId') acpId: string) {
     await this.filesService.deleteAll(acpId);
     const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
+    const responseStateCleanup = await this.filesService.cleanupOrphanedResponseStates(acpId);
     const validationRun = await this.validationService.autoValidateUploadedFiles(
       acpId,
       await this.filesService.findByAcp(acpId),
@@ -97,6 +98,7 @@ export class FilesController {
     return {
       message: 'All files deleted successfully',
       cleanupReport,
+      responseStateCleanup,
       validationSummary: validationRun.summary,
     };
   }
@@ -247,6 +249,7 @@ export class FilesController {
   async delete(@Param('acpId') acpId: string, @Param('fileId') fileId: string) {
     await this.filesService.deleteForAcp(acpId, fileId);
     const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
+    const responseStateCleanup = await this.filesService.cleanupOrphanedResponseStates(acpId);
     const validationRun = await this.validationService.autoValidateUploadedFiles(
       acpId,
       await this.filesService.findByAcp(acpId),
@@ -254,6 +257,7 @@ export class FilesController {
     return {
       message: 'File deleted successfully',
       cleanupReport,
+      responseStateCleanup,
       validationSummary: validationRun.summary,
     };
   }

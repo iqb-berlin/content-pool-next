@@ -8,7 +8,13 @@ import {
 } from '@nestjs/common';
 import * as fs from 'fs/promises';
 import { FilesService } from './files.service';
-import { AcpFile, Acp, AcpAccessConfig } from '../database/entities';
+import { UnitParserService } from './unit-parser.service';
+import {
+  AcpFile,
+  Acp,
+  AcpAccessConfig,
+  ItemResponseState,
+} from '../database/entities';
 
 jest.mock('fs/promises', () => ({
   mkdir: jest.fn().mockResolvedValue(undefined),
@@ -22,6 +28,8 @@ describe('FilesService', () => {
   let repo: any;
   let acpRepo: any;
   let accessConfigRepo: any;
+  let stateRepo: any;
+  let unitParserService: any;
 
   const mockFile = {
     id: 'file-1',
@@ -76,6 +84,18 @@ describe('FilesService', () => {
     accessConfigRepo = {
       findOne: jest.fn().mockResolvedValue({ featureConfig: {} }),
     };
+    stateRepo = {
+      find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    unitParserService = {
+      getItemListFromFiles: jest.fn().mockResolvedValue({
+        columns: [],
+        items: [],
+        unitMetadata: {},
+        codingSchemes: {},
+      }),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,7 +103,9 @@ describe('FilesService', () => {
         { provide: getRepositoryToken(AcpFile), useValue: repo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
         { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepo },
+        { provide: getRepositoryToken(ItemResponseState), useValue: stateRepo },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('./uploads') } },
+        { provide: UnitParserService, useValue: unitParserService },
       ],
     }).compile();
 
@@ -254,6 +276,44 @@ describe('FilesService', () => {
         expect.objectContaining({ id: 'file-1' }),
         expect.objectContaining({ id: 'file-2' }),
       ]);
+    });
+  });
+
+  describe('cleanupOrphanedResponseStates', () => {
+    it('deletes response states that no longer match any file-backed item', async () => {
+      stateRepo.find.mockResolvedValueOnce([
+        { id: 'state-1', unitId: 'unit-1', itemId: 'item-a' },
+        { id: 'state-2', unitId: 'unit-1', itemId: 'item-b' },
+      ]);
+      unitParserService.getItemListFromFiles.mockResolvedValueOnce({
+        columns: [],
+        items: [{ itemId: 'item-a', unitId: 'unit-1' }],
+        unitMetadata: {},
+        codingSchemes: {},
+      });
+
+      const result = await service.cleanupOrphanedResponseStates('acp-1');
+
+      expect(stateRepo.delete).toHaveBeenCalledWith(['state-2']);
+      expect(result).toEqual({
+        totalStates: 2,
+        deletedStates: 1,
+        keptStates: 1,
+      });
+    });
+
+    it('returns zero cleanup when no response states exist', async () => {
+      stateRepo.find.mockResolvedValueOnce([]);
+
+      const result = await service.cleanupOrphanedResponseStates('acp-1');
+
+      expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
+      expect(stateRepo.delete).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        totalStates: 0,
+        deletedStates: 0,
+        keptStates: 0,
+      });
     });
   });
 

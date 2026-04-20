@@ -120,6 +120,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   highlightItemId = '';
   highlightApplied = false;
   focusWarning = '';
+  private responseStateReady = false;
+  private responseStateData: Record<string, any> | null = null;
 
   private definitionContent: string | null = null;
   private playerFrameReady = false;
@@ -173,6 +175,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
         this.loading = false;
         this.currentlyLoadingUnit();
+        this.loadResponseStateForItem();
         const token = ++this.unitLoadToken;
         this.loadPlayerHtml(u.dependencies || [], token);
         this.loadDefinition(u.dependencies || [], token);
@@ -242,6 +245,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     this.definitionContent = null;
     this.highlightApplied = false;
     this.focusWarning = '';
+    this.responseStateReady = false;
+    this.responseStateData = null;
     this.playerHeight = '100%';
     this.clearFocusRetryTimer();
   }
@@ -290,7 +295,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   }
 
   private startPlayerIfReady() {
-    if (!this.playerFrameReady || !this.definitionContent || !this.unit || !this.item) return;
+    if (!this.playerFrameReady || !this.definitionContent || !this.unit || !this.item || !this.responseStateReady) return;
 
     const variableRef = this.item.sourceVariable || this.item.variableId || '';
     const startPage = variableRef ? this.voudService.getStartPage(this.definitionContent, variableRef) : undefined;
@@ -300,7 +305,12 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       type: 'vopStartCommand',
       sessionId: `review-item-${this.itemId}-${this.startSessionCounter}`,
       unitDefinition: this.definitionContent,
-      unitState: { dataParts: {} },
+      unitState: {
+        dataParts:
+          this.responseStateData && Object.keys(this.responseStateData).length > 0
+            ? this.responseStateData
+            : {},
+      },
       playerConfig: {
         stateReportPolicy: 'none',
         pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
@@ -481,6 +491,66 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     }
 
     return routeItemId;
+  }
+
+  private loadResponseStateForItem() {
+    if (!this.unit || !this.item) {
+      this.responseStateReady = true;
+      this.responseStateData = null;
+      this.startPlayerIfReady();
+      return;
+    }
+
+    const unitId = String(this.item.unitId || this.unit.id || '').trim();
+    const currentItemId = String(this.highlightItemId || '').trim();
+    if (!unitId || !currentItemId) {
+      this.responseStateReady = true;
+      this.responseStateData = null;
+      this.startPlayerIfReady();
+      return;
+    }
+
+    const fallbackItemList = this.buildStateFallbackItemList(this.unit, currentItemId);
+
+    this.api.getResponseStateWithFallback(this.acpId, currentItemId, unitId, fallbackItemList).subscribe({
+      next: (result) => {
+        const data = result?.state?.responseData;
+        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+          this.responseStateData = data;
+        } else {
+          this.responseStateData = null;
+        }
+        this.responseStateReady = true;
+        this.startPlayerIfReady();
+      },
+      error: () => {
+        this.responseStateData = null;
+        this.responseStateReady = true;
+        this.startPlayerIfReady();
+      },
+    });
+  }
+
+  private buildStateFallbackItemList(
+    unit: UnitViewData,
+    currentItemId: string,
+  ): { itemId: string; unitId: string }[] {
+    const unitId = String(unit.id || '').trim();
+    const result = (unit.items || [])
+      .map((unitItem: any) => {
+        const itemId = String(unitItem?.id || '').trim();
+        if (!itemId || !unitId) {
+          return null;
+        }
+        return { itemId, unitId };
+      })
+      .filter((entry): entry is { itemId: string; unitId: string } => Boolean(entry));
+
+    if (!result.length && unitId && currentItemId) {
+      return [{ itemId: currentItemId, unitId }];
+    }
+
+    return result;
   }
 
   private clearFocusRetryTimer() {

@@ -251,6 +251,18 @@ describe('FilesController', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('uses default allow=true for unit view when flag is unset', async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      allowUnitDownload: true,
+      allowFileDownload: false,
+      enableItemList: true,
+    });
+
+    await expect(
+      controller.getUnitView('acp-1', 'unit-1', { acpAccessLevel: 'PUBLIC' }),
+    ).resolves.toEqual({ unitId: 'u-1' });
+  });
+
   it('blocks file metadata for non-managers when file download is disabled', async () => {
     filesService.getFeatureConfig.mockResolvedValueOnce({
       allowUnitDownload: true,
@@ -331,6 +343,20 @@ describe('FilesController', () => {
       'Content-Disposition',
       'attachment; filename="unit-1.xml"',
     );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from('file-body'));
+  });
+
+  it('allows dependency downloads when unit view flag is unset', async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      allowUnitDownload: false,
+      allowFileDownload: false,
+      enableItemList: true,
+    });
+    filesService.isUnitDependencyFile.mockResolvedValueOnce(true);
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.download('acp-1', 'file-1', { acpAccessLevel: 'PUBLIC' }, res);
+
     expect(res.send).toHaveBeenCalledWith(Buffer.from('file-body'));
   });
 

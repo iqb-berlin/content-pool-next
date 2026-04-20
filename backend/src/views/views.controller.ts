@@ -109,7 +109,7 @@ export class ViewsController {
     @Param('unitId') unitId: string,
     @Request() req: any,
   ) {
-    if (!(await this.canUseFeature(acpId, req, 'enableUnitView'))) {
+    if (!(await this.canUseFeature(acpId, req, 'enableUnitView', true))) {
       throw new ForbiddenException('Unit view is not enabled for this ACP');
     }
 

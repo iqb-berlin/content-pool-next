@@ -90,6 +90,16 @@ describe('ViewsController', () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
+  it('uses default allow=true for unit view when flag is unset', async () => {
+    viewsService.getAcpStartPage.mockResolvedValueOnce({
+      featureConfig: {},
+    });
+
+    await expect(
+      controller.getUnit('acp-1', 'unit-1', { acpAccessLevel: 'PUBLIC' }),
+    ).resolves.toEqual({ unitId: 'unit-1' });
+  });
+
   it('returns unit view for managers regardless of feature config', async () => {
     viewsService.getAcpStartPage.mockResolvedValueOnce({
       featureConfig: { enableUnitView: false },

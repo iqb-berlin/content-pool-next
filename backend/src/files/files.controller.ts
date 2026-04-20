@@ -141,7 +141,7 @@ export class FilesController {
     const isManager = req?.acpAccessLevel === 'MANAGER' || req?.acpAccessLevel === 'ADMIN';
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
-      if (!featureConfig.enableUnitView) {
+      if (featureConfig.enableUnitView === false) {
         throw new ForbiddenException('Unit view is not enabled for this ACP');
       }
     }
@@ -232,7 +232,7 @@ export class FilesController {
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
       const isDependency = await this.filesService.isUnitDependencyFile(acpId, file.originalName);
-      const canDownloadForView = !!featureConfig.enableUnitView && isDependency;
+      const canDownloadForView = featureConfig.enableUnitView !== false && isDependency;
       if (!featureConfig.allowFileDownload && !canDownloadForView) {
         throw new ForbiddenException('File download is not enabled for this ACP');
       }

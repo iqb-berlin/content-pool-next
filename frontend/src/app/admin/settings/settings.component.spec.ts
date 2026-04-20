@@ -79,7 +79,7 @@ describe('SettingsComponent', () => {
         language: 'en',
         theme: expect.objectContaining({ '--color-primary': '#123456' }),
         defaultAcpIndex: { custom: true },
-      })
+      }),
     );
     expect(dispatchSpy).toHaveBeenCalled();
     expect(component.saved).toBe(true);

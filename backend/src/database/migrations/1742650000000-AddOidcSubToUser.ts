@@ -1,15 +1,15 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class AddOidcSubToUser1742650000000 implements MigrationInterface {
-  name = 'AddOidcSubToUser1742650000000';
+  name = "AddOidcSubToUser1742650000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const hasUsersTable = await queryRunner.hasTable('users');
+    const hasUsersTable = await queryRunner.hasTable("users");
     if (!hasUsersTable) {
       return;
     }
 
-    const hasOidcSubColumn = await queryRunner.hasColumn('users', 'oidc_sub');
+    const hasOidcSubColumn = await queryRunner.hasColumn("users", "oidc_sub");
     if (!hasOidcSubColumn) {
       await queryRunner.query(`
         ALTER TABLE "users"
@@ -17,7 +17,10 @@ export class AddOidcSubToUser1742650000000 implements MigrationInterface {
       `);
     }
 
-    const hasOidcSubIndex = await this.indexExists(queryRunner, 'idx_users_oidc_sub');
+    const hasOidcSubIndex = await this.indexExists(
+      queryRunner,
+      "idx_users_oidc_sub",
+    );
     if (!hasOidcSubIndex) {
       await queryRunner.query(`
         CREATE INDEX "idx_users_oidc_sub" ON "users" ("oidc_sub")
@@ -26,19 +29,22 @@ export class AddOidcSubToUser1742650000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const hasUsersTable = await queryRunner.hasTable('users');
+    const hasUsersTable = await queryRunner.hasTable("users");
     if (!hasUsersTable) {
       return;
     }
 
-    const hasOidcSubIndex = await this.indexExists(queryRunner, 'idx_users_oidc_sub');
+    const hasOidcSubIndex = await this.indexExists(
+      queryRunner,
+      "idx_users_oidc_sub",
+    );
     if (hasOidcSubIndex) {
       await queryRunner.query(`
         DROP INDEX "idx_users_oidc_sub"
       `);
     }
 
-    const hasOidcSubColumn = await queryRunner.hasColumn('users', 'oidc_sub');
+    const hasOidcSubColumn = await queryRunner.hasColumn("users", "oidc_sub");
     if (hasOidcSubColumn) {
       await queryRunner.query(`
         ALTER TABLE "users"
@@ -47,7 +53,10 @@ export class AddOidcSubToUser1742650000000 implements MigrationInterface {
     }
   }
 
-  private async indexExists(queryRunner: QueryRunner, indexName: string): Promise<boolean> {
+  private async indexExists(
+    queryRunner: QueryRunner,
+    indexName: string,
+  ): Promise<boolean> {
     const result = await queryRunner.query(
       `SELECT to_regclass('public."${indexName}"') AS index_name`,
     );

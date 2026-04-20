@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AppSettings } from '../database/entities';
-import { DEFAULT_ACP_INDEX_VERSION } from '../acp/acp-index.utils';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { AppSettings } from "../database/entities";
+import { DEFAULT_ACP_INDEX_VERSION } from "../acp/acp-index.utils";
 
 @Injectable()
 export class AdminService {
@@ -16,7 +16,7 @@ export class AdminService {
     if (!settings) {
       settings = this.settingsRepository.create({
         theme: {},
-        language: 'de',
+        language: "de",
         defaultAcpIndex: {
           version: DEFAULT_ACP_INDEX_VERSION,
           assessmentParts: [],
@@ -32,11 +32,14 @@ export class AdminService {
     if (data.theme !== undefined) settings.theme = data.theme;
     if (data.language !== undefined) settings.language = data.language;
     if (data.logoUrl !== undefined) settings.logoUrl = data.logoUrl;
-    if (data.landingPageHtml !== undefined) settings.landingPageHtml = data.landingPageHtml;
+    if (data.landingPageHtml !== undefined)
+      settings.landingPageHtml = data.landingPageHtml;
     if (data.imprintHtml !== undefined) settings.imprintHtml = data.imprintHtml;
     if (data.privacyHtml !== undefined) settings.privacyHtml = data.privacyHtml;
-    if (data.accessibilityHtml !== undefined) settings.accessibilityHtml = data.accessibilityHtml;
-    if (data.defaultAcpIndex !== undefined) settings.defaultAcpIndex = data.defaultAcpIndex;
+    if (data.accessibilityHtml !== undefined)
+      settings.accessibilityHtml = data.accessibilityHtml;
+    if (data.defaultAcpIndex !== undefined)
+      settings.defaultAcpIndex = data.defaultAcpIndex;
     return this.settingsRepository.save(settings);
   }
 }

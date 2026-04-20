@@ -19,18 +19,18 @@ describe('AuthService', () => {
     username: 'testuser',
     displayName: 'Test User',
     isAppAdmin: true,
-    acpRoles: []
+    acpRoles: [],
   };
 
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
-    
+
     broadcastChannelMock = {
       postMessage: vi.fn(),
       onmessage: null,
     };
-    
+
     class BroadcastChannelMock {
       onmessage: ((event: MessageEvent) => void) | null = null;
       postMessage = broadcastChannelMock.postMessage;
@@ -40,12 +40,12 @@ describe('AuthService', () => {
         }, 0);
       }
     }
-    
+
     vi.stubGlobal('BroadcastChannel', BroadcastChannelMock);
-    
+
     httpClientMock = {
       post: vi.fn().mockReturnValue(of({})),
-      get: vi.fn().mockReturnValue(of(mockUserProfile))
+      get: vi.fn().mockReturnValue(of(mockUserProfile)),
     };
     service = new AuthService(httpClientMock as any);
   });
@@ -128,7 +128,9 @@ describe('AuthService', () => {
 
     it('should return true for app admin', () => {
       localStorage.setItem('cp_token', 'test-token');
-      httpClientMock.get.mockReturnValue(of({ ...mockUserProfile, isAppAdmin: true, acpRoles: [] }));
+      httpClientMock.get.mockReturnValue(
+        of({ ...mockUserProfile, isAppAdmin: true, acpRoles: [] }),
+      );
       service.loadProfile();
 
       expect(service.hasManagedAcps).toBe(true);
@@ -136,11 +138,13 @@ describe('AuthService', () => {
 
     it('should return true when user manages at least one ACP', () => {
       localStorage.setItem('cp_token', 'test-token');
-      httpClientMock.get.mockReturnValue(of({
-        ...mockUserProfile,
-        isAppAdmin: false,
-        acpRoles: [{ acpId: 'acp1', role: 'ACP_MANAGER' as const }]
-      }));
+      httpClientMock.get.mockReturnValue(
+        of({
+          ...mockUserProfile,
+          isAppAdmin: false,
+          acpRoles: [{ acpId: 'acp1', role: 'ACP_MANAGER' as const }],
+        }),
+      );
       service.loadProfile();
 
       expect(service.hasManagedAcps).toBe(true);
@@ -148,11 +152,13 @@ describe('AuthService', () => {
 
     it('should safely return false when acpRoles are missing', () => {
       localStorage.setItem('cp_token', 'test-token');
-      httpClientMock.get.mockReturnValue(of({
-        ...mockUserProfile,
-        isAppAdmin: false,
-        acpRoles: undefined,
-      }));
+      httpClientMock.get.mockReturnValue(
+        of({
+          ...mockUserProfile,
+          isAppAdmin: false,
+          acpRoles: undefined,
+        }),
+      );
       service.loadProfile();
 
       expect(service.hasManagedAcps).toBe(false);
@@ -170,26 +176,37 @@ describe('AuthService', () => {
       const loginResponse: LoginResponse = { accessToken: 'new-token', user: mockUserProfile };
       httpClientMock.post.mockReturnValue(of(loginResponse));
 
-      service.login('testuser', 'password').subscribe(response => {
+      service.login('testuser', 'password').subscribe((response) => {
         expect(response).toEqual(loginResponse);
         expect(localStorage.getItem('cp_token')).toBe('new-token');
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/login', { username: 'testuser', password: 'password' });
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/login', {
+        username: 'testuser',
+        password: 'password',
+      });
     });
   });
 
   describe('credentialLogin', () => {
     it('should store token on successful credential login', () => {
-      const response: CredentialLoginResponse = { accessToken: 'cred-token', acpId: 'acp1', username: 'user' };
+      const response: CredentialLoginResponse = {
+        accessToken: 'cred-token',
+        acpId: 'acp1',
+        username: 'user',
+      };
       httpClientMock.post.mockReturnValue(of(response));
 
-      service.credentialLogin('acp1', 'user', 'pass').subscribe(res => {
+      service.credentialLogin('acp1', 'user', 'pass').subscribe((res) => {
         expect(res).toEqual(response);
         expect(localStorage.getItem('cp_token')).toBe('cred-token');
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/credential-login', { acpId: 'acp1', username: 'user', password: 'pass' });
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/credential-login', {
+        acpId: 'acp1',
+        username: 'user',
+        password: 'pass',
+      });
     });
   });
 
@@ -197,18 +214,18 @@ describe('AuthService', () => {
     it('should remove token and clear user', () => {
       localStorage.setItem('cp_token', 'test-token');
       httpClientMock.post.mockReturnValue(of({}));
-      
+
       service.logout();
-      
+
       expect(localStorage.getItem('cp_token')).toBeNull();
     });
 
     it('should call backend logout endpoint', () => {
       localStorage.setItem('cp_token', 'test-token');
       httpClientMock.post.mockReturnValue(of({}));
-      
+
       service.logout();
-      
+
       expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/logout', {});
     });
 
@@ -216,18 +233,18 @@ describe('AuthService', () => {
       localStorage.setItem('cp_token', 'test-token');
       sessionStorage.setItem('oidc_redirect_url', '/some-path');
       httpClientMock.post.mockReturnValue(of({}));
-      
+
       service.logout();
-      
+
       expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
     });
 
     it('should broadcast logout to other tabs', () => {
       localStorage.setItem('cp_token', 'test-token');
       httpClientMock.post.mockReturnValue(of({}));
-      
+
       service.logout();
-      
+
       expect(broadcastChannelMock.postMessage).toHaveBeenCalledWith('logout');
     });
   });
@@ -262,7 +279,9 @@ describe('AuthService', () => {
 
     it('should return true for app admin', () => {
       localStorage.setItem('cp_token', 'test-token');
-      httpClientMock.get.mockReturnValue(of({ ...mockUserProfile, isAppAdmin: true, acpRoles: [] }));
+      httpClientMock.get.mockReturnValue(
+        of({ ...mockUserProfile, isAppAdmin: true, acpRoles: [] }),
+      );
       service.loadProfile();
 
       expect(service.hasAcpRole('acp1', 'any-role')).toBe(true);
@@ -270,11 +289,13 @@ describe('AuthService', () => {
 
     it('should check specific ACP role', () => {
       localStorage.setItem('cp_token', 'test-token');
-      httpClientMock.get.mockReturnValue(of({
-        ...mockUserProfile,
-        isAppAdmin: false,
-        acpRoles: [{ acpId: 'acp1', role: 'ACP_MANAGER' as const }]
-      }));
+      httpClientMock.get.mockReturnValue(
+        of({
+          ...mockUserProfile,
+          isAppAdmin: false,
+          acpRoles: [{ acpId: 'acp1', role: 'ACP_MANAGER' as const }],
+        }),
+      );
       service.loadProfile();
 
       expect(service.hasAcpRole('acp1', 'ACP_MANAGER')).toBe(true);

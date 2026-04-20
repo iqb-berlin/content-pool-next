@@ -1,9 +1,14 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
-import { User, AcpUserRole, AcpRole } from '../database/entities';
-import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as bcrypt from "bcryptjs";
+import { User, AcpUserRole, AcpRole } from "../database/entities";
+import { CreateUserDto, UpdateUserDto } from "./dto/user.dto";
 
 @Injectable()
 export class UsersService {
@@ -16,15 +21,31 @@ export class UsersService {
 
   async findAll(): Promise<User[]> {
     return this.userRepository.find({
-      select: ['id', 'username', 'displayName', 'isAppAdmin', 'oidcSub', 'createdAt', 'updatedAt'],
-      order: { username: 'ASC' },
+      select: [
+        "id",
+        "username",
+        "displayName",
+        "isAppAdmin",
+        "oidcSub",
+        "createdAt",
+        "updatedAt",
+      ],
+      order: { username: "ASC" },
     });
   }
 
   async findById(id: string): Promise<User> {
     const user = await this.userRepository.findOne({
       where: { id },
-      select: ['id', 'username', 'displayName', 'isAppAdmin', 'oidcSub', 'createdAt', 'updatedAt'],
+      select: [
+        "id",
+        "username",
+        "displayName",
+        "isAppAdmin",
+        "oidcSub",
+        "createdAt",
+        "updatedAt",
+      ],
     });
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -107,20 +128,21 @@ export class UsersService {
    */
   async seedInitialAdmin(): Promise<void> {
     const shouldSeed =
-      process.env.SEED_DEFAULT_ADMIN === 'true' || process.env.NODE_ENV !== 'production';
+      process.env.SEED_DEFAULT_ADMIN === "true" ||
+      process.env.NODE_ENV !== "production";
     if (!shouldSeed) {
       return;
     }
 
     const count = await this.userRepository.count();
     if (count === 0) {
-      const username = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
-      const password = process.env.DEFAULT_ADMIN_PASSWORD || 'admin';
+      const username = process.env.DEFAULT_ADMIN_USERNAME || "admin";
+      const password = process.env.DEFAULT_ADMIN_PASSWORD || "admin";
       const passwordHash = await bcrypt.hash(password, 12);
       const admin = this.userRepository.create({
         username,
         passwordHash,
-        displayName: 'Administrator',
+        displayName: "Administrator",
         isAppAdmin: true,
       });
       await this.userRepository.save(admin);

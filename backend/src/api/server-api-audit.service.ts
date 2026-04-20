@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ServerApiAuditLog } from '../database/entities';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { ServerApiAuditLog } from "../database/entities";
 
 export interface ServerApiAuditEntry {
   clientId: string;
@@ -38,19 +38,23 @@ export class ServerApiAuditService {
     await this.auditRepository.save(record);
   }
 
-  async list(limit = 100, action?: string, clientId?: string): Promise<ServerApiAuditLog[]> {
+  async list(
+    limit = 100,
+    action?: string,
+    clientId?: string,
+  ): Promise<ServerApiAuditLog[]> {
     const safeLimit = Math.max(1, Math.min(limit, 500));
     const qb = this.auditRepository
-      .createQueryBuilder('log')
-      .orderBy('log.created_at', 'DESC')
+      .createQueryBuilder("log")
+      .orderBy("log.created_at", "DESC")
       .limit(safeLimit);
 
     if (action) {
-      qb.andWhere('log.action = :action', { action });
+      qb.andWhere("log.action = :action", { action });
     }
 
     if (clientId) {
-      qb.andWhere('log.client_id = :clientId', { clientId });
+      qb.andWhere("log.client_id = :clientId", { clientId });
     }
 
     return qb.getMany();

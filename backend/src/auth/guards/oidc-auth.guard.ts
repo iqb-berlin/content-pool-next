@@ -1,5 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { JwtAuthGuard } from './jwt-auth.guard';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+} from "@nestjs/common";
+import { JwtAuthGuard } from "./jwt-auth.guard";
 
 @Injectable()
 export class OidcAuthGuard extends JwtAuthGuard implements CanActivate {
@@ -11,10 +16,12 @@ export class OidcAuthGuard extends JwtAuthGuard implements CanActivate {
     }
 
     const { user } = context.switchToHttp().getRequest();
-    
+
     // Check if user authenticated via OIDC
-    if (user.authType !== 'oidc') {
-      throw new ForbiddenException('OIDC authentication required for this resource');
+    if (user.authType !== "oidc") {
+      throw new ForbiddenException(
+        "OIDC authentication required for this resource",
+      );
     }
 
     return true;

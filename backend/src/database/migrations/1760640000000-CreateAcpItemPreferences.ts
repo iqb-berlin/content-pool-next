@@ -1,10 +1,12 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateAcpItemPreferences1760640000000 implements MigrationInterface {
-  name = 'CreateAcpItemPreferences1760640000000';
+  name = "CreateAcpItemPreferences1760640000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const hasPreferencesTable = await queryRunner.hasTable('acp_item_preferences');
+    const hasPreferencesTable = await queryRunner.hasTable(
+      "acp_item_preferences",
+    );
     if (hasPreferencesTable) {
       return;
     }
@@ -49,13 +51,19 @@ export class CreateAcpItemPreferences1760640000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const hasPreferencesTable = await queryRunner.hasTable('acp_item_preferences');
+    const hasPreferencesTable = await queryRunner.hasTable(
+      "acp_item_preferences",
+    );
     if (!hasPreferencesTable) {
       return;
     }
 
-    await queryRunner.query('DROP INDEX "public"."IDX_acp_item_preferences_lookup_credential"');
-    await queryRunner.query('DROP INDEX "public"."IDX_acp_item_preferences_lookup_user"');
+    await queryRunner.query(
+      'DROP INDEX "public"."IDX_acp_item_preferences_lookup_credential"',
+    );
+    await queryRunner.query(
+      'DROP INDEX "public"."IDX_acp_item_preferences_lookup_user"',
+    );
 
     await queryRunner.query(`
       ALTER TABLE "acp_item_preferences" DROP CONSTRAINT "FK_acp_item_preferences_user"

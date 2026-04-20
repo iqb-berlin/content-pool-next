@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { Acp, AcpSnapshot, AcpSnapshotFile, AcpFile } from '../database/entities';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { LessThan, Repository } from "typeorm";
+import { ConfigService } from "@nestjs/config";
+import * as fs from "fs/promises";
+import * as path from "path";
+import {
+  Acp,
+  AcpSnapshot,
+  AcpSnapshotFile,
+  AcpFile,
+} from "../database/entities";
 
 @Injectable()
 export class SnapshotsService {
@@ -21,20 +26,23 @@ export class SnapshotsService {
     private readonly fileRepository: Repository<AcpFile>,
     private readonly configService: ConfigService,
   ) {
-    this.storagePath = this.configService.get<string>('FILE_STORAGE_PATH', './uploads');
+    this.storagePath = this.configService.get<string>(
+      "FILE_STORAGE_PATH",
+      "./uploads",
+    );
   }
 
   async findByAcp(acpId: string): Promise<AcpSnapshot[]> {
     return this.snapshotRepository.find({
       where: { acpId },
-      order: { versionNumber: 'DESC' },
+      order: { versionNumber: "DESC" },
     });
   }
 
   async findById(id: string): Promise<AcpSnapshot> {
     const snapshot = await this.snapshotRepository.findOne({
       where: { id },
-      relations: ['snapshotFiles'],
+      relations: ["snapshotFiles"],
     });
     if (!snapshot) {
       throw new NotFoundException(`Snapshot with ID ${id} not found`);
@@ -45,7 +53,9 @@ export class SnapshotsService {
   async findByIdInAcp(acpId: string, snapshotId: string): Promise<AcpSnapshot> {
     const snapshot = await this.findById(snapshotId);
     if (snapshot.acpId !== acpId) {
-      throw new NotFoundException(`Snapshot with ID ${snapshotId} not found for ACP ${acpId}`);
+      throw new NotFoundException(
+        `Snapshot with ID ${snapshotId} not found for ACP ${acpId}`,
+      );
     }
     return snapshot;
   }
@@ -56,13 +66,25 @@ export class SnapshotsService {
     const snapshotEntityId = snapshot.id;
 
     if (!snapshotAcpId || !snapshotEntityId) {
-      throw new NotFoundException(`Snapshot with ID ${snapshotId} is missing required metadata`);
+      throw new NotFoundException(
+        `Snapshot with ID ${snapshotId} is missing required metadata`,
+      );
     }
 
     await this.snapshotRepository.remove(snapshot);
 
-    const snapshotDir = path.join(this.storagePath, snapshotAcpId, 'snapshots', snapshotEntityId);
-    const restoreDir = path.join(this.storagePath, snapshotAcpId, 'snapshot-restore', snapshotEntityId);
+    const snapshotDir = path.join(
+      this.storagePath,
+      snapshotAcpId,
+      "snapshots",
+      snapshotEntityId,
+    );
+    const restoreDir = path.join(
+      this.storagePath,
+      snapshotAcpId,
+      "snapshot-restore",
+      snapshotEntityId,
+    );
 
     await Promise.allSettled([
       fs.rm(snapshotDir, { recursive: true, force: true }),
@@ -79,7 +101,7 @@ export class SnapshotsService {
     // Determine next version number
     const latestSnapshot = await this.snapshotRepository.findOne({
       where: { acpId },
-      order: { versionNumber: 'DESC' },
+      order: { versionNumber: "DESC" },
     });
     const nextVersion = latestSnapshot ? latestSnapshot.versionNumber + 1 : 1;
 
@@ -103,13 +125,15 @@ export class SnapshotsService {
         file,
         index,
       );
-      snapshotFiles.push(this.snapshotFileRepository.create({
-        snapshotId: savedSnapshot.id,
-        filePath: snapshotFilePath,
-        originalName: file.originalName,
-        checksum: file.checksum,
-        fileSize: file.fileSize,
-      }));
+      snapshotFiles.push(
+        this.snapshotFileRepository.create({
+          snapshotId: savedSnapshot.id,
+          filePath: snapshotFilePath,
+          originalName: file.originalName,
+          checksum: file.checksum,
+          fileSize: file.fileSize,
+        }),
+      );
     }
     if (snapshotFiles.length > 0) {
       await this.snapshotFileRepository.save(snapshotFiles);
@@ -124,7 +148,7 @@ export class SnapshotsService {
       where: { id: snapshot.acpId },
     });
     if (!acp) {
-      throw new NotFoundException('ACP not found');
+      throw new NotFoundException("ACP not found");
     }
 
     // Restore ACP-Index
@@ -136,7 +160,11 @@ export class SnapshotsService {
     const restoredFiles: AcpFile[] = [];
     if (snapshot.snapshotFiles?.length) {
       for (const sf of snapshot.snapshotFiles) {
-        const { filePath, fileSize } = await this.resolveRestoredFilePath(acp.id, snapshot.id, sf);
+        const { filePath, fileSize } = await this.resolveRestoredFilePath(
+          acp.id,
+          snapshot.id,
+          sf,
+        );
         restoredFiles.push(
           this.fileRepository.create({
             acpId: acp.id,
@@ -170,7 +198,12 @@ export class SnapshotsService {
     }
 
     try {
-      const targetDir = path.join(this.storagePath, acpId, 'snapshot-restore', snapshotId);
+      const targetDir = path.join(
+        this.storagePath,
+        acpId,
+        "snapshot-restore",
+        snapshotId,
+      );
       await fs.mkdir(targetDir, { recursive: true });
       const targetPath = path.join(targetDir, snapshotFile.originalName);
       await fs.copyFile(snapshotFile.filePath, targetPath);
@@ -189,10 +222,18 @@ export class SnapshotsService {
     file: AcpFile,
     index: number,
   ): Promise<string> {
-    const snapshotDir = path.join(this.storagePath, acpId, 'snapshots', snapshotId);
+    const snapshotDir = path.join(
+      this.storagePath,
+      acpId,
+      "snapshots",
+      snapshotId,
+    );
     await fs.mkdir(snapshotDir, { recursive: true });
     const sourceBaseName = path.basename(file.filePath) || file.originalName;
-    const snapshotFilePath = path.join(snapshotDir, `${index}-${sourceBaseName}`);
+    const snapshotFilePath = path.join(
+      snapshotDir,
+      `${index}-${sourceBaseName}`,
+    );
 
     try {
       await fs.copyFile(file.filePath, snapshotFilePath);
@@ -212,12 +253,12 @@ export class SnapshotsService {
         acpId: snapshot.acpId,
         versionNumber: LessThan(snapshot.versionNumber),
       },
-      order: { versionNumber: 'DESC' },
-      relations: ['snapshotFiles'],
+      order: { versionNumber: "DESC" },
+      relations: ["snapshotFiles"],
     });
 
     if (!previousSnapshot) {
-      return { message: 'No previous snapshot to compare with' };
+      return { message: "No previous snapshot to compare with" };
     }
 
     // Compare file lists
@@ -257,13 +298,17 @@ export class SnapshotsService {
 
   async diffWithCurrent(snapshotId: string): Promise<Record<string, unknown>> {
     const snapshot = await this.findById(snapshotId);
-    const acp = await this.acpRepository.findOne({ where: { id: snapshot.acpId } });
+    const acp = await this.acpRepository.findOne({
+      where: { id: snapshot.acpId },
+    });
     if (!acp) {
       throw new NotFoundException(`ACP with ID ${snapshot.acpId} not found`);
     }
 
     const snapshotFiles = snapshot.snapshotFiles || [];
-    const currentFiles = await this.fileRepository.find({ where: { acpId: snapshot.acpId } });
+    const currentFiles = await this.fileRepository.find({
+      where: { acpId: snapshot.acpId },
+    });
 
     const snapshotChecksums = new Map(
       snapshotFiles.map((file) => [file.originalName, file.checksum]),
@@ -293,8 +338,10 @@ export class SnapshotsService {
 
     return {
       snapshotId,
-      comparedWith: 'current',
-      indexChanged: JSON.stringify(snapshot.acpIndexSnapshot || {}) !== JSON.stringify(acp.acpIndex || {}),
+      comparedWith: "current",
+      indexChanged:
+        JSON.stringify(snapshot.acpIndexSnapshot || {}) !==
+        JSON.stringify(acp.acpIndex || {}),
       added,
       removed,
       modified,

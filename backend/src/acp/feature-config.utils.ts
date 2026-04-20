@@ -6,7 +6,7 @@ interface MetadataColumnsConfig {
 }
 
 function asRecord(value: unknown): UnknownRecord {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as UnknownRecord;
   }
   return {};
@@ -15,7 +15,7 @@ function asRecord(value: unknown): UnknownRecord {
 function asStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
-    .filter((entry): entry is string => typeof entry === 'string')
+    .filter((entry): entry is string => typeof entry === "string")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
 }

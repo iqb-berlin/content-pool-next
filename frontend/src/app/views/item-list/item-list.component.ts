@@ -21,7 +21,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
     @if (enableFilter || enableSort) {
       <div class="toolbar">
         @if (enableFilter) {
-          <input class="filter-input" [(ngModel)]="filterText" placeholder="🔍 Items filtern..." (input)="applyFilter()">
+          <input
+            class="filter-input"
+            [(ngModel)]="filterText"
+            placeholder="🔍 Items filtern..."
+            (input)="applyFilter()"
+          />
         }
         @if (enableSort) {
           <select [(ngModel)]="sortField" (change)="applySort()" class="sort-select">
@@ -29,7 +34,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             <option value="unitId">Aufgabe</option>
             <option value="name">Name</option>
           </select>
-          <button class="btn btn-sm btn-outline" (click)="toggleSortDir()">{{ sortDir === 'asc' ? '↑ A-Z' : '↓ Z-A' }}</button>
+          <button class="btn btn-sm btn-outline" (click)="toggleSortDir()">
+            {{ sortDir === 'asc' ? '↑ A-Z' : '↓ Z-A' }}
+          </button>
         }
       </div>
     }
@@ -57,14 +64,22 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         <tbody>
           @for (item of filteredItems; track item.itemId) {
             <tr [class.clickable]="enableClick" (click)="enableClick && navigateToItem(item)">
-              <td><code>{{ item.itemId }}</code></td>
+              <td>
+                <code>{{ item.itemId }}</code>
+              </td>
               <td>{{ item.unitName || item.unitId }}</td>
               <td>{{ item.name || '–' }}</td>
-              <td><code>{{ item.sourceVariable || '–' }}</code></td>
+              <td>
+                <code>{{ item.sourceVariable || '–' }}</code>
+              </td>
               @if (enableTags) {
                 <td class="tags-cell" (click)="$event.stopPropagation()">
-                  @for (tag of (itemTags[item.itemId] || []); track tag) {
-                    <span class="badge badge-info tag-badge" (click)="removeItemTag(item.itemId, tag)">{{ tag }} ✕</span>
+                  @for (tag of itemTags[item.itemId] || []; track tag) {
+                    <span
+                      class="badge badge-info tag-badge"
+                      (click)="removeItemTag(item.itemId, tag)"
+                      >{{ tag }} ✕</span
+                    >
                   }
                   <select class="tag-select" (change)="addItemTag(item.itemId, $event)">
                     <option value="">+Tag</option>
@@ -76,9 +91,19 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               }
               <td>
                 @if (enableClick) {
-                  <a [routerLink]="['/view', acpId, 'item', item.itemId]" class="btn btn-sm btn-outline" (click)="$event.stopPropagation()">Ansehen</a>
+                  <a
+                    [routerLink]="['/view', acpId, 'item', item.itemId]"
+                    class="btn btn-sm btn-outline"
+                    (click)="$event.stopPropagation()"
+                    >Ansehen</a
+                  >
                 } @else {
-                  <a [routerLink]="['/view', acpId, 'unit', item.unitId]" class="btn btn-sm btn-outline" (click)="$event.stopPropagation()">Aufgabe</a>
+                  <a
+                    [routerLink]="['/view', acpId, 'unit', item.unitId]"
+                    class="btn btn-sm btn-outline"
+                    (click)="$event.stopPropagation()"
+                    >Aufgabe</a
+                  >
                 }
               </td>
             </tr>
@@ -87,29 +112,62 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
       </table>
     </div>
   `,
-  styles: [`
-    .item-count { font-size: 0.85rem; color: var(--color-text-secondary); }
-    .filter-input {
-      padding: 8px 12px; border: 1px solid var(--color-border);
-      border-radius: var(--radius); font-size: 0.9rem; min-width: 250px;
-      font-family: inherit;
-    }
-    .sort-select {
-      padding: 6px 10px; border: 1px solid var(--color-border);
-      border-radius: var(--radius); font-size: 0.85rem; font-family: inherit;
-    }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--color-primary-light); }
-    .clickable { cursor: pointer; }
-    .clickable:hover td { background: rgba(41,128,185,0.04); }
-    .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-    .tag-badge { cursor: pointer; font-size: 0.7rem; }
-    .tag-badge:hover { opacity: 0.7; }
-    .tag-select {
-      padding: 2px 4px; border: 1px solid var(--color-border);
-      border-radius: 4px; font-size: 0.75rem; background: white;
-    }
-  `]
+  styles: [
+    `
+      .item-count {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+      .filter-input {
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        min-width: 250px;
+        font-family: inherit;
+      }
+      .sort-select {
+        padding: 6px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+        font-family: inherit;
+      }
+      .sortable {
+        cursor: pointer;
+        user-select: none;
+      }
+      .sortable:hover {
+        color: var(--color-primary-light);
+      }
+      .clickable {
+        cursor: pointer;
+      }
+      .clickable:hover td {
+        background: rgba(41, 128, 185, 0.04);
+      }
+      .tags-cell {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .tag-badge {
+        cursor: pointer;
+        font-size: 0.7rem;
+      }
+      .tag-badge:hover {
+        opacity: 0.7;
+      }
+      .tag-select {
+        padding: 2px 4px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        background: white;
+      }
+    `,
+  ],
 })
 export class ItemListComponent implements OnInit, OnDestroy {
   acpId = '';
@@ -151,7 +209,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
     ];
 
     // Load feature config
-    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
       this.enableFilter = fc.enableItemListFilter !== false;
       this.enableSort = fc.enableItemListSort !== false;
@@ -163,7 +221,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
       this.loadPreferences();
     });
 
-    this.api.getViewItems(this.acpId).subscribe(items => {
+    this.api.getViewItems(this.acpId).subscribe((items) => {
       this.items = items;
       this.filteredItems = [...items];
       this.applyFilter(false);
@@ -179,11 +237,12 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
   applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
-    this.filteredItems = this.items.filter(i =>
-      i.itemId.toLowerCase().includes(term) ||
-      (i.name || '').toLowerCase().includes(term) ||
-      (i.unitId || '').toLowerCase().includes(term) ||
-      (i.unitName || '').toLowerCase().includes(term)
+    this.filteredItems = this.items.filter(
+      (i) =>
+        i.itemId.toLowerCase().includes(term) ||
+        (i.name || '').toLowerCase().includes(term) ||
+        (i.unitId || '').toLowerCase().includes(term) ||
+        (i.unitName || '').toLowerCase().includes(term),
     );
     this.applySort(false);
     if (shouldPersist) {
@@ -242,7 +301,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
   removeItemTag(itemId: string, tag: string) {
     if (this.itemTags[itemId]) {
-      this.itemTags[itemId] = this.itemTags[itemId].filter(t => t !== tag);
+      this.itemTags[itemId] = this.itemTags[itemId].filter((t) => t !== tag);
       this.saveTagPreferences();
       this.applyFilter(false);
     }
@@ -345,25 +404,27 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
     this.serverSaveTimeout = setTimeout(() => {
       this.serverSaveTimeout = null;
-      this.api.saveViewItemPreferences(
-        this.acpId,
-        {
-          ui: this.pendingServerUiPreferences,
-          tags: this.pendingServerTagPreferences,
-        },
-        this.preferenceViewId,
-      ).subscribe({
-        next: (savedPreferences) => {
-          this.pendingServerUiPreferences = this.isObject(savedPreferences?.ui)
-            ? savedPreferences.ui
-            : this.pendingServerUiPreferences;
-          this.pendingServerTagPreferences = this.normalizeTags(savedPreferences?.tags);
-          this.itemTags = this.pendingServerTagPreferences;
-        },
-        error: (err) => {
-          console.error('Failed to persist item list preferences', err);
-        },
-      });
+      this.api
+        .saveViewItemPreferences(
+          this.acpId,
+          {
+            ui: this.pendingServerUiPreferences,
+            tags: this.pendingServerTagPreferences,
+          },
+          this.preferenceViewId,
+        )
+        .subscribe({
+          next: (savedPreferences) => {
+            this.pendingServerUiPreferences = this.isObject(savedPreferences?.ui)
+              ? savedPreferences.ui
+              : this.pendingServerUiPreferences;
+            this.pendingServerTagPreferences = this.normalizeTags(savedPreferences?.tags);
+            this.itemTags = this.pendingServerTagPreferences;
+          },
+          error: (err) => {
+            console.error('Failed to persist item list preferences', err);
+          },
+        });
     }, this.serverPreferenceDebounceMs);
   }
 
@@ -412,11 +473,11 @@ export class ItemListComponent implements OnInit, OnDestroy {
       const normalizedItemId = String(itemId || '').trim();
       if (!normalizedItemId || !Array.isArray(values)) continue;
 
-      const normalizedValues = Array.from(new Set(
-        values
-          .map(value => String(value || '').trim())
-          .filter(value => value.length > 0),
-      ));
+      const normalizedValues = Array.from(
+        new Set(
+          values.map((value) => String(value || '').trim()).filter((value) => value.length > 0),
+        ),
+      );
 
       if (normalizedValues.length) {
         tags[normalizedItemId] = normalizedValues;

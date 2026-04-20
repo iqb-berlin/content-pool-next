@@ -1,7 +1,7 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateInitialSchema1740000000000 implements MigrationInterface {
-  name = 'CreateInitialSchema1740000000000';
+  name = "CreateInitialSchema1740000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
@@ -202,8 +202,12 @@ export class CreateInitialSchema1740000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_item_response_states_acp_unit"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_item_response_states_acp_item_unique"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_item_response_states_acp_unit"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_item_response_states_acp_item_unique"`,
+    );
 
     await queryRunner.query(`DROP TABLE IF EXISTS "item_response_states"`);
     await queryRunner.query(`DROP TABLE IF EXISTS "comments"`);
@@ -218,7 +222,9 @@ export class CreateInitialSchema1740000000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS "users"`);
 
     await queryRunner.query(`DROP TYPE IF EXISTS "comments_target_type_enum"`);
-    await queryRunner.query(`DROP TYPE IF EXISTS "acp_access_configs_access_model_enum"`);
+    await queryRunner.query(
+      `DROP TYPE IF EXISTS "acp_access_configs_access_model_enum"`,
+    );
     await queryRunner.query(`DROP TYPE IF EXISTS "acp_user_roles_role_enum"`);
   }
 }

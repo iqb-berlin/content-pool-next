@@ -5,30 +5,34 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
-} from 'typeorm';
+} from "typeorm";
 
-@Entity('item_response_states')
-@Index('IDX_item_response_states_acp_unit_item_unique', ['acpId', 'unitId', 'itemId'], { unique: true })
-@Index('IDX_item_response_states_acp_unit', ['acpId', 'unitId'])
+@Entity("item_response_states")
+@Index(
+  "IDX_item_response_states_acp_unit_item_unique",
+  ["acpId", "unitId", "itemId"],
+  { unique: true },
+)
+@Index("IDX_item_response_states_acp_unit", ["acpId", "unitId"])
 export class ItemResponseState {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: 'acp_id' })
+  @Column({ name: "acp_id" })
   acpId!: string;
 
-  @Column({ name: 'item_id' })
+  @Column({ name: "item_id" })
   itemId!: string;
 
-  @Column({ name: 'unit_id' })
+  @Column({ name: "unit_id" })
   unitId!: string;
 
-  @Column({ name: 'response_data', type: 'jsonb', default: {} })
+  @Column({ name: "response_data", type: "jsonb", default: {} })
   responseData!: Record<string, any>;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }

@@ -5,54 +5,54 @@ import {
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
-} from 'typeorm';
-import { Acp } from './acp.entity';
-import { User } from './user.entity';
+} from "typeorm";
+import { Acp } from "./acp.entity";
+import { User } from "./user.entity";
 
 export enum CommentTargetType {
-  UNIT = 'UNIT',
-  ITEM = 'ITEM',
-  TASK_SEQUENCE = 'TASK_SEQUENCE',
+  UNIT = "UNIT",
+  ITEM = "ITEM",
+  TASK_SEQUENCE = "TASK_SEQUENCE",
 }
 
-@Entity('comments')
+@Entity("comments")
 export class Comment {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: 'acp_id' })
+  @Column({ name: "acp_id" })
   acpId!: string;
 
-  @Column({ name: 'user_id', nullable: true })
+  @Column({ name: "user_id", nullable: true })
   userId?: string;
 
-  @Column({ name: 'credential_username', nullable: true })
+  @Column({ name: "credential_username", nullable: true })
   credentialUsername?: string;
 
   @Column({
-    name: 'target_type',
-    type: 'enum',
+    name: "target_type",
+    type: "enum",
     enum: CommentTargetType,
   })
   targetType!: CommentTargetType;
 
-  @Column({ name: 'target_id' })
+  @Column({ name: "target_id" })
   targetId!: string;
 
-  @Column({ name: 'comment_text', type: 'text' })
+  @Column({ name: "comment_text", type: "text" })
   commentText!: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @ManyToOne(() => Acp, (acp) => acp.comments, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'acp_id' })
+  @ManyToOne(() => Acp, (acp) => acp.comments, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "acp_id" })
   acp!: Acp;
 
   @ManyToOne(() => User, (user) => user.comments, {
-    onDelete: 'SET NULL',
+    onDelete: "SET NULL",
     nullable: true,
   })
-  @JoinColumn({ name: 'user_id' })
+  @JoinColumn({ name: "user_id" })
   user?: User;
 }

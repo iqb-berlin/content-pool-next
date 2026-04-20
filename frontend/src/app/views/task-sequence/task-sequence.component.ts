@@ -17,13 +17,21 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <h1>{{ sequence.name || sequence.id }}</h1>
         <div class="seq-actions">
           @if (showUnitListBtn) {
-            <button class="btn btn-outline btn-sm" (click)="toggleUnitList()">📋 Aufgabenliste</button>
+            <button class="btn btn-outline btn-sm" (click)="toggleUnitList()">
+              📋 Aufgabenliste
+            </button>
           }
           @if (showCommentBtn) {
             <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
           }
           @if (showDownloadBtn) {
-            <button class="btn btn-outline btn-sm" (click)="downloadSequence()" [disabled]="!hasUnits">⬇️ Download</button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="downloadSequence()"
+              [disabled]="!hasUnits"
+            >
+              ⬇️ Download
+            </button>
           }
         </div>
       </div>
@@ -47,15 +55,23 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <div class="unit-embed card">
           <div class="embed-header">
             <h3>{{ currentUnit.name || currentUnit.id }}</h3>
-            <a [routerLink]="['/view', acpId, 'unit', currentUnit.id]" class="btn btn-sm btn-outline">
+            <a
+              [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
+              class="btn btn-sm btn-outline"
+            >
               Vollansicht ↗
             </a>
           </div>
           <div class="embed-body">
             <p class="help-text">
-              Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
+              Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen
+              Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
             </p>
-            <a [routerLink]="['/view', acpId, 'unit', currentUnit.id]" class="btn btn-primary" style="margin-top: 12px">
+            <a
+              [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
+              class="btn btn-primary"
+              style="margin-top: 12px"
+            >
               📝 Aufgabe {{ currentUnit.name || currentUnit.id }} öffnen
             </a>
           </div>
@@ -77,7 +93,11 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               <button class="btn btn-outline btn-sm" (click)="unitListOpen = false">✕</button>
             </div>
             @for (unit of sequence.units; track unit.id; let i = $index) {
-              <button class="unit-list-item" [class.active]="i === currentIndex" (click)="jumpTo(i)">
+              <button
+                class="unit-list-item"
+                [class.active]="i === currentIndex"
+                (click)="jumpTo(i)"
+              >
                 <span class="unit-num">{{ i + 1 }}</span>
                 <span>{{ unit.name || unit.id }}</span>
               </button>
@@ -95,62 +115,130 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       [targetType]="'TASK_SEQUENCE'"
       [targetId]="sequenceId"
       (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false">
+      (closed)="commentOpen = false"
+    >
     </app-comment-dialog>
   `,
-  styles: [`
-    .seq-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 16px;
-    }
-    .seq-header h1 { margin-bottom: 0; }
-    .seq-actions { display: flex; gap: 8px; }
+  styles: [
+    `
+      .seq-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .seq-header h1 {
+        margin-bottom: 0;
+      }
+      .seq-actions {
+        display: flex;
+        gap: 8px;
+      }
 
-    .nav-bar {
-      display: flex; justify-content: center; align-items: center;
-      gap: 20px; padding: 16px; background: var(--color-bg);
-      border-radius: var(--radius); margin-bottom: 16px;
-    }
-    .nav-info { font-size: 0.95rem; color: var(--color-text-secondary); }
+      .nav-bar {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 20px;
+        padding: 16px;
+        background: var(--color-bg);
+        border-radius: var(--radius);
+        margin-bottom: 16px;
+      }
+      .nav-info {
+        font-size: 0.95rem;
+        color: var(--color-text-secondary);
+      }
 
-    .unit-embed { }
-    .embed-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 12px;
-    }
-    .embed-body { padding: 24px; text-align: center; }
-    .help-text { color: var(--color-text-secondary); font-size: 0.9rem; }
+      .unit-embed {
+      }
+      .embed-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .embed-body {
+        padding: 24px;
+        text-align: center;
+      }
+      .help-text {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
 
-    .popup-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-      display: flex; justify-content: center; align-items: center;
-      z-index: 1000;
-    }
-    .popup { width: 100%; max-width: 420px; max-height: 70vh; overflow-y: auto; }
-    .popup-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 12px;
-    }
-    .unit-list-item {
-      display: flex; align-items: center; gap: 12px;
-      width: 100%; padding: 10px 12px; border: none; background: none;
-      font-family: inherit; font-size: 0.9rem; cursor: pointer;
-      border-radius: 6px; text-align: left; transition: background 0.15s;
-    }
-    .unit-list-item:hover { background: var(--color-bg); }
-    .unit-list-item.active { background: rgba(41,128,185,0.1); font-weight: 600; }
-    .unit-num {
-      display: flex; align-items: center; justify-content: center;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: var(--color-bg); font-weight: 600; font-size: 0.8rem;
-    }
-    .unit-list-item.active .unit-num { background: var(--color-primary); color: white; }
+      .popup-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+      }
+      .popup {
+        width: 100%;
+        max-width: 420px;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+      .popup-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .unit-list-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+        padding: 10px 12px;
+        border: none;
+        background: none;
+        font-family: inherit;
+        font-size: 0.9rem;
+        cursor: pointer;
+        border-radius: 6px;
+        text-align: left;
+        transition: background 0.15s;
+      }
+      .unit-list-item:hover {
+        background: var(--color-bg);
+      }
+      .unit-list-item.active {
+        background: rgba(41, 128, 185, 0.1);
+        font-weight: 600;
+      }
+      .unit-num {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--color-bg);
+        font-weight: 600;
+        font-size: 0.8rem;
+      }
+      .unit-list-item.active .unit-num {
+        background: var(--color-primary);
+        color: white;
+      }
 
-    @media (max-width: 768px) {
-      .seq-header { flex-direction: column; gap: 12px; align-items: flex-start; }
-      .nav-bar { flex-direction: column; gap: 12px; }
-    }
-  `]
+      @media (max-width: 768px) {
+        .seq-header {
+          flex-direction: column;
+          gap: 12px;
+          align-items: flex-start;
+        }
+        .nav-bar {
+          flex-direction: column;
+          gap: 12px;
+        }
+      }
+    `,
+  ],
 })
 export class TaskSequenceComponent implements OnInit {
   acpId = '';
@@ -175,7 +263,7 @@ export class TaskSequenceComponent implements OnInit {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.sequenceId = this.route.snapshot.paramMap.get('sequenceId') || '';
 
-    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
       const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
       this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('TASK_SEQUENCE'));
@@ -183,7 +271,7 @@ export class TaskSequenceComponent implements OnInit {
       this.showUnitListBtn = fc.enableSequenceNavigation !== false;
     });
 
-    this.api.getViewSequence(this.acpId, this.sequenceId).subscribe(s => {
+    this.api.getViewSequence(this.acpId, this.sequenceId).subscribe((s) => {
       this.sequence = this.normalizeSequence(s);
       this.currentIndex = 0;
       this.unitListOpen = false;
@@ -196,7 +284,7 @@ export class TaskSequenceComponent implements OnInit {
   }
 
   get hasUnits(): boolean {
-    return !!(this.sequence?.units?.length);
+    return !!this.sequence?.units?.length;
   }
 
   get currentUnit(): { id: string; name: string } | null {
@@ -241,7 +329,9 @@ export class TaskSequenceComponent implements OnInit {
 
   onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
     this.api.createComment(this.acpId, event).subscribe({
-      next: () => { this.commentOpen = false; },
+      next: () => {
+        this.commentOpen = false;
+      },
     });
   }
 
@@ -257,9 +347,10 @@ export class TaskSequenceComponent implements OnInit {
       .filter((unit: any) => typeof unit?.id === 'string' && unit.id.trim().length > 0)
       .map((unit: any) => ({
         id: unit.id.trim(),
-        name: typeof unit?.name === 'string' && unit.name.trim().length > 0
-          ? unit.name
-          : unit.id.trim(),
+        name:
+          typeof unit?.name === 'string' && unit.name.trim().length > 0
+            ? unit.name
+            : unit.id.trim(),
       }));
 
     return {

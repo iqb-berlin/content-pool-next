@@ -1,10 +1,10 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateItemExplorerStateAndChangeLog1760642000000 implements MigrationInterface {
-  name = 'CreateItemExplorerStateAndChangeLog1760642000000';
+  name = "CreateItemExplorerStateAndChangeLog1760642000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const hasStateTable = await queryRunner.hasTable('acp_item_explorer_state');
+    const hasStateTable = await queryRunner.hasTable("acp_item_explorer_state");
     if (!hasStateTable) {
       await queryRunner.query(`
         CREATE TABLE "acp_item_explorer_state" (
@@ -45,7 +45,9 @@ export class CreateItemExplorerStateAndChangeLog1760642000000 implements Migrati
       `);
     }
 
-    const hasLogTable = await queryRunner.hasTable('acp_item_explorer_change_log');
+    const hasLogTable = await queryRunner.hasTable(
+      "acp_item_explorer_change_log",
+    );
     if (!hasLogTable) {
       await queryRunner.query(`
         CREATE TABLE "acp_item_explorer_change_log" (
@@ -92,20 +94,36 @@ export class CreateItemExplorerStateAndChangeLog1760642000000 implements Migrati
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const hasLogTable = await queryRunner.hasTable('acp_item_explorer_change_log');
+    const hasLogTable = await queryRunner.hasTable(
+      "acp_item_explorer_change_log",
+    );
     if (hasLogTable) {
-      await queryRunner.query('DROP INDEX "public"."IDX_acp_item_explorer_change_log_change_type"');
-      await queryRunner.query('DROP INDEX "public"."IDX_acp_item_explorer_change_log_acp_created"');
-      await queryRunner.query('ALTER TABLE "acp_item_explorer_change_log" DROP CONSTRAINT "FK_acp_item_explorer_change_log_actor_user"');
-      await queryRunner.query('ALTER TABLE "acp_item_explorer_change_log" DROP CONSTRAINT "FK_acp_item_explorer_change_log_acp"');
+      await queryRunner.query(
+        'DROP INDEX "public"."IDX_acp_item_explorer_change_log_change_type"',
+      );
+      await queryRunner.query(
+        'DROP INDEX "public"."IDX_acp_item_explorer_change_log_acp_created"',
+      );
+      await queryRunner.query(
+        'ALTER TABLE "acp_item_explorer_change_log" DROP CONSTRAINT "FK_acp_item_explorer_change_log_actor_user"',
+      );
+      await queryRunner.query(
+        'ALTER TABLE "acp_item_explorer_change_log" DROP CONSTRAINT "FK_acp_item_explorer_change_log_acp"',
+      );
       await queryRunner.query('DROP TABLE "acp_item_explorer_change_log"');
     }
 
-    const hasStateTable = await queryRunner.hasTable('acp_item_explorer_state');
+    const hasStateTable = await queryRunner.hasTable("acp_item_explorer_state");
     if (hasStateTable) {
-      await queryRunner.query('DROP INDEX "public"."IDX_acp_item_explorer_state_status"');
-      await queryRunner.query('ALTER TABLE "acp_item_explorer_state" DROP CONSTRAINT "FK_acp_item_explorer_state_updated_by_user"');
-      await queryRunner.query('ALTER TABLE "acp_item_explorer_state" DROP CONSTRAINT "FK_acp_item_explorer_state_acp"');
+      await queryRunner.query(
+        'DROP INDEX "public"."IDX_acp_item_explorer_state_status"',
+      );
+      await queryRunner.query(
+        'ALTER TABLE "acp_item_explorer_state" DROP CONSTRAINT "FK_acp_item_explorer_state_updated_by_user"',
+      );
+      await queryRunner.query(
+        'ALTER TABLE "acp_item_explorer_state" DROP CONSTRAINT "FK_acp_item_explorer_state_acp"',
+      );
       await queryRunner.query('DROP TABLE "acp_item_explorer_state"');
     }
   }

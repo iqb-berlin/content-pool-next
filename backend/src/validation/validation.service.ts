@@ -1,22 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as fs from 'fs/promises';
-import { AcpFile, Acp } from '../database/entities';
+import { Injectable, Logger } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as fs from "fs/promises";
+import { AcpFile, Acp } from "../database/entities";
 import {
   ACP_INDEX_ALLOWED_STATUS_VALUES,
   getAssessmentParts,
   getIndexScales,
   getIndexUnits,
   toRuntimeAcpIndex,
-} from '../acp/acp-index.utils';
+} from "../acp/acp-index.utils";
 
 export interface ValidationIssue {
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info";
   message: string;
   field?: string;
   path?: string;
-  scope?: 'syntactic' | 'schema' | 'semantic';
+  scope?: "syntactic" | "schema" | "semantic";
 }
 
 export interface ValidationResult {
@@ -58,42 +58,42 @@ export class ValidationService {
     // Check file extension and apply format-specific validation
     const name = file.originalName.toLowerCase();
 
-    if (name.endsWith('.json')) {
+    if (name.endsWith(".json")) {
       let parsedJson: unknown;
       try {
-        parsedJson = JSON.parse(buffer.toString('utf-8'));
+        parsedJson = JSON.parse(buffer.toString("utf-8"));
       } catch (e: any) {
         issues.push({
-          severity: 'error',
+          severity: "error",
           message: `Invalid JSON: ${e.message}`,
-          scope: 'syntactic',
+          scope: "syntactic",
         });
       }
       if (parsedJson !== undefined) {
         issues.push(...this.validateJsonSchema(file.originalName, parsedJson));
       }
-    } else if (name.endsWith('.xml')) {
+    } else if (name.endsWith(".xml")) {
       // Basic XML well-formedness check
-      const content = buffer.toString('utf-8');
-      if (!content.trim().startsWith('<')) {
+      const content = buffer.toString("utf-8");
+      if (!content.trim().startsWith("<")) {
         issues.push({
-          severity: 'error',
-          message: 'File does not appear to be valid XML',
-          scope: 'syntactic',
+          severity: "error",
+          message: "File does not appear to be valid XML",
+          scope: "syntactic",
         });
       }
     }
 
     if (buffer.length === 0) {
       issues.push({
-        severity: 'warning',
-        message: 'File is empty',
-        scope: 'syntactic',
+        severity: "warning",
+        message: "File is empty",
+        scope: "syntactic",
       });
     }
 
     const result: ValidationResult = {
-      valid: !issues.some((i) => i.severity === 'error'),
+      valid: !issues.some((i) => i.severity === "error"),
       issues,
       timestamp: new Date().toISOString(),
     };
@@ -141,9 +141,9 @@ export class ValidationService {
           valid: false,
           issues: [
             {
-              severity: 'error',
-              message: 'File is missing on disk and could not be validated',
-              scope: 'syntactic',
+              severity: "error",
+              message: "File is missing on disk and could not be validated",
+              scope: "syntactic",
             },
           ],
           timestamp: new Date().toISOString(),
@@ -154,7 +154,7 @@ export class ValidationService {
     const semanticResult = await this.validateAcpConsistency(acpId);
     const semanticIssues = semanticResult.issues.map((issue) => ({
       ...issue,
-      scope: 'semantic' as const,
+      scope: "semantic" as const,
     }));
 
     const now = new Date().toISOString();
@@ -163,9 +163,9 @@ export class ValidationService {
         valid: false,
         issues: [
           {
-            severity: 'error',
-            message: 'Validation result missing',
-            scope: 'syntactic' as const,
+            severity: "error",
+            message: "Validation result missing",
+            scope: "syntactic" as const,
           },
         ],
         timestamp: now,
@@ -176,14 +176,19 @@ export class ValidationService {
         issues: mergedIssues,
         timestamp: now,
       };
-      file.validationResult = mergedResult as unknown as Record<string, unknown>;
+      file.validationResult = mergedResult as unknown as Record<
+        string,
+        unknown
+      >;
       return { file, result: mergedResult };
     });
     const validatedFiles = validatedEntries.map((entry) => entry.file);
 
     await this.fileRepository.save(validatedFiles);
 
-    const validFiles = validatedEntries.filter((entry) => entry.result.valid).length;
+    const validFiles = validatedEntries.filter(
+      (entry) => entry.result.valid,
+    ).length;
 
     return {
       files: validatedFiles,
@@ -206,7 +211,7 @@ export class ValidationService {
     if (!acp) {
       return {
         valid: false,
-        issues: [{ severity: 'error', message: 'ACP not found' }],
+        issues: [{ severity: "error", message: "ACP not found" }],
         timestamp: new Date().toISOString(),
       };
     }
@@ -216,7 +221,7 @@ export class ValidationService {
     const units = getIndexUnits(index);
     const unitIds = new Set(
       units
-        .map((u: any) => (typeof u?.id === 'string' ? u.id : ''))
+        .map((u: any) => (typeof u?.id === "string" ? u.id : ""))
         .filter((id: string) => id.length > 0),
     );
     const files = await this.fileRepository.find({ where: { acpId } });
@@ -224,13 +229,15 @@ export class ValidationService {
 
     // Check that all unit dependencies reference existing files
     for (const [unitIndex, unit] of units.entries()) {
-      const dependencies = Array.isArray(unit?.dependencies) ? unit.dependencies : [];
+      const dependencies = Array.isArray(unit?.dependencies)
+        ? unit.dependencies
+        : [];
       for (const [depIndex, dep] of dependencies.entries()) {
-        const depId = typeof dep?.id === 'string' ? dep.id : '';
+        const depId = typeof dep?.id === "string" ? dep.id : "";
         if (!depId || !fileNames.has(depId)) {
           issues.push({
-            severity: 'error',
-            message: `Unit "${unit.id}" references missing file: ${depId || '(unbekannt)'}`,
+            severity: "error",
+            message: `Unit "${unit.id}" references missing file: ${depId || "(unbekannt)"}`,
             path: `units[${unitIndex}].dependencies[${depIndex}].id`,
           });
         }
@@ -240,22 +247,25 @@ export class ValidationService {
     // Check that booklet modules reference existing units
     const assessmentParts = getAssessmentParts(index);
     for (const [partIndex, part] of assessmentParts.entries()) {
-      const modules = Array.isArray(part?.bookletModules) ? part.bookletModules : [];
+      const modules = Array.isArray(part?.bookletModules)
+        ? part.bookletModules
+        : [];
       const moduleIds = new Set(
         modules
-          .map((m: any) => (typeof m?.id === 'string' ? m.id : ''))
+          .map((m: any) => (typeof m?.id === "string" ? m.id : ""))
           .filter((id: string) => id.length > 0),
       );
 
       for (const [moduleIndex, module] of modules.entries()) {
         const moduleUnitRefs = Array.isArray(module?.units) ? module.units : [];
         for (const [moduleUnitIndex, modUnit] of moduleUnitRefs.entries()) {
-          const { id: moduleUnitId, pathSuffix } = this.resolveUnitReference(modUnit);
+          const { id: moduleUnitId, pathSuffix } =
+            this.resolveUnitReference(modUnit);
           const unitExists = !!moduleUnitId && unitIds.has(moduleUnitId);
           if (!unitExists) {
             issues.push({
-              severity: 'error',
-              message: `Module "${module?.id || '(unbekannt)'}" references missing unit: ${moduleUnitId || '(unbekannt)'}`,
+              severity: "error",
+              message: `Module "${module?.id || "(unbekannt)"}" references missing unit: ${moduleUnitId || "(unbekannt)"}`,
               path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}].units[${moduleUnitIndex}]${pathSuffix}`,
             });
           }
@@ -263,30 +273,37 @@ export class ValidationService {
       }
 
       // Check instruments reference existing modules
-      const instruments = Array.isArray(part?.instruments) ? part.instruments : [];
+      const instruments = Array.isArray(part?.instruments)
+        ? part.instruments
+        : [];
       for (const [instrumentIndex, instrument] of instruments.entries()) {
         const booklets = Array.isArray(instrument?.testcenterBooklet)
           ? instrument.testcenterBooklet
           : [];
         for (const [bookletIndex, booklet] of booklets.entries()) {
           const definitionId =
-            typeof booklet?.definitionId === 'string' ? booklet.definitionId : '';
+            typeof booklet?.definitionId === "string"
+              ? booklet.definitionId
+              : "";
           if (definitionId && !fileNames.has(definitionId)) {
             issues.push({
-              severity: 'warning',
-              message: `Instrument "${instrument?.id || '(unbekannt)'}" references missing booklet file: ${definitionId}`,
+              severity: "warning",
+              message: `Instrument "${instrument?.id || "(unbekannt)"}" references missing booklet file: ${definitionId}`,
               path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].definitionId`,
             });
           }
 
-          const moduleRefs = Array.isArray(booklet?.modules) ? booklet.modules : [];
+          const moduleRefs = Array.isArray(booklet?.modules)
+            ? booklet.modules
+            : [];
           for (const [moduleRefIndex, modRef] of moduleRefs.entries()) {
-            const { id: moduleRefId, pathSuffix } = this.resolveModuleReference(modRef);
+            const { id: moduleRefId, pathSuffix } =
+              this.resolveModuleReference(modRef);
             const moduleExists = !!moduleRefId && moduleIds.has(moduleRefId);
             if (!moduleExists) {
               issues.push({
-                severity: 'error',
-                message: `Instrument "${instrument?.id || '(unbekannt)'}" references missing module: ${moduleRefId || '(unbekannt)'}`,
+                severity: "error",
+                message: `Instrument "${instrument?.id || "(unbekannt)"}" references missing module: ${moduleRefId || "(unbekannt)"}`,
                 path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].modules[${moduleRefIndex}]${pathSuffix}`,
               });
             }
@@ -296,7 +313,8 @@ export class ValidationService {
     }
 
     const knownItemIds = this.collectKnownItemIds(units);
-    const scalesInParts = this.collectScaleEntriesFromAssessmentParts(assessmentParts);
+    const scalesInParts =
+      this.collectScaleEntriesFromAssessmentParts(assessmentParts);
     const scaleEntries = scalesInParts.length
       ? scalesInParts
       : this.collectScaleEntriesFromLegacyTopLevel(index);
@@ -309,8 +327,8 @@ export class ValidationService {
         const scaleItemId = this.resolveScaleItemId(scaleItem);
         if (!scaleItemId || !knownItemIds.has(scaleItemId)) {
           issues.push({
-            severity: 'warning',
-            message: `Scale "${scaleEntry.scale?.id || '(unbekannt)'}" references unknown item: ${scaleItemId || '(unbekannt)'}`,
+            severity: "warning",
+            message: `Scale "${scaleEntry.scale?.id || "(unbekannt)"}" references unknown item: ${scaleItemId || "(unbekannt)"}`,
             path: `${scaleEntry.pathBase}.typeParameters.items[${scaleItemIndex}].id`,
           });
         }
@@ -318,24 +336,28 @@ export class ValidationService {
     }
 
     return {
-      valid: !issues.some((i) => i.severity === 'error'),
+      valid: !issues.some((i) => i.severity === "error"),
       issues,
       timestamp: new Date().toISOString(),
     };
   }
 
-  private validateJsonSchema(fileName: string, payload: unknown): ValidationIssue[] {
+  private validateJsonSchema(
+    fileName: string,
+    payload: unknown,
+  ): ValidationIssue[] {
     if (!this.looksLikeAcpIndex(fileName, payload)) {
       return [];
     }
 
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return [
         {
-          severity: 'error',
-          message: 'ACP-Index schema check failed: top-level JSON must be an object',
-          scope: 'schema',
-          path: '$',
+          severity: "error",
+          message:
+            "ACP-Index schema check failed: top-level JSON must be an object",
+          scope: "schema",
+          path: "$",
         },
       ];
     }
@@ -343,50 +365,60 @@ export class ValidationService {
     const issues: ValidationIssue[] = [];
     const index = payload as Record<string, unknown>;
 
-    if (typeof index.packageId !== 'string' || !index.packageId.trim()) {
+    if (typeof index.packageId !== "string" || !index.packageId.trim()) {
       issues.push({
-        severity: 'error',
-        message: 'ACP-Index schema: required field "packageId" is missing or empty',
-        scope: 'schema',
-        path: 'packageId',
+        severity: "error",
+        message:
+          'ACP-Index schema: required field "packageId" is missing or empty',
+        scope: "schema",
+        path: "packageId",
       });
     }
 
-    if (typeof index.version !== 'string' || !index.version.trim()) {
+    if (typeof index.version !== "string" || !index.version.trim()) {
       issues.push({
-        severity: 'error',
-        message: 'ACP-Index schema: required field "version" is missing or empty',
-        scope: 'schema',
-        path: 'version',
+        severity: "error",
+        message:
+          'ACP-Index schema: required field "version" is missing or empty',
+        scope: "schema",
+        path: "version",
       });
     }
 
-    if (typeof index.status !== 'string' || !ACP_INDEX_ALLOWED_STATUS_VALUES.includes(index.status as any)) {
+    if (
+      typeof index.status !== "string" ||
+      !ACP_INDEX_ALLOWED_STATUS_VALUES.includes(index.status as any)
+    ) {
       issues.push({
-        severity: 'error',
-        message: `ACP-Index schema: "status" must be one of ${ACP_INDEX_ALLOWED_STATUS_VALUES.join(', ')}`,
-        scope: 'schema',
-        path: 'status',
+        severity: "error",
+        message: `ACP-Index schema: "status" must be one of ${ACP_INDEX_ALLOWED_STATUS_VALUES.join(", ")}`,
+        scope: "schema",
+        path: "status",
       });
     }
 
     if (!Array.isArray(index.assessmentParts)) {
       issues.push({
-        severity: 'error',
-        message: 'ACP-Index schema: required field "assessmentParts" must be an array',
-        scope: 'schema',
-        path: 'assessmentParts',
+        severity: "error",
+        message:
+          'ACP-Index schema: required field "assessmentParts" must be an array',
+        scope: "schema",
+        path: "assessmentParts",
       });
       return issues;
     }
 
-    for (let partIndex = 0; partIndex < index.assessmentParts.length; partIndex++) {
+    for (
+      let partIndex = 0;
+      partIndex < index.assessmentParts.length;
+      partIndex++
+    ) {
       const part = index.assessmentParts[partIndex] as Record<string, unknown>;
-      if (!part || typeof part !== 'object' || Array.isArray(part)) {
+      if (!part || typeof part !== "object" || Array.isArray(part)) {
         issues.push({
-          severity: 'error',
-          message: 'ACP-Index schema: assessmentPart entry must be an object',
-          scope: 'schema',
+          severity: "error",
+          message: "ACP-Index schema: assessmentPart entry must be an object",
+          scope: "schema",
           path: `assessmentParts[${partIndex}]`,
         });
         continue;
@@ -395,39 +427,42 @@ export class ValidationService {
       const modules = part.bookletModules;
       if (modules !== undefined && !Array.isArray(modules)) {
         issues.push({
-          severity: 'error',
+          severity: "error",
           message: 'ACP-Index schema: "bookletModules" must be an array',
-          scope: 'schema',
+          scope: "schema",
           path: `assessmentParts[${partIndex}].bookletModules`,
         });
       }
 
-      for (const [moduleIndex, moduleEntry] of (Array.isArray(modules) ? modules : []).entries()) {
+      for (const [moduleIndex, moduleEntry] of (Array.isArray(modules)
+        ? modules
+        : []
+      ).entries()) {
         const module = moduleEntry as Record<string, unknown>;
-        if (!module || typeof module !== 'object' || Array.isArray(module)) {
+        if (!module || typeof module !== "object" || Array.isArray(module)) {
           issues.push({
-            severity: 'error',
-            message: 'ACP-Index schema: bookletModule entry must be an object',
-            scope: 'schema',
+            severity: "error",
+            message: "ACP-Index schema: bookletModule entry must be an object",
+            scope: "schema",
             path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}]`,
           });
           continue;
         }
 
-        if (typeof module.id !== 'string' || !module.id.trim()) {
+        if (typeof module.id !== "string" || !module.id.trim()) {
           issues.push({
-            severity: 'error',
+            severity: "error",
             message: 'ACP-Index schema: bookletModule requires non-empty "id"',
-            scope: 'schema',
+            scope: "schema",
             path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}].id`,
           });
         }
 
         if (module.units !== undefined && !Array.isArray(module.units)) {
           issues.push({
-            severity: 'error',
+            severity: "error",
             message: 'ACP-Index schema: bookletModule "units" must be an array',
-            scope: 'schema',
+            scope: "schema",
             path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}].units`,
           });
         }
@@ -436,20 +471,29 @@ export class ValidationService {
       const instruments = part.instruments;
       if (instruments !== undefined && !Array.isArray(instruments)) {
         issues.push({
-          severity: 'error',
+          severity: "error",
           message: 'ACP-Index schema: "instruments" must be an array',
-          scope: 'schema',
+          scope: "schema",
           path: `assessmentParts[${partIndex}].instruments`,
         });
       }
 
-      for (const [instrumentIndex, instrumentEntry] of (Array.isArray(instruments) ? instruments : []).entries()) {
+      for (const [instrumentIndex, instrumentEntry] of (Array.isArray(
+        instruments,
+      )
+        ? instruments
+        : []
+      ).entries()) {
         const instrument = instrumentEntry as Record<string, unknown>;
-        if (!instrument || typeof instrument !== 'object' || Array.isArray(instrument)) {
+        if (
+          !instrument ||
+          typeof instrument !== "object" ||
+          Array.isArray(instrument)
+        ) {
           issues.push({
-            severity: 'error',
-            message: 'ACP-Index schema: instrument entry must be an object',
-            scope: 'schema',
+            severity: "error",
+            message: "ACP-Index schema: instrument entry must be an object",
+            scope: "schema",
             path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}]`,
           });
           continue;
@@ -458,42 +502,59 @@ export class ValidationService {
         const booklets = instrument.testcenterBooklet;
         if (booklets !== undefined && !Array.isArray(booklets)) {
           issues.push({
-            severity: 'error',
-            message: 'ACP-Index schema: instrument "testcenterBooklet" must be an array',
-            scope: 'schema',
+            severity: "error",
+            message:
+              'ACP-Index schema: instrument "testcenterBooklet" must be an array',
+            scope: "schema",
             path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet`,
           });
           continue;
         }
 
-        for (const [bookletIndex, bookletEntry] of (Array.isArray(booklets) ? booklets : []).entries()) {
+        for (const [bookletIndex, bookletEntry] of (Array.isArray(booklets)
+          ? booklets
+          : []
+        ).entries()) {
           const booklet = bookletEntry as Record<string, unknown>;
-          if (!booklet || typeof booklet !== 'object' || Array.isArray(booklet)) {
+          if (
+            !booklet ||
+            typeof booklet !== "object" ||
+            Array.isArray(booklet)
+          ) {
             issues.push({
-              severity: 'error',
-              message: 'ACP-Index schema: booklet entry must be an object',
-              scope: 'schema',
+              severity: "error",
+              message: "ACP-Index schema: booklet entry must be an object",
+              scope: "schema",
               path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}]`,
             });
             continue;
           }
 
-          if (booklet.modules !== undefined && !Array.isArray(booklet.modules)) {
+          if (
+            booklet.modules !== undefined &&
+            !Array.isArray(booklet.modules)
+          ) {
             issues.push({
-              severity: 'error',
+              severity: "error",
               message: 'ACP-Index schema: booklet "modules" must be an array',
-              scope: 'schema',
+              scope: "schema",
               path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].modules`,
             });
             continue;
           }
 
-          for (const [moduleRefIndex, moduleRef] of (Array.isArray(booklet.modules) ? booklet.modules : []).entries()) {
+          for (const [moduleRefIndex, moduleRef] of (Array.isArray(
+            booklet.modules,
+          )
+            ? booklet.modules
+            : []
+          ).entries()) {
             if (!this.resolveModuleReferenceId(moduleRef)) {
               issues.push({
-                severity: 'error',
-                message: 'ACP-Index schema: module reference must be string, {moduleId}, or {id}',
-                scope: 'schema',
+                severity: "error",
+                message:
+                  "ACP-Index schema: module reference must be string, {moduleId}, or {id}",
+                scope: "schema",
                 path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].modules[${moduleRefIndex}]`,
               });
             }
@@ -506,99 +567,101 @@ export class ValidationService {
   }
 
   private looksLikeAcpIndex(fileName: string, payload: unknown): boolean {
-    if (fileName.toLowerCase().includes('acp-index')) {
+    if (fileName.toLowerCase().includes("acp-index")) {
       return true;
     }
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return false;
     }
     const root = payload as Record<string, unknown>;
     return (
-      'assessmentParts' in root
-      || 'packageId' in root
-      || 'status' in root
-      || 'version' in root
+      "assessmentParts" in root ||
+      "packageId" in root ||
+      "status" in root ||
+      "version" in root
     );
   }
 
   private resolveModuleReferenceId(moduleRef: unknown): string | null {
-    if (typeof moduleRef === 'string' && moduleRef.trim().length > 0) {
+    if (typeof moduleRef === "string" && moduleRef.trim().length > 0) {
       return moduleRef.trim();
     }
-    if (moduleRef && typeof moduleRef === 'object') {
+    if (moduleRef && typeof moduleRef === "object") {
       const ref = moduleRef as { moduleId?: unknown; id?: unknown };
-      if (typeof ref.moduleId === 'string' && ref.moduleId.trim().length > 0) {
+      if (typeof ref.moduleId === "string" && ref.moduleId.trim().length > 0) {
         return ref.moduleId.trim();
       }
-      if (typeof ref.id === 'string' && ref.id.trim().length > 0) {
+      if (typeof ref.id === "string" && ref.id.trim().length > 0) {
         return ref.id.trim();
       }
     }
     return null;
   }
 
-  private resolveModuleReference(
-    moduleRef: unknown,
-  ): { id: string | null; pathSuffix: string } {
-    if (typeof moduleRef === 'string') {
+  private resolveModuleReference(moduleRef: unknown): {
+    id: string | null;
+    pathSuffix: string;
+  } {
+    if (typeof moduleRef === "string") {
       const id = moduleRef.trim();
       return {
         id: id.length ? id : null,
-        pathSuffix: '',
+        pathSuffix: "",
       };
     }
-    if (moduleRef && typeof moduleRef === 'object') {
+    if (moduleRef && typeof moduleRef === "object") {
       const ref = moduleRef as { moduleId?: unknown; id?: unknown };
-      if (typeof ref.moduleId === 'string') {
+      if (typeof ref.moduleId === "string") {
         const id = ref.moduleId.trim();
         return {
           id: id.length ? id : null,
-          pathSuffix: '.moduleId',
+          pathSuffix: ".moduleId",
         };
       }
-      if (typeof ref.id === 'string') {
+      if (typeof ref.id === "string") {
         const id = ref.id.trim();
         return {
           id: id.length ? id : null,
-          pathSuffix: '.id',
+          pathSuffix: ".id",
         };
       }
-      return { id: null, pathSuffix: '' };
+      return { id: null, pathSuffix: "" };
     }
-    return { id: null, pathSuffix: '' };
+    return { id: null, pathSuffix: "" };
   }
 
-  private resolveUnitReference(
-    unitRef: unknown,
-  ): { id: string | null; pathSuffix: string } {
-    if (typeof unitRef === 'string') {
+  private resolveUnitReference(unitRef: unknown): {
+    id: string | null;
+    pathSuffix: string;
+  } {
+    if (typeof unitRef === "string") {
       const id = unitRef.trim();
       return {
         id: id.length ? id : null,
-        pathSuffix: '',
+        pathSuffix: "",
       };
     }
-    if (unitRef && typeof unitRef === 'object') {
+    if (unitRef && typeof unitRef === "object") {
       const ref = unitRef as { id?: unknown };
-      if (typeof ref.id === 'string') {
+      if (typeof ref.id === "string") {
         const id = ref.id.trim();
         return {
           id: id.length ? id : null,
-          pathSuffix: '.id',
+          pathSuffix: ".id",
         };
       }
-      return { id: null, pathSuffix: '' };
+      return { id: null, pathSuffix: "" };
     }
-    return { id: null, pathSuffix: '' };
+    return { id: null, pathSuffix: "" };
   }
 
   private collectKnownItemIds(units: any[]): Set<string> {
     const knownItemIds = new Set<string>();
     for (const unit of units) {
-      const unitId = typeof unit?.id === 'string' ? unit.id : '';
+      const unitId = typeof unit?.id === "string" ? unit.id : "";
       const items = Array.isArray(unit?.items) ? unit.items : [];
       for (const item of items) {
-        const itemId = typeof item?.id === 'string' ? item.id : '';
+        const itemId = typeof item?.id === "string" ? item.id : "";
         if (!itemId) continue;
         knownItemIds.add(itemId);
         if (unitId && item.useUnitAliasAsPrefix !== false) {
@@ -610,13 +673,13 @@ export class ValidationService {
   }
 
   private resolveScaleItemId(scaleItem: unknown): string | null {
-    if (typeof scaleItem === 'string') {
+    if (typeof scaleItem === "string") {
       const id = scaleItem.trim();
       return id.length ? id : null;
     }
-    if (scaleItem && typeof scaleItem === 'object') {
+    if (scaleItem && typeof scaleItem === "object") {
       const entry = scaleItem as { id?: unknown };
-      if (typeof entry.id === 'string') {
+      if (typeof entry.id === "string") {
         const id = entry.id.trim();
         return id.length ? id : null;
       }

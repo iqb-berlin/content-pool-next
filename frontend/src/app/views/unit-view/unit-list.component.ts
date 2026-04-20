@@ -17,29 +17,49 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
 
     <div class="card">
       <table class="table">
-        <thead><tr><th>ID</th><th>Name</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
           @for (unit of units; track unit.id) {
             <tr>
-              <td><code>{{ unit.id }}</code></td>
+              <td>
+                <code>{{ unit.id }}</code>
+              </td>
               <td>{{ unit.name }}</td>
-              <td><a [routerLink]="['/view', acpId, 'unit', unit.id]" class="btn btn-sm btn-primary">Ansehen</a></td>
+              <td>
+                <a [routerLink]="['/view', acpId, 'unit', unit.id]" class="btn btn-sm btn-primary"
+                  >Ansehen</a
+                >
+              </td>
             </tr>
           }
         </tbody>
       </table>
     </div>
   `,
-  styles: [`
-    .unit-count { font-size: 0.85rem; color: var(--color-text-secondary); }
-  `]
+  styles: [
+    `
+      .unit-count {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+    `,
+  ],
 })
 export class UnitListComponent implements OnInit {
   acpId = '';
   units: any[] = [];
   breadcrumbs: BreadcrumbItem[] = [];
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(
+    private route: ActivatedRoute,
+    private api: ApiService,
+  ) {}
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
@@ -48,6 +68,6 @@ export class UnitListComponent implements OnInit {
       { label: 'ACP', route: ['/view', this.acpId] },
       { label: 'Aufgaben' },
     ];
-    this.api.getViewUnits(this.acpId).subscribe(u => this.units = u);
+    this.api.getViewUnits(this.acpId).subscribe((u) => (this.units = u));
   }
 }

@@ -9,23 +9,31 @@ import {
   Request,
   Res,
   UseGuards,
-} from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsObject, IsOptional, IsString } from 'class-validator';
-import { Response } from 'express';
-import { ViewsService } from './views.service';
-import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
-import { ItemExplorerStateService } from '../item-explorer/item-explorer-state.service';
+} from "@nestjs/common";
+import {
+  ApiBody,
+  ApiOperation,
+  ApiPropertyOptional,
+  ApiTags,
+} from "@nestjs/swagger";
+import { IsObject, IsOptional, IsString } from "class-validator";
+import { Response } from "express";
+import { ViewsService } from "./views.service";
+import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
 class SaveItemPreferencesDto {
-  @ApiPropertyOptional({ description: 'Preference scope/view id', example: 'item-list' })
+  @ApiPropertyOptional({
+    description: "Preference scope/view id",
+    example: "item-list",
+  })
   @IsOptional()
   @IsString()
   viewId?: string;
 
   @ApiPropertyOptional({
-    description: 'View specific UI state',
-    type: 'object',
+    description: "View specific UI state",
+    type: "object",
     additionalProperties: true,
   })
   @IsOptional()
@@ -33,11 +41,11 @@ class SaveItemPreferencesDto {
   ui?: Record<string, unknown>;
 
   @ApiPropertyOptional({
-    description: 'Item tags keyed by item identifier',
-    type: 'object',
+    description: "Item tags keyed by item identifier",
+    type: "object",
     additionalProperties: {
-      type: 'array',
-      items: { type: 'string' },
+      type: "array",
+      items: { type: "string" },
     },
   })
   @IsOptional()
@@ -45,103 +53,118 @@ class SaveItemPreferencesDto {
   tags?: Record<string, string[]>;
 }
 
-@ApiTags('Public Views')
-@Controller('view')
+@ApiTags("Public Views")
+@Controller("view")
 export class ViewsController {
   constructor(
     private readonly viewsService: ViewsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
   ) {}
 
-  @Get('settings')
-  @ApiOperation({ summary: 'Get public app settings (theme, logo, legal pages)' })
+  @Get("settings")
+  @ApiOperation({
+    summary: "Get public app settings (theme, logo, legal pages)",
+  })
   async getPublicSettings() {
     return this.viewsService.getPublicSettings();
   }
 
-  @Get('acp')
-  @ApiOperation({ summary: 'List publicly accessible ACPs' })
+  @Get("acp")
+  @ApiOperation({ summary: "List publicly accessible ACPs" })
   async getPublicAcps() {
     return this.viewsService.getPublicAcps();
   }
 
-  @Get('acp/:acpId')
+  @Get("acp/:acpId")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'ACP start page data' })
-  async getAcpStartPage(@Param('acpId') acpId: string) {
+  @ApiOperation({ summary: "ACP start page data" })
+  async getAcpStartPage(@Param("acpId") acpId: string) {
     return this.viewsService.getAcpStartPage(acpId);
   }
 
-  @Get('acp/:acpId/index')
+  @Get("acp/:acpId/index")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get ACP-Index for read-only view' })
-  async getAcpIndex(@Param('acpId') acpId: string) {
+  @ApiOperation({ summary: "Get ACP-Index for read-only view" })
+  async getAcpIndex(@Param("acpId") acpId: string) {
     return this.viewsService.getAcpIndex(acpId);
   }
 
-  @Get('acp/:acpId/index/export')
+  @Get("acp/:acpId/index/export")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Export ACP-Index JSON for read-only view' })
-  async exportAcpIndex(@Param('acpId') acpId: string, @Request() req: any, @Res() res: Response) {
-    if (!(await this.canUseFeature(acpId, req, 'allowIndexDownload'))) {
-      throw new ForbiddenException('Index download is not enabled for this ACP');
+  @ApiOperation({ summary: "Export ACP-Index JSON for read-only view" })
+  async exportAcpIndex(
+    @Param("acpId") acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    if (!(await this.canUseFeature(acpId, req, "allowIndexDownload"))) {
+      throw new ForbiddenException(
+        "Index download is not enabled for this ACP",
+      );
     }
 
     const index = await this.viewsService.getAcpIndex(acpId);
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="acp-index-${acpId}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="acp-index-${acpId}.json"`,
+    );
     res.json(index || {});
   }
 
-  @Get('acp/:acpId/units')
+  @Get("acp/:acpId/units")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'List all units in an ACP' })
-  async getUnits(@Param('acpId') acpId: string) {
+  @ApiOperation({ summary: "List all units in an ACP" })
+  async getUnits(@Param("acpId") acpId: string) {
     const data = await this.viewsService.getAcpStartPage(acpId);
     return data?.units || [];
   }
 
-  @Get('acp/:acpId/units/:unitId')
+  @Get("acp/:acpId/units/:unitId")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get unit view data' })
+  @ApiOperation({ summary: "Get unit view data" })
   async getUnit(
-    @Param('acpId') acpId: string,
-    @Param('unitId') unitId: string,
+    @Param("acpId") acpId: string,
+    @Param("unitId") unitId: string,
     @Request() req: any,
   ) {
-    if (!(await this.canUseFeature(acpId, req, 'enableUnitView', true))) {
-      throw new ForbiddenException('Unit view is not enabled for this ACP');
+    if (!(await this.canUseFeature(acpId, req, "enableUnitView", true))) {
+      throw new ForbiddenException("Unit view is not enabled for this ACP");
     }
 
     return this.viewsService.getUnitViewData(acpId, unitId);
   }
 
-  @Get('acp/:acpId/items')
+  @Get("acp/:acpId/items")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get item list for an ACP' })
-  async getItems(@Param('acpId') acpId: string, @Request() req: any) {
-    if (!(await this.canUseFeature(acpId, req, 'enableItemList', true))) {
-      throw new ForbiddenException('Item list is not enabled for this ACP');
+  @ApiOperation({ summary: "Get item list for an ACP" })
+  async getItems(@Param("acpId") acpId: string, @Request() req: any) {
+    if (!(await this.canUseFeature(acpId, req, "enableItemList", true))) {
+      throw new ForbiddenException("Item list is not enabled for this ACP");
     }
 
     return this.viewsService.getItemList(acpId);
   }
 
-  @Get('acp/:acpId/item-explorer/state')
+  @Get("acp/:acpId/item-explorer/state")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get shared Item Explorer state for ACP' })
-  async getItemExplorerState(@Param('acpId') acpId: string, @Request() req: any) {
-    const canEdit = req?.acpAccessLevel === 'MANAGER' || req?.acpAccessLevel === 'ADMIN';
+  @ApiOperation({ summary: "Get shared Item Explorer state for ACP" })
+  async getItemExplorerState(
+    @Param("acpId") acpId: string,
+    @Request() req: any,
+  ) {
+    const canEdit =
+      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
     return this.itemExplorerStateService.getStateForViewer(acpId, canEdit);
   }
 
-  @Get('acp/:acpId/items/preferences')
+  @Get("acp/:acpId/items/preferences")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get persisted user preferences for item views' })
+  @ApiOperation({ summary: "Get persisted user preferences for item views" })
   async getItemPreferences(
-    @Param('acpId') acpId: string,
+    @Param("acpId") acpId: string,
     @Request() req: any,
-    @Query('viewId') viewId?: string,
+    @Query("viewId") viewId?: string,
   ) {
     if (!(await this.isPreferencePersistenceEnabled(acpId))) {
       return { ui: {}, tags: {} };
@@ -150,12 +173,12 @@ export class ViewsController {
     return this.viewsService.getItemPreferences(acpId, req?.user, viewId);
   }
 
-  @Put('acp/:acpId/items/preferences')
+  @Put("acp/:acpId/items/preferences")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Save persisted user preferences for item views' })
+  @ApiOperation({ summary: "Save persisted user preferences for item views" })
   @ApiBody({ type: SaveItemPreferencesDto })
   async saveItemPreferences(
-    @Param('acpId') acpId: string,
+    @Param("acpId") acpId: string,
     @Body() dto: SaveItemPreferencesDto,
     @Request() req: any,
   ) {
@@ -174,28 +197,36 @@ export class ViewsController {
     );
   }
 
-  @Get('acp/:acpId/sequences')
+  @Get("acp/:acpId/sequences")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'List task sequences for an ACP' })
-  async getSequences(@Param('acpId') acpId: string, @Request() req: any) {
-    if (!(await this.canUseFeature(acpId, req, 'enableSequenceNavigation', true))) {
-      throw new ForbiddenException('Task sequences are not enabled for this ACP');
+  @ApiOperation({ summary: "List task sequences for an ACP" })
+  async getSequences(@Param("acpId") acpId: string, @Request() req: any) {
+    if (
+      !(await this.canUseFeature(acpId, req, "enableSequenceNavigation", true))
+    ) {
+      throw new ForbiddenException(
+        "Task sequences are not enabled for this ACP",
+      );
     }
 
     const data = await this.viewsService.getAcpStartPage(acpId);
     return data?.sequences || [];
   }
 
-  @Get('acp/:acpId/sequences/:sequenceId')
+  @Get("acp/:acpId/sequences/:sequenceId")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get task sequence with ordered units' })
+  @ApiOperation({ summary: "Get task sequence with ordered units" })
   async getSequence(
-    @Param('acpId') acpId: string,
-    @Param('sequenceId') sequenceId: string,
+    @Param("acpId") acpId: string,
+    @Param("sequenceId") sequenceId: string,
     @Request() req: any,
   ) {
-    if (!(await this.canUseFeature(acpId, req, 'enableSequenceNavigation', true))) {
-      throw new ForbiddenException('Task sequences are not enabled for this ACP');
+    if (
+      !(await this.canUseFeature(acpId, req, "enableSequenceNavigation", true))
+    ) {
+      throw new ForbiddenException(
+        "Task sequences are not enabled for this ACP",
+      );
     }
 
     return this.viewsService.getTaskSequence(acpId, sequenceId);
@@ -207,12 +238,15 @@ export class ViewsController {
     featureKey: string,
     defaultWhenUnset = false,
   ): Promise<boolean> {
-    if (req?.acpAccessLevel === 'MANAGER' || req?.acpAccessLevel === 'ADMIN') {
+    if (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") {
       return true;
     }
 
     const data = await this.viewsService.getAcpStartPage(acpId);
-    const featureConfig = (data?.featureConfig || {}) as Record<string, unknown>;
+    const featureConfig = (data?.featureConfig || {}) as Record<
+      string,
+      unknown
+    >;
     const value = featureConfig[featureKey];
     if (value === undefined) {
       return defaultWhenUnset;
@@ -220,9 +254,14 @@ export class ViewsController {
     return Boolean(value);
   }
 
-  private async isPreferencePersistenceEnabled(acpId: string): Promise<boolean> {
+  private async isPreferencePersistenceEnabled(
+    acpId: string,
+  ): Promise<boolean> {
     const data = await this.viewsService.getAcpStartPage(acpId);
-    const featureConfig = (data?.featureConfig || {}) as Record<string, unknown>;
+    const featureConfig = (data?.featureConfig || {}) as Record<
+      string,
+      unknown
+    >;
     return Boolean(featureConfig.persistUserPreferences);
   }
 }

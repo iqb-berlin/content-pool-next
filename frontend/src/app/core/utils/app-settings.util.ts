@@ -12,14 +12,20 @@ export const DEFAULT_THEME: Record<string, string> = {
   '--color-border': '#dfe6e9',
 };
 
-export function normalizeTheme(theme: Record<string, unknown> | null | undefined): Record<string, string> {
+export function normalizeTheme(
+  theme: Record<string, unknown> | null | undefined,
+): Record<string, string> {
   const normalized = { ...DEFAULT_THEME };
   if (!theme || typeof theme !== 'object') {
     return normalized;
   }
 
   for (const [key, value] of Object.entries(theme)) {
-    if (Object.prototype.hasOwnProperty.call(DEFAULT_THEME, key) && typeof value === 'string' && value.trim()) {
+    if (
+      Object.prototype.hasOwnProperty.call(DEFAULT_THEME, key) &&
+      typeof value === 'string' &&
+      value.trim()
+    ) {
       normalized[key] = value;
     }
   }

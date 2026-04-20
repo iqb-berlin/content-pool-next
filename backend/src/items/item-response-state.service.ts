@@ -1,14 +1,14 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ItemResponseState } from '../database/entities';
+import { Injectable, ForbiddenException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { ItemResponseState } from "../database/entities";
 
 @Injectable()
 export class ItemResponseStateService {
   constructor(
     @InjectRepository(ItemResponseState)
     private readonly stateRepository: Repository<ItemResponseState>,
-  ) { }
+  ) {}
 
   /**
    * Save or update response state for an item.
@@ -22,7 +22,9 @@ export class ItemResponseStateService {
     userIsManager: boolean,
   ): Promise<ItemResponseState> {
     if (!userIsManager) {
-      throw new ForbiddenException('Only ACP managers can save response states');
+      throw new ForbiddenException(
+        "Only ACP managers can save response states",
+      );
     }
 
     // Check if state already exists
@@ -68,7 +70,11 @@ export class ItemResponseStateService {
     itemId: string,
     unitId: string,
     itemList: { itemId: string; unitId: string }[],
-  ): Promise<{ state: ItemResponseState | null; isFallback: boolean; fallbackItemId?: string }> {
+  ): Promise<{
+    state: ItemResponseState | null;
+    isFallback: boolean;
+    fallbackItemId?: string;
+  }> {
     // First try to get direct state
     const directState = await this.getResponseState(acpId, itemId, unitId);
     if (directState) {
@@ -76,7 +82,9 @@ export class ItemResponseStateService {
     }
 
     // Find position of current item in the list
-    const currentIndex = itemList.findIndex(i => i.itemId === itemId && i.unitId === unitId);
+    const currentIndex = itemList.findIndex(
+      (i) => i.itemId === itemId && i.unitId === unitId,
+    );
     if (currentIndex <= 0) {
       return { state: null, isFallback: false };
     }
@@ -85,7 +93,11 @@ export class ItemResponseStateService {
     for (let i = currentIndex - 1; i >= 0; i--) {
       const prevItem = itemList[i];
       if (prevItem.unitId === unitId) {
-        const prevState = await this.getResponseState(acpId, prevItem.itemId, prevItem.unitId);
+        const prevState = await this.getResponseState(
+          acpId,
+          prevItem.itemId,
+          prevItem.unitId,
+        );
         if (prevState) {
           return {
             state: prevState,
@@ -110,11 +122,18 @@ export class ItemResponseStateService {
     userIsManager: boolean,
   ): Promise<{ success: boolean }> {
     if (!userIsManager) {
-      throw new ForbiddenException('Only ACP managers can delete response states');
+      throw new ForbiddenException(
+        "Only ACP managers can delete response states",
+      );
     }
 
     const result = await this.stateRepository.delete({ acpId, itemId, unitId });
-    return { success: result.affected !== undefined && result.affected !== null && result.affected > 0 };
+    return {
+      success:
+        result.affected !== undefined &&
+        result.affected !== null &&
+        result.affected > 0,
+    };
   }
 
   /**
@@ -126,12 +145,14 @@ export class ItemResponseStateService {
     userIsManager: boolean,
   ): Promise<ItemResponseState[]> {
     if (!userIsManager) {
-      throw new ForbiddenException('Only ACP managers can view all response states');
+      throw new ForbiddenException(
+        "Only ACP managers can view all response states",
+      );
     }
 
     return this.stateRepository.find({
       where: { acpId },
-      order: { unitId: 'ASC', itemId: 'ASC' },
+      order: { unitId: "ASC", itemId: "ASC" },
     });
   }
 

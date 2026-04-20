@@ -9,14 +9,16 @@ import { AuthService } from '../core/services/auth.service';
   template: `<div class="callback-container">
     <p>Verarbeitung der Anmeldung...</p>
   </div>`,
-  styles: [`
-    .callback-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 60vh;
-    }
-  `],
+  styles: [
+    `
+      .callback-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 60vh;
+      }
+    `,
+  ],
 })
 export class OidcCallbackComponent implements OnInit {
   constructor(
@@ -55,7 +57,13 @@ export class OidcCallbackComponent implements OnInit {
         const tokenForBackend = idToken || accessToken;
 
         if (tokenForBackend) {
-          await firstValueFrom(this.auth.handleOidcCallback(tokenForBackend, accessToken || undefined, idToken || undefined));
+          await firstValueFrom(
+            this.auth.handleOidcCallback(
+              tokenForBackend,
+              accessToken || undefined,
+              idToken || undefined,
+            ),
+          );
           this.navigateToTarget();
           return;
         }

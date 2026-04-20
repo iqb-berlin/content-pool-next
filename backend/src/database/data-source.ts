@@ -1,5 +1,5 @@
-import { DataSource } from 'typeorm';
-import { config } from 'dotenv';
+import { DataSource } from "typeorm";
+import { config } from "dotenv";
 
 config();
 
@@ -12,14 +12,14 @@ config();
  *   npx typeorm-ts-node-commonjs migration:revert -d src/database/data-source.ts
  */
 export default new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT || '5432', 10),
-  username: process.env.DB_USERNAME || 'contentpool',
-  password: process.env.DB_PASSWORD || 'contentpool_dev',
-  database: process.env.DB_DATABASE || 'contentpool',
-  entities: [__dirname + '/entities/**/*.entity{.ts,.js}'],
-  migrations: [__dirname + '/migrations/**/*{.ts,.js}'],
+  type: "postgres",
+  host: process.env.DB_HOST || "localhost",
+  port: parseInt(process.env.DB_PORT || "5432", 10),
+  username: process.env.DB_USERNAME || "contentpool",
+  password: process.env.DB_PASSWORD || "contentpool_dev",
+  database: process.env.DB_DATABASE || "contentpool",
+  entities: [__dirname + "/entities/**/*.entity{.ts,.js}"],
+  migrations: [__dirname + "/migrations/**/*{.ts,.js}"],
   synchronize: false,
   logging: true,
 });

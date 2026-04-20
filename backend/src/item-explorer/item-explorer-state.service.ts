@@ -2,17 +2,17 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, Repository } from 'typeorm';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { DeepPartial, Repository } from "typeorm";
 import {
   Acp,
   AcpAccessConfig,
   AcpItemExplorerChangeLog,
   AcpItemExplorerState,
   ItemExplorerDraftStatus,
-} from '../database/entities';
-import { normalizeFeatureConfig } from '../acp/feature-config.utils';
+} from "../database/entities";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
 
 export interface ExplorerActor {
   userId?: string;
@@ -56,7 +56,8 @@ export interface ExplorerDraftPatch {
   itemPropertiesPatch?: Record<string, Record<string, unknown> | null>;
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class ItemExplorerStateService {
@@ -71,7 +72,10 @@ export class ItemExplorerStateService {
     private readonly changeLogRepository: Repository<AcpItemExplorerChangeLog>,
   ) {}
 
-  async getStateForViewer(acpId: string, canEdit: boolean): Promise<ExplorerStateEnvelope> {
+  async getStateForViewer(
+    acpId: string,
+    canEdit: boolean,
+  ): Promise<ExplorerStateEnvelope> {
     const record = await this.ensureStateRecord(acpId);
     return this.toEnvelope(record, canEdit);
   }
@@ -79,7 +83,11 @@ export class ItemExplorerStateService {
   async patchDraft(
     acpId: string,
     patch: ExplorerDraftPatch,
-    options: { actor?: ExplorerActor; changeType?: string; baseVersion?: number } = {},
+    options: {
+      actor?: ExplorerActor;
+      changeType?: string;
+      baseVersion?: number;
+    } = {},
   ): Promise<ExplorerStateEnvelope> {
     const record = await this.ensureStateRecord(acpId);
     this.assertVersion(record, options.baseVersion);
@@ -89,14 +97,14 @@ export class ItemExplorerStateService {
     const published = this.normalizeStatePayload(record.publishedState);
 
     record.draftState = after as unknown as Record<string, unknown>;
-    record.status = this.statesEqual(after, published) ? 'CLEAN' : 'DIRTY';
+    record.status = this.statesEqual(after, published) ? "CLEAN" : "DIRTY";
     record.version += 1;
     this.applyActor(record, options.actor);
     const saved = await this.stateRepository.save(record);
 
     await this.logChange({
       acpId,
-      changeType: options.changeType || 'PATCH_DRAFT',
+      changeType: options.changeType || "PATCH_DRAFT",
       before,
       after,
       draftVersion: saved.version,
@@ -121,7 +129,7 @@ export class ItemExplorerStateService {
 
     record.publishedState = nextPublished as unknown as Record<string, unknown>;
     record.draftState = nextPublished as unknown as Record<string, unknown>;
-    record.status = 'CLEAN';
+    record.status = "CLEAN";
     record.version += 1;
     record.publishedVersion += 1;
     this.applyActor(record, options.actor);
@@ -129,7 +137,7 @@ export class ItemExplorerStateService {
 
     await this.logChange({
       acpId,
-      changeType: 'SAVE_DRAFT',
+      changeType: "SAVE_DRAFT",
       before: beforePublished,
       after: nextPublished,
       draftVersion: saved.version,
@@ -151,14 +159,14 @@ export class ItemExplorerStateService {
     const published = this.normalizeStatePayload(record.publishedState);
 
     record.draftState = published as unknown as Record<string, unknown>;
-    record.status = 'CLEAN';
+    record.status = "CLEAN";
     record.version += 1;
     this.applyActor(record, options.actor);
     const saved = await this.stateRepository.save(record);
 
     await this.logChange({
       acpId,
-      changeType: 'DISCARD_DRAFT',
+      changeType: "DISCARD_DRAFT",
       before,
       after: published,
       draftVersion: saved.version,
@@ -169,35 +177,41 @@ export class ItemExplorerStateService {
     return this.toEnvelope(saved, true);
   }
 
-  async listChanges(acpId: string, limit = 100): Promise<AcpItemExplorerChangeLog[]> {
+  async listChanges(
+    acpId: string,
+    limit = 100,
+  ): Promise<AcpItemExplorerChangeLog[]> {
     const safeLimit = Math.max(1, Math.min(limit, 500));
     return this.changeLogRepository.find({
       where: { acpId },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
       take: safeLimit,
     });
   }
 
   resolveActor(user: any, acpId: string): ExplorerActor {
-    const username = typeof user?.username === 'string'
-      ? user.username
-      : typeof user?.displayName === 'string'
-        ? user.displayName
-        : undefined;
+    const username =
+      typeof user?.username === "string"
+        ? user.username
+        : typeof user?.displayName === "string"
+          ? user.displayName
+          : undefined;
 
-    let role = 'READ_ONLY';
+    let role = "READ_ONLY";
     if (user?.isAppAdmin) {
-      role = 'APP_ADMIN';
+      role = "APP_ADMIN";
     } else if (Array.isArray(user?.acpRoles)) {
-      const acpRole = user.acpRoles.find((entry: any) => entry?.acpId === acpId);
-      if (acpRole?.role === 'ACP_MANAGER') {
-        role = 'ACP_MANAGER';
+      const acpRole = user.acpRoles.find(
+        (entry: any) => entry?.acpId === acpId,
+      );
+      if (acpRole?.role === "ACP_MANAGER") {
+        role = "ACP_MANAGER";
       }
-    } else if (user?.type === 'credential') {
-      role = 'CREDENTIAL';
+    } else if (user?.type === "credential") {
+      role = "CREDENTIAL";
     }
 
-    const sub = typeof user?.sub === 'string' ? user.sub : undefined;
+    const sub = typeof user?.sub === "string" ? user.sub : undefined;
     return {
       userId: sub,
       username,
@@ -205,7 +219,9 @@ export class ItemExplorerStateService {
     };
   }
 
-  private async ensureStateRecord(acpId: string): Promise<AcpItemExplorerState> {
+  private async ensureStateRecord(
+    acpId: string,
+  ): Promise<AcpItemExplorerState> {
     let record = await this.stateRepository.findOne({ where: { acpId } });
     if (record) {
       return record;
@@ -213,17 +229,19 @@ export class ItemExplorerStateService {
 
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
-      throw new NotFoundException('ACP not found');
+      throw new NotFoundException("ACP not found");
     }
 
-    const accessConfig = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const accessConfig = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     const defaultState = this.buildDefaultState(acp, accessConfig || undefined);
 
     record = this.stateRepository.create({
       acpId,
       publishedState: defaultState as unknown as Record<string, unknown>,
       draftState: defaultState as unknown as Record<string, unknown>,
-      status: 'CLEAN',
+      status: "CLEAN",
       version: 1,
       publishedVersion: 1,
     } as DeepPartial<AcpItemExplorerState>);
@@ -231,9 +249,15 @@ export class ItemExplorerStateService {
     return this.stateRepository.save(record);
   }
 
-  private buildDefaultState(acp: Acp, accessConfig?: AcpAccessConfig): ExplorerSharedStatePayload {
-    const normalizedFeatureConfig = normalizeFeatureConfig(accessConfig?.featureConfig || {});
-    const rawMetadataColumns = (normalizedFeatureConfig.metadataColumns || {}) as Record<string, unknown>;
+  private buildDefaultState(
+    acp: Acp,
+    accessConfig?: AcpAccessConfig,
+  ): ExplorerSharedStatePayload {
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      accessConfig?.featureConfig || {},
+    );
+    const rawMetadataColumns = (normalizedFeatureConfig.metadataColumns ||
+      {}) as Record<string, unknown>;
 
     const visible = this.asStringArray(rawMetadataColumns.visible);
     const order = this.asStringArray(rawMetadataColumns.order);
@@ -261,21 +285,28 @@ export class ItemExplorerStateService {
     };
   }
 
-  private async applyPublishedStateToDomain(acpId: string, state: ExplorerSharedStatePayload): Promise<void> {
+  private async applyPublishedStateToDomain(
+    acpId: string,
+    state: ExplorerSharedStatePayload,
+  ): Promise<void> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
-      throw new NotFoundException('ACP not found');
+      throw new NotFoundException("ACP not found");
     }
 
     acp.itemProperties = this.normalizeItemProperties(state.itemProperties);
     await this.acpRepository.save(acp);
 
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config) {
       return;
     }
 
-    const normalizedFeatureConfig = normalizeFeatureConfig(config.featureConfig || {});
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      config.featureConfig || {},
+    );
     const visible = this.asStringArray(state.metadataColumns?.visible);
     const order = this.asStringArray(state.metadataColumns?.order);
 
@@ -292,7 +323,10 @@ export class ItemExplorerStateService {
     await this.accessConfigRepository.save(config);
   }
 
-  private toEnvelope(record: AcpItemExplorerState, canEdit: boolean): ExplorerStateEnvelope {
+  private toEnvelope(
+    record: AcpItemExplorerState,
+    canEdit: boolean,
+  ): ExplorerStateEnvelope {
     const publishedState = this.normalizeStatePayload(record.publishedState);
     const draftState = this.normalizeStatePayload(record.draftState);
 
@@ -330,7 +364,10 @@ export class ItemExplorerStateService {
     };
   }
 
-  private mergeDraftPatch(current: ExplorerSharedStatePayload, patch: ExplorerDraftPatch): ExplorerSharedStatePayload {
+  private mergeDraftPatch(
+    current: ExplorerSharedStatePayload,
+    patch: ExplorerDraftPatch,
+  ): ExplorerSharedStatePayload {
     const merged: ExplorerSharedStatePayload = {
       ui: { ...current.ui },
       tags: this.normalizeTags(current.tags),
@@ -367,11 +404,15 @@ export class ItemExplorerStateService {
     }
 
     if (patch.itemProperties !== undefined) {
-      merged.itemProperties = this.normalizeItemProperties(patch.itemProperties);
+      merged.itemProperties = this.normalizeItemProperties(
+        patch.itemProperties,
+      );
     }
 
     if (patch.itemPropertiesPatch && this.isRecord(patch.itemPropertiesPatch)) {
-      for (const [itemKey, value] of Object.entries(patch.itemPropertiesPatch)) {
+      for (const [itemKey, value] of Object.entries(
+        patch.itemPropertiesPatch,
+      )) {
         const normalizedKey = itemKey.trim();
         if (!normalizedKey) continue;
 
@@ -380,7 +421,9 @@ export class ItemExplorerStateService {
           continue;
         }
 
-        const currentItemProps = this.asRecord(merged.itemProperties[normalizedKey]);
+        const currentItemProps = this.asRecord(
+          merged.itemProperties[normalizedKey],
+        );
         const nextItemProps = {
           ...currentItemProps,
           ...this.asRecord(value),
@@ -392,7 +435,9 @@ export class ItemExplorerStateService {
           merged.itemProperties[normalizedKey] = nextItemProps;
         }
       }
-      merged.itemProperties = this.normalizeItemProperties(merged.itemProperties);
+      merged.itemProperties = this.normalizeItemProperties(
+        merged.itemProperties,
+      );
     }
 
     return merged;
@@ -408,7 +453,9 @@ export class ItemExplorerStateService {
     actor?: ExplorerActor;
   }): Promise<void> {
     const diff = this.buildTopLevelDiff(params.before, params.after);
-    const actorUserId = this.isUuid(params.actor?.userId) ? params.actor?.userId : null;
+    const actorUserId = this.isUuid(params.actor?.userId)
+      ? params.actor?.userId
+      : null;
 
     const entry = this.changeLogRepository.create({
       acpId: params.acpId,
@@ -431,7 +478,13 @@ export class ItemExplorerStateService {
     after: ExplorerSharedStatePayload,
   ): Record<string, unknown> {
     const diff: Record<string, unknown> = {};
-    const keys: Array<keyof ExplorerSharedStatePayload> = ['ui', 'tags', 'metadataColumns', 'itemOrder', 'itemProperties'];
+    const keys: Array<keyof ExplorerSharedStatePayload> = [
+      "ui",
+      "tags",
+      "metadataColumns",
+      "itemOrder",
+      "itemProperties",
+    ];
 
     for (const key of keys) {
       if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
@@ -445,23 +498,38 @@ export class ItemExplorerStateService {
     return diff;
   }
 
-  private assertVersion(record: AcpItemExplorerState, baseVersion?: number): void {
-    if (typeof baseVersion === 'number' && Number.isInteger(baseVersion) && baseVersion !== record.version) {
+  private assertVersion(
+    record: AcpItemExplorerState,
+    baseVersion?: number,
+  ): void {
+    if (
+      typeof baseVersion === "number" &&
+      Number.isInteger(baseVersion) &&
+      baseVersion !== record.version
+    ) {
       throw new ConflictException({
-        message: 'Item Explorer draft version conflict',
+        message: "Item Explorer draft version conflict",
         expectedVersion: baseVersion,
         currentVersion: record.version,
       });
     }
   }
 
-  private applyActor(record: AcpItemExplorerState, actor?: ExplorerActor): void {
-    record.updatedByUserId = this.isUuid(actor?.userId) ? actor?.userId || null : null;
+  private applyActor(
+    record: AcpItemExplorerState,
+    actor?: ExplorerActor,
+  ): void {
+    record.updatedByUserId = this.isUuid(actor?.userId)
+      ? actor?.userId || null
+      : null;
     record.updatedByUsername = actor?.username || null;
     record.updatedByRole = actor?.role || null;
   }
 
-  private statesEqual(a: ExplorerSharedStatePayload, b: ExplorerSharedStatePayload): boolean {
+  private statesEqual(
+    a: ExplorerSharedStatePayload,
+    b: ExplorerSharedStatePayload,
+  ): boolean {
     return JSON.stringify(a) === JSON.stringify(b);
   }
 
@@ -472,7 +540,7 @@ export class ItemExplorerStateService {
 
     const tags: Record<string, string[]> = {};
     for (const [itemKey, value] of Object.entries(rawTags)) {
-      const normalizedItemKey = String(itemKey || '').trim();
+      const normalizedItemKey = String(itemKey || "").trim();
       if (!normalizedItemKey || !Array.isArray(value)) {
         continue;
       }
@@ -486,21 +554,25 @@ export class ItemExplorerStateService {
   }
 
   private normalizeTagArray(values: unknown[]): string[] {
-    return Array.from(new Set(
-      values
-        .map((value) => String(value || '').trim())
-        .filter((value) => value.length > 0),
-    ));
+    return Array.from(
+      new Set(
+        values
+          .map((value) => String(value || "").trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
   }
 
-  private normalizeItemProperties(raw: unknown): Record<string, Record<string, unknown>> {
+  private normalizeItemProperties(
+    raw: unknown,
+  ): Record<string, Record<string, unknown>> {
     if (!this.isRecord(raw)) {
       return {};
     }
 
     const normalized: Record<string, Record<string, unknown>> = {};
     for (const [itemKey, value] of Object.entries(raw)) {
-      const normalizedKey = String(itemKey || '').trim();
+      const normalizedKey = String(itemKey || "").trim();
       if (!normalizedKey || !this.isRecord(value)) {
         continue;
       }
@@ -518,7 +590,10 @@ export class ItemExplorerStateService {
       }
 
       const empiricalDifficultyRaw = itemValue.empiricalDifficulty;
-      if (empiricalDifficultyRaw !== undefined && empiricalDifficultyRaw !== null) {
+      if (
+        empiricalDifficultyRaw !== undefined &&
+        empiricalDifficultyRaw !== null
+      ) {
         const parsed = Number(empiricalDifficultyRaw);
         if (Number.isFinite(parsed)) {
           nextItemValue.empiricalDifficulty = parsed;
@@ -540,11 +615,13 @@ export class ItemExplorerStateService {
       return [];
     }
 
-    return Array.from(new Set(
-      value
-        .map((entry) => String(entry || '').trim())
-        .filter((entry) => entry.length > 0),
-    ));
+    return Array.from(
+      new Set(
+        value
+          .map((entry) => String(entry || "").trim())
+          .filter((entry) => entry.length > 0),
+      ),
+    );
   }
 
   private asRecord(value: unknown): Record<string, unknown> {
@@ -552,10 +629,10 @@ export class ItemExplorerStateService {
   }
 
   private isRecord(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 
   private isUuid(value?: string): boolean {
-    return typeof value === 'string' && UUID_REGEX.test(value);
+    return typeof value === "string" && UUID_REGEX.test(value);
   }
 }

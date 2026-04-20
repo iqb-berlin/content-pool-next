@@ -34,10 +34,7 @@ export class AccessService {
     return this.router.createUrlTree(['/access'], { queryParams });
   }
 
-  redirectToAccess(
-    reason: AccessReason,
-    options: AccessNavigationOptions = {},
-  ): Promise<boolean> {
+  redirectToAccess(reason: AccessReason, options: AccessNavigationOptions = {}): Promise<boolean> {
     const tree = this.createAccessUrlTree(reason, options);
     const targetUrl = this.router.serializeUrl(tree);
     const now = Date.now();

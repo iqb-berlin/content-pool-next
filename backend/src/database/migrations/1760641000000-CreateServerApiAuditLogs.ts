@@ -1,10 +1,10 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateServerApiAuditLogs1760641000000 implements MigrationInterface {
-  name = 'CreateServerApiAuditLogs1760641000000';
+  name = "CreateServerApiAuditLogs1760641000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const hasAuditTable = await queryRunner.hasTable('server_api_audit_logs');
+    const hasAuditTable = await queryRunner.hasTable("server_api_audit_logs");
     if (hasAuditTable) {
       return;
     }
@@ -43,14 +43,20 @@ export class CreateServerApiAuditLogs1760641000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const hasAuditTable = await queryRunner.hasTable('server_api_audit_logs');
+    const hasAuditTable = await queryRunner.hasTable("server_api_audit_logs");
     if (!hasAuditTable) {
       return;
     }
 
-    await queryRunner.query('DROP INDEX "public"."IDX_server_api_audit_logs_action"');
-    await queryRunner.query('DROP INDEX "public"."IDX_server_api_audit_logs_client_id"');
-    await queryRunner.query('DROP INDEX "public"."IDX_server_api_audit_logs_created_at"');
+    await queryRunner.query(
+      'DROP INDEX "public"."IDX_server_api_audit_logs_action"',
+    );
+    await queryRunner.query(
+      'DROP INDEX "public"."IDX_server_api_audit_logs_client_id"',
+    );
+    await queryRunner.query(
+      'DROP INDEX "public"."IDX_server_api_audit_logs_created_at"',
+    );
     await queryRunner.query('DROP TABLE "server_api_audit_logs"');
   }
 }

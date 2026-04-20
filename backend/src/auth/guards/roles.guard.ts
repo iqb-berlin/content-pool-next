@@ -1,7 +1,13 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
 
-export const ROLES_KEY = 'roles';
+export const ROLES_KEY = "roles";
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -10,10 +16,10 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     this.logger.log(`RolesGuard checking: ${JSON.stringify(requiredRoles)}`);
 
@@ -27,12 +33,12 @@ export class RolesGuard implements CanActivate {
     this.logger.log(`Request params: ${JSON.stringify(params, null, 2)}`);
 
     if (!user) {
-      throw new ForbiddenException('Not authenticated');
+      throw new ForbiddenException("Not authenticated");
     }
 
     // Check if user is App Admin - App Admins have access to everything
     if (user.isAppAdmin) {
-      this.logger.log('Access granted: User is App Admin');
+      this.logger.log("Access granted: User is App Admin");
       return true;
     }
 
@@ -42,23 +48,31 @@ export class RolesGuard implements CanActivate {
       const acpRole = user.acpRoles.find((role: any) => role.acpId === acpId);
 
       this.logger.log(`Checking ACP roles for ACP ID: ${acpId}`);
-      this.logger.log(`User ACP roles: ${JSON.stringify(user.acpRoles, null, 2)}`);
+      this.logger.log(
+        `User ACP roles: ${JSON.stringify(user.acpRoles, null, 2)}`,
+      );
       this.logger.log(`Found ACP role: ${JSON.stringify(acpRole)}`);
 
       // ACP_MANAGER can access ACP_MANAGER-protected endpoints
-      if (requiredRoles.includes('ACP_MANAGER') && acpRole?.role === 'ACP_MANAGER') {
-        this.logger.log('Access granted: User is ACP Manager for this ACP');
+      if (
+        requiredRoles.includes("ACP_MANAGER") &&
+        acpRole?.role === "ACP_MANAGER"
+      ) {
+        this.logger.log("Access granted: User is ACP Manager for this ACP");
         return true;
       }
 
       // READ_ONLY users can access READ_ONLY-protected endpoints
-      if (requiredRoles.includes('READ_ONLY') && (acpRole?.role === 'READ_ONLY' || acpRole?.role === 'ACP_MANAGER')) {
-        this.logger.log('Access granted: User has read access for this ACP');
+      if (
+        requiredRoles.includes("READ_ONLY") &&
+        (acpRole?.role === "READ_ONLY" || acpRole?.role === "ACP_MANAGER")
+      ) {
+        this.logger.log("Access granted: User has read access for this ACP");
         return true;
       }
     }
 
-    this.logger.warn('Access denied: Insufficient permissions');
-    throw new ForbiddenException('Insufficient permissions');
+    this.logger.warn("Access denied: Insufficient permissions");
+    throw new ForbiddenException("Insufficient permissions");
   }
 }

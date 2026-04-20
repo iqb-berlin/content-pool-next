@@ -1,6 +1,10 @@
 import { AuthConfig } from 'angular-oauth2-oidc';
 
-export function createAuthConfig(issuerUrl: string, clientId: string, redirectUri: string): AuthConfig {
+export function createAuthConfig(
+  issuerUrl: string,
+  clientId: string,
+  redirectUri: string,
+): AuthConfig {
   return {
     issuer: issuerUrl,
     redirectUri: redirectUri,

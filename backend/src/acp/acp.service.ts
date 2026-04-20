@@ -3,10 +3,10 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as bcrypt from "bcryptjs";
 import {
   Acp,
   AcpUserRole,
@@ -16,7 +16,7 @@ import {
   AcpCredential,
   AppSettings,
   User,
-} from '../database/entities';
+} from "../database/entities";
 import {
   CreateAcpDto,
   UpdateAcpDto,
@@ -27,14 +27,14 @@ import {
   CredentialResponseDto,
   CreateCredentialDto,
   UpdateCredentialDto,
-} from './dto/acp.dto';
+} from "./dto/acp.dto";
 import {
   ACP_INDEX_ALLOWED_STATUS_VALUES,
   DEFAULT_ACP_INDEX_VERSION,
   normalizeIndexForStorage,
   toRuntimeAcpIndex,
-} from './acp-index.utils';
-import { normalizeFeatureConfig } from './feature-config.utils';
+} from "./acp-index.utils";
+import { normalizeFeatureConfig } from "./feature-config.utils";
 
 @Injectable()
 export class AcpService {
@@ -54,13 +54,13 @@ export class AcpService {
   ) {}
 
   async findAll(): Promise<Acp[]> {
-    return this.acpRepository.find({ order: { name: 'ASC' } });
+    return this.acpRepository.find({ order: { name: "ASC" } });
   }
 
   async findByUser(userId: string): Promise<Acp[]> {
     const roles = await this.acpUserRoleRepository.find({
       where: { userId },
-      relations: ['acp'],
+      relations: ["acp"],
     });
     return roles.map((r) => r.acp);
   }
@@ -78,7 +78,9 @@ export class AcpService {
       where: { packageId: dto.packageId },
     });
     if (existing) {
-      throw new ConflictException(`Package ID "${dto.packageId}" already exists`);
+      throw new ConflictException(
+        `Package ID "${dto.packageId}" already exists`,
+      );
     }
 
     // Get default ACP index from settings
@@ -92,11 +94,11 @@ export class AcpService {
       ...defaultIndex,
       packageId: dto.packageId,
       version: DEFAULT_ACP_INDEX_VERSION,
-      name: [{ lang: 'de', value: dto.name }],
+      name: [{ lang: "de", value: dto.name }],
       description: dto.description
-        ? [{ lang: 'de', value: dto.description }]
+        ? [{ lang: "de", value: dto.description }]
         : [],
-      status: 'IN_DEVELOPMENT',
+      status: "IN_DEVELOPMENT",
       units: [],
       assessmentParts: [],
     });
@@ -129,14 +131,20 @@ export class AcpService {
     return toRuntimeAcpIndex(acp.acpIndex);
   }
 
-  async updateIndex(id: string, index: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async updateIndex(
+    id: string,
+    index: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     const acp = await this.findById(id);
     acp.acpIndex = this.prepareIndexForSave(acp, index, {});
     const saved = await this.acpRepository.save(acp);
     return toRuntimeAcpIndex(saved.acpIndex);
   }
 
-  async importIndex(id: string, indexJson: Record<string, unknown>): Promise<Record<string, unknown>> {
+  async importIndex(
+    id: string,
+    indexJson: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
     const acp = await this.findById(id);
 
     // Get default settings for required fields
@@ -170,7 +178,9 @@ export class AcpService {
   // Role management
   async assignRole(acpId: string, dto: AssignRoleDto): Promise<AcpUserRole> {
     await this.findById(acpId);
-    const targetUser = await this.userRepository.findOne({ where: { id: dto.userId } });
+    const targetUser = await this.userRepository.findOne({
+      where: { id: dto.userId },
+    });
     if (!targetUser) {
       throw new NotFoundException(`User with ID ${dto.userId} not found`);
     }
@@ -181,10 +191,15 @@ export class AcpService {
       where: { userId: dto.userId, acpId },
     });
     if (existing) {
-      if (existing.role === AcpRole.ACP_MANAGER && targetRole !== AcpRole.ACP_MANAGER) {
+      if (
+        existing.role === AcpRole.ACP_MANAGER &&
+        targetRole !== AcpRole.ACP_MANAGER
+      ) {
         const managerCount = await this.countAcpManagers(acpId);
         if (managerCount <= 1) {
-          throw new BadRequestException('At least one ACP_MANAGER must remain assigned');
+          throw new BadRequestException(
+            "At least one ACP_MANAGER must remain assigned",
+          );
         }
       }
       existing.role = targetRole;
@@ -207,7 +222,9 @@ export class AcpService {
       if (role.role === AcpRole.ACP_MANAGER) {
         const managerCount = await this.countAcpManagers(acpId);
         if (managerCount <= 1) {
-          throw new BadRequestException('At least one ACP_MANAGER must remain assigned');
+          throw new BadRequestException(
+            "At least one ACP_MANAGER must remain assigned",
+          );
         }
       }
       await this.acpUserRoleRepository.remove(role);
@@ -217,7 +234,7 @@ export class AcpService {
   async getRoles(acpId: string): Promise<AcpUserRole[]> {
     return this.acpUserRoleRepository.find({
       where: { acpId },
-      relations: ['user'],
+      relations: ["user"],
     });
   }
 
@@ -225,13 +242,18 @@ export class AcpService {
   async getAccessConfig(acpId: string): Promise<AcpAccessConfig | null> {
     const config = await this.accessConfigRepository.findOne({
       where: { acpId },
-      relations: ['credentials'],
+      relations: ["credentials"],
     });
 
     if (!config) return null;
 
-    const normalizedFeatureConfig = normalizeFeatureConfig(config.featureConfig || {});
-    if (JSON.stringify(config.featureConfig || {}) !== JSON.stringify(normalizedFeatureConfig)) {
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      config.featureConfig || {},
+    );
+    if (
+      JSON.stringify(config.featureConfig || {}) !==
+      JSON.stringify(normalizedFeatureConfig)
+    ) {
       config.featureConfig = normalizedFeatureConfig;
       return this.accessConfigRepository.save(config);
     }
@@ -239,40 +261,60 @@ export class AcpService {
     return config;
   }
 
-  async updateAccessConfig(acpId: string, dto: UpdateAccessConfigDto): Promise<AcpAccessConfig> {
+  async updateAccessConfig(
+    acpId: string,
+    dto: UpdateAccessConfigDto,
+  ): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
     // Validate time limit for CREDENTIALS_LIST
-    if (dto.accessModel === 'CREDENTIALS_LIST') {
+    if (dto.accessModel === "CREDENTIALS_LIST") {
       if (!dto.validFrom || !dto.validUntil) {
-        throw new BadRequestException('Credential-based access requires validFrom and validUntil');
+        throw new BadRequestException(
+          "Credential-based access requires validFrom and validUntil",
+        );
       }
 
       const validFrom = new Date(dto.validFrom);
       const validUntil = new Date(dto.validUntil);
-      if (Number.isNaN(validFrom.getTime()) || Number.isNaN(validUntil.getTime())) {
-        throw new BadRequestException('validFrom and validUntil must be valid ISO date strings');
+      if (
+        Number.isNaN(validFrom.getTime()) ||
+        Number.isNaN(validUntil.getTime())
+      ) {
+        throw new BadRequestException(
+          "validFrom and validUntil must be valid ISO date strings",
+        );
       }
       if (validUntil <= validFrom) {
-        throw new BadRequestException('validUntil must be after validFrom');
+        throw new BadRequestException("validUntil must be after validFrom");
       }
 
       const maxEnd = new Date(validFrom);
       maxEnd.setMonth(maxEnd.getMonth() + 3);
       if (validUntil > maxEnd) {
-        throw new BadRequestException('Credential-based access is limited to 3 months');
+        throw new BadRequestException(
+          "Credential-based access is limited to 3 months",
+        );
       }
     }
 
-    let config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    let config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (config) {
       config.accessModel = dto.accessModel as AccessModel;
-      if (dto.allowRegistered !== undefined) config.allowRegistered = dto.allowRegistered;
-      if (dto.featureConfig) config.featureConfig = normalizeFeatureConfig(dto.featureConfig);
+      if (dto.allowRegistered !== undefined)
+        config.allowRegistered = dto.allowRegistered;
+      if (dto.featureConfig)
+        config.featureConfig = normalizeFeatureConfig(dto.featureConfig);
       config.validFrom =
-        dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom ? new Date(dto.validFrom) : undefined;
+        dto.accessModel === "CREDENTIALS_LIST" && dto.validFrom
+          ? new Date(dto.validFrom)
+          : undefined;
       config.validUntil =
-        dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil ? new Date(dto.validUntil) : undefined;
+        dto.accessModel === "CREDENTIALS_LIST" && dto.validUntil
+          ? new Date(dto.validUntil)
+          : undefined;
     } else {
       config = this.accessConfigRepository.create({
         acpId,
@@ -280,11 +322,11 @@ export class AcpService {
         allowRegistered: dto.allowRegistered || false,
         featureConfig: normalizeFeatureConfig(dto.featureConfig || {}),
         validFrom:
-          dto.accessModel === 'CREDENTIALS_LIST' && dto.validFrom
+          dto.accessModel === "CREDENTIALS_LIST" && dto.validFrom
             ? new Date(dto.validFrom)
             : undefined,
         validUntil:
-          dto.accessModel === 'CREDENTIALS_LIST' && dto.validUntil
+          dto.accessModel === "CREDENTIALS_LIST" && dto.validUntil
             ? new Date(dto.validUntil)
             : undefined,
       });
@@ -293,17 +335,22 @@ export class AcpService {
     return this.accessConfigRepository.save(config);
   }
 
-  async updateMetadataColumns(acpId: string, dto: UpdateMetadataColumnsDto): Promise<AcpAccessConfig> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+  async updateMetadataColumns(
+    acpId: string,
+    dto: UpdateMetadataColumnsDto,
+  ): Promise<AcpAccessConfig> {
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config) {
-      throw new NotFoundException('Access configuration not found');
+      throw new NotFoundException("Access configuration not found");
     }
 
     const currentConfig = config.featureConfig || {};
     const normalizedConfig = normalizeFeatureConfig(currentConfig);
     normalizedConfig.metadataColumns = {
       visible: dto.visibleColumns,
-      order: dto.columnOrder || dto.visibleColumns
+      order: dto.columnOrder || dto.visibleColumns,
     };
 
     config.featureConfig = normalizedConfig;
@@ -313,11 +360,20 @@ export class AcpService {
   async uploadCredentials(
     acpId: string,
     credentials: CredentialEntryDto[],
-    mode: 'replace' | 'append' | 'upsert' = 'replace',
-  ): Promise<{ added: number; updated: number; skipped: number; duplicates: string[] }> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    mode: "replace" | "append" | "upsert" = "replace",
+  ): Promise<{
+    added: number;
+    updated: number;
+    skipped: number;
+    duplicates: string[];
+  }> {
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
-      throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
+      throw new BadRequestException(
+        "ACP must be configured for CREDENTIALS_LIST access",
+      );
     }
 
     // Get existing credentials for comparison
@@ -342,16 +398,16 @@ export class AcpService {
 
       const existing = existingMap.get(cred.username);
 
-      if (mode === 'replace') {
+      if (mode === "replace") {
         // Replace: just collect for recreation
         continue;
-      } else if (mode === 'append') {
+      } else if (mode === "append") {
         // Append: skip if exists
         if (existing) {
           skipped++;
           continue;
         }
-      } else if (mode === 'upsert') {
+      } else if (mode === "upsert") {
         // Upsert: update if exists
         if (existing) {
           const passwordHash = await bcrypt.hash(cred.password, 12);
@@ -365,7 +421,7 @@ export class AcpService {
       added++;
     }
 
-    if (mode === 'replace') {
+    if (mode === "replace") {
       // Delete all existing
       await this.credentialRepository.delete({ accessConfigId: config.id });
 
@@ -387,8 +443,8 @@ export class AcpService {
       // For append/upsert: create only new credentials
       const newCreds = credentials.filter((cred) => {
         if (duplicates.includes(cred.username)) return false;
-        if (mode === 'append' && existingMap.has(cred.username)) return false;
-        if (mode === 'upsert' && existingMap.has(cred.username)) return false;
+        if (mode === "append" && existingMap.has(cred.username)) return false;
+        if (mode === "upsert" && existingMap.has(cred.username)) return false;
         return true;
       });
 
@@ -410,36 +466,42 @@ export class AcpService {
   }
 
   async getCredentials(acpId: string): Promise<CredentialResponseDto[]> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config) {
       return [];
     }
     const credentials = await this.credentialRepository.find({
       where: { accessConfigId: config.id },
-      select: ['id', 'username'],
+      select: ["id", "username"],
     });
-    return credentials.map(c => ({ id: c.id, username: c.username }));
+    return credentials.map((c) => ({ id: c.id, username: c.username }));
   }
 
-  async getAssignableUsers(acpId: string): Promise<Pick<User, 'id' | 'username' | 'displayName'>[]> {
+  async getAssignableUsers(
+    acpId: string,
+  ): Promise<Pick<User, "id" | "username" | "displayName">[]> {
     await this.findById(acpId);
     return this.userRepository.find({
       where: { isAppAdmin: false },
-      select: ['id', 'username', 'displayName'],
-      order: { username: 'ASC' },
+      select: ["id", "username", "displayName"],
+      order: { username: "ASC" },
     });
   }
 
   async deleteCredential(acpId: string, credentialId: string): Promise<void> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config) {
-      throw new NotFoundException('Access configuration not found');
+      throw new NotFoundException("Access configuration not found");
     }
     const credential = await this.credentialRepository.findOne({
       where: { id: credentialId, accessConfigId: config.id },
     });
     if (!credential) {
-      throw new NotFoundException('Credential not found');
+      throw new NotFoundException("Credential not found");
     }
     await this.credentialRepository.remove(credential);
   }
@@ -448,9 +510,13 @@ export class AcpService {
     acpId: string,
     dto: CreateCredentialDto,
   ): Promise<CredentialResponseDto> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
-      throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
+      throw new BadRequestException(
+        "ACP must be configured for CREDENTIALS_LIST access",
+      );
     }
 
     // Check for duplicate username
@@ -477,16 +543,20 @@ export class AcpService {
     credentialId: string,
     dto: UpdateCredentialDto,
   ): Promise<CredentialResponseDto> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     if (!config || config.accessModel !== AccessModel.CREDENTIALS_LIST) {
-      throw new BadRequestException('ACP must be configured for CREDENTIALS_LIST access');
+      throw new BadRequestException(
+        "ACP must be configured for CREDENTIALS_LIST access",
+      );
     }
 
     const credential = await this.credentialRepository.findOne({
       where: { id: credentialId, accessConfigId: config.id },
     });
     if (!credential) {
-      throw new NotFoundException('Credential not found');
+      throw new NotFoundException("Credential not found");
     }
 
     // Check for duplicate username if changing username
@@ -495,7 +565,9 @@ export class AcpService {
         where: { accessConfigId: config.id, username: dto.username },
       });
       if (existing) {
-        throw new ConflictException(`Username "${dto.username}" already exists`);
+        throw new ConflictException(
+          `Username "${dto.username}" already exists`,
+        );
       }
       credential.username = dto.username;
     }
@@ -520,25 +592,30 @@ export class AcpService {
     inputIndex: Record<string, unknown>,
     defaultIndex: Record<string, unknown>,
   ): Record<string, unknown> {
-    if (!inputIndex || typeof inputIndex !== 'object' || Array.isArray(inputIndex)) {
-      throw new BadRequestException(
-        'ACP-Index muss ein JSON-Objekt sein.',
-      );
+    if (
+      !inputIndex ||
+      typeof inputIndex !== "object" ||
+      Array.isArray(inputIndex)
+    ) {
+      throw new BadRequestException("ACP-Index muss ein JSON-Objekt sein.");
     }
 
-    const merged = { ...defaultIndex, ...inputIndex } as Record<string, unknown>;
+    const merged = { ...defaultIndex, ...inputIndex } as Record<
+      string,
+      unknown
+    >;
     const packageId = this.resolvePackageId(acp, merged.packageId);
     const version = this.resolveVersion(merged.version);
     const status = this.resolveStatus(merged.status);
     const name = this.resolveLanguageTextArray(
       merged.name,
-      [{ lang: 'de', value: acp.name || acp.packageId }],
-      'name',
+      [{ lang: "de", value: acp.name || acp.packageId }],
+      "name",
     );
     const description = this.resolveLanguageTextArray(
       merged.description,
-      acp.description ? [{ lang: 'de', value: acp.description }] : [],
-      'description',
+      acp.description ? [{ lang: "de", value: acp.description }] : [],
+      "description",
       true,
     );
 
@@ -555,12 +632,18 @@ export class AcpService {
   }
 
   private resolvePackageId(acp: Acp, rawPackageId: unknown): string {
-    if (rawPackageId === undefined || rawPackageId === null || rawPackageId === '') {
+    if (
+      rawPackageId === undefined ||
+      rawPackageId === null ||
+      rawPackageId === ""
+    ) {
       return acp.packageId;
     }
 
-    if (typeof rawPackageId !== 'string') {
-      throw new BadRequestException('Ungültiges Feld "packageId": Muss ein Text sein.');
+    if (typeof rawPackageId !== "string") {
+      throw new BadRequestException(
+        'Ungültiges Feld "packageId": Muss ein Text sein.',
+      );
     }
 
     if (rawPackageId !== acp.packageId) {
@@ -573,29 +656,33 @@ export class AcpService {
   }
 
   private resolveVersion(rawVersion: unknown): string {
-    if (rawVersion === undefined || rawVersion === null || rawVersion === '') {
+    if (rawVersion === undefined || rawVersion === null || rawVersion === "") {
       return DEFAULT_ACP_INDEX_VERSION;
     }
 
-    if (typeof rawVersion !== 'string') {
-      throw new BadRequestException('Ungültiges Feld "version": Muss ein Text sein.');
+    if (typeof rawVersion !== "string") {
+      throw new BadRequestException(
+        'Ungültiges Feld "version": Muss ein Text sein.',
+      );
     }
 
     return rawVersion;
   }
 
   private resolveStatus(rawStatus: unknown): string {
-    if (rawStatus === undefined || rawStatus === null || rawStatus === '') {
-      return 'IN_DEVELOPMENT';
+    if (rawStatus === undefined || rawStatus === null || rawStatus === "") {
+      return "IN_DEVELOPMENT";
     }
 
-    if (typeof rawStatus !== 'string') {
-      throw new BadRequestException('Ungültiges Feld "status": Muss ein Text sein.');
+    if (typeof rawStatus !== "string") {
+      throw new BadRequestException(
+        'Ungültiges Feld "status": Muss ein Text sein.',
+      );
     }
 
     if (!ACP_INDEX_ALLOWED_STATUS_VALUES.includes(rawStatus as any)) {
       throw new BadRequestException(
-        `Ungültiges Feld "status": "${rawStatus}". Erlaubte Werte: ${ACP_INDEX_ALLOWED_STATUS_VALUES.join(', ')}`,
+        `Ungültiges Feld "status": "${rawStatus}". Erlaubte Werte: ${ACP_INDEX_ALLOWED_STATUS_VALUES.join(", ")}`,
       );
     }
 
@@ -613,7 +700,9 @@ export class AcpService {
     }
 
     if (!Array.isArray(rawValue)) {
-      throw new BadRequestException(`Ungültiges Feld "${fieldName}": Muss ein Array sein.`);
+      throw new BadRequestException(
+        `Ungültiges Feld "${fieldName}": Muss ein Array sein.`,
+      );
     }
 
     if (rawValue.length === 0) {
@@ -624,12 +713,12 @@ export class AcpService {
       const lang = entry?.lang;
       const value = entry?.value;
 
-      if (typeof lang !== 'string' || !/^[a-z]{2}$/.test(lang)) {
+      if (typeof lang !== "string" || !/^[a-z]{2}$/.test(lang)) {
         throw new BadRequestException(
           `Ungültiges Feld "${fieldName}[${idx}].lang": Muss ein ISO-Sprachcode mit 2 Kleinbuchstaben sein.`,
         );
       }
-      if (typeof value !== 'string' || !value.trim()) {
+      if (typeof value !== "string" || !value.trim()) {
         throw new BadRequestException(
           `Ungültiges Feld "${fieldName}[${idx}].value": Muss ein nicht-leerer Text sein.`,
         );

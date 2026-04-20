@@ -1,11 +1,4 @@
-import {
-  Component,
-  Input,
-  ElementRef,
-  ViewChild,
-  AfterViewInit,
-  OnDestroy
-} from '@angular/core';
+import { Component, Input, ElementRef, ViewChild, AfterViewInit, OnDestroy } from '@angular/core';
 
 @Component({
   selector: 'app-split-pane',
@@ -15,10 +8,7 @@ import {
       <div class="pane pane-left" [style.width.%]="leftPercent">
         <ng-content select="[left]"></ng-content>
       </div>
-      <div
-        class="divider"
-        [class.active]="isDragging"
-        (mousedown)="onDragStart($event)">
+      <div class="divider" [class.active]="isDragging" (mousedown)="onDragStart($event)">
         <div class="divider-handle"></div>
       </div>
       <div class="pane pane-right">
@@ -26,60 +16,68 @@ import {
       </div>
     </div>
   `,
-  styles: [`
-    :host { display: block; height: 100%; }
-    .split-pane {
-      display: flex;
-      height: 100%;
-      min-height: 0;
-    }
-    .split-pane.dragging {
-      cursor: col-resize;
-      user-select: none;
-    }
-    .split-pane.dragging .pane {
-      pointer-events: none;
-    }
-    .pane {
-      overflow: hidden;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .pane-left {
-      flex-shrink: 0;
-    }
-    .pane-right {
-      flex: 1;
-      min-width: 0;
-    }
-    .divider {
-      width: 8px;
-      cursor: col-resize;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      position: relative;
-      z-index: 10;
-      transition: background 0.15s;
-    }
-    .divider:hover, .divider.active {
-      background: rgba(41, 128, 185, 0.08);
-    }
-    .divider-handle {
-      width: 4px;
-      height: 48px;
-      border-radius: 2px;
-      background: var(--color-border, #dfe6e9);
-      transition: background 0.15s, height 0.15s;
-    }
-    .divider:hover .divider-handle,
-    .divider.active .divider-handle {
-      background: var(--color-primary-light, #2980b9);
-      height: 64px;
-    }
-  `]
+  styles: [
+    `
+      :host {
+        display: block;
+        height: 100%;
+      }
+      .split-pane {
+        display: flex;
+        height: 100%;
+        min-height: 0;
+      }
+      .split-pane.dragging {
+        cursor: col-resize;
+        user-select: none;
+      }
+      .split-pane.dragging .pane {
+        pointer-events: none;
+      }
+      .pane {
+        overflow: hidden;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .pane-left {
+        flex-shrink: 0;
+      }
+      .pane-right {
+        flex: 1;
+        min-width: 0;
+      }
+      .divider {
+        width: 8px;
+        cursor: col-resize;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        position: relative;
+        z-index: 10;
+        transition: background 0.15s;
+      }
+      .divider:hover,
+      .divider.active {
+        background: rgba(41, 128, 185, 0.08);
+      }
+      .divider-handle {
+        width: 4px;
+        height: 48px;
+        border-radius: 2px;
+        background: var(--color-border, #dfe6e9);
+        transition:
+          background 0.15s,
+          height 0.15s;
+      }
+      .divider:hover .divider-handle,
+      .divider.active .divider-handle {
+        background: var(--color-primary-light, #2980b9);
+        height: 64px;
+      }
+    `,
+  ],
 })
 export class SplitPaneComponent implements AfterViewInit, OnDestroy {
   @ViewChild('container') container!: ElementRef<HTMLElement>;

@@ -11,7 +11,11 @@ import { SplitPaneComponent } from '../../shared/components/split-pane.component
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 import { firstValueFrom } from 'rxjs';
-import { ItemExplorerChangeLogEntry, ItemExplorerSharedState, ItemExplorerStateEnvelope } from '../../core/models/api.models';
+import {
+  ItemExplorerChangeLogEntry,
+  ItemExplorerSharedState,
+  ItemExplorerStateEnvelope,
+} from '../../core/models/api.models';
 
 interface MetadataColumn {
   id: string;
@@ -42,7 +46,13 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
-  imports: [FormsModule, CommonModule, BreadcrumbComponent, SplitPaneComponent, ConfirmDialogComponent],
+  imports: [
+    FormsModule,
+    CommonModule,
+    BreadcrumbComponent,
+    SplitPaneComponent,
+    ConfirmDialogComponent,
+  ],
   template: `
     <app-breadcrumb [items]="breadcrumbs" />
 
@@ -51,23 +61,46 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       <div class="header-actions">
         <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
         @if (canEditExplorer) {
-          <input type="file" #csvUploadInput style="display: none" accept=".csv" (change)="onCsvFileSelected($event)">
+          <input
+            type="file"
+            #csvUploadInput
+            style="display: none"
+            accept=".csv"
+            (change)="onCsvFileSelected($event)"
+          />
           <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
             📄 Item-Schwierigkeiten (CSV) hochladen
           </button>
-          <button class="btn btn-outline btn-sm" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);" (click)="openClearEmpiricalDifficultiesDialog()" title="Alle Itemschwierigkeiten löschen">
+          <button
+            class="btn btn-outline btn-sm"
+            style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
+            (click)="openClearEmpiricalDifficultiesDialog()"
+            title="Alle Itemschwierigkeiten löschen"
+          >
             🗑️ Werte bereinigen
           </button>
           <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
             👁️ Spalten verwalten
           </button>
-          <button class="btn btn-outline btn-sm" (click)="enableManualOrderMode()" [class.btn-primary]="sortField === '__manual__'">
+          <button
+            class="btn btn-outline btn-sm"
+            (click)="enableManualOrderMode()"
+            [class.btn-primary]="sortField === '__manual__'"
+          >
             ↕️ Reihenfolge
           </button>
-          <button class="btn btn-outline btn-sm" [disabled]="!selectedItem || sortField !== '__manual__'" (click)="moveSelectedItem(-1)">
+          <button
+            class="btn btn-outline btn-sm"
+            [disabled]="!selectedItem || sortField !== '__manual__'"
+            (click)="moveSelectedItem(-1)"
+          >
             ↑
           </button>
-          <button class="btn btn-outline btn-sm" [disabled]="!selectedItem || sortField !== '__manual__'" (click)="moveSelectedItem(1)">
+          <button
+            class="btn btn-outline btn-sm"
+            [disabled]="!selectedItem || sortField !== '__manual__'"
+            (click)="moveSelectedItem(1)"
+          >
             ↓
           </button>
           <button class="btn btn-outline btn-sm" (click)="showHistory()">
@@ -80,18 +113,30 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
     <div class="card explorer-status-bar">
       <div class="status-main">
         <strong>Status:</strong>
-        <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{ explorerStatusLabel }}</span>
-        <span class="status-meta">v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span>
+        <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{
+          explorerStatusLabel
+        }}</span>
+        <span class="status-meta"
+          >v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span
+        >
         @if (lastExplorerChangeInfo) {
           <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
         }
       </div>
       <div class="status-actions">
         @if (canPublishExplorer) {
-          <button class="btn btn-primary btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="openSavePreviewDialog()">
+          <button
+            class="btn btn-primary btn-sm"
+            [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+            (click)="openSavePreviewDialog()"
+          >
             💾 Speichern
           </button>
-          <button class="btn btn-outline btn-sm" [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'" (click)="openDiscardExplorerDraftDialog()">
+          <button
+            class="btn btn-outline btn-sm"
+            [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+            (click)="openDiscardExplorerDraftDialog()"
+          >
             ↩️ Verwerfen
           </button>
         }
@@ -110,7 +155,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
       [details]="[
         'Die Änderungen betreffen alle Items im aktuellen ACP.',
-        'Veröffentlicht wird erst nach anschließendem Speichern.'
+        'Veröffentlicht wird erst nach anschließendem Speichern.',
       ]"
       [error]="clearEmpiricalDifficultiesError"
       [busy]="clearEmpiricalDifficultiesBusy"
@@ -118,7 +163,8 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       confirmLabel="Alle Werte entfernen"
       confirmVariant="danger"
       (confirmed)="confirmClearEmpiricalDifficulties()"
-      (cancelled)="closeClearEmpiricalDifficultiesDialog()" />
+      (cancelled)="closeClearEmpiricalDifficultiesDialog()"
+    />
 
     <app-confirm-dialog
       [open]="showDiscardDraftDialog"
@@ -126,7 +172,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       message="Die aktuellen Entwurfsänderungen im Item-Explorer werden verworfen."
       [details]="[
         'Nicht veröffentlichte Änderungen gehen verloren.',
-        'Der veröffentlichte Stand bleibt unverändert.'
+        'Der veröffentlichte Stand bleibt unverändert.',
       ]"
       [error]="discardDraftDialogError"
       [busy]="discardDraftDialogBusy"
@@ -134,12 +180,21 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       confirmLabel="Änderungen verwerfen"
       confirmVariant="danger"
       (confirmed)="confirmDiscardDraftDialog()"
-      (cancelled)="closeDiscardDraftDialog()" />
+      (cancelled)="closeDiscardDraftDialog()"
+    />
 
     @if (showLeaveWithChangesDialog) {
-      <div class="overlay-backdrop" (click)="leaveWithChangesDialogState === 'idle' && stayOnPage()">
+      <div
+        class="overlay-backdrop"
+        (click)="leaveWithChangesDialogState === 'idle' && stayOnPage()"
+      >
         <div class="overlay-dialog" style="max-width: 560px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header" [style.border-top]="leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'">
+          <div
+            class="overlay-header"
+            [style.border-top]="
+              leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'
+            "
+          >
             <h2 style="display: flex; align-items: center; gap: 8px;">
               <span>⚠️</span> Ungespeicherte Änderungen
             </h2>
@@ -147,23 +202,39 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           <div class="overlay-content" style="padding: 24px;">
             <p>Es gibt ungespeicherte Explorer-Änderungen. Wie möchten Sie fortfahren?</p>
             <ul style="margin: 10px 0 14px 18px; color: var(--color-text-secondary);">
-              <li><strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite verlassen</li>
+              <li>
+                <strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite verlassen
+              </li>
               <li><strong>Nicht speichern:</strong> Änderungen verwerfen und Seite verlassen</li>
               <li><strong>Bleiben:</strong> Auf der aktuellen Seite bleiben</li>
             </ul>
 
             @if (leaveWithChangesDialogError) {
-              <div class="alert alert-error" style="margin-bottom: 14px;">{{ leaveWithChangesDialogError }}</div>
+              <div class="alert alert-error" style="margin-bottom: 14px;">
+                {{ leaveWithChangesDialogError }}
+              </div>
             }
 
             <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
-              <button class="btn btn-outline" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="stayOnPage()">
+              <button
+                class="btn btn-outline"
+                [disabled]="leaveWithChangesDialogState !== 'idle'"
+                (click)="stayOnPage()"
+              >
                 Bleiben
               </button>
-              <button class="btn btn-danger" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="discardAndLeave()">
+              <button
+                class="btn btn-danger"
+                [disabled]="leaveWithChangesDialogState !== 'idle'"
+                (click)="discardAndLeave()"
+              >
                 Nicht speichern
               </button>
-              <button class="btn btn-primary" [disabled]="leaveWithChangesDialogState !== 'idle'" (click)="saveAndLeave()">
+              <button
+                class="btn btn-primary"
+                [disabled]="leaveWithChangesDialogState !== 'idle'"
+                (click)="saveAndLeave()"
+              >
                 Speichern & Weiter
               </button>
             </div>
@@ -180,7 +251,8 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             class="filter-input"
             [(ngModel)]="filterText"
             placeholder="🔍 Items filtern..."
-            (input)="applyFilter()">
+            (input)="applyFilter()"
+          />
         </div>
 
         <div class="table-scroll">
@@ -209,45 +281,90 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               </tr>
               <tr class="filter-row">
                 <th class="sticky-col">
-                  <input class="col-filter-input" [(ngModel)]="columnFilters['itemId']" placeholder="🔍 ID..." (input)="applyFilter()">
+                  <input
+                    class="col-filter-input"
+                    [(ngModel)]="columnFilters['itemId']"
+                    placeholder="🔍 ID..."
+                    (input)="applyFilter()"
+                  />
                 </th>
                 <th>
-                  <input class="col-filter-input" [(ngModel)]="columnFilters['unitLabel']" placeholder="🔍 Aufgabe..." (input)="applyFilter()">
+                  <input
+                    class="col-filter-input"
+                    [(ngModel)]="columnFilters['unitLabel']"
+                    placeholder="🔍 Aufgabe..."
+                    (input)="applyFilter()"
+                  />
                 </th>
                 @if (hasEmpiricalDifficulty) {
                   <th>
-                    <input type="number" class="col-filter-input" [(ngModel)]="columnFilters['empiricalDifficulty']" placeholder="🔍 Wert..." (input)="applyFilter()">
+                    <input
+                      type="number"
+                      class="col-filter-input"
+                      [(ngModel)]="columnFilters['empiricalDifficulty']"
+                      placeholder="🔍 Wert..."
+                      (input)="applyFilter()"
+                    />
                   </th>
                 }
                 @for (col of columns; track col.id) {
                   <th>
-                    <input class="col-filter-input" [(ngModel)]="columnFilters[col.id]" [placeholder]="'🔍 ' + col.label + '...'" (input)="applyFilter()">
+                    <input
+                      class="col-filter-input"
+                      [(ngModel)]="columnFilters[col.id]"
+                      [placeholder]="'🔍 ' + col.label + '...'"
+                      (input)="applyFilter()"
+                    />
                   </th>
                 }
                 @if (enableTags) {
                   <th>
-                    <input class="col-filter-input" [(ngModel)]="columnFilters['tags']" placeholder="🔍 Tags..." (input)="applyFilter()">
+                    <input
+                      class="col-filter-input"
+                      [(ngModel)]="columnFilters['tags']"
+                      placeholder="🔍 Tags..."
+                      (input)="applyFilter()"
+                    />
                   </th>
                 }
               </tr>
             </thead>
             <tbody>
               @for (item of filteredItems; track item.unitId + '_' + item.itemId; let i = $index) {
-                <tr
-                  [class.active]="selectedItem?.uuid === item.uuid"
-                  (click)="selectItem(item, i)">
-                  <td class="sticky-col"><code><span class="unit-id">{{ item.unitId }}</span><span class="item-id">{{ item.itemId }}</span></code></td>
+                <tr [class.active]="selectedItem?.uuid === item.uuid" (click)="selectItem(item, i)">
+                  <td class="sticky-col">
+                    <code
+                      ><span class="unit-id">{{ item.unitId }}</span
+                      ><span class="item-id">{{ item.itemId }}</span></code
+                    >
+                  </td>
                   <td>{{ item.unitLabel }}</td>
                   @if (hasEmpiricalDifficulty) {
-                    <td>{{ item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null ? item.empiricalDifficulty : '–' }}</td>
+                    <td>
+                      {{
+                        item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null
+                          ? item.empiricalDifficulty
+                          : '–'
+                      }}
+                    </td>
                   }
                   @for (col of columns; track col.id) {
                     <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
                   }
                   @if (enableTags) {
                     <td class="tags-cell" (click)="$event.stopPropagation()">
-                      @for (tag of (itemTags[item.uuid || (item.unitId + '_' + item.itemId)] || []); track tag) {
-                        <span class="badge badge-info tag-badge" (click)="removeItemTag(item.uuid, tag)">{{ tag }} @if (canEditExplorer) { ✕ }</span>
+                      @for (
+                        tag of itemTags[item.uuid || item.unitId + '_' + item.itemId] || [];
+                        track tag
+                      ) {
+                        <span
+                          class="badge badge-info tag-badge"
+                          (click)="removeItemTag(item.uuid, tag)"
+                          >{{ tag }}
+                          @if (canEditExplorer) {
+                            ✕
+                          }
+                        </span>
                       }
                       @if (canEditExplorer) {
                         <div class="tag-add-container">
@@ -259,11 +376,13 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                               }
                             </select>
                           }
-                          <input type="text"
-                                 class="tag-input-inline"
-                                 placeholder="Neu..."
-                                 (keydown.enter)="addCustomTag(item.uuid, $event)"
-                                 (blur)="addCustomTag(item.uuid, $event)">
+                          <input
+                            type="text"
+                            class="tag-input-inline"
+                            placeholder="Neu..."
+                            (keydown.enter)="addCustomTag(item.uuid, $event)"
+                            (blur)="addCustomTag(item.uuid, $event)"
+                          />
                         </div>
                       }
                     </td>
@@ -279,7 +398,10 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       <div right class="preview-panel">
         @if (selectedItem) {
           <!-- Player -->
-          <div class="player-container card" [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'">
+          <div
+            class="player-container card"
+            [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
+          >
             @if (playerSrcDoc) {
               <iframe
                 #playerFrame
@@ -288,7 +410,8 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
                 [style.height]="playerHeight"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
-                (load)="onPlayerLoaded()">
+                (load)="onPlayerLoaded()"
+              >
               </iframe>
             } @else if (loadingUnit) {
               <div class="empty-state">
@@ -305,14 +428,32 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
           <!-- Item Navigation -->
           <div class="item-nav">
-            <button class="btn btn-outline" [disabled]="selectedIndex <= 0" (click)="navigateItem(-1)">← Vorheriges Item</button>
-            <span class="item-nav-info">Item {{ selectedIndex + 1 }} von {{ filteredItems.length }}</span>
-            <button class="btn btn-outline" [disabled]="selectedIndex >= filteredItems.length - 1" (click)="navigateItem(1)">Nächstes Item →</button>
+            <button
+              class="btn btn-outline"
+              [disabled]="selectedIndex <= 0"
+              (click)="navigateItem(-1)"
+            >
+              ← Vorheriges Item
+            </button>
+            <span class="item-nav-info"
+              >Item {{ selectedIndex + 1 }} von {{ filteredItems.length }}</span
+            >
+            <button
+              class="btn btn-outline"
+              [disabled]="selectedIndex >= filteredItems.length - 1"
+              (click)="navigateItem(1)"
+            >
+              Nächstes Item →
+            </button>
           </div>
 
           <!-- Action Buttons -->
           <div class="action-buttons">
-            <select class="btn btn-outline btn-sm" [(ngModel)]="pagingMode" (change)="onPagingModeChange()">
+            <select
+              class="btn btn-outline btn-sm"
+              [(ngModel)]="pagingMode"
+              (change)="onPagingModeChange()"
+            >
               <option value="buttons">Paging: Buttons</option>
               <option value="separate">Paging: Separate</option>
               <option value="concat-scroll">Paging: Scroll</option>
@@ -320,15 +461,41 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <option value="view-all">Paging: Alles (Print)</option>
               <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
-            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">📋 Kodierung</button>
-            <button class="btn btn-outline btn-sm" (click)="showMetadataDrawer = !showMetadataDrawer" [class.btn-primary]="showMetadataDrawer">📄 Metadaten</button>
+            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">
+              📋 Kodierung
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="showMetadataDrawer = !showMetadataDrawer"
+              [class.btn-primary]="showMetadataDrawer"
+            >
+              📄 Metadaten
+            </button>
             @if (canEditExplorer) {
-              <button class="btn btn-outline btn-sm" (click)="saveCurrentResponseState()" title="Aktuellen Zustand speichern">💾 Zustand speichern</button>
-              <button class="btn btn-outline btn-sm" (click)="resetResponseState()" title="Zustand zurücksetzen" style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);">🗑️ Zustand löschen</button>
-              <button class="btn btn-outline btn-sm" (click)="loadAllResponseStates()" title="Alle gespeicherten Daten anzeigen">👁️ Rohdaten</button>
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="saveCurrentResponseState()"
+                title="Aktuellen Zustand speichern"
+              >
+                💾 Zustand speichern
+              </button>
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="resetResponseState()"
+                title="Zustand zurücksetzen"
+                style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
+              >
+                🗑️ Zustand löschen
+              </button>
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="loadAllResponseStates()"
+                title="Alle gespeicherten Daten anzeigen"
+              >
+                👁️ Rohdaten
+              </button>
             }
           </div>
-
         } @else {
           <div class="empty-state preview-empty">
             <div style="font-size:3rem;margin-bottom:16px">👈</div>
@@ -354,13 +521,22 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                   <input
                     class="filter-input"
                     [(ngModel)]="codingSearchText"
-                    placeholder="🔍 Variablen suchen (ID oder Label)...">
+                    placeholder="🔍 Variablen suchen (ID oder Label)..."
+                  />
                 </div>
                 <div class="sort-actions">
-                  <button class="btn btn-outline btn-sm" (click)="toggleCodingSort('id')" title="Nach ID sortieren">
+                  <button
+                    class="btn btn-outline btn-sm"
+                    (click)="toggleCodingSort('id')"
+                    title="Nach ID sortieren"
+                  >
                     ID {{ getCodingSortIndicator('id') }}
                   </button>
-                  <button class="btn btn-outline btn-sm" (click)="toggleCodingSort('label')" title="Nach Label sortieren">
+                  <button
+                    class="btn btn-outline btn-sm"
+                    (click)="toggleCodingSort('label')"
+                    title="Nach Label sortieren"
+                  >
                     Label {{ getCodingSortIndicator('label') }}
                   </button>
                 </div>
@@ -378,7 +554,12 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                     @if ($any(coding).manualInstructionText) {
                       <div class="global-manual-instruction">
                         <strong>📖 Variable-Instruktion:</strong>
-                        <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)"></div>
+                        <div
+                          class="html-content"
+                          [innerHTML]="
+                            sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)
+                          "
+                        ></div>
                       </div>
                     }
                     <div class="codes-list">
@@ -389,13 +570,22 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                             <span class="code-score">({{ code.score }})</span>
                             <span class="code-label">{{ code.label }}</span>
                             @if (code.hasManualInstruction) {
-                              <span class="manual-icon" title="Manuelle Prüfung erforderlich">📝</span>
+                              <span class="manual-icon" title="Manuelle Prüfung erforderlich"
+                                >📝</span
+                              >
                             }
                           </div>
                           @if ($any(code).manualInstructionText) {
                             <div class="code-manual-instruction">
                               <strong>Instruktion:</strong>
-                              <div class="html-content" [innerHTML]="sanitizer.bypassSecurityTrustHtml($any(code).manualInstructionText)"></div>
+                              <div
+                                class="html-content"
+                                [innerHTML]="
+                                  sanitizer.bypassSecurityTrustHtml(
+                                    $any(code).manualInstructionText
+                                  )
+                                "
+                              ></div>
                             </div>
                           }
                           @if (code.ruleSetDescriptions.length) {
@@ -420,8 +610,16 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
     }
 
     <!-- DRAWER: Metadata -->
-    <div class="drawer-backdrop" [class.open]="showMetadataDrawer" (click)="showMetadataDrawer = false">
-      <div class="drawer-container" [class.open]="showMetadataDrawer" (click)="$event.stopPropagation()">
+    <div
+      class="drawer-backdrop"
+      [class.open]="showMetadataDrawer"
+      (click)="showMetadataDrawer = false"
+    >
+      <div
+        class="drawer-container"
+        [class.open]="showMetadataDrawer"
+        (click)="$event.stopPropagation()"
+      >
         <div class="drawer-header">
           <div class="drawer-title">
             <span class="drawer-icon">📄</span>
@@ -438,7 +636,11 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               @for (entry of currentUnitMetadata; track entry.id) {
                 <div class="meta-item">
                   <div class="meta-label">{{ extractLabel(entry.label) }}</div>
-                  <div class="meta-value">{{ extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–' }}</div>
+                  <div class="meta-value">
+                    {{
+                      extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–'
+                    }}
+                  </div>
                 </div>
               }
             </div>
@@ -457,29 +659,67 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
         <div class="overlay-dialog" (click)="$event.stopPropagation()">
           <div class="overlay-header">
             <h2>Upload Bericht</h2>
-            <button class="btn btn-sm btn-outline" (click)="showUploadReport = false; reloadItems()">✕ Schließen</button>
+            <button
+              class="btn btn-sm btn-outline"
+              (click)="showUploadReport = false; reloadItems()"
+            >
+              ✕ Schließen
+            </button>
           </div>
           <div class="overlay-content">
-            <p><strong>Zusammenfassung:</strong> {{ uploadResult?.updated }} erfolgreich aktualisiert, {{ uploadResult?.failed?.length || 0 }} fehlgeschlagen.</p>
+            <p>
+              <strong>Zusammenfassung:</strong> {{ uploadResult?.updated }} erfolgreich
+              aktualisiert, {{ uploadResult?.failed?.length || 0 }} fehlgeschlagen.
+            </p>
 
             @if (uploadResult?.successes?.length) {
               <div style="margin-top: 16px;">
-                <h3 style="color: #27ae60;">Erfolgreich aktualisiert ({{ uploadResult!.successes.length }})</h3>
-                <div style="margin: 8px 0; max-height: 350px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 4px;">
+                <h3 style="color: #27ae60;">
+                  Erfolgreich aktualisiert ({{ uploadResult!.successes.length }})
+                </h3>
+                <div
+                  style="margin: 8px 0; max-height: 350px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 4px;"
+                >
                   <table class="table" style="width: 100%; border-collapse: collapse;">
-                    <thead style="position: sticky; top: 0; background: var(--color-surface); z-index: 1;">
+                    <thead
+                      style="position: sticky; top: 0; background: var(--color-surface); z-index: 1;"
+                    >
                       <tr>
-                        <th style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Aufgabe</th>
-                        <th style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Item-ID</th>
-                        <th style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);">Wert (est)</th>
+                        <th
+                          style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                        >
+                          Aufgabe
+                        </th>
+                        <th
+                          style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                        >
+                          Item-ID
+                        </th>
+                        <th
+                          style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                        >
+                          Wert (est)
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       @for (success of uploadResult!.successes; track $index) {
                         <tr>
-                          <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"><code>{{ success.unitId }}</code></td>
-                          <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"><code>{{ success.itemId }}</code></td>
-                          <td style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);">{{ success.value }}</td>
+                          <td
+                            style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                          >
+                            <code>{{ success.unitId }}</code>
+                          </td>
+                          <td
+                            style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                          >
+                            <code>{{ success.itemId }}</code>
+                          </td>
+                          <td
+                            style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                          >
+                            {{ success.value }}
+                          </td>
                         </tr>
                       }
                     </tbody>
@@ -491,19 +731,30 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             @if (uploadResult?.failed?.length) {
               <div style="margin-top: 16px;">
                 <h3 style="color: #e74c3c;">Fehlgeschlagen ({{ uploadResult!.failed.length }})</h3>
-                <div style="margin: 8px 0; max-height: 250px; overflow-y: auto; background: rgba(231, 76, 60, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.2);">
-                  <ul style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem;">
+                <div
+                  style="margin: 8px 0; max-height: 250px; overflow-y: auto; background: rgba(231, 76, 60, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.2);"
+                >
+                  <ul
+                    style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem;"
+                  >
                     @for (fail of uploadResult!.failed; track $index) {
-                      <li><code>{{ fail.csvRow }}</code>: {{ fail.reason }}</li>
+                      <li>
+                        <code>{{ fail.csvRow }}</code
+                        >: {{ fail.reason }}
+                      </li>
                     }
                   </ul>
                 </div>
-                <p class="help-text" style="font-size: 0.8rem; margin-top: 8px;">Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder Unit-Item Kombi übereinstimmen).</p>
+                <p class="help-text" style="font-size: 0.8rem; margin-top: 8px;">
+                  Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder
+                  Unit-Item Kombi übereinstimmen).
+                </p>
               </div>
             } @else if (uploadResult?.successes?.length) {
-              <p style="color: #27ae60; margin-top: 16px; font-weight: bold;">🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!</p>
+              <p style="color: #27ae60; margin-top: 16px; font-weight: bold;">
+                🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!
+              </p>
             }
-
           </div>
         </div>
       </div>
@@ -512,7 +763,11 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
     <!-- OVERLAY: Error Dialog -->
     @if (showErrorDialog) {
       <div class="overlay-backdrop" (click)="showErrorDialog = false">
-        <div class="overlay-dialog" style="max-width: 500px; border-top: 4px solid #e74c3c;" (click)="$event.stopPropagation()">
+        <div
+          class="overlay-dialog"
+          style="max-width: 500px; border-top: 4px solid #e74c3c;"
+          (click)="$event.stopPropagation()"
+        >
           <div class="overlay-header">
             <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
               <span>⚠️</span> Upload-Fehler
@@ -521,7 +776,9 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           </div>
           <div class="overlay-content" style="text-align: center; padding: 24px 16px;">
             <div style="font-size: 3rem; margin-bottom: 16px;">🚫</div>
-            <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text);">{{ errorMessage }}</p>
+            <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text);">
+              {{ errorMessage }}
+            </p>
             <div style="margin-top: 24px;">
               <button class="btn btn-primary" (click)="showErrorDialog = false">Verstanden</button>
             </div>
@@ -550,24 +807,32 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <input
                   class="filter-input"
                   [(ngModel)]="columnFilterText"
-                  placeholder="🔍 Spalten suchen (Label oder ID)...">
+                  placeholder="🔍 Spalten suchen (Label oder ID)..."
+                />
               </div>
-              <button class="btn btn-outline btn-sm" (click)="resetToDefault()" [disabled]="!metadataSettings.visible.length">
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="resetToDefault()"
+                [disabled]="!metadataSettings.visible.length"
+              >
                 🔄 Standard
               </button>
             </div>
 
             <div class="column-grid">
               @for (col of filteredAllColumns; track col.id) {
-                <div class="column-tile"
-                     [class.active]="metadataSettings.visible.includes(col.id)"
-                     (click)="toggleColumnVisibility(col)">
+                <div
+                  class="column-tile"
+                  [class.active]="metadataSettings.visible.includes(col.id)"
+                  (click)="toggleColumnVisibility(col)"
+                >
                   <div class="tile-check">
                     <input
                       type="checkbox"
                       [checked]="metadataSettings.visible.includes(col.id)"
                       (click)="$event.stopPropagation()"
-                      (change)="toggleColumnVisibility(col)">
+                      (change)="toggleColumnVisibility(col)"
+                    />
                   </div>
                   <div class="tile-body">
                     <span class="tile-label">{{ col.label }}</span>
@@ -575,16 +840,22 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                   </div>
                   @if (metadataSettings.visible.includes(col.id)) {
                     <div class="tile-actions" (click)="$event.stopPropagation()">
-                      <button class="btn btn-xs btn-outline"
-                              (click)="moveColumnUp(col)"
-                              [disabled]="metadataSettings.order[0] === col.id"
-                              title="Nach oben">
+                      <button
+                        class="btn btn-xs btn-outline"
+                        (click)="moveColumnUp(col)"
+                        [disabled]="metadataSettings.order[0] === col.id"
+                        title="Nach oben"
+                      >
                         ↑
                       </button>
-                      <button class="btn btn-xs btn-outline"
-                              (click)="moveColumnDown(col)"
-                              [disabled]="metadataSettings.order[metadataSettings.order.length - 1] === col.id"
-                              title="Nach unten">
+                      <button
+                        class="btn btn-xs btn-outline"
+                        (click)="moveColumnDown(col)"
+                        [disabled]="
+                          metadataSettings.order[metadataSettings.order.length - 1] === col.id
+                        "
+                        title="Nach unten"
+                      >
                         ↓
                       </button>
                     </div>
@@ -603,8 +874,12 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 {{ metadataSettings.visible.length }} von {{ allColumns.length }} Spalten gewählt
               </div>
               <div class="footer-actions">
-                <button class="btn btn-outline" (click)="showColumnManager = false">Abbrechen</button>
-                <button class="btn btn-primary" (click)="saveMetadataSettings()">💾 Speichern</button>
+                <button class="btn btn-outline" (click)="showColumnManager = false">
+                  Abbrechen
+                </button>
+                <button class="btn btn-primary" (click)="saveMetadataSettings()">
+                  💾 Speichern
+                </button>
               </div>
             </div>
           </div>
@@ -614,9 +889,17 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Save Response State Confirmation -->
     @if (showSaveConfirmDialog) {
-      <div class="overlay-backdrop" (click)="!confirmDialogState && (showSaveConfirmDialog = false)">
+      <div
+        class="overlay-backdrop"
+        (click)="!confirmDialogState && (showSaveConfirmDialog = false)"
+      >
         <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header" [style.border-top]="confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'">
+          <div
+            class="overlay-header"
+            [style.border-top]="
+              confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'
+            "
+          >
             @if (confirmDialogState === 'saving') {
               <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
                 <span class="spinner-inline"></span> Speichern...
@@ -626,7 +909,13 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <span>💾</span> Zustand speichern
               </h2>
             }
-            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">✕</button>
+            <button
+              class="btn btn-sm btn-outline"
+              [disabled]="confirmDialogState === 'saving'"
+              (click)="showSaveConfirmDialog = false"
+            >
+              ✕
+            </button>
           </div>
           <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
             @if (confirmDialogError) {
@@ -637,15 +926,25 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <p style="font-size: 1.1rem; margin-bottom: 8px;">
                 Möchten Sie den aktuellen Zustand speichern?
               </p>
-              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+              <p
+                style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
+              >
                 Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
               </p>
             }
             <div style="display: flex; gap: 12px; justify-content: center;">
-              <button class="btn btn-outline" [disabled]="confirmDialogState === 'saving'" (click)="showSaveConfirmDialog = false">
+              <button
+                class="btn btn-outline"
+                [disabled]="confirmDialogState === 'saving'"
+                (click)="showSaveConfirmDialog = false"
+              >
                 Abbrechen
               </button>
-              <button class="btn btn-primary" [disabled]="confirmDialogState === 'saving'" (click)="confirmSaveResponseState()">
+              <button
+                class="btn btn-primary"
+                [disabled]="confirmDialogState === 'saving'"
+                (click)="confirmSaveResponseState()"
+              >
                 💾 Speichern
               </button>
             </div>
@@ -656,9 +955,17 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Delete Response State Confirmation -->
     @if (showDeleteConfirmDialog) {
-      <div class="overlay-backdrop" (click)="!confirmDialogState && (showDeleteConfirmDialog = false)">
+      <div
+        class="overlay-backdrop"
+        (click)="!confirmDialogState && (showDeleteConfirmDialog = false)"
+      >
         <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header" [style.border-top]="confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'">
+          <div
+            class="overlay-header"
+            [style.border-top]="
+              confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'
+            "
+          >
             @if (confirmDialogState === 'deleting') {
               <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
                 <span class="spinner-inline"></span> Löschen...
@@ -668,7 +975,13 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <span>🗑️</span> Zustand löschen
               </h2>
             }
-            <button class="btn btn-sm btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">✕</button>
+            <button
+              class="btn btn-sm btn-outline"
+              [disabled]="confirmDialogState === 'deleting'"
+              (click)="showDeleteConfirmDialog = false"
+            >
+              ✕
+            </button>
           </div>
           <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
             @if (confirmDialogError) {
@@ -679,18 +992,31 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <p style="font-size: 1.1rem; margin-bottom: 8px;">
                 Möchten Sie den gespeicherten Zustand löschen?
               </p>
-              <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;">
+              <p
+                style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
+              >
                 Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
               </p>
-              <p style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;">
+              <p
+                style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;"
+              >
                 ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
               </p>
             }
             <div style="display: flex; gap: 12px; justify-content: center;">
-              <button class="btn btn-outline" [disabled]="confirmDialogState === 'deleting'" (click)="showDeleteConfirmDialog = false">
+              <button
+                class="btn btn-outline"
+                [disabled]="confirmDialogState === 'deleting'"
+                (click)="showDeleteConfirmDialog = false"
+              >
                 Abbrechen
               </button>
-              <button class="btn btn-danger" [disabled]="confirmDialogState === 'deleting'" (click)="confirmDeleteResponseState()" style="background: #e74c3c; color: white; border-color: #e74c3c;">
+              <button
+                class="btn btn-danger"
+                [disabled]="confirmDialogState === 'deleting'"
+                (click)="confirmDeleteResponseState()"
+                style="background: #e74c3c; color: white; border-color: #e74c3c;"
+              >
                 🗑️ Löschen
               </button>
             </div>
@@ -725,7 +1051,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                     <div class="state-header">
                       <code>{{ state.itemId }}</code>
                       <span class="unit-badge">{{ state.unitId }}</span>
-                      <span class="date">{{ state.updatedAt | date:'short' }}</span>
+                      <span class="date">{{ state.updatedAt | date: 'short' }}</span>
                     </div>
                     <pre class="json-view">{{ state.responseData | json }}</pre>
                   </div>
@@ -753,12 +1079,36 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           </div>
           <div class="overlay-content">
             <div class="column-manager-toolbar">
-              <input class="filter-input" [(ngModel)]="historyFilterUser" placeholder="Nach Nutzer filtern...">
-              <input class="filter-input" [(ngModel)]="historyFilterType" placeholder="Nach Aktion filtern...">
-              <input class="filter-input" type="date" [(ngModel)]="historyFilterFrom" title="Von Datum">
-              <input class="filter-input" type="date" [(ngModel)]="historyFilterTo" title="Bis Datum">
+              <input
+                class="filter-input"
+                [(ngModel)]="historyFilterUser"
+                placeholder="Nach Nutzer filtern..."
+              />
+              <input
+                class="filter-input"
+                [(ngModel)]="historyFilterType"
+                placeholder="Nach Aktion filtern..."
+              />
+              <input
+                class="filter-input"
+                type="date"
+                [(ngModel)]="historyFilterFrom"
+                title="Von Datum"
+              />
+              <input
+                class="filter-input"
+                type="date"
+                [(ngModel)]="historyFilterTo"
+                title="Bis Datum"
+              />
               <button class="btn btn-outline btn-sm" (click)="showHistory()">Aktualisieren</button>
-              <button class="btn btn-outline btn-sm" [disabled]="filteredHistoryEntries.length === 0" (click)="exportHistoryCsv()">Export CSV</button>
+              <button
+                class="btn btn-outline btn-sm"
+                [disabled]="filteredHistoryEntries.length === 0"
+                (click)="exportHistoryCsv()"
+              >
+                Export CSV
+              </button>
             </div>
             @if (historyLoading) {
               <div class="empty-state">
@@ -781,7 +1131,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                       <strong>{{ entry.changeType }}</strong>
                       <span class="unit-badge">{{ entry.actorRole || 'unbekannt' }}</span>
                       <span>{{ entry.actorUsername || 'unbekannt' }}</span>
-                      <span class="date">{{ entry.createdAt | date:'short' }}</span>
+                      <span class="date">{{ entry.createdAt | date: 'short' }}</span>
                     </div>
                     <pre class="json-view">{{ entry.diff | json }}</pre>
                   </div>
@@ -825,10 +1175,16 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               </div>
             }
             <div class="column-manager-footer" style="margin-top: 20px;">
-              <span class="selection-info">Draft v{{ explorerVersion }} → Publish v{{ explorerPublishedVersion + 1 }}</span>
+              <span class="selection-info"
+                >Draft v{{ explorerVersion }} → Publish v{{ explorerPublishedVersion + 1 }}</span
+              >
               <div class="footer-actions">
-                <button class="btn btn-outline" (click)="cancelSavePreviewDialog()">Abbrechen</button>
-                <button class="btn btn-primary" (click)="confirmSaveExplorerDraft()">Veröffentlichen</button>
+                <button class="btn btn-outline" (click)="cancelSavePreviewDialog()">
+                  Abbrechen
+                </button>
+                <button class="btn btn-primary" (click)="confirmSaveExplorerDraft()">
+                  Veröffentlichen
+                </button>
               </div>
             </div>
           </div>
@@ -836,599 +1192,891 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       </div>
     }
   `,
-  styles: [`
-    :host {
-      display: flex;
-      flex-direction: column;
-      height: calc(100vh - 140px);
-      overflow: hidden;
-    }
-    app-split-pane {
-      flex: 1;
-      min-height: 0;
-    }
+  styles: [
+    `
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: calc(100vh - 140px);
+        overflow: hidden;
+      }
+      app-split-pane {
+        flex: 1;
+        min-height: 0;
+      }
 
-    .explorer-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 16px;
-    }
-    .explorer-header h1 { margin-bottom: 0; }
-    .header-actions {
-      display: flex; align-items: center; gap: 16px;
-    }
-    .item-count { font-size: 0.85rem; color: var(--color-text-secondary); }
-    .explorer-status-bar {
-      margin-bottom: 12px;
-      padding: 10px 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .status-main {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      font-size: 0.85rem;
-    }
-    .status-meta {
-      color: var(--color-text-secondary);
-      font-size: 0.8rem;
-    }
-    .status-pill {
-      border-radius: 999px;
-      padding: 2px 10px;
-      font-size: 0.75rem;
-      font-weight: 600;
-      border: 1px solid transparent;
-    }
-    .status-clean {
-      color: #1e8449;
-      background: rgba(39, 174, 96, 0.12);
-      border-color: rgba(39, 174, 96, 0.4);
-    }
-    .status-saved {
-      color: #117a65;
-      background: rgba(26, 188, 156, 0.18);
-      border-color: rgba(26, 188, 156, 0.45);
-    }
-    .status-dirty {
-      color: #b9770e;
-      background: rgba(241, 196, 15, 0.2);
-      border-color: rgba(241, 196, 15, 0.5);
-    }
-    .status-saving {
-      color: #1f618d;
-      background: rgba(52, 152, 219, 0.2);
-      border-color: rgba(52, 152, 219, 0.5);
-    }
-    .status-error {
-      color: #922b21;
-      background: rgba(231, 76, 60, 0.18);
-      border-color: rgba(231, 76, 60, 0.45);
-    }
-    .status-actions {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+      .explorer-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .explorer-header h1 {
+        margin-bottom: 0;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .item-count {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+      .explorer-status-bar {
+        margin-bottom: 12px;
+        padding: 10px 14px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .status-main {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        font-size: 0.85rem;
+      }
+      .status-meta {
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+      }
+      .status-pill {
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        border: 1px solid transparent;
+      }
+      .status-clean {
+        color: #1e8449;
+        background: rgba(39, 174, 96, 0.12);
+        border-color: rgba(39, 174, 96, 0.4);
+      }
+      .status-saved {
+        color: #117a65;
+        background: rgba(26, 188, 156, 0.18);
+        border-color: rgba(26, 188, 156, 0.45);
+      }
+      .status-dirty {
+        color: #b9770e;
+        background: rgba(241, 196, 15, 0.2);
+        border-color: rgba(241, 196, 15, 0.5);
+      }
+      .status-saving {
+        color: #1f618d;
+        background: rgba(52, 152, 219, 0.2);
+        border-color: rgba(52, 152, 219, 0.5);
+      }
+      .status-error {
+        color: #922b21;
+        background: rgba(231, 76, 60, 0.18);
+        border-color: rgba(231, 76, 60, 0.45);
+      }
+      .status-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
 
-    /* Table panel */
-    .table-panel {
-      display: flex; flex-direction: column;
-      height: 100%; overflow: hidden;
-    }
-    .table-toolbar {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--color-border);
-      background: var(--color-surface);
-      flex-shrink: 0;
-    }
-    .filter-input {
-      width: 100%; padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius); font-size: 0.9rem;
-      font-family: inherit;
-    }
-    .filter-input:focus {
-      outline: none; border-color: var(--color-primary-light);
-      box-shadow: 0 0 0 3px rgba(41,128,185,0.15);
-    }
-    .table-scroll {
-      flex: 1; overflow: auto;
-      background: var(--color-surface);
-      border-radius: 0 0 var(--radius) var(--radius);
-      box-shadow: var(--shadow);
-      /* Fix corner and layout shift */
-      scrollbar-gutter: stable;
-      position: relative;
-    }
-    /* Better scrollbar styling to avoid 'messy' intersection */
-    .table-scroll::-webkit-scrollbar {
-      width: 12px;
-      height: 12px;
-    }
-    .table-scroll::-webkit-scrollbar-track {
-      background: #f8f9fa;
-      border-radius: 0 0 var(--radius) var(--radius);
-    }
-    .table-scroll::-webkit-scrollbar-thumb {
-      background: #ced4da;
-      border-radius: 10px;
-      border: 3px solid #f8f9fa;
-    }
-    .table-scroll::-webkit-scrollbar-thumb:hover {
-      background: #adb5bd;
-    }
-    .table-scroll::-webkit-scrollbar-corner {
-      background: #f8f9fa;
-    }
+      /* Table panel */
+      .table-panel {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
+      .table-toolbar {
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        background: var(--color-surface);
+        flex-shrink: 0;
+      }
+      .filter-input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        font-family: inherit;
+      }
+      .filter-input:focus {
+        outline: none;
+        border-color: var(--color-primary-light);
+        box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.15);
+      }
+      .table-scroll {
+        flex: 1;
+        overflow: auto;
+        background: var(--color-surface);
+        border-radius: 0 0 var(--radius) var(--radius);
+        box-shadow: var(--shadow);
+        /* Fix corner and layout shift */
+        scrollbar-gutter: stable;
+        position: relative;
+      }
+      /* Better scrollbar styling to avoid 'messy' intersection */
+      .table-scroll::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+      }
+      .table-scroll::-webkit-scrollbar-track {
+        background: #f8f9fa;
+        border-radius: 0 0 var(--radius) var(--radius);
+      }
+      .table-scroll::-webkit-scrollbar-thumb {
+        background: #ced4da;
+        border-radius: 10px;
+        border: 3px solid #f8f9fa;
+      }
+      .table-scroll::-webkit-scrollbar-thumb:hover {
+        background: #adb5bd;
+      }
+      .table-scroll::-webkit-scrollbar-corner {
+        background: #f8f9fa;
+      }
 
-    .explorer-table {
-      font-size: 0.85rem;
-      margin-bottom: 0;
-      width: 100%;
-      min-width: max-content;
-      border-collapse: collapse; /* Reverting to collapse for better background handling */
-    }
-    .explorer-table th, .explorer-table td {
-      padding: 10px 16px;
-      text-align: left;
-      border-bottom: 1px solid var(--color-border);
-    }
-    .explorer-table th {
-      position: sticky; top: 0;
-      background-color: var(--color-bg) !important;
-      z-index: 100;
-      white-space: nowrap;
-      min-width: 150px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      /* Using box-shadow instead of border-bottom for better sticky support in collapse mode */
-      box-shadow: inset 0 -2px 0 var(--color-border);
-    }
-    .explorer-table td {
-      white-space: nowrap;
-      max-width: 400px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .sticky-col {
-      position: sticky;
-      left: 0;
-      background-color: var(--color-surface) !important;
-      z-index: 50;
-      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-    }
-    th.sticky-col {
-      background-color: var(--color-bg) !important;
-      z-index: 200; /* Highest priority */
-    }
-    tr.active .sticky-col {
-      background: rgba(41,128,185,0.1);
-    }
-    .meta-cell {
-      font-size: 0.8rem;
-      color: var(--color-text-secondary);
-    }
-    .sortable { cursor: pointer; user-select: none; }
-    .sortable:hover { color: var(--color-primary-light); }
-    tr.active td {
-      background: rgba(41,128,185,0.1) !important;
-      border-left: 3px solid var(--color-primary-light);
-    }
-    tr:not(.active) { cursor: pointer; }
+      .explorer-table {
+        font-size: 0.85rem;
+        margin-bottom: 0;
+        width: 100%;
+        min-width: max-content;
+        border-collapse: collapse; /* Reverting to collapse for better background handling */
+      }
+      .explorer-table th,
+      .explorer-table td {
+        padding: 10px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .explorer-table th {
+        position: sticky;
+        top: 0;
+        background-color: var(--color-bg) !important;
+        z-index: 100;
+        white-space: nowrap;
+        min-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        /* Using box-shadow instead of border-bottom for better sticky support in collapse mode */
+        box-shadow: inset 0 -2px 0 var(--color-border);
+      }
+      .explorer-table td {
+        white-space: nowrap;
+        max-width: 400px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .sticky-col {
+        position: sticky;
+        left: 0;
+        background-color: var(--color-surface) !important;
+        z-index: 50;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+      }
+      th.sticky-col {
+        background-color: var(--color-bg) !important;
+        z-index: 200; /* Highest priority */
+      }
+      tr.active .sticky-col {
+        background: rgba(41, 128, 185, 0.1);
+      }
+      .meta-cell {
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
+      .sortable {
+        cursor: pointer;
+        user-select: none;
+      }
+      .sortable:hover {
+        color: var(--color-primary-light);
+      }
+      tr.active td {
+        background: rgba(41, 128, 185, 0.1) !important;
+        border-left: 3px solid var(--color-primary-light);
+      }
+      tr:not(.active) {
+        cursor: pointer;
+      }
 
-    /* Filter row */
-    .filter-row th {
-      padding: 4px 10px;
-      background-color: var(--color-bg) !important;
-      border-bottom: 2px solid var(--color-border);
-      position: sticky; top: 44px; /* Matches the header height */
-      z-index: 100;
-    }
-    .filter-row th.sticky-col { z-index: 200; }
-    .col-filter-input {
-      width: 100%; padding: 4px 8px;
-      border: 1px solid var(--color-border);
-      border-radius: 4px; font-size: 0.75rem;
-      font-family: inherit;
-    }
-    .col-filter-input:focus {
-      outline: none; border-color: var(--color-primary-light);
-      box-shadow: 0 0 0 2px rgba(41,128,185,0.1);
-    }
+      /* Filter row */
+      .filter-row th {
+        padding: 4px 10px;
+        background-color: var(--color-bg) !important;
+        border-bottom: 2px solid var(--color-border);
+        position: sticky;
+        top: 44px; /* Matches the header height */
+        z-index: 100;
+      }
+      .filter-row th.sticky-col {
+        z-index: 200;
+      }
+      .col-filter-input {
+        width: 100%;
+        padding: 4px 8px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-family: inherit;
+      }
+      .col-filter-input:focus {
+        outline: none;
+        border-color: var(--color-primary-light);
+        box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.1);
+      }
 
-    /* Tags */
-    .tags-cell { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-    .tag-badge { cursor: pointer; font-size: 0.7rem; }
-    .tag-badge:hover { opacity: 0.7; }
-    .tag-select {
-      padding: 2px 4px; border: 1px solid var(--color-border);
-      border-radius: 4px; font-size: 0.75rem; background: white;
-      max-width: 80px;
-    }
-    .tag-add-container { display: flex; gap: 4px; align-items: center; }
-    .tag-input-inline {
-      width: 60px; padding: 2px 6px; border: 1px solid var(--color-border);
-      border-radius: 4px; font-size: 0.75rem;
-      transition: width 0.2s;
-    }
-    .tag-input-inline:focus { width: 100px; outline: none; border-color: var(--color-primary-light); }
+      /* Tags */
+      .tags-cell {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+      .tag-badge {
+        cursor: pointer;
+        font-size: 0.7rem;
+      }
+      .tag-badge:hover {
+        opacity: 0.7;
+      }
+      .tag-select {
+        padding: 2px 4px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        background: white;
+        max-width: 80px;
+      }
+      .tag-add-container {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+      .tag-input-inline {
+        width: 60px;
+        padding: 2px 6px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        transition: width 0.2s;
+      }
+      .tag-input-inline:focus {
+        width: 100px;
+        outline: none;
+        border-color: var(--color-primary-light);
+      }
 
-    /* Combined ID styling */
-    .unit-id { color: var(--color-text-secondary); }
-    .item-id { color: var(--color-text); font-weight: 600; }
+      /* Combined ID styling */
+      .unit-id {
+        color: var(--color-text-secondary);
+      }
+      .item-id {
+        color: var(--color-text);
+        font-weight: 600;
+      }
 
-    /* Preview panel */
-    .preview-panel {
-      height: 100%; overflow-y: auto;
-      padding: 0 16px; display: flex; flex-direction: column;
-    }
-    .player-container { padding: 0; overflow: hidden; display: flex; flex-direction: column; flex: 1; min-height: 500px; transition: height 0.2s; }
-    /* In view-all mode, we want the container to follow the iframe's height and not CLIP it */
-    .player-container.view-all-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; }
-    .player-iframe {
-      width: 100%; height: 100%; border: none; display: block;
-    }
-    .player-iframe.view-all-mode { min-height: 1000px; height: auto; }
+      /* Preview panel */
+      .preview-panel {
+        height: 100%;
+        overflow-y: auto;
+        padding: 0 16px;
+        display: flex;
+        flex-direction: column;
+      }
+      .player-container {
+        padding: 0;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 500px;
+        transition: height 0.2s;
+      }
+      /* In view-all mode, we want the container to follow the iframe's height and not CLIP it */
+      .player-container.view-all-mode {
+        display: block;
+        overflow: visible;
+        flex: none;
+        height: auto;
+        min-height: 1000px;
+      }
+      .player-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+      }
+      .player-iframe.view-all-mode {
+        min-height: 1000px;
+        height: auto;
+      }
 
-    /* Navigations */
-    .item-nav {
-      display: flex; align-items: center; justify-content: center;
-      gap: 12px; padding: 10px 0;
-      border-top: 1px solid var(--color-border);
-      border-bottom: 1px solid var(--color-border);
-    }
-    .item-nav-info {
-      font-size: 0.85rem; font-weight: 500;
-      color: var(--color-text-secondary);
-    }
+      /* Navigations */
+      .item-nav {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 10px 0;
+        border-top: 1px solid var(--color-border);
+        border-bottom: 1px solid var(--color-border);
+      }
+      .item-nav-info {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+      }
 
-    .action-buttons {
-      display: flex; gap: 8px; padding: 10px 0;
-      justify-content: center;
-    }
+      .action-buttons {
+        display: flex;
+        gap: 8px;
+        padding: 10px 0;
+        justify-content: center;
+      }
 
-    .preview-empty {
-      height: 100%; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-    }
+      .preview-empty {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
 
-    /* Spinner */
-    .spinner {
-      width: 32px; height: 32px;
-      border: 3px solid var(--color-border);
-      border-top-color: var(--color-primary-light);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-bottom: 12px;
-    }
-    .spinner-inline {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid var(--color-border);
-      border-top-color: var(--color-primary-light);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+      /* Spinner */
+      .spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid var(--color-border);
+        border-top-color: var(--color-primary-light);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 12px;
+      }
+      .spinner-inline {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--color-border);
+        border-top-color: var(--color-primary-light);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
 
-    .overlay-content {
-      padding: 24px;
-      overflow-y: auto;
-      flex: 1;
-    }
-    .coding-scheme-view {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-    .coding-item {
-      background: rgba(0, 0, 0, 0.02);
-      border-radius: 12px;
-      padding: 20px;
-      border: 1px solid var(--color-border);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.02);
-    }
-    .coding-item-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      border-bottom: 1px solid var(--color-border);
-      padding-bottom: 10px;
-    }
-    .header-tags {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .manual-icon {
-      font-size: 0.9rem;
-      cursor: help;
-      margin-left: 4px;
-    }
-    .coding-item h4 {
-      margin: 0;
-      color: var(--color-primary);
-      font-size: 1.1rem;
-      font-weight: 600;
-    }
-    .variable-id {
-      font-size: 0.8rem;
-      background: rgba(0,0,0,0.05);
-      padding: 2px 8px;
-      border-radius: 4px;
-      color: var(--color-text-secondary);
-    }
-    .global-manual-instruction {
-      background: rgba(243, 156, 18, 0.05);
-      border-left: 4px solid #f39c12;
-      padding: 10px 14px;
-      margin-bottom: 20px;
-      font-size: 0.85rem;
-      border-radius: 4px;
-      color: #7e5109;
-      line-height: 1.4;
-    }
-    .codes-list {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .code-row {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 8px;
-      border-radius: 6px;
-      background: white;
-      border-left: 4px solid transparent;
-      transition: all 0.2s;
-    }
-    .code-row:hover {
-      background: rgba(41,128,185,0.03);
-      border-left-color: var(--color-primary-light);
-    }
-    .code-manual-instruction {
-      margin: 2px 0 4px 44px;
-      font-size: 0.8rem;
-      color: #d35400;
-      background: rgba(230, 126, 34, 0.03);
-      padding: 4px 8px;
-      border-radius: 4px;
-    }
-    .html-content {
-      margin-top: 4px;
-    }
-    .html-content ul, .html-content ol {
-      margin: 8px 0;
-      padding-left: 20px;
-    }
-    .html-content p {
-      margin: 4px 0;
-    }
-    .code-main {
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      font-size: 0.9rem;
-    }
-    .code-id {
-      font-weight: 700;
-      color: var(--color-text-secondary);
-      min-width: 24px;
-    }
-    .code-score {
-      font-weight: 700;
-      color: #27ae60;
-      min-width: 30px;
-    }
-    .code-label {
-      font-weight: 500;
-      color: var(--color-text);
-    }
-    .rule-list {
-      margin: 4px 0 0 44px;
-      padding-left: 0;
-      font-size: 0.8rem;
-      color: var(--color-text-secondary);
-      list-style-type: none;
-    }
-    .rule-list li {
-      position: relative;
-      padding-left: 14px;
-      margin-bottom: 2px;
-    }
-    .rule-list li::before {
-      content: "•";
-      position: absolute;
-      left: 0;
-      color: var(--color-primary-light);
-    }
+      .overlay-content {
+        padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .coding-scheme-view {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .coding-item {
+        background: rgba(0, 0, 0, 0.02);
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid var(--color-border);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+      }
+      .coding-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        border-bottom: 1px solid var(--color-border);
+        padding-bottom: 10px;
+      }
+      .header-tags {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .manual-icon {
+        font-size: 0.9rem;
+        cursor: help;
+        margin-left: 4px;
+      }
+      .coding-item h4 {
+        margin: 0;
+        color: var(--color-primary);
+        font-size: 1.1rem;
+        font-weight: 600;
+      }
+      .variable-id {
+        font-size: 0.8rem;
+        background: rgba(0, 0, 0, 0.05);
+        padding: 2px 8px;
+        border-radius: 4px;
+        color: var(--color-text-secondary);
+      }
+      .global-manual-instruction {
+        background: rgba(243, 156, 18, 0.05);
+        border-left: 4px solid #f39c12;
+        padding: 10px 14px;
+        margin-bottom: 20px;
+        font-size: 0.85rem;
+        border-radius: 4px;
+        color: #7e5109;
+        line-height: 1.4;
+      }
+      .codes-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .code-row {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px;
+        border-radius: 6px;
+        background: white;
+        border-left: 4px solid transparent;
+        transition: all 0.2s;
+      }
+      .code-row:hover {
+        background: rgba(41, 128, 185, 0.03);
+        border-left-color: var(--color-primary-light);
+      }
+      .code-manual-instruction {
+        margin: 2px 0 4px 44px;
+        font-size: 0.8rem;
+        color: #d35400;
+        background: rgba(230, 126, 34, 0.03);
+        padding: 4px 8px;
+        border-radius: 4px;
+      }
+      .html-content {
+        margin-top: 4px;
+      }
+      .html-content ul,
+      .html-content ol {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      .html-content p {
+        margin: 4px 0;
+      }
+      .code-main {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        font-size: 0.9rem;
+      }
+      .code-id {
+        font-weight: 700;
+        color: var(--color-text-secondary);
+        min-width: 24px;
+      }
+      .code-score {
+        font-weight: 700;
+        color: #27ae60;
+        min-width: 30px;
+      }
+      .code-label {
+        font-weight: 500;
+        color: var(--color-text);
+      }
+      .rule-list {
+        margin: 4px 0 0 44px;
+        padding-left: 0;
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+        list-style-type: none;
+      }
+      .rule-list li {
+        position: relative;
+        padding-left: 14px;
+        margin-bottom: 2px;
+      }
+      .rule-list li::before {
+        content: '•';
+        position: absolute;
+        left: 0;
+        color: var(--color-primary-light);
+      }
 
-    /* Combined ID styling */
-    .overlay-backdrop {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.5); z-index: 1000;
-      display: flex; align-items: center; justify-content: center;
-      animation: fadeIn 0.15s ease;
-    }
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-    .overlay-dialog {
-      background: var(--color-surface);
-      border-radius: var(--radius);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      width: 90vw; max-width: 800px;
-      max-height: 85vh;
-      display: flex; flex-direction: column;
-      animation: slideUp 0.2s ease;
-    }
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-    /* Column Manager Premium */
-    .column-manager-dialog {
-      max-width: 650px;
-    }
-    .column-manager-toolbar {
-      display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
-    }
-    .column-manager-toolbar .search-container { flex: 1; }
+      /* Combined ID styling */
+      .overlay-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.15s ease;
+      }
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .overlay-dialog {
+        background: var(--color-surface);
+        border-radius: var(--radius);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        width: 90vw;
+        max-width: 800px;
+        max-height: 85vh;
+        display: flex;
+        flex-direction: column;
+        animation: slideUp 0.2s ease;
+      }
+      @keyframes slideUp {
+        from {
+          transform: translateY(20px);
+          opacity: 0;
+        }
+        to {
+          transform: translateY(0);
+          opacity: 1;
+        }
+      }
+      /* Column Manager Premium */
+      .column-manager-dialog {
+        max-width: 650px;
+      }
+      .column-manager-toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      .column-manager-toolbar .search-container {
+        flex: 1;
+      }
 
-    /* Coding Toolbar */
-    .coding-toolbar {
-      display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
-      padding: 0 4px;
-    }
-    .coding-toolbar .search-container { flex: 1; }
-    .sort-actions { display: flex; gap: 8px; }
+      /* Coding Toolbar */
+      .coding-toolbar {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 20px;
+        padding: 0 4px;
+      }
+      .coding-toolbar .search-container {
+        flex: 1;
+      }
+      .sort-actions {
+        display: flex;
+        gap: 8px;
+      }
 
-    .column-grid {
-      display: flex; flex-direction: column; gap: 8px;
-      max-height: 450px; overflow-y: auto; padding: 4px;
-      scrollbar-gutter: stable;
-    }
-    .column-tile {
-      display: flex; align-items: center; gap: 16px; padding: 12px 16px;
-      background: var(--color-surface); border-radius: 12px;
-      border: 1px solid var(--color-border); cursor: pointer;
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-    .column-tile:hover {
-      transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-      border-color: var(--color-primary-light);
-    }
-    .column-tile.active {
-      background: rgba(26, 82, 118, 0.03);
-      border-color: rgba(26, 82, 118, 0.3);
-    }
-    .tile-check { display: flex; align-items: center; }
-    .tile-check input { width: 18px; height: 18px; cursor: pointer; }
-    .tile-body { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-    .tile-label { font-size: 0.95rem; font-weight: 600; color: var(--color-text); }
-    .tile-id { font-size: 0.75rem; color: var(--color-text-secondary); opacity: 0.7; }
-    .tile-actions { display: flex; gap: 4px; }
-    .column-manager-footer {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-border);
-    }
-    .selection-info { font-size: 0.85rem; color: var(--color-text-secondary); font-weight: 500; }
-    .footer-actions { display: flex; gap: 12px; }
+      .column-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 450px;
+        overflow-y: auto;
+        padding: 4px;
+        scrollbar-gutter: stable;
+      }
+      .column-tile {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 12px 16px;
+        background: var(--color-surface);
+        border-radius: 12px;
+        border: 1px solid var(--color-border);
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .column-tile:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        border-color: var(--color-primary-light);
+      }
+      .column-tile.active {
+        background: rgba(26, 82, 118, 0.03);
+        border-color: rgba(26, 82, 118, 0.3);
+      }
+      .tile-check {
+        display: flex;
+        align-items: center;
+      }
+      .tile-check input {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+      .tile-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .tile-label {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--color-text);
+      }
+      .tile-id {
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+        opacity: 0.7;
+      }
+      .tile-actions {
+        display: flex;
+        gap: 4px;
+      }
+      .column-manager-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+      }
+      .selection-info {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        font-weight: 500;
+      }
+      .footer-actions {
+        display: flex;
+        gap: 12px;
+      }
 
-    /* Metadata Summary Card */
-    .unit-metadata-card {
-      margin-top: 16px; padding: 16px; background: rgba(26, 82, 118, 0.03);
-      border: 1px solid rgba(26, 82, 118, 0.1);
-    }
-    .unit-metadata-card .card-header {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
-    }
-    .unit-metadata-card h4 { margin: 0; font-size: 0.9rem; color: var(--color-primary); }
-    .meta-summary-grid {
-      display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px;
-    }
-    .meta-summary-item { display: flex; flex-direction: column; gap: 2px; }
-    .meta-summary-label { font-size: 0.75rem; color: var(--color-text-secondary); }
-    .meta-summary-value { font-size: 0.85rem; font-weight: 600; }
+      /* Metadata Summary Card */
+      .unit-metadata-card {
+        margin-top: 16px;
+        padding: 16px;
+        background: rgba(26, 82, 118, 0.03);
+        border: 1px solid rgba(26, 82, 118, 0.1);
+      }
+      .unit-metadata-card .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .unit-metadata-card h4 {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--color-primary);
+      }
+      .meta-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+      }
+      .meta-summary-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .meta-summary-label {
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .meta-summary-value {
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
 
-    /* Metadata Drawer */
-    .drawer-backdrop {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.3); z-index: 1100;
-      opacity: 0; visibility: hidden; transition: all 0.3s ease;
-      backdrop-filter: blur(4px);
-    }
-    .drawer-backdrop.open { opacity: 1; visibility: visible; }
-    .drawer-container {
-      position: absolute; top: 0; right: -400px; width: 400px; height: 100%;
-      background: rgba(255, 255, 255, 0.9);
-      backdrop-filter: blur(20px) saturate(180%);
-      box-shadow: -5px 0 25px rgba(0,0,0,0.1);
-      display: flex; flex-direction: column;
-      transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      border-left: 1px solid rgba(255,255,255,0.3);
-    }
-    .drawer-container.open { right: 0; }
-    .drawer-header {
-      padding: 24px; border-bottom: 1px solid var(--color-border);
-      display: flex; justify-content: space-between; align-items: flex-start;
-    }
-    .drawer-title { display: flex; gap: 16px; align-items: center; }
-    .drawer-title h3 { margin: 0; font-size: 1.25rem; }
-    .drawer-title small { color: var(--color-text-secondary); display: block; margin-top: 2px; }
-    .drawer-icon {
-      width: 40px; height: 40px; background: var(--color-primary-light);
-      display: flex; align-items: center; justify-content: center;
-      border-radius: 10px; color: white; font-size: 1.2rem;
-    }
-    .btn-close {
-      background: none; border: none; font-size: 1.5rem; cursor: pointer;
-      color: var(--color-text-secondary); transition: color 0.2s;
-    }
-    .btn-close:hover { color: var(--color-danger); }
-    .drawer-content { padding: 24px; overflow-y: auto; flex: 1; }
-    .meta-grid { display: flex; flex-direction: column; gap: 20px; }
-    .meta-item { border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 12px; }
-    .meta-item:last-child { border-bottom: none; }
-    .meta-label { font-size: 0.8rem; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .meta-value { font-size: 1rem; color: var(--color-text); font-weight: 500; }
+      /* Metadata Drawer */
+      .drawer-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.3);
+        z-index: 1100;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(4px);
+      }
+      .drawer-backdrop.open {
+        opacity: 1;
+        visibility: visible;
+      }
+      .drawer-container {
+        position: absolute;
+        top: 0;
+        right: -400px;
+        width: 400px;
+        height: 100%;
+        background: rgba(255, 255, 255, 0.9);
+        backdrop-filter: blur(20px) saturate(180%);
+        box-shadow: -5px 0 25px rgba(0, 0, 0, 0.1);
+        display: flex;
+        flex-direction: column;
+        transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        border-left: 1px solid rgba(255, 255, 255, 0.3);
+      }
+      .drawer-container.open {
+        right: 0;
+      }
+      .drawer-header {
+        padding: 24px;
+        border-bottom: 1px solid var(--color-border);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+      .drawer-title {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+      .drawer-title h3 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+      .drawer-title small {
+        color: var(--color-text-secondary);
+        display: block;
+        margin-top: 2px;
+      }
+      .drawer-icon {
+        width: 40px;
+        height: 40px;
+        background: var(--color-primary-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        color: white;
+        font-size: 1.2rem;
+      }
+      .btn-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        transition: color 0.2s;
+      }
+      .btn-close:hover {
+        color: var(--color-danger);
+      }
+      .drawer-content {
+        padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .meta-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .meta-item {
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        padding-bottom: 12px;
+      }
+      .meta-item:last-child {
+        border-bottom: none;
+      }
+      .meta-label {
+        font-size: 0.8rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 4px;
+      }
+      .meta-value {
+        font-size: 1rem;
+        color: var(--color-text);
+        font-weight: 500;
+      }
 
-    /* General Overlays */
-    .overlay-header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--color-border);
-    }
-    .overlay-header h2 { margin-bottom: 0; font-size: 1.1rem; }
-    .overlay-content {
-      padding: 24px; overflow-y: auto; flex: 1;
-    }
-    .json-view {
-      background: var(--color-bg); padding: 16px;
-      border-radius: var(--radius); font-size: 0.75rem;
-      overflow: auto; max-height: 60vh;
-      white-space: pre-wrap; word-break: break-word;
-    }
-    .state-list {
-      display: flex; flex-direction: column; gap: 16px;
-    }
-    .state-item {
-      background: var(--color-surface);
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 16px;
-    }
-    .state-header {
-      display: flex; align-items: center; gap: 12px;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1px solid var(--color-border);
-    }
-    .unit-badge {
-      background: var(--color-primary-light);
-      color: white;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-    }
-    .state-header .date {
-      color: var(--color-text-secondary);
-      font-size: 0.8rem;
-      margin-left: auto;
-    }
-    .meta-dl {
-      display: grid; grid-template-columns: auto 1fr;
-      gap: 8px 20px; font-size: 0.9rem;
-    }
-    .meta-dl dt { font-weight: 600; color: var(--color-text-secondary); }
-    .meta-dl dd { margin: 0; }
-    .help-text { color: var(--color-text-secondary); font-size: 0.9rem; }
-  `]
+      /* General Overlays */
+      .overlay-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .overlay-header h2 {
+        margin-bottom: 0;
+        font-size: 1.1rem;
+      }
+      .overlay-content {
+        padding: 24px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .json-view {
+        background: var(--color-bg);
+        padding: 16px;
+        border-radius: var(--radius);
+        font-size: 0.75rem;
+        overflow: auto;
+        max-height: 60vh;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .state-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .state-item {
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 16px;
+      }
+      .state-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .unit-badge {
+        background: var(--color-primary-light);
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+      }
+      .state-header .date {
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+        margin-left: auto;
+      }
+      .meta-dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 20px;
+        font-size: 0.9rem;
+      }
+      .meta-dl dt {
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .meta-dl dd {
+        margin: 0;
+      }
+      .help-text {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
+    `,
+  ],
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -1455,7 +2103,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   playerSrcDoc: any = null;
   currentPage = 1;
   totalPages = 1;
-  pagingMode: 'buttons' | 'separate' | 'concat-scroll' | 'concat-scroll-snap' | 'view-all' | 'print-ids' = 'buttons';
+  pagingMode:
+    | 'buttons'
+    | 'separate'
+    | 'concat-scroll'
+    | 'concat-scroll-snap'
+    | 'view-all'
+    | 'print-ids' = 'buttons';
   playerHeight = '100%';
 
   // Overlays
@@ -1485,7 +2139,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // File Upload
   showUploadReport = false;
-  uploadResult: { updated: number, failed: any[], successes: any[] } | null = null;
+  uploadResult: { updated: number; failed: any[]; successes: any[] } | null = null;
   isUploading = false;
   showErrorDialog = false;
   errorMessage = '';
@@ -1556,27 +2210,27 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   get filteredCodingSchemeAsText(): CodingAsText[] {
     if (!this.currentCodingSchemeAsText) return [];
-    
+
     let list = [...this.currentCodingSchemeAsText];
 
     if (!this.showAudioVideoCodingVariables) {
-      list = list.filter(c => !this.isAudioVideoCodingVariable(c));
+      list = list.filter((c) => !this.isAudioVideoCodingVariable(c));
     }
-    
+
     // Search
     if (this.codingSearchText) {
       const term = this.codingSearchText.toLowerCase();
-      list = list.filter(c => 
-        c.id.toLowerCase().includes(term) || 
-        (c.label && c.label.toLowerCase().includes(term))
+      list = list.filter(
+        (c) =>
+          c.id.toLowerCase().includes(term) || (c.label && c.label.toLowerCase().includes(term)),
       );
     }
-    
+
     // Sort
     return list.sort((a, b) => {
-      const aVal = (this.codingSortField === 'id' ? a.id : (a.label || a.id)).toLowerCase();
-      const bVal = (this.codingSortField === 'id' ? b.id : (b.label || b.id)).toLowerCase();
-      
+      const aVal = (this.codingSortField === 'id' ? a.id : a.label || a.id).toLowerCase();
+      const bVal = (this.codingSortField === 'id' ? b.id : b.label || b.id).toLowerCase();
+
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
     });
@@ -1585,7 +2239,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private isAudioVideoCodingVariable(coding: CodingAsText): boolean {
     const id = coding.id?.toLowerCase() || '';
     const label = coding.label?.toLowerCase() || '';
-    return id.includes('audio') || id.includes('video') || label.includes('audio') || label.includes('video');
+    return (
+      id.includes('audio') ||
+      id.includes('video') ||
+      label.includes('audio') ||
+      label.includes('video')
+    );
   }
 
   toggleCodingSort(field: 'id' | 'label') {
@@ -1606,17 +2265,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     let list = [...this.allColumns];
     if (this.columnFilterText) {
       const term = this.columnFilterText.toLowerCase();
-      list = list.filter(c => 
-        c.label.toLowerCase().includes(term) || 
-        c.id.toLowerCase().includes(term)
+      list = list.filter(
+        (c) => c.label.toLowerCase().includes(term) || c.id.toLowerCase().includes(term),
       );
     }
-    
+
     // Sort columns: selected/ordered ones first, then alphabetical
     return list.sort((a, b) => {
       const indexA = this.metadataSettings.order.indexOf(a.id);
       const indexB = this.metadataSettings.order.indexOf(b.id);
-      
+
       // Both are in the custom order
       if (indexA !== -1 && indexB !== -1) return indexA - indexB;
       // Only A is in the order
@@ -1686,7 +2344,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.checkUserRole();
 
     // Load feature config and metadata settings
-    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
@@ -1694,7 +2352,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
-      
+
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
       this.loadSharedExplorerState();
@@ -1706,13 +2364,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // --- Reload Items ---
   reloadItems() {
     // Load item list from .vomd files
-    this.api.getFileItemList(this.acpId).subscribe(result => {
+    this.api.getFileItemList(this.acpId).subscribe((result) => {
       this.allColumns = result.columns || [];
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.items = result.items || [];
       this.hydrateItemTagsFromItems();
       this.applyExplorerStateToItems();
-      this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
+      this.hasEmpiricalDifficulty = this.items.some(
+        (item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
+      );
       this.filteredItems = [...this.items];
       this.unitMetadataCache = result.unitMetadata || {};
       this.codingSchemeCache = result.codingSchemes || {};
@@ -1754,15 +2414,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
 
-    this.filteredItems = this.items.filter(item => {
+    this.filteredItems = this.items.filter((item) => {
       // 1. Global Filter
       if (term) {
-        const matchesGlobal = (
+        const matchesGlobal =
           (item.unitId + item.itemId).toLowerCase().includes(term) ||
           item.unitLabel.toLowerCase().includes(term) ||
           item.description.toLowerCase().includes(term) ||
-          Object.values(item.metadata).some(val => val && val.toLowerCase().includes(term))
-        );
+          Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term));
         if (!matchesGlobal) return false;
       }
 
@@ -1778,9 +2437,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
         } else if (colId === 'tags') {
           const tags = this.itemTags[item.uuid] || [];
-          if (!tags.some(t => t.toLowerCase().includes(subTerm))) return false;
+          if (!tags.some((t) => t.toLowerCase().includes(subTerm))) return false;
         } else if (colId === 'empiricalDifficulty') {
-          if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null) return false;
+          if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
+            return false;
           if (item.empiricalDifficulty.toString() !== filterValue) return false;
         } else {
           // Metadata column
@@ -1874,31 +2534,35 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const file = input.files[0];
 
     this.isUploading = true;
-    this.api.uploadEmpiricalDifficulties(this.acpId, file, {
-      draft: true,
-      baseVersion: this.explorerVersion,
-    }).subscribe({
-      next: (result) => {
-        this.isUploading = false;
-        this.uploadResult = result;
-        this.showUploadReport = true;
-        if (result.explorerState) {
-          this.applySharedExplorerEnvelope(result.explorerState, true);
-        }
-        this.reloadItems();
-      },
-      error: (err) => {
-        console.error(err);
-        this.isUploading = false;
-        if (err?.status === 409) {
-          this.errorMessage = 'Konflikt beim Speichern des Entwurfs. Bitte neu laden.';
-          this.loadSharedExplorerState();
-        } else {
-          this.errorMessage = err.error?.message || 'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
-        }
-        this.showErrorDialog = true;
-      }
-    });
+    this.api
+      .uploadEmpiricalDifficulties(this.acpId, file, {
+        draft: true,
+        baseVersion: this.explorerVersion,
+      })
+      .subscribe({
+        next: (result) => {
+          this.isUploading = false;
+          this.uploadResult = result;
+          this.showUploadReport = true;
+          if (result.explorerState) {
+            this.applySharedExplorerEnvelope(result.explorerState, true);
+          }
+          this.reloadItems();
+        },
+        error: (err) => {
+          console.error(err);
+          this.isUploading = false;
+          if (err?.status === 409) {
+            this.errorMessage = 'Konflikt beim Speichern des Entwurfs. Bitte neu laden.';
+            this.loadSharedExplorerState();
+          } else {
+            this.errorMessage =
+              err.error?.message ||
+              'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
+          }
+          this.showErrorDialog = true;
+        },
+      });
 
     input.value = ''; // reset input
   }
@@ -1921,31 +2585,35 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.clearEmpiricalDifficultiesError = '';
     this.lastDraftOperationError = '';
 
-    this.api.clearEmpiricalDifficulties(this.acpId, {
-      draft: true,
-      baseVersion: this.explorerVersion,
-    }).subscribe({
-      next: (result) => {
-        if (result.explorerState) {
-          this.applySharedExplorerEnvelope(result.explorerState, true);
-        }
-        this.reloadItems();
-        this.clearEmpiricalDifficultiesBusy = false;
-        this.showClearEmpiricalDifficultiesDialog = false;
-      },
-      error: (err) => {
-        console.error(err);
-        this.clearEmpiricalDifficultiesBusy = false;
-        if (err?.status === 409) {
-          this.clearEmpiricalDifficultiesError = 'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
+    this.api
+      .clearEmpiricalDifficulties(this.acpId, {
+        draft: true,
+        baseVersion: this.explorerVersion,
+      })
+      .subscribe({
+        next: (result) => {
+          if (result.explorerState) {
+            this.applySharedExplorerEnvelope(result.explorerState, true);
+          }
+          this.reloadItems();
+          this.clearEmpiricalDifficultiesBusy = false;
+          this.showClearEmpiricalDifficultiesDialog = false;
+        },
+        error: (err) => {
+          console.error(err);
+          this.clearEmpiricalDifficultiesBusy = false;
+          if (err?.status === 409) {
+            this.clearEmpiricalDifficultiesError =
+              'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
+            this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
+            void this.loadSharedExplorerState();
+            return;
+          }
+          this.clearEmpiricalDifficultiesError =
+            err?.error?.message || 'Fehler beim Löschen der Itemschwierigkeiten.';
           this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
-          void this.loadSharedExplorerState();
-          return;
-        }
-        this.clearEmpiricalDifficultiesError = err?.error?.message || 'Fehler beim Löschen der Itemschwierigkeiten.';
-        this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
-      }
-    });
+        },
+      });
   }
 
   getSortIndicator(field: string): string {
@@ -1974,7 +2642,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.currentPage = 1;
     this.totalPages = 1;
     this.loadingUnit = true;
-    
+
     // Reset response state flags
     this.hasResponseState = false;
     this.isFallbackState = false;
@@ -1989,13 +2657,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         : this.currentCodingScheme.variableCodings || [];
       this.currentCodingSchemeAsText = CodingSchemeTextFactory.asText(codings);
       // Enrich with manual instruction texts from raw JSON
-      this.currentCodingSchemeAsText.forEach(cat => {
+      this.currentCodingSchemeAsText.forEach((cat) => {
         const rawVariable = codings.find((v: any) => v.id === cat.id);
         if (rawVariable) {
           (cat as any).manualInstructionText = rawVariable.manualInstruction;
-          cat.codes.forEach(c => {
-            const rawCode = rawVariable.codes?.find((rc: any) => 
-              (rc.id === null ? 'null' : rc.id.toString(10)) === c.id
+          cat.codes.forEach((c) => {
+            const rawCode = rawVariable.codes?.find(
+              (rc: any) => (rc.id === null ? 'null' : rc.id.toString(10)) === c.id,
             );
             if (rawCode) {
               (c as any).manualInstructionText = rawCode.manualInstruction;
@@ -2026,53 +2694,58 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         u.dependencies = deps;
 
         // Find player HTML file
-        const playerDep = deps.find((d: any) =>
-          d.type === 'PLAYER' || d.type === 'player'
-        );
+        const playerDep = deps.find((d: any) => d.type === 'PLAYER' || d.type === 'player');
         if (playerDep) {
           fetch(playerDep.downloadUrl)
-            .then(res => res.text())
-            .then(html => {
+            .then((res) => res.text())
+            .then((html) => {
               this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
             });
         }
       },
       error: () => {
         this.loadingUnit = false;
-      }
+      },
     });
   }
 
   // --- Response State ---
   private loadResponseStateForItem(item: ExplorerItem, _index: number) {
     // Build item list from filteredItems for fallback lookup
-    const itemList = this.filteredItems.map(i => ({ itemId: i.itemId, unitId: i.unitId }));
+    const itemList = this.filteredItems.map((i) => ({ itemId: i.itemId, unitId: i.unitId }));
 
-    this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList).subscribe({
-      next: (result) => {
-        if (result.state && result.state.responseData && Object.keys(result.state.responseData).length > 0) {
-          this.currentResponseData = result.state.responseData;
-          this.hasResponseState = true;
-          this.isFallbackState = result.isFallback;
-        } else {
-          // No state available (direct or fallback)
+    this.api
+      .getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList)
+      .subscribe({
+        next: (result) => {
+          if (
+            result.state &&
+            result.state.responseData &&
+            Object.keys(result.state.responseData).length > 0
+          ) {
+            this.currentResponseData = result.state.responseData;
+            this.hasResponseState = true;
+            this.isFallbackState = result.isFallback;
+          } else {
+            // No state available (direct or fallback)
+            this.currentResponseData = null;
+            this.hasResponseState = false;
+            this.isFallbackState = false;
+          }
+        },
+        error: () => {
+          // On error, continue without state
           this.currentResponseData = null;
           this.hasResponseState = false;
           this.isFallbackState = false;
-        }
-      },
-      error: () => {
-        // On error, continue without state
-        this.currentResponseData = null;
-        this.hasResponseState = false;
-        this.isFallbackState = false;
-      }
-    });
+        },
+      });
   }
 
   saveCurrentResponseState() {
     if (!this.selectedItem || !this.currentResponseData) {
-      this.confirmDialogError = 'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
+      this.confirmDialogError =
+        'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
       this.showSaveConfirmDialog = true;
       return;
     }
@@ -2085,24 +2758,26 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.confirmDialogState = 'saving';
 
-    this.api.saveResponseState(
-      this.acpId,
-      this.selectedItem.itemId,
-      this.selectedItem.unitId,
-      this.currentResponseData
-    ).subscribe({
-      next: () => {
-        this.hasResponseState = true;
-        this.isFallbackState = false;
-        this.confirmDialogState = 'idle';
-        this.showSaveConfirmDialog = false;
-      },
-      error: (err) => {
-        console.error('Error saving response state:', err);
-        this.confirmDialogState = 'idle';
-        this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
-      }
-    });
+    this.api
+      .saveResponseState(
+        this.acpId,
+        this.selectedItem.itemId,
+        this.selectedItem.unitId,
+        this.currentResponseData,
+      )
+      .subscribe({
+        next: () => {
+          this.hasResponseState = true;
+          this.isFallbackState = false;
+          this.confirmDialogState = 'idle';
+          this.showSaveConfirmDialog = false;
+        },
+        error: (err) => {
+          console.error('Error saving response state:', err);
+          this.confirmDialogState = 'idle';
+          this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
+        },
+      });
   }
 
   resetResponseState() {
@@ -2116,20 +2791,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.confirmDialogState = 'deleting';
 
-    this.api.deleteResponseState(this.acpId, this.selectedItem.itemId, this.selectedItem.unitId).subscribe({
-      next: () => {
-        this.hasResponseState = false;
-        this.isFallbackState = false;
-        this.currentResponseData = null;
-        this.confirmDialogState = 'idle';
-        this.showDeleteConfirmDialog = false;
-      },
-      error: (err) => {
-        console.error('Error deleting response state:', err);
-        this.confirmDialogState = 'idle';
-        this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
-      }
-    });
+    this.api
+      .deleteResponseState(this.acpId, this.selectedItem.itemId, this.selectedItem.unitId)
+      .subscribe({
+        next: () => {
+          this.hasResponseState = false;
+          this.isFallbackState = false;
+          this.currentResponseData = null;
+          this.confirmDialogState = 'idle';
+          this.showDeleteConfirmDialog = false;
+        },
+        error: (err) => {
+          console.error('Error deleting response state:', err);
+          this.confirmDialogState = 'idle';
+          this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
+        },
+      });
   }
 
   loadAllResponseStates() {
@@ -2141,7 +2818,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       error: (err) => {
         console.error('Error loading response states:', err);
         alert('Fehler beim Laden der gespeicherten Zustände.');
-      }
+      },
     });
   }
 
@@ -2160,25 +2837,26 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   onPlayerLoaded() {
     if (!this.unit || !this.playerFrame?.nativeElement?.contentWindow) return;
 
-    const definitionDep = this.unit.dependencies?.find((d: any) =>
-      d.type === 'UNIT_DEFINITION' || d.type === 'unitDefinition' || d.type === 'definition'
+    const definitionDep = this.unit.dependencies?.find(
+      (d: any) =>
+        d.type === 'UNIT_DEFINITION' || d.type === 'unitDefinition' || d.type === 'definition',
     );
 
     if (definitionDep) {
       fetch(definitionDep.downloadUrl)
-        .then(res => res.text())
-        .then(definition => {
+        .then((res) => res.text())
+        .then((definition) => {
           const startPage = this.voudService.getStartPage(
             definition,
             this.resolveVariableRef(this.selectedItem),
           );
-          
+
           // Prepare unitState with saved response data
           const unitState: any = { dataParts: {} };
           if (this.hasResponseState && this.currentResponseData) {
             unitState.dataParts = this.currentResponseData;
           }
-          
+
           this.sendToPlayer({
             type: 'vopStartCommand',
             sessionId: `explorer-${this.selectedItem?.uuid || 'none'}`,
@@ -2186,11 +2864,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             unitState: unitState,
             playerConfig: {
               stateReportPolicy: 'none',
-              pagingMode: (this.pagingMode === 'view-all' || this.pagingMode === 'print-ids') ? 'concat-scroll' : this.pagingMode,
-              printMode: this.pagingMode === 'view-all' ? 'on' : (this.pagingMode === 'print-ids' ? 'on-with-ids' : 'off'),
+              pagingMode:
+                this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
+                  ? 'concat-scroll'
+                  : this.pagingMode,
+              printMode:
+                this.pagingMode === 'view-all'
+                  ? 'on'
+                  : this.pagingMode === 'print-ids'
+                    ? 'on-with-ids'
+                    : 'off',
               logPolicy: 'disabled',
               startPage: startPage !== undefined ? startPage.toString() : undefined,
-              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
+              enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
             },
           });
           // Reset height for fresh load (unless print mode is on)
@@ -2345,7 +3031,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const unitId = String(this.unit?.id || selectedItem.unitId || '').trim();
     const selectedItemId = String(selectedItem.itemId || '').trim();
     const resolvedItemId = this.resolveFocusItemId();
-    const withPrefix = (value: string) => unitId && value ? `${unitId}_${value}` : '';
+    const withPrefix = (value: string) => (unitId && value ? `${unitId}_${value}` : '');
 
     const candidates = new Set<string>();
     for (const candidate of [
@@ -2378,9 +3064,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const unitItemId = typeof unitItem?.id === 'string' ? unitItem.id : '';
       if (!unitItemId) continue;
 
-      const prefixedId = unitItem.useUnitAliasAsPrefix !== false
-        ? `${unitId}_${unitItemId}`
-        : unitItemId;
+      const prefixedId =
+        unitItem.useUnitAliasAsPrefix !== false ? `${unitId}_${unitItemId}` : unitItemId;
 
       if (selectedItemId === unitItemId || selectedItemId === prefixedId) {
         return unitItemId;
@@ -2394,10 +3079,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return selectedItemId;
   }
 
-  private findElementByText(doc: Document, candidates: Array<string | undefined>): HTMLElement | null {
+  private findElementByText(
+    doc: Document,
+    candidates: Array<string | undefined>,
+  ): HTMLElement | null {
     const needles = candidates
-      .map(value => (value || '').trim().toLowerCase())
-      .filter(value => value.length > 1);
+      .map((value) => (value || '').trim().toLowerCase())
+      .filter((value) => value.length > 1);
 
     if (!needles.length) return null;
 
@@ -2408,7 +3096,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const node = nodes[i];
       const text = (node.textContent || '').trim().toLowerCase();
       if (!text) continue;
-      if (needles.some(needle => text === needle || text.includes(needle))) {
+      if (needles.some((needle) => text === needle || text.includes(needle))) {
         return node;
       }
     }
@@ -2417,7 +3105,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private applyFocus(doc: Document, target: HTMLElement) {
-    doc.querySelectorAll('.cp-item-focus-highlight').forEach(el => el.classList.remove('cp-item-focus-highlight'));
+    doc
+      .querySelectorAll('.cp-item-focus-highlight')
+      .forEach((el) => el.classList.remove('cp-item-focus-highlight'));
     target.classList.add('cp-item-focus-highlight');
     target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     try {
@@ -2445,7 +3135,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private escapeSelectorValue(value: string): string {
-    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
   }
 
   private clearFocusRetryTimer() {
@@ -2476,7 +3168,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   removeItemTag(uuid: string, tag: string) {
     if (!this.canEditExplorer) return;
     if (this.itemTags[uuid]) {
-      this.itemTags[uuid] = this.itemTags[uuid].filter(t => t !== tag);
+      this.itemTags[uuid] = this.itemTags[uuid].filter((t) => t !== tag);
       this.saveTags();
       this.applyFilter(false);
     }
@@ -2543,10 +3235,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (Array.isArray(valueAsText)) {
       const de = valueAsText.find((v: any) => v.lang === 'de');
       if (de) return de.value;
-      if (valueAsText.every(v => v && typeof v === 'object' && v.value)) {
-        return valueAsText.map(v => v.value).join(', ');
+      if (valueAsText.every((v) => v && typeof v === 'object' && v.value)) {
+        return valueAsText.map((v) => v.value).join(', ');
       }
-      return valueAsText.map(v => this.extractValueText(v)).join(', ');
+      return valueAsText.map((v) => this.extractValueText(v)).join(', ');
     }
     if (typeof valueAsText === 'object') {
       return valueAsText['de'] || valueAsText['value'] || '';
@@ -2557,9 +3249,17 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   getSummaryMetadata(): any[] {
     if (!this.currentUnitMetadata) return [];
     // Prefer these IDs for summary
-    const priorityIds = ['level', 'subject', 'competence', 'format', 'time', 'duration', 'difficulty'];
-    const summary = this.currentUnitMetadata.filter(m =>
-      priorityIds.some(pid => m.id.toLowerCase().includes(pid))
+    const priorityIds = [
+      'level',
+      'subject',
+      'competence',
+      'format',
+      'time',
+      'duration',
+      'difficulty',
+    ];
+    const summary = this.currentUnitMetadata.filter((m) =>
+      priorityIds.some((pid) => m.id.toLowerCase().includes(pid)),
     );
     // If no priority items found, show the first 4 entries
     if (summary.length === 0 && this.currentUnitMetadata.length > 0) {
@@ -2609,26 +3309,26 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.metadataSettings?.visible?.length) {
       return allColumns; // Show all if no settings
     }
-    
+
     // Filter visible columns and maintain order
     const visibleMap = new Set(this.metadataSettings.visible);
     const orderedColumns = [];
-    
+
     // First, add columns in the specified order
     for (const colId of this.metadataSettings.order || []) {
-      const col = allColumns.find(c => c.id === colId);
+      const col = allColumns.find((c) => c.id === colId);
       if (col && visibleMap.has(colId)) {
         orderedColumns.push({ ...col, visible: true });
       }
     }
-    
+
     // Then add any remaining visible columns not in the order list
     for (const col of allColumns) {
-      if (visibleMap.has(col.id) && !orderedColumns.some(c => c.id === col.id)) {
+      if (visibleMap.has(col.id) && !orderedColumns.some((c) => c.id === col.id)) {
         orderedColumns.push({ ...col, visible: true });
       }
     }
-    
+
     return orderedColumns;
   }
 
@@ -2652,8 +3352,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   moveColumnUp(column: MetadataColumn) {
     const index = this.metadataSettings.order.indexOf(column.id);
     if (index > 0) {
-      [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = 
-        [this.metadataSettings.order[index - 1], this.metadataSettings.order[index]];
+      [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = [
+        this.metadataSettings.order[index - 1],
+        this.metadataSettings.order[index],
+      ];
       this.columns = this.filterVisibleColumns(this.allColumns);
     }
   }
@@ -2661,8 +3363,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   moveColumnDown(column: MetadataColumn) {
     const index = this.metadataSettings.order.indexOf(column.id);
     if (index >= 0 && index < this.metadataSettings.order.length - 1) {
-      [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = 
-        [this.metadataSettings.order[index + 1], this.metadataSettings.order[index]];
+      [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = [
+        this.metadataSettings.order[index + 1],
+        this.metadataSettings.order[index],
+      ];
       this.columns = this.filterVisibleColumns(this.allColumns);
     }
   }
@@ -2692,7 +3396,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (targetIndex < 0 || targetIndex >= this.itemOrder.length) {
       return;
     }
-    [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [this.itemOrder[targetIndex], this.itemOrder[currentIndex]];
+    [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [
+      this.itemOrder[targetIndex],
+      this.itemOrder[currentIndex],
+    ];
     this.applySort(false);
     this.queueDraftPatch('ITEM_ORDER_CHANGED', { itemOrder: [...this.itemOrder] }, true);
   }
@@ -2700,12 +3407,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   saveMetadataSettings() {
     this.columns = this.filterVisibleColumns(this.allColumns);
     this.showColumnManager = false;
-    this.queueDraftPatch('METADATA_COLUMNS_CHANGED', {
-      metadataColumns: {
-        visible: [...this.metadataSettings.visible],
-        order: [...this.metadataSettings.order],
+    this.queueDraftPatch(
+      'METADATA_COLUMNS_CHANGED',
+      {
+        metadataColumns: {
+          visible: [...this.metadataSettings.visible],
+          order: [...this.metadataSettings.order],
+        },
       },
-    }, true);
+      true,
+    );
   }
 
   resetToDefault() {
@@ -2717,10 +3428,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const metadataColumns = featureConfig?.['metadataColumns'];
     if (metadataColumns && typeof metadataColumns === 'object') {
       const visible = Array.isArray(metadataColumns.visible)
-        ? metadataColumns.visible.filter((entry: unknown): entry is string => typeof entry === 'string')
+        ? metadataColumns.visible.filter(
+            (entry: unknown): entry is string => typeof entry === 'string',
+          )
         : [];
       const order = Array.isArray(metadataColumns.order)
-        ? metadataColumns.order.filter((entry: unknown): entry is string => typeof entry === 'string')
+        ? metadataColumns.order.filter(
+            (entry: unknown): entry is string => typeof entry === 'string',
+          )
         : [];
 
       return {
@@ -2771,9 +3486,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
     this.columnFilters = this.isRecord(columnFilters)
       ? Object.fromEntries(
-        Object.entries(columnFilters)
-          .map(([key, value]) => [key, typeof value === 'string' ? value : '']),
-      )
+          Object.entries(columnFilters).map(([key, value]) => [
+            key,
+            typeof value === 'string' ? value : '',
+          ]),
+        )
       : {};
   }
 
@@ -2850,10 +3567,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
   }
 
-  private applySharedExplorerEnvelope(
-    envelope: ItemExplorerStateEnvelope,
-    markSaved = false,
-  ) {
+  private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {
     this.lastDraftOperationError = '';
     this.latestExplorerState = envelope;
     this.explorerVersion = envelope.version;
@@ -2875,8 +3589,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       });
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.itemOrder = Array.isArray((activeState as ItemExplorerSharedState).itemOrder)
-        ? (activeState as ItemExplorerSharedState).itemOrder!
-          .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        ? (activeState as ItemExplorerSharedState).itemOrder!.filter(
+            (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
+          )
         : [];
     } finally {
       this.suppressDraftPatch = false;
@@ -2911,7 +3626,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     const itemProperties = this.isRecord(activeState.itemProperties)
-      ? activeState.itemProperties as Record<string, Record<string, unknown>>
+      ? (activeState.itemProperties as Record<string, Record<string, unknown>>)
       : {};
     const stateTags = this.normalizeTags(activeState.tags);
 
@@ -2957,7 +3672,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.itemOrder = [...filteredOrder, ...missing];
     }
 
-    this.hasEmpiricalDifficulty = this.items.some((item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null);
+    this.hasEmpiricalDifficulty = this.items.some(
+      (item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
+    );
     this.applyFilter(false);
   }
 
@@ -2999,17 +3716,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private normalizeTagValues(values: unknown[]): string[] {
-    return Array.from(new Set(
-      values
-        .map((value) => String(value || '').trim())
-        .filter((value) => value.length > 0),
-    ));
+    return Array.from(
+      new Set(
+        values.map((value) => String(value || '').trim()).filter((value) => value.length > 0),
+      ),
+    );
   }
 
   hasPendingDraftChanges(): boolean {
-    return Boolean(this.pendingDraftPatch)
-      || this.latestExplorerState?.status === 'DIRTY'
-      || this.explorerUiStatus === 'DIRTY';
+    return (
+      Boolean(this.pendingDraftPatch) ||
+      this.latestExplorerState?.status === 'DIRTY' ||
+      this.explorerUiStatus === 'DIRTY'
+    );
   }
 
   openSavePreviewDialog() {
@@ -3054,7 +3773,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showDiscardDraftDialog = false;
       return;
     }
-    this.discardDraftDialogError = this.lastDraftOperationError || 'Entwurfsänderungen konnten nicht verworfen werden.';
+    this.discardDraftDialogError =
+      this.lastDraftOperationError || 'Entwurfsänderungen konnten nicht verworfen werden.';
   }
 
   async saveExplorerDraft(force = false): Promise<boolean> {
@@ -3169,7 +3889,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const escapeCsv = (value: unknown): string => `"${String(value ?? '').replace(/"/g, '""')}"`;
     const rows = [
       ['Zeit', 'Nutzer', 'Rolle', 'Aktion', 'Draft-Version', 'Published-Version', 'Diff'],
-      ...this.filteredHistoryEntries.map((entry) => ([
+      ...this.filteredHistoryEntries.map((entry) => [
         new Date(entry.createdAt).toISOString(),
         entry.actorUsername || '',
         entry.actorRole || '',
@@ -3177,12 +3897,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         entry.draftVersion ?? '',
         entry.publishedVersion ?? '',
         JSON.stringify(entry.diff || {}),
-      ])),
+      ]),
     ];
 
-    const content = rows
-      .map((row) => row.map((cell) => escapeCsv(cell)).join(';'))
-      .join('\n');
+    const content = rows.map((row) => row.map((cell) => escapeCsv(cell)).join(';')).join('\n');
     const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
@@ -3209,7 +3927,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         detail: 'Globale Filter-, Sortier- oder Spaltenfilter-Einstellungen wurden geändert.',
       });
     }
-    if (JSON.stringify(draft.metadataColumns || {}) !== JSON.stringify(published.metadataColumns || {})) {
+    if (
+      JSON.stringify(draft.metadataColumns || {}) !==
+      JSON.stringify(published.metadataColumns || {})
+    ) {
       summary.push({
         label: 'Metadaten-Spalten',
         detail: 'Sichtbarkeit oder Reihenfolge der Metadaten-Spalten wurde angepasst.',
@@ -3227,9 +3948,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         detail: 'Tag-Zuordnungen für Items wurden verändert.',
       });
     }
-    if (JSON.stringify(draft.itemProperties || {}) !== JSON.stringify(published.itemProperties || {})) {
-      const draftCount = this.isRecord(draft.itemProperties) ? Object.keys(draft.itemProperties).length : 0;
-      const publishedCount = this.isRecord(published.itemProperties) ? Object.keys(published.itemProperties).length : 0;
+    if (
+      JSON.stringify(draft.itemProperties || {}) !== JSON.stringify(published.itemProperties || {})
+    ) {
+      const draftCount = this.isRecord(draft.itemProperties)
+        ? Object.keys(draft.itemProperties).length
+        : 0;
+      const publishedCount = this.isRecord(published.itemProperties)
+        ? Object.keys(published.itemProperties).length
+        : 0;
       summary.push({
         label: 'Item-Werte',
         detail: `Item-Eigenschaften (z.B. empirische Schwierigkeit) geändert: ${publishedCount} → ${draftCount} Einträge.`,
@@ -3303,18 +4030,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.explorerUiStatus = 'SAVING';
     try {
-      const envelope = await firstValueFrom(this.api.patchItemExplorerDraft(this.acpId, {
-        changeType,
-        patch: patch as ItemExplorerSharedState,
-        baseVersion: this.explorerVersion,
-      }));
+      const envelope = await firstValueFrom(
+        this.api.patchItemExplorerDraft(this.acpId, {
+          changeType,
+          patch: patch as ItemExplorerSharedState,
+          baseVersion: this.explorerVersion,
+        }),
+      );
       this.applySharedExplorerEnvelope(envelope);
       return true;
     } catch (error: any) {
       console.error('Failed to patch draft', error);
       this.explorerUiStatus = 'ERROR';
       if (error?.status === 409) {
-        this.lastDraftOperationError = 'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
+        this.lastDraftOperationError =
+          'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
         await this.loadSharedExplorerState();
         return false;
       }
@@ -3338,11 +4068,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const normalizedItemId = String(itemId || '').trim();
       if (!normalizedItemId || !Array.isArray(values)) continue;
 
-      const normalizedValues = Array.from(new Set(
-        values
-          .map((value) => String(value || '').trim())
-          .filter((value) => value.length > 0),
-      ));
+      const normalizedValues = Array.from(
+        new Set(
+          values.map((value) => String(value || '').trim()).filter((value) => value.length > 0),
+        ),
+      );
 
       if (normalizedValues.length) {
         tags[normalizedItemId] = normalizedValues;

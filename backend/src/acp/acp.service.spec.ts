@@ -1,11 +1,23 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
-import * as bcrypt from 'bcryptjs';
-import { AcpService } from './acp.service';
-import { Acp, AcpUserRole, AcpAccessConfig, AcpCredential, AppSettings, AccessModel, User } from '../database/entities';
+import { Test, TestingModule } from "@nestjs/testing";
+import { getRepositoryToken } from "@nestjs/typeorm";
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
+import * as bcrypt from "bcryptjs";
+import { AcpService } from "./acp.service";
+import {
+  Acp,
+  AcpUserRole,
+  AcpAccessConfig,
+  AcpCredential,
+  AppSettings,
+  AccessModel,
+  User,
+} from "../database/entities";
 
-describe('AcpService', () => {
+describe("AcpService", () => {
   let service: AcpService;
   let acpRepo: any;
   let roleRepo: any;
@@ -15,11 +27,11 @@ describe('AcpService', () => {
   let userRepo: any;
 
   const mockAcp = {
-    id: 'acp-1',
-    packageId: 'test-pkg',
-    name: 'Test ACP',
-    description: 'A test ACP',
-    acpIndex: { packageId: 'test-pkg', version: '0.5.0', units: [] },
+    id: "acp-1",
+    packageId: "test-pkg",
+    name: "Test ACP",
+    description: "A test ACP",
+    acpIndex: { packageId: "test-pkg", version: "0.5.0", units: [] },
     settings: {},
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -29,27 +41,31 @@ describe('AcpService', () => {
     acpRepo = {
       find: jest.fn().mockResolvedValue([mockAcp]),
       findOne: jest.fn().mockResolvedValue(mockAcp),
-      create: jest.fn().mockImplementation(dto => ({ ...dto, id: 'new-acp' })),
-      save: jest.fn().mockImplementation(entity => Promise.resolve(entity)),
+      create: jest
+        .fn()
+        .mockImplementation((dto) => ({ ...dto, id: "new-acp" })),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
     };
     roleRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockImplementation(dto => dto),
-      save: jest.fn().mockImplementation(entity => Promise.resolve(entity)),
+      create: jest.fn().mockImplementation((dto) => dto),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
       remove: jest.fn().mockResolvedValue(undefined),
       count: jest.fn().mockResolvedValue(2),
     };
     accessConfigRepo = {
       findOne: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockImplementation(dto => dto),
-      save: jest.fn().mockImplementation(entity => Promise.resolve(entity)),
+      create: jest.fn().mockImplementation((dto) => dto),
+      save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
     credentialRepo = {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
-      create: jest.fn().mockImplementation(dto => dto),
-      save: jest.fn().mockImplementation(entities => Promise.resolve(entities)),
+      create: jest.fn().mockImplementation((dto) => dto),
+      save: jest
+        .fn()
+        .mockImplementation((entities) => Promise.resolve(entities)),
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
       remove: jest.fn().mockResolvedValue(undefined),
@@ -58,7 +74,7 @@ describe('AcpService', () => {
       findOne: jest.fn().mockResolvedValue(null),
     };
     userRepo = {
-      findOne: jest.fn().mockResolvedValue({ id: 'user-1', isAppAdmin: false }),
+      findOne: jest.fn().mockResolvedValue({ id: "user-1", isAppAdmin: false }),
       find: jest.fn().mockResolvedValue([]),
     };
 
@@ -67,8 +83,14 @@ describe('AcpService', () => {
         AcpService,
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
         { provide: getRepositoryToken(AcpUserRole), useValue: roleRepo },
-        { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepo },
-        { provide: getRepositoryToken(AcpCredential), useValue: credentialRepo },
+        {
+          provide: getRepositoryToken(AcpAccessConfig),
+          useValue: accessConfigRepo,
+        },
+        {
+          provide: getRepositoryToken(AcpCredential),
+          useValue: credentialRepo,
+        },
         { provide: getRepositoryToken(AppSettings), useValue: settingsRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
       ],
@@ -77,168 +99,196 @@ describe('AcpService', () => {
     service = module.get<AcpService>(AcpService);
   });
 
-  describe('findAll', () => {
-    it('should return all ACPs', async () => {
+  describe("findAll", () => {
+    it("should return all ACPs", async () => {
       const result = await service.findAll();
       expect(result).toHaveLength(1);
-      expect(acpRepo.find).toHaveBeenCalledWith({ order: { name: 'ASC' } });
+      expect(acpRepo.find).toHaveBeenCalledWith({ order: { name: "ASC" } });
     });
   });
 
-  describe('findById', () => {
-    it('should return ACP by id', async () => {
-      const result = await service.findById('acp-1');
-      expect(result.name).toBe('Test ACP');
+  describe("findById", () => {
+    it("should return ACP by id", async () => {
+      const result = await service.findById("acp-1");
+      expect(result.name).toBe("Test ACP");
     });
 
-    it('should throw NotFoundException', async () => {
+    it("should throw NotFoundException", async () => {
       acpRepo.findOne.mockResolvedValue(null);
-      await expect(service.findById('bad')).rejects.toThrow(NotFoundException);
+      await expect(service.findById("bad")).rejects.toThrow(NotFoundException);
     });
   });
 
-  describe('create', () => {
-    it('should create a new ACP', async () => {
+  describe("create", () => {
+    it("should create a new ACP", async () => {
       acpRepo.findOne.mockResolvedValueOnce(null); // packageId check
-      await service.create({ packageId: 'new-pkg', name: 'New' });
+      await service.create({ packageId: "new-pkg", name: "New" });
       expect(acpRepo.create).toHaveBeenCalled();
       expect(acpRepo.save).toHaveBeenCalled();
     });
 
-    it('should throw ConflictException for duplicate package ID', async () => {
+    it("should throw ConflictException for duplicate package ID", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
-      await expect(service.create({ packageId: 'test-pkg', name: 'Dup' })).rejects.toThrow(ConflictException);
+      await expect(
+        service.create({ packageId: "test-pkg", name: "Dup" }),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
-  describe('delete', () => {
-    it('should delete existing ACP', async () => {
+  describe("delete", () => {
+    it("should delete existing ACP", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
-      await service.delete('acp-1');
+      await service.delete("acp-1");
       expect(acpRepo.remove).toHaveBeenCalledWith(mockAcp);
     });
   });
 
-  describe('updateIndex', () => {
-    it('should update ACP-Index', async () => {
-      const newIndex = { packageId: 'test-pkg', version: '1.0.0', units: [{ id: 'u1' }] };
+  describe("updateIndex", () => {
+    it("should update ACP-Index", async () => {
+      const newIndex = {
+        packageId: "test-pkg",
+        version: "1.0.0",
+        units: [{ id: "u1" }],
+      };
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
-      const result = await service.updateIndex('acp-1', newIndex);
+      const result = await service.updateIndex("acp-1", newIndex);
       expect(result).toMatchObject(newIndex);
-      expect((result as any).assessmentParts?.[0]?.units).toEqual([{ id: 'u1' }]);
+      expect((result as any).assessmentParts?.[0]?.units).toEqual([
+        { id: "u1" },
+      ]);
     });
 
-    it('should reject invalid status', async () => {
+    it("should reject invalid status", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       await expect(
-        service.updateIndex('acp-1', { packageId: 'test-pkg', status: 'DRAFT' } as any),
+        service.updateIndex("acp-1", {
+          packageId: "test-pkg",
+          status: "DRAFT",
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('importIndex', () => {
-    it('should fill missing required fields with defaults', async () => {
+  describe("importIndex", () => {
+    it("should fill missing required fields with defaults", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
 
-      const result = await service.importIndex('acp-1', { assessmentParts: [] });
+      const result = await service.importIndex("acp-1", {
+        assessmentParts: [],
+      });
 
-      expect((result as any).packageId).toBe('test-pkg');
-      expect((result as any).version).toBe('0.5.0');
-      expect((result as any).status).toBe('IN_DEVELOPMENT');
-      expect((result as any).name).toEqual([{ lang: 'de', value: 'Test ACP' }]);
+      expect((result as any).packageId).toBe("test-pkg");
+      expect((result as any).version).toBe("0.5.0");
+      expect((result as any).status).toBe("IN_DEVELOPMENT");
+      expect((result as any).name).toEqual([{ lang: "de", value: "Test ACP" }]);
     });
 
-    it('should reject unknown status values', async () => {
+    it("should reject unknown status values", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       await expect(
-        service.importIndex('acp-1', { packageId: 'test-pkg', status: 'INVALID_STATUS' } as any),
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
+          status: "INVALID_STATUS",
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should reject packageId mismatch', async () => {
+    it("should reject packageId mismatch", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       await expect(
-        service.importIndex('acp-1', { packageId: 'other-pkg' } as any),
+        service.importIndex("acp-1", { packageId: "other-pkg" } as any),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('deleteIndex', () => {
-    it('should reset index using configured defaults', async () => {
+  describe("deleteIndex", () => {
+    it("should reset index using configured defaults", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
       settingsRepo.findOne.mockResolvedValue({
         defaultAcpIndex: {
           assessmentParts: [
             {
-              id: 'part-1',
+              id: "part-1",
             },
           ],
         },
       });
 
-      const result = await service.deleteIndex('acp-1');
+      const result = await service.deleteIndex("acp-1");
 
       expect(settingsRepo.findOne).toHaveBeenCalledWith({ where: {} });
       expect(acpRepo.save).toHaveBeenCalled();
-      expect((result as any).packageId).toBe('test-pkg');
+      expect((result as any).packageId).toBe("test-pkg");
       expect((result as any).assessmentParts).toHaveLength(1);
     });
 
-    it('should reset index with ACP fallbacks when no defaults are configured', async () => {
+    it("should reset index with ACP fallbacks when no defaults are configured", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
       acpRepo.save.mockImplementation((entity: any) => Promise.resolve(entity));
       settingsRepo.findOne.mockResolvedValue(null);
 
-      const result = await service.deleteIndex('acp-1');
+      const result = await service.deleteIndex("acp-1");
 
-      expect((result as any).packageId).toBe('test-pkg');
-      expect((result as any).version).toBe('0.5.0');
-      expect((result as any).status).toBe('IN_DEVELOPMENT');
+      expect((result as any).packageId).toBe("test-pkg");
+      expect((result as any).version).toBe("0.5.0");
+      expect((result as any).status).toBe("IN_DEVELOPMENT");
     });
   });
 
-  describe('assignRole', () => {
-    it('should create new role assignment', async () => {
+  describe("assignRole", () => {
+    it("should create new role assignment", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       roleRepo.findOne.mockResolvedValue(null);
-      await service.assignRole('acp-1', { userId: 'user-1', role: 'ACP_MANAGER' });
+      await service.assignRole("acp-1", {
+        userId: "user-1",
+        role: "ACP_MANAGER",
+      });
       expect(roleRepo.create).toHaveBeenCalled();
       expect(roleRepo.save).toHaveBeenCalled();
     });
 
-    it('should update existing role', async () => {
-      const existingRole = { userId: 'user-1', acpId: 'acp-1', role: 'READ_ONLY' };
+    it("should update existing role", async () => {
+      const existingRole = {
+        userId: "user-1",
+        acpId: "acp-1",
+        role: "READ_ONLY",
+      };
       acpRepo.findOne.mockResolvedValue(mockAcp);
       roleRepo.findOne.mockResolvedValue(existingRole);
-      await service.assignRole('acp-1', { userId: 'user-1', role: 'ACP_MANAGER' });
-      expect(roleRepo.save).toHaveBeenCalledWith(expect.objectContaining({ role: 'ACP_MANAGER' }));
+      await service.assignRole("acp-1", {
+        userId: "user-1",
+        role: "ACP_MANAGER",
+      });
+      expect(roleRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({ role: "ACP_MANAGER" }),
+      );
     });
   });
 
-  describe('updateAccessConfig', () => {
-    it('should create access config if none exists', async () => {
+  describe("updateAccessConfig", () => {
+    it("should create access config if none exists", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValue(null);
-      await service.updateAccessConfig('acp-1', { accessModel: 'PUBLIC' });
+      await service.updateAccessConfig("acp-1", { accessModel: "PUBLIC" });
       expect(accessConfigRepo.create).toHaveBeenCalled();
       expect(accessConfigRepo.save).toHaveBeenCalled();
     });
 
-    it('normalizes legacy metadata column key on update', async () => {
+    it("normalizes legacy metadata column key on update", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValue({
-        acpId: 'acp-1',
+        acpId: "acp-1",
         accessModel: AccessModel.PUBLIC,
         featureConfig: {},
       });
 
-      await service.updateAccessConfig('acp-1', {
-        accessModel: 'PUBLIC',
+      await service.updateAccessConfig("acp-1", {
+        accessModel: "PUBLIC",
         featureConfig: {
-          itemListMetadataColumns: ['col-1', 'col-2'],
+          itemListMetadataColumns: ["col-1", "col-2"],
         },
       });
 
@@ -246,63 +296,65 @@ describe('AcpService', () => {
         expect.objectContaining({
           featureConfig: expect.objectContaining({
             metadataColumns: {
-              visible: ['col-1', 'col-2'],
-              order: ['col-1', 'col-2'],
+              visible: ["col-1", "col-2"],
+              order: ["col-1", "col-2"],
             },
           }),
         }),
       );
     });
 
-    it('validates credential access time window constraints', async () => {
+    it("validates credential access time window constraints", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
 
       await expect(
-        service.updateAccessConfig('acp-1', { accessModel: 'CREDENTIALS_LIST' } as any),
-      ).rejects.toThrow(BadRequestException);
-
-      await expect(
-        service.updateAccessConfig('acp-1', {
-          accessModel: 'CREDENTIALS_LIST',
-          validFrom: 'invalid',
-          validUntil: '2026-01-01T00:00:00.000Z',
+        service.updateAccessConfig("acp-1", {
+          accessModel: "CREDENTIALS_LIST",
         } as any),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.updateAccessConfig('acp-1', {
-          accessModel: 'CREDENTIALS_LIST',
-          validFrom: '2026-01-02T00:00:00.000Z',
-          validUntil: '2026-01-01T00:00:00.000Z',
+        service.updateAccessConfig("acp-1", {
+          accessModel: "CREDENTIALS_LIST",
+          validFrom: "invalid",
+          validUntil: "2026-01-01T00:00:00.000Z",
         } as any),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.updateAccessConfig('acp-1', {
-          accessModel: 'CREDENTIALS_LIST',
-          validFrom: '2026-01-01T00:00:00.000Z',
-          validUntil: '2026-05-05T00:00:00.000Z',
+        service.updateAccessConfig("acp-1", {
+          accessModel: "CREDENTIALS_LIST",
+          validFrom: "2026-01-02T00:00:00.000Z",
+          validUntil: "2026-01-01T00:00:00.000Z",
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.updateAccessConfig("acp-1", {
+          accessModel: "CREDENTIALS_LIST",
+          validFrom: "2026-01-01T00:00:00.000Z",
+          validUntil: "2026-05-05T00:00:00.000Z",
         } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('updates existing access config values', async () => {
+    it("updates existing access config values", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValue({
-        acpId: 'acp-1',
+        acpId: "acp-1",
         accessModel: AccessModel.CREDENTIALS_LIST,
         allowRegistered: false,
         featureConfig: {},
       });
 
-      await service.updateAccessConfig('acp-1', {
-        accessModel: 'PUBLIC',
+      await service.updateAccessConfig("acp-1", {
+        accessModel: "PUBLIC",
         allowRegistered: true,
       } as any);
 
       expect(accessConfigRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          accessModel: 'PUBLIC',
+          accessModel: "PUBLIC",
           allowRegistered: true,
           validFrom: undefined,
           validUntil: undefined,
@@ -311,133 +363,157 @@ describe('AcpService', () => {
     });
   });
 
-  describe('misc ACP operations', () => {
-    it('finds ACPs by user role relation', async () => {
-      roleRepo.find.mockResolvedValue([{ acp: { id: 'acp-a' } }, { acp: { id: 'acp-b' } }]);
-      await expect(service.findByUser('user-1')).resolves.toEqual([{ id: 'acp-a' }, { id: 'acp-b' }]);
+  describe("misc ACP operations", () => {
+    it("finds ACPs by user role relation", async () => {
+      roleRepo.find.mockResolvedValue([
+        { acp: { id: "acp-a" } },
+        { acp: { id: "acp-b" } },
+      ]);
+      await expect(service.findByUser("user-1")).resolves.toEqual([
+        { id: "acp-a" },
+        { id: "acp-b" },
+      ]);
       expect(roleRepo.find).toHaveBeenCalledWith({
-        where: { userId: 'user-1' },
-        relations: ['acp'],
+        where: { userId: "user-1" },
+        relations: ["acp"],
       });
     });
 
-    it('updates ACP metadata fields', async () => {
+    it("updates ACP metadata fields", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
-      await service.update('acp-1', { name: 'Updated Name', description: 'Updated Desc' });
+      await service.update("acp-1", {
+        name: "Updated Name",
+        description: "Updated Desc",
+      });
       expect(acpRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          name: 'Updated Name',
-          description: 'Updated Desc',
+          name: "Updated Name",
+          description: "Updated Desc",
         }),
       );
     });
 
-    it('returns normalized ACP index via getIndex', async () => {
+    it("returns normalized ACP index via getIndex", async () => {
       acpRepo.findOne.mockResolvedValue({
         ...mockAcp,
         acpIndex: {
-          version: '0.5.0',
+          version: "0.5.0",
           assessmentParts: [],
         },
       });
-      const index = await service.getIndex('acp-1');
+      const index = await service.getIndex("acp-1");
       expect((index as any).assessmentParts).toEqual([]);
-      expect((index as any).version).toBe('0.5.0');
+      expect((index as any).version).toBe("0.5.0");
     });
   });
 
-  describe('role management edge cases', () => {
-    it('throws when target user does not exist', async () => {
+  describe("role management edge cases", () => {
+    it("throws when target user does not exist", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       userRepo.findOne.mockResolvedValue(null);
       await expect(
-        service.assignRole('acp-1', { userId: 'missing-user', role: 'READ_ONLY' }),
+        service.assignRole("acp-1", {
+          userId: "missing-user",
+          role: "READ_ONLY",
+        }),
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('prevents removing last ACP manager on role downgrade/remove', async () => {
+    it("prevents removing last ACP manager on role downgrade/remove", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
-      roleRepo.findOne.mockResolvedValue({ userId: 'user-1', acpId: 'acp-1', role: 'ACP_MANAGER' });
+      roleRepo.findOne.mockResolvedValue({
+        userId: "user-1",
+        acpId: "acp-1",
+        role: "ACP_MANAGER",
+      });
       roleRepo.count.mockResolvedValue(1);
 
       await expect(
-        service.assignRole('acp-1', { userId: 'user-1', role: 'READ_ONLY' }),
+        service.assignRole("acp-1", { userId: "user-1", role: "READ_ONLY" }),
       ).rejects.toThrow(BadRequestException);
 
-      await expect(service.removeRole('acp-1', 'user-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('removes role when manager count is sufficient', async () => {
-      roleRepo.findOne.mockResolvedValue({ userId: 'user-1', acpId: 'acp-1', role: 'ACP_MANAGER' });
-      roleRepo.count.mockResolvedValue(2);
-
-      await service.removeRole('acp-1', 'user-1');
-      expect(roleRepo.remove).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 'user-1' }),
+      await expect(service.removeRole("acp-1", "user-1")).rejects.toThrow(
+        BadRequestException,
       );
     });
 
-    it('returns roles with user relation', async () => {
-      roleRepo.find.mockResolvedValue([{ id: 'role-1' }]);
-      await expect(service.getRoles('acp-1')).resolves.toEqual([{ id: 'role-1' }]);
+    it("removes role when manager count is sufficient", async () => {
+      roleRepo.findOne.mockResolvedValue({
+        userId: "user-1",
+        acpId: "acp-1",
+        role: "ACP_MANAGER",
+      });
+      roleRepo.count.mockResolvedValue(2);
+
+      await service.removeRole("acp-1", "user-1");
+      expect(roleRepo.remove).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: "user-1" }),
+      );
+    });
+
+    it("returns roles with user relation", async () => {
+      roleRepo.find.mockResolvedValue([{ id: "role-1" }]);
+      await expect(service.getRoles("acp-1")).resolves.toEqual([
+        { id: "role-1" },
+      ]);
       expect(roleRepo.find).toHaveBeenCalledWith({
-        where: { acpId: 'acp-1' },
-        relations: ['user'],
+        where: { acpId: "acp-1" },
+        relations: ["user"],
       });
     });
   });
 
-  describe('access config retrieval and metadata updates', () => {
-    it('returns null config and persists normalized feature config when needed', async () => {
+  describe("access config retrieval and metadata updates", () => {
+    it("returns null config and persists normalized feature config when needed", async () => {
       accessConfigRepo.findOne.mockResolvedValueOnce(null);
-      await expect(service.getAccessConfig('acp-1')).resolves.toBeNull();
+      await expect(service.getAccessConfig("acp-1")).resolves.toBeNull();
 
       accessConfigRepo.findOne.mockResolvedValueOnce({
-        id: 'cfg-1',
-        acpId: 'acp-1',
+        id: "cfg-1",
+        acpId: "acp-1",
         featureConfig: {
-          itemListMetadataColumns: ['legacy'],
+          itemListMetadataColumns: ["legacy"],
         },
       });
 
-      await service.getAccessConfig('acp-1');
+      await service.getAccessConfig("acp-1");
       expect(accessConfigRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
             metadataColumns: {
-              visible: ['legacy'],
-              order: ['legacy'],
+              visible: ["legacy"],
+              order: ["legacy"],
             },
           }),
         }),
       );
     });
 
-    it('updates metadata columns and rejects missing config', async () => {
+    it("updates metadata columns and rejects missing config", async () => {
       accessConfigRepo.findOne.mockResolvedValueOnce(null);
       await expect(
-        service.updateMetadataColumns('acp-1', {
-          visibleColumns: ['a'],
-          columnOrder: ['a'],
+        service.updateMetadataColumns("acp-1", {
+          visibleColumns: ["a"],
+          columnOrder: ["a"],
         }),
       ).rejects.toThrow(NotFoundException);
 
       accessConfigRepo.findOne.mockResolvedValueOnce({
-        acpId: 'acp-1',
+        acpId: "acp-1",
         featureConfig: {},
       });
 
-      await service.updateMetadataColumns('acp-1', {
-        visibleColumns: ['a', 'b'],
-        columnOrder: ['b', 'a'],
+      await service.updateMetadataColumns("acp-1", {
+        visibleColumns: ["a", "b"],
+        columnOrder: ["b", "a"],
       });
 
       expect(accessConfigRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
             metadataColumns: {
-              visible: ['a', 'b'],
-              order: ['b', 'a'],
+              visible: ["a", "b"],
+              order: ["b", "a"],
             },
           }),
         }),
@@ -445,135 +521,218 @@ describe('AcpService', () => {
     });
   });
 
-  describe('credentials management', () => {
+  describe("credentials management", () => {
     beforeEach(() => {
-      jest.spyOn(bcrypt, 'hash').mockResolvedValue('hashed' as never);
+      jest.spyOn(bcrypt, "hash").mockResolvedValue("hashed" as never);
     });
 
     afterEach(() => {
       jest.restoreAllMocks();
     });
 
-    it('requires CREDENTIALS_LIST access model for credential upload', async () => {
-      accessConfigRepo.findOne.mockResolvedValue({ id: 'cfg-1', accessModel: AccessModel.PUBLIC });
+    it("requires CREDENTIALS_LIST access model for credential upload", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.PUBLIC,
+      });
       await expect(
-        service.uploadCredentials('acp-1', [{ username: 'u', password: 'p' }], 'replace'),
+        service.uploadCredentials(
+          "acp-1",
+          [{ username: "u", password: "p" }],
+          "replace",
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('supports replace/append/upsert credential upload modes', async () => {
-      accessConfigRepo.findOne.mockResolvedValue({ id: 'cfg-1', accessModel: AccessModel.CREDENTIALS_LIST });
-      credentialRepo.find.mockResolvedValue([{ id: 'cred-1', username: 'existing', passwordHash: 'x' }]);
+    it("supports replace/append/upsert credential upload modes", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
+      credentialRepo.find.mockResolvedValue([
+        { id: "cred-1", username: "existing", passwordHash: "x" },
+      ]);
 
-      const replace = await service.uploadCredentials('acp-1', [{ username: 'new-user', password: 'pw' }], 'replace');
-      expect(replace).toEqual({ added: 1, updated: 0, skipped: 0, duplicates: [] });
-      expect(credentialRepo.delete).toHaveBeenCalledWith({ accessConfigId: 'cfg-1' });
+      const replace = await service.uploadCredentials(
+        "acp-1",
+        [{ username: "new-user", password: "pw" }],
+        "replace",
+      );
+      expect(replace).toEqual({
+        added: 1,
+        updated: 0,
+        skipped: 0,
+        duplicates: [],
+      });
+      expect(credentialRepo.delete).toHaveBeenCalledWith({
+        accessConfigId: "cfg-1",
+      });
 
-      const append = await service.uploadCredentials('acp-1', [
-        { username: 'existing', password: 'pw' },
-        { username: 'new-user-2', password: 'pw' },
-      ], 'append');
+      const append = await service.uploadCredentials(
+        "acp-1",
+        [
+          { username: "existing", password: "pw" },
+          { username: "new-user-2", password: "pw" },
+        ],
+        "append",
+      );
       expect(append.skipped).toBe(1);
       expect(append.added).toBe(1);
 
       credentialRepo.save.mockClear();
-      const upsert = await service.uploadCredentials('acp-1', [
-        { username: 'existing', password: 'pw' },
-        { username: 'brand-new', password: 'pw' },
-      ], 'upsert');
+      const upsert = await service.uploadCredentials(
+        "acp-1",
+        [
+          { username: "existing", password: "pw" },
+          { username: "brand-new", password: "pw" },
+        ],
+        "upsert",
+      );
       expect(upsert.updated).toBe(1);
       expect(upsert.added).toBe(1);
     });
 
-    it('handles duplicate usernames within upload payload', async () => {
-      accessConfigRepo.findOne.mockResolvedValue({ id: 'cfg-1', accessModel: AccessModel.CREDENTIALS_LIST });
+    it("handles duplicate usernames within upload payload", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
       credentialRepo.find.mockResolvedValue([]);
 
       const result = await service.uploadCredentials(
-        'acp-1',
+        "acp-1",
         [
-          { username: 'dup-user', password: 'a' },
-          { username: 'dup-user', password: 'b' },
+          { username: "dup-user", password: "a" },
+          { username: "dup-user", password: "b" },
         ],
-        'append',
+        "append",
       );
 
-      expect(result.duplicates).toEqual(['dup-user']);
+      expect(result.duplicates).toEqual(["dup-user"]);
       expect(result.added).toBe(1);
     });
 
-    it('reads, creates, updates and deletes credentials', async () => {
-      accessConfigRepo.findOne.mockResolvedValue({ id: 'cfg-1', accessModel: AccessModel.CREDENTIALS_LIST });
-      credentialRepo.find.mockResolvedValue([{ id: 'cred-1', username: 'reader-1' }]);
-      await expect(service.getCredentials('acp-1')).resolves.toEqual([{ id: 'cred-1', username: 'reader-1' }]);
+    it("reads, creates, updates and deletes credentials", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
+      credentialRepo.find.mockResolvedValue([
+        { id: "cred-1", username: "reader-1" },
+      ]);
+      await expect(service.getCredentials("acp-1")).resolves.toEqual([
+        { id: "cred-1", username: "reader-1" },
+      ]);
 
       credentialRepo.findOne.mockResolvedValueOnce(null);
-      credentialRepo.save.mockResolvedValueOnce({ id: 'cred-2', username: 'reader-2' });
+      credentialRepo.save.mockResolvedValueOnce({
+        id: "cred-2",
+        username: "reader-2",
+      });
       await expect(
-        service.createCredential('acp-1', { username: 'reader-2', password: 'pw' } as any),
-      ).resolves.toEqual({ id: 'cred-2', username: 'reader-2' });
+        service.createCredential("acp-1", {
+          username: "reader-2",
+          password: "pw",
+        } as any),
+      ).resolves.toEqual({ id: "cred-2", username: "reader-2" });
 
-      credentialRepo.findOne.mockResolvedValueOnce({ id: 'cred-2', username: 'reader-2', accessConfigId: 'cfg-1' });
+      credentialRepo.findOne.mockResolvedValueOnce({
+        id: "cred-2",
+        username: "reader-2",
+        accessConfigId: "cfg-1",
+      });
       await expect(
-        service.createCredential('acp-1', { username: 'reader-2', password: 'pw' } as any),
+        service.createCredential("acp-1", {
+          username: "reader-2",
+          password: "pw",
+        } as any),
       ).rejects.toThrow(ConflictException);
 
       credentialRepo.findOne
-        .mockResolvedValueOnce({ id: 'cred-2', username: 'reader-2', accessConfigId: 'cfg-1', passwordHash: 'old' })
+        .mockResolvedValueOnce({
+          id: "cred-2",
+          username: "reader-2",
+          accessConfigId: "cfg-1",
+          passwordHash: "old",
+        })
         .mockResolvedValueOnce(null);
-      credentialRepo.save.mockResolvedValueOnce({ id: 'cred-2', username: 'reader-renamed' });
+      credentialRepo.save.mockResolvedValueOnce({
+        id: "cred-2",
+        username: "reader-renamed",
+      });
       await expect(
-        service.updateCredential('acp-1', 'cred-2', { username: 'reader-renamed', password: 'new' } as any),
-      ).resolves.toEqual({ id: 'cred-2', username: 'reader-renamed' });
+        service.updateCredential("acp-1", "cred-2", {
+          username: "reader-renamed",
+          password: "new",
+        } as any),
+      ).resolves.toEqual({ id: "cred-2", username: "reader-renamed" });
 
       credentialRepo.findOne
-        .mockResolvedValueOnce({ id: 'cred-3', username: 'reader-3', accessConfigId: 'cfg-1' })
+        .mockResolvedValueOnce({
+          id: "cred-3",
+          username: "reader-3",
+          accessConfigId: "cfg-1",
+        })
         .mockResolvedValueOnce(null);
-      await expect(service.deleteCredential('acp-1', 'cred-3')).resolves.toBeUndefined();
-      await expect(service.deleteCredential('acp-1', 'missing')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.deleteCredential("acp-1", "cred-3"),
+      ).resolves.toBeUndefined();
+      await expect(
+        service.deleteCredential("acp-1", "missing"),
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it('returns assignable non-admin users', async () => {
+    it("returns assignable non-admin users", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
-      userRepo.find.mockResolvedValue([{ id: 'user-1', username: 'u1', displayName: 'User 1' }]);
+      userRepo.find.mockResolvedValue([
+        { id: "user-1", username: "u1", displayName: "User 1" },
+      ]);
 
-      await expect(service.getAssignableUsers('acp-1')).resolves.toEqual([
-        { id: 'user-1', username: 'u1', displayName: 'User 1' },
+      await expect(service.getAssignableUsers("acp-1")).resolves.toEqual([
+        { id: "user-1", username: "u1", displayName: "User 1" },
       ]);
       expect(userRepo.find).toHaveBeenCalledWith({
         where: { isAppAdmin: false },
-        select: ['id', 'username', 'displayName'],
-        order: { username: 'ASC' },
+        select: ["id", "username", "displayName"],
+        order: { username: "ASC" },
       });
     });
   });
 
-  describe('index payload validation', () => {
-    it('rejects invalid ACP index object types and language payloads', async () => {
+  describe("index payload validation", () => {
+    it("rejects invalid ACP index object types and language payloads", async () => {
       acpRepo.findOne.mockResolvedValue({ ...mockAcp });
 
-      await expect(service.updateIndex('acp-1', [] as any)).rejects.toThrow(BadRequestException);
+      await expect(service.updateIndex("acp-1", [] as any)).rejects.toThrow(
+        BadRequestException,
+      );
       await expect(
-        service.importIndex('acp-1', { packageId: 'test-pkg', version: 1 as any } as any),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.importIndex('acp-1', { packageId: 'test-pkg', name: {} as any } as any),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.importIndex('acp-1', {
-          packageId: 'test-pkg',
-          name: [{ lang: 'deu', value: 'Bad Lang' }],
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
+          version: 1 as any,
         } as any),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.importIndex('acp-1', {
-          packageId: 'test-pkg',
-          name: [{ lang: 'de', value: '' }],
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
+          name: {} as any,
         } as any),
       ).rejects.toThrow(BadRequestException);
       await expect(
-        service.importIndex('acp-1', {
-          packageId: 'test-pkg',
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
+          name: [{ lang: "deu", value: "Bad Lang" }],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
+          name: [{ lang: "de", value: "" }],
+        } as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.importIndex("acp-1", {
+          packageId: "test-pkg",
           status: 123 as any,
         } as any),
       ).rejects.toThrow(BadRequestException);

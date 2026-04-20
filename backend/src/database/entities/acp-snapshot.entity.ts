@@ -6,32 +6,32 @@ import {
   JoinColumn,
   CreateDateColumn,
   OneToMany,
-} from 'typeorm';
-import { Acp } from './acp.entity';
-import { AcpSnapshotFile } from './acp-snapshot-file.entity';
+} from "typeorm";
+import { Acp } from "./acp.entity";
+import { AcpSnapshotFile } from "./acp-snapshot-file.entity";
 
-@Entity('acp_snapshots')
+@Entity("acp_snapshots")
 export class AcpSnapshot {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: 'acp_id' })
+  @Column({ name: "acp_id" })
   acpId!: string;
 
-  @Column({ name: 'version_number' })
+  @Column({ name: "version_number" })
   versionNumber!: number;
 
-  @Column({ name: 'acp_index_snapshot', type: 'jsonb' })
+  @Column({ name: "acp_index_snapshot", type: "jsonb" })
   acpIndexSnapshot!: Record<string, unknown>;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   changelog?: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @ManyToOne(() => Acp, (acp) => acp.snapshots, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'acp_id' })
+  @ManyToOne(() => Acp, (acp) => acp.snapshots, { onDelete: "CASCADE" })
+  @JoinColumn({ name: "acp_id" })
   acp!: Acp;
 
   @OneToMany(() => AcpSnapshotFile, (sf) => sf.snapshot)

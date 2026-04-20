@@ -12,7 +12,13 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 @Component({
   selector: 'app-item-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, MetadataPanelComponent, FormsModule, CommentDialogComponent],
+  imports: [
+    RouterLink,
+    BreadcrumbComponent,
+    MetadataPanelComponent,
+    FormsModule,
+    CommentDialogComponent,
+  ],
   template: `
     @if (unit && item) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -20,7 +26,11 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       <div class="item-header">
         <h1>Item: {{ item.name || item.itemId || item.id }}</h1>
         <div class="item-actions">
-          <select class="btn btn-outline btn-sm" [(ngModel)]="printMode" (change)="onPrintModeChange()">
+          <select
+            class="btn btn-outline btn-sm"
+            [(ngModel)]="printMode"
+            (change)="onPrintModeChange()"
+          >
             <option value="off">Print: Aus</option>
             <option value="on">Print: Ein</option>
             <option value="on-with-ids">Print: Ein + IDs</option>
@@ -28,7 +38,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           @if (showCommentBtn) {
             <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
           }
-          <a [routerLink]="['/view', acpId, 'items']" class="btn btn-outline btn-sm">← Zur Item-Liste</a>
+          <a [routerLink]="['/view', acpId, 'items']" class="btn btn-outline btn-sm"
+            >← Zur Item-Liste</a
+          >
         </div>
       </div>
 
@@ -43,7 +55,8 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
                 [style.height]="playerHeight"
                 [class.print-mode]="printMode !== 'off'"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
-                (load)="onPlayerLoaded()">
+                (load)="onPlayerLoaded()"
+              >
               </iframe>
             } @else {
               <div class="empty-state">
@@ -53,14 +66,20 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             }
           </div>
           <div class="item-highlight-info card" [class.focus-ok]="highlightApplied">
-            <span class="badge" [class.badge-success]="highlightApplied" [class.badge-info]="!highlightApplied">
+            <span
+              class="badge"
+              [class.badge-success]="highlightApplied"
+              [class.badge-info]="!highlightApplied"
+            >
               {{ highlightApplied ? '✅ Fokus aktiv' : '🎯 Fokus wird gesetzt' }}
             </span>
             <p>
               Dieses Item befindet sich in der Aufgabe <strong>{{ unit.name }}</strong>
               @if (highlightItemId) {
-                (<code>{{ highlightItemId }}</code>)
-              }.
+                (<code>{{ highlightItemId }}</code
+                >)
+              }
+              .
             </p>
             @if (focusWarning) {
               <p class="focus-warning">{{ focusWarning }}</p>
@@ -69,7 +88,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         </div>
 
         <div class="meta-area">
-          <app-metadata-panel [unit]="unit" [highlightItemId]="highlightItemId"></app-metadata-panel>
+          <app-metadata-panel
+            [unit]="unit"
+            [highlightItemId]="highlightItemId"
+          ></app-metadata-panel>
         </div>
       </div>
     } @else if (!loading) {
@@ -81,27 +103,87 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       [targetType]="'ITEM'"
       [targetId]="item?.itemId || item?.id || itemId"
       (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false">
+      (closed)="commentOpen = false"
+    >
     </app-comment-dialog>
   `,
-  styles: [`
-    .item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-    .item-header h1 { margin-bottom: 0; }
-    .item-actions { display: flex; gap: 8px; align-items: center; }
-    .item-layout { display: grid; grid-template-columns: 1fr 380px; gap: 16px; }
-    .player-container { padding: 0; overflow: auto; min-height: 600px; }
-    .player-container.print-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; border: none; }
-    .player-iframe { width: 100%; min-height: 550px; border: none; display: block; }
-    .player-iframe.print-mode { min-height: 1000px; height: auto; }
-    .item-highlight-info { margin-top: 12px; padding: 12px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-    .item-highlight-info p { margin: 0; font-size: 0.9rem; color: var(--color-text-secondary); }
-    .item-highlight-info.focus-ok { border-left: 4px solid var(--color-success); background: rgba(39,174,96,0.05); }
-    .focus-warning { color: #a76d00; font-size: 0.82rem; }
-    @media (max-width: 900px) {
-      .item-layout { grid-template-columns: 1fr; }
-      .item-header { flex-direction: column; gap: 12px; align-items: flex-start; }
-    }
-  `]
+  styles: [
+    `
+      .item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .item-header h1 {
+        margin-bottom: 0;
+      }
+      .item-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .item-layout {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 16px;
+      }
+      .player-container {
+        padding: 0;
+        overflow: auto;
+        min-height: 600px;
+      }
+      .player-container.print-mode {
+        display: block;
+        overflow: visible;
+        flex: none;
+        height: auto;
+        min-height: 1000px;
+        border: none;
+      }
+      .player-iframe {
+        width: 100%;
+        min-height: 550px;
+        border: none;
+        display: block;
+      }
+      .player-iframe.print-mode {
+        min-height: 1000px;
+        height: auto;
+      }
+      .item-highlight-info {
+        margin-top: 12px;
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .item-highlight-info p {
+        margin: 0;
+        font-size: 0.9rem;
+        color: var(--color-text-secondary);
+      }
+      .item-highlight-info.focus-ok {
+        border-left: 4px solid var(--color-success);
+        background: rgba(39, 174, 96, 0.05);
+      }
+      .focus-warning {
+        color: #a76d00;
+        font-size: 0.82rem;
+      }
+      @media (max-width: 900px) {
+        .item-layout {
+          grid-template-columns: 1fr;
+        }
+        .item-header {
+          flex-direction: column;
+          gap: 12px;
+          align-items: flex-start;
+        }
+      }
+    `,
+  ],
 })
 export class ItemViewComponent implements OnInit, OnDestroy {
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -145,20 +227,20 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
     window.addEventListener('message', this.messageHandler);
 
-    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
       const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
       this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('ITEM'));
     });
 
-    this.api.getViewItems(this.acpId).subscribe(items => {
+    this.api.getViewItems(this.acpId).subscribe((items) => {
       this.item = items.find((i: any) => i.itemId === this.itemId || i.id === this.itemId);
       if (!this.item) {
         this.loading = false;
         return;
       }
 
-      this.api.getViewUnit(this.acpId, this.item.unitId).subscribe(u => {
+      this.api.getViewUnit(this.acpId, this.item.unitId).subscribe((u) => {
         this.unit = u;
         this.highlightItemId = this.resolveHighlightItemId(u, this.itemId, this.item?.itemId);
         this.breadcrumbs = [
@@ -168,9 +250,9 @@ export class ItemViewComponent implements OnInit, OnDestroy {
           { label: this.item.name || this.item.itemId || this.item.id },
         ];
 
-        u.dependencies = (u.dependencies || []).map(d => ({
+        u.dependencies = (u.dependencies || []).map((d) => ({
           ...d,
-          downloadUrl: this.api.appendAuthToken(d.downloadUrl)
+          downloadUrl: this.api.appendAuthToken(d.downloadUrl),
         }));
 
         this.loading = false;
@@ -252,15 +334,17 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   }
 
   private loadPlayerHtml(dependencies: any[], token: number) {
-    const playerDep = dependencies.find((d: any) => String(d?.type || '').toLowerCase() === 'player');
+    const playerDep = dependencies.find(
+      (d: any) => String(d?.type || '').toLowerCase() === 'player',
+    );
     if (!playerDep?.downloadUrl) {
       this.playerSrcDoc = null;
       return;
     }
 
     fetch(playerDep.downloadUrl)
-      .then(res => res.text())
-      .then(html => {
+      .then((res) => res.text())
+      .then((html) => {
         if (token !== this.unitLoadToken) return;
         this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
       })
@@ -282,8 +366,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     }
 
     fetch(definitionDep.downloadUrl)
-      .then(res => res.text())
-      .then(definition => {
+      .then((res) => res.text())
+      .then((definition) => {
         if (token !== this.unitLoadToken) return;
         this.definitionContent = definition;
         this.startPlayerIfReady();
@@ -295,10 +379,19 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   }
 
   private startPlayerIfReady() {
-    if (!this.playerFrameReady || !this.definitionContent || !this.unit || !this.item || !this.responseStateReady) return;
+    if (
+      !this.playerFrameReady ||
+      !this.definitionContent ||
+      !this.unit ||
+      !this.item ||
+      !this.responseStateReady
+    )
+      return;
 
     const variableRef = this.item.sourceVariable || this.item.variableId || '';
-    const startPage = variableRef ? this.voudService.getStartPage(this.definitionContent, variableRef) : undefined;
+    const startPage = variableRef
+      ? this.voudService.getStartPage(this.definitionContent, variableRef)
+      : undefined;
 
     this.startSessionCounter += 1;
     this.sendToPlayer({
@@ -317,7 +410,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         printMode: this.printMode,
         logPolicy: 'disabled',
         startPage: startPage !== undefined ? startPage.toString() : undefined,
-        enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end']
+        enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },
     });
 
@@ -345,7 +438,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       const focused = this.tryFocusItemInPlayer();
       if (focused || attempts >= maxAttempts) {
         if (!focused) {
-          this.focusWarning = 'Automatischer Fokus im Player war nicht eindeutig möglich, Metadaten-Highlight bleibt aktiv.';
+          this.focusWarning =
+            'Automatischer Fokus im Player war nicht eindeutig möglich, Metadaten-Highlight bleibt aktiv.';
         }
         return;
       }
@@ -397,7 +491,9 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       );
     }
 
-    const variableRef = this.escapeSelectorValue(this.item?.sourceVariable || this.item?.variableId || '');
+    const variableRef = this.escapeSelectorValue(
+      this.item?.sourceVariable || this.item?.variableId || '',
+    );
     if (variableRef) {
       selectors.push(
         `[data-variable-id="${variableRef}"]`,
@@ -412,10 +508,13 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     return Array.from(new Set(selectors));
   }
 
-  private findElementByText(doc: Document, candidates: Array<string | undefined>): HTMLElement | null {
+  private findElementByText(
+    doc: Document,
+    candidates: Array<string | undefined>,
+  ): HTMLElement | null {
     const needles = candidates
-      .map(v => (v || '').trim().toLowerCase())
-      .filter(v => v.length > 1);
+      .map((v) => (v || '').trim().toLowerCase())
+      .filter((v) => v.length > 1);
 
     if (!needles.length) return null;
 
@@ -426,7 +525,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       const node = nodes[i];
       const text = (node.textContent || '').trim().toLowerCase();
       if (!text) continue;
-      if (needles.some(n => text === n || text.includes(n))) {
+      if (needles.some((n) => text === n || text.includes(n))) {
         return node;
       }
     }
@@ -435,7 +534,9 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   }
 
   private applyFocus(doc: Document, target: HTMLElement) {
-    doc.querySelectorAll('.cp-item-focus-highlight').forEach(el => el.classList.remove('cp-item-focus-highlight'));
+    doc
+      .querySelectorAll('.cp-item-focus-highlight')
+      .forEach((el) => el.classList.remove('cp-item-focus-highlight'));
     target.classList.add('cp-item-focus-highlight');
     target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     try {
@@ -466,19 +567,24 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   }
 
   private escapeSelectorValue(value: string): string {
-    return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return String(value || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
   }
 
-  private resolveHighlightItemId(unit: UnitViewData, routeItemId: string, listedItemId?: string): string {
+  private resolveHighlightItemId(
+    unit: UnitViewData,
+    routeItemId: string,
+    listedItemId?: string,
+  ): string {
     const candidates = [routeItemId, listedItemId].filter((v): v is string => !!v && v.length > 0);
 
     for (const unitItem of unit.items || []) {
       const unitItemId = typeof unitItem?.id === 'string' ? unitItem.id : '';
       if (!unitItemId) continue;
 
-      const withPrefix = unitItem.useUnitAliasAsPrefix !== false
-        ? `${unit.id}_${unitItemId}`
-        : unitItemId;
+      const withPrefix =
+        unitItem.useUnitAliasAsPrefix !== false ? `${unit.id}_${unitItemId}` : unitItemId;
 
       if (candidates.includes(unitItemId) || candidates.includes(withPrefix)) {
         return unitItemId;
@@ -512,23 +618,25 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
     const fallbackItemList = this.buildStateFallbackItemList(this.unit, currentItemId);
 
-    this.api.getResponseStateWithFallback(this.acpId, currentItemId, unitId, fallbackItemList).subscribe({
-      next: (result) => {
-        const data = result?.state?.responseData;
-        if (data && typeof data === 'object' && Object.keys(data).length > 0) {
-          this.responseStateData = data;
-        } else {
+    this.api
+      .getResponseStateWithFallback(this.acpId, currentItemId, unitId, fallbackItemList)
+      .subscribe({
+        next: (result) => {
+          const data = result?.state?.responseData;
+          if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+            this.responseStateData = data;
+          } else {
+            this.responseStateData = null;
+          }
+          this.responseStateReady = true;
+          this.startPlayerIfReady();
+        },
+        error: () => {
           this.responseStateData = null;
-        }
-        this.responseStateReady = true;
-        this.startPlayerIfReady();
-      },
-      error: () => {
-        this.responseStateData = null;
-        this.responseStateReady = true;
-        this.startPlayerIfReady();
-      },
-    });
+          this.responseStateReady = true;
+          this.startPlayerIfReady();
+        },
+      });
   }
 
   private buildStateFallbackItemList(

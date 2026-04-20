@@ -79,7 +79,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <h3>Downloads</h3>
             <div class="download-links">
               @if (fc.allowIndexDownload) {
-                <button class="btn btn-outline btn-sm" (click)="downloadIndex()">ACP-Index (JSON)</button>
+                <button class="btn btn-outline btn-sm" (click)="downloadIndex()">
+                  ACP-Index (JSON)
+                </button>
               }
               @if (fc.allowUnitDownload) {
                 <span class="download-info">Unit-Download verfügbar in Aufgabenansicht</span>
@@ -95,8 +97,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <h3>Kommentare</h3>
             @if (isLoggedIn) {
               <div class="comment-actions">
-                <button class="btn btn-outline btn-sm" (click)="commentOpen = true">💬 Kommentar hinzufügen</button>
-                <button class="btn btn-outline btn-sm" (click)="exportComments()">📄 Kommentare exportieren (XLSX)</button>
+                <button class="btn btn-outline btn-sm" (click)="commentOpen = true">
+                  💬 Kommentar hinzufügen
+                </button>
+                <button class="btn btn-outline btn-sm" (click)="exportComments()">
+                  📄 Kommentare exportieren (XLSX)
+                </button>
               </div>
               @if (myComments.length > 0) {
                 <div class="my-comments">
@@ -126,106 +132,134 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       [targetType]="'UNIT'"
       [targetId]="acpId"
       (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false">
+      (closed)="commentOpen = false"
+    >
     </app-comment-dialog>
   `,
-  styles: [`
-    .acp-header {
-      margin-bottom: 32px;
-    }
-    .acp-header-main {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .acp-header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      margin-bottom: 8px;
-    }
-    .desc {
-      color: var(--color-text-secondary);
-      font-size: 1.05rem;
-      line-height: 1.6;
-    }
+  styles: [
+    `
+      .acp-header {
+        margin-bottom: 32px;
+      }
+      .acp-header-main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .acp-header h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+      .desc {
+        color: var(--color-text-secondary);
+        font-size: 1.05rem;
+        line-height: 1.6;
+      }
 
-    .sections-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
-    }
+      .sections-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px;
+      }
 
-    .section-card {
-      display: flex;
-      flex-direction: column;
-      text-decoration: none;
-      color: inherit;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      border: 1px solid var(--color-border);
-    }
-    a.section-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-      text-decoration: none;
-    }
-    .section-icon {
-      font-size: 2rem;
-      margin-bottom: 12px;
-    }
-    .section-card h3 {
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-    .section-card p {
-      color: var(--color-text-secondary);
-      font-size: 0.9rem;
-      line-height: 1.5;
-    }
+      .section-card {
+        display: flex;
+        flex-direction: column;
+        text-decoration: none;
+        color: inherit;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+        border: 1px solid var(--color-border);
+      }
+      a.section-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        text-decoration: none;
+      }
+      .section-icon {
+        font-size: 2rem;
+        margin-bottom: 12px;
+      }
+      .section-card h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .section-card p {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+      }
 
-    .seq-list {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin-top: 8px;
-    }
-    .seq-link {
-      display: block;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 0.9rem;
-      color: var(--color-primary-light);
-      transition: background 0.15s;
-    }
-    .seq-link:hover {
-      background: rgba(41,128,185,0.06);
-      text-decoration: none;
-    }
+      .seq-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-top: 8px;
+      }
+      .seq-link {
+        display: block;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-size: 0.9rem;
+        color: var(--color-primary-light);
+        transition: background 0.15s;
+      }
+      .seq-link:hover {
+        background: rgba(41, 128, 185, 0.06);
+        text-decoration: none;
+      }
 
-    .download-links {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 8px;
-    }
-    .download-info {
-      font-size: 0.8rem;
-      color: var(--color-text-secondary);
-    }
+      .download-links {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .download-info {
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
 
-    .comment-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-    .my-comments { margin-top: 16px; border-top: 1px solid var(--color-border); padding-top: 12px; }
-    .my-comments h4 { font-size: 0.85rem; margin-bottom: 8px; color: var(--color-text-secondary); }
-    .comment-summary { font-size: 0.8rem; padding: 4px 0; display: flex; align-items: center; gap: 6px; }
-    .comment-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  `]
+      .comment-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .my-comments {
+        margin-top: 16px;
+        border-top: 1px solid var(--color-border);
+        padding-top: 12px;
+      }
+      .my-comments h4 {
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+        color: var(--color-text-secondary);
+      }
+      .comment-summary {
+        font-size: 0.8rem;
+        padding: 4px 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .comment-text {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+    `,
+  ],
 })
 export class AcpStartComponent implements OnInit {
   acpId = '';
   data: any = null;
-  fc: any = {};  // feature config
+  fc: any = {}; // feature config
   breadcrumbs: BreadcrumbItem[] = [];
   canManageAcp = false;
   myComments: any[] = [];
@@ -234,7 +268,7 @@ export class AcpStartComponent implements OnInit {
   constructor(
     private route: ActivatedRoute,
     private api: ApiService,
-    private auth: AuthService
+    private auth: AuthService,
   ) {}
 
   get isLoggedIn(): boolean {
@@ -245,7 +279,7 @@ export class AcpStartComponent implements OnInit {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
 
-    this.api.getAcpStartPage(this.acpId).subscribe(d => {
+    this.api.getAcpStartPage(this.acpId).subscribe((d) => {
       this.data = d;
       this.fc = d?.featureConfig || {};
 
@@ -265,7 +299,7 @@ export class AcpStartComponent implements OnInit {
   }
 
   loadMyComments() {
-    this.api.getMyComments(this.acpId).subscribe(comments => {
+    this.api.getMyComments(this.acpId).subscribe((comments) => {
       this.myComments = comments;
     });
   }
@@ -275,12 +309,12 @@ export class AcpStartComponent implements OnInit {
       next: () => {
         this.commentOpen = false;
         this.loadMyComments();
-      }
+      },
     });
   }
 
   exportComments() {
-    this.api.exportCommentsXlsx(this.acpId).subscribe(blob => {
+    this.api.exportCommentsXlsx(this.acpId).subscribe((blob) => {
       if (!blob || blob.size === 0) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');

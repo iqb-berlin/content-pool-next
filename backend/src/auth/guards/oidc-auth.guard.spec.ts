@@ -1,8 +1,8 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { OidcAuthGuard } from './oidc-auth.guard';
+import { ExecutionContext, ForbiddenException } from "@nestjs/common";
+import { JwtAuthGuard } from "./jwt-auth.guard";
+import { OidcAuthGuard } from "./oidc-auth.guard";
 
-describe('OidcAuthGuard', () => {
+describe("OidcAuthGuard", () => {
   let guard: OidcAuthGuard;
 
   const createContext = (user: any): ExecutionContext =>
@@ -16,28 +16,38 @@ describe('OidcAuthGuard', () => {
     guard = new OidcAuthGuard();
   });
 
-  it('returns false when JWT validation fails', async () => {
-    const spy = jest.spyOn(JwtAuthGuard.prototype, 'canActivate').mockResolvedValue(false);
+  it("returns false when JWT validation fails", async () => {
+    const spy = jest
+      .spyOn(JwtAuthGuard.prototype, "canActivate")
+      .mockResolvedValue(false);
 
-    await expect(guard.canActivate(createContext({ authType: 'oidc' }))).resolves.toBe(false);
+    await expect(
+      guard.canActivate(createContext({ authType: "oidc" })),
+    ).resolves.toBe(false);
 
     spy.mockRestore();
   });
 
-  it('throws when authenticated user is not OIDC-based', async () => {
-    const spy = jest.spyOn(JwtAuthGuard.prototype, 'canActivate').mockResolvedValue(true);
+  it("throws when authenticated user is not OIDC-based", async () => {
+    const spy = jest
+      .spyOn(JwtAuthGuard.prototype, "canActivate")
+      .mockResolvedValue(true);
 
     await expect(
-      guard.canActivate(createContext({ authType: 'credential' })),
+      guard.canActivate(createContext({ authType: "credential" })),
     ).rejects.toThrow(ForbiddenException);
 
     spy.mockRestore();
   });
 
-  it('allows OIDC-authenticated users', async () => {
-    const spy = jest.spyOn(JwtAuthGuard.prototype, 'canActivate').mockResolvedValue(true);
+  it("allows OIDC-authenticated users", async () => {
+    const spy = jest
+      .spyOn(JwtAuthGuard.prototype, "canActivate")
+      .mockResolvedValue(true);
 
-    await expect(guard.canActivate(createContext({ authType: 'oidc' }))).resolves.toBe(true);
+    await expect(
+      guard.canActivate(createContext({ authType: "oidc" })),
+    ).resolves.toBe(true);
 
     spy.mockRestore();
   });

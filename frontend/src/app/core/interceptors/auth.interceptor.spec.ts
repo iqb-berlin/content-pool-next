@@ -44,9 +44,7 @@ describe('authInterceptor', () => {
       return of(new HttpResponse({ status: 200, body: {} }));
     });
 
-    await firstValueFrom(
-      runInInjectionContext(injector, () => authInterceptor(req, next as any)),
-    );
+    await firstValueFrom(runInInjectionContext(injector, () => authInterceptor(req, next as any)));
 
     expect(next).toHaveBeenCalledTimes(1);
   });
@@ -60,9 +58,12 @@ describe('authInterceptor', () => {
     ).rejects.toBeInstanceOf(HttpErrorResponse);
 
     expect(authMock.clearSession).toHaveBeenCalledTimes(1);
-    expect(accessMock.redirectToAccess).toHaveBeenCalledWith('session_expired', expect.objectContaining({
-      replaceUrl: true,
-    }));
+    expect(accessMock.redirectToAccess).toHaveBeenCalledWith(
+      'session_expired',
+      expect.objectContaining({
+        replaceUrl: true,
+      }),
+    );
   });
 
   it('does not redirect for inline login errors', async () => {
@@ -80,11 +81,12 @@ describe('authInterceptor', () => {
   it('maps feature-disabled 403 errors to feature_disabled access reason', async () => {
     const req = new HttpRequest('GET', '/api/view/acp/acp-1/units/u1');
     const next = vi.fn(() =>
-      throwError(() =>
-        new HttpErrorResponse({
-          status: 403,
-          error: { message: 'Unit view is not enabled for this ACP' },
-        }),
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 403,
+            error: { message: 'Unit view is not enabled for this ACP' },
+          }),
       ),
     );
 
@@ -92,8 +94,11 @@ describe('authInterceptor', () => {
       firstValueFrom(runInInjectionContext(injector, () => authInterceptor(req, next as any))),
     ).rejects.toBeInstanceOf(HttpErrorResponse);
 
-    expect(accessMock.redirectToAccess).toHaveBeenCalledWith('feature_disabled', expect.objectContaining({
-      replaceUrl: true,
-    }));
+    expect(accessMock.redirectToAccess).toHaveBeenCalledWith(
+      'feature_disabled',
+      expect.objectContaining({
+        replaceUrl: true,
+      }),
+    );
   });
 });

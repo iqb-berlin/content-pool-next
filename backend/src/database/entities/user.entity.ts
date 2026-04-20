@@ -5,34 +5,34 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-} from 'typeorm';
-import { AcpUserRole } from './acp-user-role.entity';
-import { Comment } from './comment.entity';
+} from "typeorm";
+import { AcpUserRole } from "./acp-user-role.entity";
+import { Comment } from "./comment.entity";
 
-@Entity('users')
+@Entity("users")
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
   @Column({ unique: true })
   username!: string;
 
-  @Column({ name: 'password_hash' })
+  @Column({ name: "password_hash" })
   passwordHash!: string;
 
-  @Column({ name: 'display_name', nullable: true })
+  @Column({ name: "display_name", nullable: true })
   displayName?: string;
 
-  @Column({ name: 'is_app_admin', default: false })
+  @Column({ name: "is_app_admin", default: false })
   isAppAdmin!: boolean;
 
-  @Column({ name: 'oidc_sub', nullable: true, unique: true })
+  @Column({ name: "oidc_sub", nullable: true, unique: true })
   oidcSub?: string;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 
   @OneToMany(() => AcpUserRole, (role) => role.user)

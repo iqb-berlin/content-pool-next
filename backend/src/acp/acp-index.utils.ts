@@ -1,14 +1,14 @@
 type UnknownRecord = Record<string, unknown>;
-export const DEFAULT_ACP_INDEX_VERSION = '0.5.0';
+export const DEFAULT_ACP_INDEX_VERSION = "0.5.0";
 export const ACP_INDEX_ALLOWED_STATUS_VALUES = [
-  'IN_DEVELOPMENT',
-  'DISCONTINUED',
-  'RELEASED_PUBLIC',
-  'RELEASED_CONFIDENTIAL',
+  "IN_DEVELOPMENT",
+  "DISCONTINUED",
+  "RELEASED_PUBLIC",
+  "RELEASED_CONFIDENTIAL",
 ] as const;
 
 function asRecord(value: unknown): UnknownRecord {
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as UnknownRecord;
   }
   return {};
@@ -23,7 +23,7 @@ function dedupeById<T extends { id?: unknown }>(entries: T[]): T[] {
   const deduped: T[] = [];
 
   for (const entry of entries) {
-    const id = typeof entry?.id === 'string' ? entry.id : '';
+    const id = typeof entry?.id === "string" ? entry.id : "";
     if (!id) {
       deduped.push(entry);
       continue;
@@ -59,7 +59,10 @@ export function getIndexScales(index: unknown): any[] {
   return dedupeById(scales);
 }
 
-export function findUnitInIndex(index: unknown, unitId: string): any | undefined {
+export function findUnitInIndex(
+  index: unknown,
+  unitId: string,
+): any | undefined {
   return getIndexUnits(index).find((unit) => unit?.id === unitId);
 }
 
@@ -71,7 +74,7 @@ export function findUnitInIndex(index: unknown, unitId: string): any | undefined
 export function toRuntimeAcpIndex(index: unknown): UnknownRecord {
   const source = asRecord(index);
   const version =
-    typeof source.version === 'string' && source.version.trim()
+    typeof source.version === "string" && source.version.trim()
       ? source.version
       : DEFAULT_ACP_INDEX_VERSION;
 
@@ -96,13 +99,18 @@ export function normalizeIndexForStorage(index: unknown): UnknownRecord {
   const scales = getIndexScales(runtime);
 
   const hasUnitsInParts = parts.some((part) => asArray(part.units).length > 0);
-  const hasScalesInParts = parts.some((part) => asArray(part.scales).length > 0);
+  const hasScalesInParts = parts.some(
+    (part) => asArray(part.scales).length > 0,
+  );
 
-  if ((units.length && !hasUnitsInParts) || (scales.length && !hasScalesInParts)) {
+  if (
+    (units.length && !hasUnitsInParts) ||
+    (scales.length && !hasScalesInParts)
+  ) {
     if (!parts.length) {
       parts.push({
-        id: 'default-assessment-part',
-        name: [{ lang: 'de', value: 'Default Assessment Part' }],
+        id: "default-assessment-part",
+        name: [{ lang: "de", value: "Default Assessment Part" }],
       });
     }
 

@@ -10,21 +10,22 @@ import {
   Matches,
   IsInt,
   Min,
-} from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+} from "class-validator";
+import { Type } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
-const STRONG_CREDENTIAL_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
+const STRONG_CREDENTIAL_PASSWORD_REGEX =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
 const STRONG_CREDENTIAL_PASSWORD_MESSAGE =
-  'Password must be at least 12 characters long and include uppercase, lowercase, number, and special character.';
+  "Password must be at least 12 characters long and include uppercase, lowercase, number, and special character.";
 
 export class CreateAcpDto {
-  @ApiProperty({ example: 'vera-2026-math' })
+  @ApiProperty({ example: "vera-2026-math" })
   @IsString()
   @IsNotEmpty()
   packageId!: string;
 
-  @ApiProperty({ example: 'VERA 2026 Mathematics' })
+  @ApiProperty({ example: "VERA 2026 Mathematics" })
   @IsString()
   @IsNotEmpty()
   name!: string;
@@ -53,14 +54,14 @@ export class AssignRoleDto {
   @IsNotEmpty()
   userId!: string;
 
-  @ApiProperty({ enum: ['ACP_MANAGER', 'READ_ONLY'] })
+  @ApiProperty({ enum: ["ACP_MANAGER", "READ_ONLY"] })
   @IsString()
   @IsNotEmpty()
   role!: string;
 }
 
 export class UpdateAccessConfigDto {
-  @ApiProperty({ enum: ['PUBLIC', 'CREDENTIALS_LIST'] })
+  @ApiProperty({ enum: ["PUBLIC", "CREDENTIALS_LIST"] })
   @IsString()
   @IsNotEmpty()
   accessModel!: string;
@@ -86,12 +87,18 @@ export class UpdateAccessConfigDto {
 }
 
 export class UpdateMetadataColumnsDto {
-  @ApiProperty({ type: [String], description: 'List of metadata column IDs to display' })
+  @ApiProperty({
+    type: [String],
+    description: "List of metadata column IDs to display",
+  })
   @IsArray()
   @IsString({ each: true })
   visibleColumns!: string[];
 
-  @ApiPropertyOptional({ type: [String], description: 'Order of metadata columns' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: "Order of metadata columns",
+  })
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
@@ -107,7 +114,9 @@ export class CredentialEntryDto {
   @ApiProperty()
   @IsString()
   @MinLength(12)
-  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, {
+    message: STRONG_CREDENTIAL_PASSWORD_MESSAGE,
+  })
   password!: string;
 }
 
@@ -128,7 +137,9 @@ export class CreateCredentialDto {
   @ApiProperty()
   @IsString()
   @MinLength(12)
-  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, {
+    message: STRONG_CREDENTIAL_PASSWORD_MESSAGE,
+  })
   password!: string;
 }
 
@@ -141,13 +152,17 @@ export class UpdateCredentialDto {
   @ApiPropertyOptional()
   @IsString()
   @MinLength(12)
-  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, { message: STRONG_CREDENTIAL_PASSWORD_MESSAGE })
+  @Matches(STRONG_CREDENTIAL_PASSWORD_REGEX, {
+    message: STRONG_CREDENTIAL_PASSWORD_MESSAGE,
+  })
   @IsOptional()
   password?: string;
 }
 
 export class CreateSnapshotDto {
-  @ApiPropertyOptional({ description: 'Changelog text describing changes since last snapshot' })
+  @ApiPropertyOptional({
+    description: "Changelog text describing changes since last snapshot",
+  })
   @IsString()
   @IsOptional()
   changelog?: string;
@@ -168,20 +183,20 @@ export class ItemExplorerMetadataColumnsDto {
 }
 
 export class PatchItemExplorerDraftDto {
-  @ApiPropertyOptional({ description: 'Optimistic lock base version' })
+  @ApiPropertyOptional({ description: "Optimistic lock base version" })
   @IsInt()
   @Min(1)
   @IsOptional()
   baseVersion?: number;
 
-  @ApiProperty({ description: 'Change type for audit log' })
+  @ApiProperty({ description: "Change type for audit log" })
   @IsString()
   @IsNotEmpty()
   changeType!: string;
 
   @ApiPropertyOptional({
-    description: 'Partial draft patch',
-    type: 'object',
+    description: "Partial draft patch",
+    type: "object",
     additionalProperties: true,
   })
   @IsObject()
@@ -190,7 +205,7 @@ export class PatchItemExplorerDraftDto {
 }
 
 export class VersionedItemExplorerActionDto {
-  @ApiPropertyOptional({ description: 'Optimistic lock base version' })
+  @ApiPropertyOptional({ description: "Optimistic lock base version" })
   @IsInt()
   @Min(1)
   @IsOptional()

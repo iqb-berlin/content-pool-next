@@ -5,40 +5,40 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-} from 'typeorm';
-import { AcpUserRole } from './acp-user-role.entity';
-import { AcpFile } from './acp-file.entity';
-import { AcpSnapshot } from './acp-snapshot.entity';
-import { AcpAccessConfig } from './acp-access-config.entity';
-import { Comment } from './comment.entity';
+} from "typeorm";
+import { AcpUserRole } from "./acp-user-role.entity";
+import { AcpFile } from "./acp-file.entity";
+import { AcpSnapshot } from "./acp-snapshot.entity";
+import { AcpAccessConfig } from "./acp-access-config.entity";
+import { Comment } from "./comment.entity";
 
-@Entity('acp')
+@Entity("acp")
 export class Acp {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: 'package_id', unique: true })
+  @Column({ name: "package_id", unique: true })
   packageId!: string;
 
   @Column()
   name!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   description?: string;
 
-  @Column({ name: 'acp_index', type: 'jsonb', default: {} })
+  @Column({ name: "acp_index", type: "jsonb", default: {} })
   acpIndex!: Record<string, unknown>;
 
-  @Column({ name: 'item_properties', type: 'jsonb', default: {} })
+  @Column({ name: "item_properties", type: "jsonb", default: {} })
   itemProperties!: Record<string, Record<string, any>>;
 
-  @Column({ type: 'jsonb', default: {} })
+  @Column({ type: "jsonb", default: {} })
   settings!: Record<string, unknown>;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 
   @OneToMany(() => AcpUserRole, (role) => role.acp)

@@ -1,35 +1,62 @@
-import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { PassportModule } from '@nestjs/passport';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthService } from './auth.service';
-import { AuthController } from './auth.controller';
-import { JwtStrategy } from './strategies/jwt.strategy';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
-import { AcpAccessGuard } from './guards/acp-access.guard';
-import { OidcAuthGuard } from './guards/oidc-auth.guard';
-import { OidcValidationService } from './services/oidc-validation.service';
-import { User, AcpCredential, AcpAccessConfig, AcpUserRole } from '../database/entities';
+import { Module } from "@nestjs/common";
+import { JwtModule } from "@nestjs/jwt";
+import { PassportModule } from "@nestjs/passport";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { AuthService } from "./auth.service";
+import { AuthController } from "./auth.controller";
+import { JwtStrategy } from "./strategies/jwt.strategy";
+import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { RolesGuard } from "./guards/roles.guard";
+import { AcpAccessGuard } from "./guards/acp-access.guard";
+import { OidcAuthGuard } from "./guards/oidc-auth.guard";
+import { OidcValidationService } from "./services/oidc-validation.service";
+import {
+  User,
+  AcpCredential,
+  AcpAccessConfig,
+  AcpUserRole,
+} from "../database/entities";
 
 @Module({
   imports: [
-    PassportModule.register({ defaultStrategy: 'jwt' }),
+    PassportModule.register({ defaultStrategy: "jwt" }),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET', 'dev-secret'),
+        secret: configService.get<string>("JWT_SECRET", "dev-secret"),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRATION', '24h') as any,
+          expiresIn: configService.get<string>("JWT_EXPIRATION", "24h") as any,
         },
       }),
     }),
-    TypeOrmModule.forFeature([User, AcpCredential, AcpAccessConfig, AcpUserRole]),
+    TypeOrmModule.forFeature([
+      User,
+      AcpCredential,
+      AcpAccessConfig,
+      AcpUserRole,
+    ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcValidationService, OidcAuthGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard, AcpAccessGuard, OidcAuthGuard, OidcValidationService, JwtModule, TypeOrmModule],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+    AcpAccessGuard,
+    OidcValidationService,
+    OidcAuthGuard,
+  ],
+  exports: [
+    AuthService,
+    JwtAuthGuard,
+    RolesGuard,
+    AcpAccessGuard,
+    OidcAuthGuard,
+    OidcValidationService,
+    JwtModule,
+    TypeOrmModule,
+  ],
 })
 export class AuthModule {}

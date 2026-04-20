@@ -1,19 +1,22 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as fs from 'fs/promises';
-import { AcpFile, Acp } from '../database/entities';
-import { getAssessmentParts, normalizeIndexForStorage } from '../acp/acp-index.utils';
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as fs from "fs/promises";
+import { AcpFile, Acp } from "../database/entities";
+import {
+  getAssessmentParts,
+  normalizeIndexForStorage,
+} from "../acp/acp-index.utils";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
   unitId: string;
   unitLabel: string;
   description?: string;
-  definitionRef: string;     // .voud filename
-  playerRef: string;         // e.g. "iqb-player-aspect@2.11"
-  codingSchemeRef?: string;  // .vocs filename
-  metadataRef?: string;      // .vomd filename
+  definitionRef: string; // .voud filename
+  playerRef: string; // e.g. "iqb-player-aspect@2.11"
+  codingSchemeRef?: string; // .vocs filename
+  metadataRef?: string; // .vomd filename
 }
 
 /** Result of validating a unit's file completeness */
@@ -55,7 +58,7 @@ export interface ItemListResult {
   columns: MetadataColumn[];
   items: VomdItemData[];
   unitMetadata: Record<string, any[]>; // unitId → unit-level profile entries
-  codingSchemes: Record<string, any>;  // unitId → coding scheme JSON
+  codingSchemes: Record<string, any>; // unitId → coding scheme JSON
 }
 
 export interface IndexSyncReport {
@@ -92,7 +95,7 @@ export class UnitParserService {
     try {
       // Extract <Id>
       const idMatch = xmlContent.match(/<Id>([^<]+)<\/Id>/);
-      const unitId = idMatch?.[1] || '';
+      const unitId = idMatch?.[1] || "";
 
       // Extract <Label>
       const labelMatch = xmlContent.match(/<Label>([^<]+)<\/Label>/);
@@ -103,15 +106,21 @@ export class UnitParserService {
       const description = descMatch?.[1] || undefined;
 
       // Extract <DefinitionRef ...>filename.voud</DefinitionRef>
-      const defRefMatch = xmlContent.match(/<DefinitionRef[^>]*>([^<]+)<\/DefinitionRef>/);
-      const definitionRef = defRefMatch?.[1]?.trim() || '';
+      const defRefMatch = xmlContent.match(
+        /<DefinitionRef[^>]*>([^<]+)<\/DefinitionRef>/,
+      );
+      const definitionRef = defRefMatch?.[1]?.trim() || "";
 
       // Extract player attribute from <DefinitionRef player="...">
-      const playerAttrMatch = xmlContent.match(/<DefinitionRef[^>]*player="([^"]+)"/);
-      const playerRef = playerAttrMatch?.[1] || '';
+      const playerAttrMatch = xmlContent.match(
+        /<DefinitionRef[^>]*player="([^"]+)"/,
+      );
+      const playerRef = playerAttrMatch?.[1] || "";
 
       // Extract <CodingSchemeRef ...>filename.vocs</CodingSchemeRef>
-      const codingRefMatch = xmlContent.match(/<CodingSchemeRef[^>]*>([^<]+)<\/CodingSchemeRef>/);
+      const codingRefMatch = xmlContent.match(
+        /<CodingSchemeRef[^>]*>([^<]+)<\/CodingSchemeRef>/,
+      );
       const codingSchemeRef = codingRefMatch?.[1]?.trim() || undefined;
 
       // Extract <Reference>filename.vomd</Reference>
@@ -156,21 +165,26 @@ export class UnitParserService {
    * Resolve a player reference like "iqb-player-aspect@2.11" to an actual
    * uploaded file. Finds the best match among uploaded HTML files.
    */
-  private findPlayerFile(playerRef: string, fileNames: string[]): string | undefined {
+  private findPlayerFile(
+    playerRef: string,
+    fileNames: string[],
+  ): string | undefined {
     if (!playerRef) return undefined;
 
     // playerRef format: "iqb-player-aspect@2.11"
     // Uploaded file format: "iqb-player-aspect-2.11.6.html"
     // Strategy: match base name and major.minor version
-    const parts = playerRef.split('@');
+    const parts = playerRef.split("@");
     const baseName = parts[0]; // e.g. "iqb-player-aspect"
-    const version = parts[1];  // e.g. "2.11"
+    const version = parts[1]; // e.g. "2.11"
 
-    return fileNames.find(name => {
+    return fileNames.find((name) => {
       const lower = name.toLowerCase();
-      return lower.includes(baseName.toLowerCase()) &&
-             (version ? lower.includes(version) : true) &&
-             lower.endsWith('.html');
+      return (
+        lower.includes(baseName.toLowerCase()) &&
+        (version ? lower.includes(version) : true) &&
+        lower.endsWith(".html")
+      );
     });
   }
 
@@ -180,22 +194,23 @@ export class UnitParserService {
   async validateUnitFiles(acpId: string): Promise<UnitValidationResult[]> {
     // Get all files for this ACP
     const allFiles = await this.fileRepository.find({ where: { acpId } });
-    const fileNames = allFiles.map(f => f.originalName);
+    const fileNames = allFiles.map((f) => f.originalName);
     const results: UnitValidationResult[] = [];
 
     // Find all .xml files
-    const xmlFiles = allFiles.filter(f =>
-      f.originalName.toLowerCase().endsWith('.xml') &&
-      !f.originalName.toLowerCase().startsWith('booklet') &&
-      !f.originalName.toLowerCase().startsWith('testtaker'),
+    const xmlFiles = allFiles.filter(
+      (f) =>
+        f.originalName.toLowerCase().endsWith(".xml") &&
+        !f.originalName.toLowerCase().startsWith("booklet") &&
+        !f.originalName.toLowerCase().startsWith("testtaker"),
     );
 
     for (const xmlFile of xmlFiles) {
       try {
-        const content = await fs.readFile(xmlFile.filePath, 'utf-8');
+        const content = await fs.readFile(xmlFile.filePath, "utf-8");
 
         // Only process Unit XML files (not booklet or testtaker XMLs)
-        if (!content.includes('<Unit')) continue;
+        if (!content.includes("<Unit")) continue;
 
         const parsed = this.parseUnitXml(content, xmlFile.originalName);
         if (!parsed) continue;
@@ -213,13 +228,19 @@ export class UnitParserService {
               found: fileNames.includes(parsed.definitionRef),
             },
             codingScheme: {
-              expected: parsed.codingSchemeRef || '(nicht referenziert)',
-              found: parsed.codingSchemeRef ? fileNames.includes(parsed.codingSchemeRef) : true,
+              expected: parsed.codingSchemeRef || "(nicht referenziert)",
+              found: parsed.codingSchemeRef
+                ? fileNames.includes(parsed.codingSchemeRef)
+                : true,
             },
             metadata: {
-              expected: parsed.metadataRef || '(nicht referenziert)',
+              expected: parsed.metadataRef || "(nicht referenziert)",
               found: parsed.metadataRef
-                ? fileNames.some(n => n === parsed.metadataRef || n === parsed.metadataRef + '.json')
+                ? fileNames.some(
+                    (n) =>
+                      n === parsed.metadataRef ||
+                      n === parsed.metadataRef + ".json",
+                  )
                 : true,
             },
             player: {
@@ -231,14 +252,17 @@ export class UnitParserService {
         };
 
         // Check overall validity
-        result.valid = result.files.definition.found &&
-                       result.files.codingScheme.found &&
-                       result.files.metadata.found &&
-                       result.files.player.found;
+        result.valid =
+          result.files.definition.found &&
+          result.files.codingScheme.found &&
+          result.files.metadata.found &&
+          result.files.player.found;
 
         results.push(result);
       } catch (e) {
-        this.logger.error(`Error validating unit file ${xmlFile.originalName}: ${e}`);
+        this.logger.error(
+          `Error validating unit file ${xmlFile.originalName}: ${e}`,
+        );
       }
     }
 
@@ -279,47 +303,58 @@ export class UnitParserService {
 
     if (!parts.length) {
       parts.push({
-        id: 'default-assessment-part',
-        name: [{ lang: 'de', value: 'Default Assessment Part' }],
+        id: "default-assessment-part",
+        name: [{ lang: "de", value: "Default Assessment Part" }],
         units: [],
       });
     }
 
-    const unitLocation = new Map<string, { partIndex: number; unitIndex: number }>();
+    const unitLocation = new Map<
+      string,
+      { partIndex: number; unitIndex: number }
+    >();
     for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-      const units = Array.isArray(parts[partIndex].units) ? parts[partIndex].units : [];
+      const units = Array.isArray(parts[partIndex].units)
+        ? parts[partIndex].units
+        : [];
       parts[partIndex].units = units;
       for (let unitIndex = 0; unitIndex < units.length; unitIndex++) {
-        const unitId = typeof units[unitIndex]?.id === 'string' ? units[unitIndex].id : '';
+        const unitId =
+          typeof units[unitIndex]?.id === "string" ? units[unitIndex].id : "";
         if (unitId && !unitLocation.has(unitId)) {
           unitLocation.set(unitId, { partIndex, unitIndex });
         }
       }
     }
 
-    const xmlFiles = allFiles.filter((f) =>
-      f.originalName.toLowerCase().endsWith('.xml') &&
-      !f.originalName.toLowerCase().startsWith('booklet') &&
-      !f.originalName.toLowerCase().startsWith('testtaker'),
+    const xmlFiles = allFiles.filter(
+      (f) =>
+        f.originalName.toLowerCase().endsWith(".xml") &&
+        !f.originalName.toLowerCase().startsWith("booklet") &&
+        !f.originalName.toLowerCase().startsWith("testtaker"),
     );
 
     for (const xmlFile of xmlFiles) {
-      let xmlContent = '';
+      let xmlContent = "";
       try {
-        xmlContent = await fs.readFile(xmlFile.filePath, 'utf-8');
+        xmlContent = await fs.readFile(xmlFile.filePath, "utf-8");
       } catch (e) {
         warningSet.add(`Konnte Unit-XML nicht lesen: ${xmlFile.originalName}`);
-        this.logger.warn(`Could not read XML file ${xmlFile.originalName}: ${e}`);
+        this.logger.warn(
+          `Could not read XML file ${xmlFile.originalName}: ${e}`,
+        );
         continue;
       }
 
-      if (!xmlContent.includes('<Unit')) {
+      if (!xmlContent.includes("<Unit")) {
         continue;
       }
 
       const parsedUnit = this.parseUnitXml(xmlContent, xmlFile.originalName);
       if (!parsedUnit?.unitId) {
-        warningSet.add(`Unit-XML konnte nicht geparst werden: ${xmlFile.originalName}`);
+        warningSet.add(
+          `Unit-XML konnte nicht geparst werden: ${xmlFile.originalName}`,
+        );
         continue;
       }
 
@@ -335,12 +370,20 @@ export class UnitParserService {
         warningSet,
       );
 
-      const existingItems = Array.isArray(existingUnit?.items) ? [...existingUnit.items] : [];
-      const parsedItems = await this.extractItemsForUnit(parsedUnit, allFiles, warningSet);
+      const existingItems = Array.isArray(existingUnit?.items)
+        ? [...existingUnit.items]
+        : [];
+      const parsedItems = await this.extractItemsForUnit(
+        parsedUnit,
+        allFiles,
+        warningSet,
+      );
       const mergedItems = [...existingItems];
 
       for (const parsedItem of parsedItems) {
-        const existingIndex = mergedItems.findIndex((i: any) => i?.id === parsedItem.id);
+        const existingIndex = mergedItems.findIndex(
+          (i: any) => i?.id === parsedItem.id,
+        );
         if (existingIndex === -1) {
           mergedItems.push(parsedItem);
           report.itemsAdded++;
@@ -361,20 +404,26 @@ export class UnitParserService {
           changed = true;
         }
 
-        if (nextItem.useUnitAliasAsPrefix === undefined && parsedItem.useUnitAliasAsPrefix !== undefined) {
+        if (
+          nextItem.useUnitAliasAsPrefix === undefined &&
+          parsedItem.useUnitAliasAsPrefix !== undefined
+        ) {
           nextItem.useUnitAliasAsPrefix = parsedItem.useUnitAliasAsPrefix;
           changed = true;
         }
 
         if (parsedItem.metadata && Object.keys(parsedItem.metadata).length) {
-          const existingMetadata = nextItem.metadata && typeof nextItem.metadata === 'object'
-            ? nextItem.metadata
-            : {};
+          const existingMetadata =
+            nextItem.metadata && typeof nextItem.metadata === "object"
+              ? nextItem.metadata
+              : {};
           const mergedMetadata = {
             ...parsedItem.metadata,
             ...existingMetadata,
           };
-          if (JSON.stringify(mergedMetadata) !== JSON.stringify(existingMetadata)) {
+          if (
+            JSON.stringify(mergedMetadata) !== JSON.stringify(existingMetadata)
+          ) {
             nextItem.metadata = mergedMetadata;
             changed = true;
           }
@@ -395,7 +444,10 @@ export class UnitParserService {
         id: parsedUnit.unitId,
         name: existingUnit?.name || parsedUnit.unitLabel || parsedUnit.unitId,
         description: existingUnit?.description || parsedUnit.description,
-        dependencies: this.mergeDependencies(existingDependencies, dependencies),
+        dependencies: this.mergeDependencies(
+          existingDependencies,
+          dependencies,
+        ),
         items: mergedItems,
       };
 
@@ -436,7 +488,9 @@ export class UnitParserService {
    * Remove unit dependency entries that reference files no longer present
    * in ACP storage. This is intended for cleanup after file deletions.
    */
-  async pruneMissingDependencies(acpId: string): Promise<IndexDependencyCleanupReport> {
+  async pruneMissingDependencies(
+    acpId: string,
+  ): Promise<IndexDependencyCleanupReport> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
       throw new NotFoundException(`ACP with ID ${acpId} not found`);
@@ -456,7 +510,8 @@ export class UnitParserService {
       ...normalizedIndex,
       assessmentParts: parts,
     });
-    const indexUpdated = JSON.stringify(acp.acpIndex || {}) !== JSON.stringify(nextIndex);
+    const indexUpdated =
+      JSON.stringify(acp.acpIndex || {}) !== JSON.stringify(nextIndex);
 
     if (indexUpdated) {
       acp.acpIndex = nextIndex;
@@ -488,16 +543,17 @@ export class UnitParserService {
     const codingSchemes: Record<string, any> = {};
 
     // First pass: find all .xml files to get unit IDs and references
-    const xmlFiles = allFiles.filter(f =>
-      f.originalName.toLowerCase().endsWith('.xml') &&
-      !f.originalName.toLowerCase().startsWith('booklet') &&
-      !f.originalName.toLowerCase().startsWith('testtaker'),
+    const xmlFiles = allFiles.filter(
+      (f) =>
+        f.originalName.toLowerCase().endsWith(".xml") &&
+        !f.originalName.toLowerCase().startsWith("booklet") &&
+        !f.originalName.toLowerCase().startsWith("testtaker"),
     );
 
     for (const xmlFile of xmlFiles) {
       try {
-        const xmlContent = await fs.readFile(xmlFile.filePath, 'utf-8');
-        if (!xmlContent.includes('<Unit')) continue;
+        const xmlContent = await fs.readFile(xmlFile.filePath, "utf-8");
+        if (!xmlContent.includes("<Unit")) continue;
 
         const parsed = this.parseUnitXml(xmlContent, xmlFile.originalName);
         if (!parsed) continue;
@@ -507,13 +563,14 @@ export class UnitParserService {
         if (!vomdFileName) continue;
 
         // Try exact match and .json suffix
-        const vomdFile = allFiles.find(f =>
-          f.originalName === vomdFileName ||
-          f.originalName === vomdFileName + '.json',
+        const vomdFile = allFiles.find(
+          (f) =>
+            f.originalName === vomdFileName ||
+            f.originalName === vomdFileName + ".json",
         );
         if (!vomdFile) continue;
 
-        const vomdContent = await fs.readFile(vomdFile.filePath, 'utf-8');
+        const vomdContent = await fs.readFile(vomdFile.filePath, "utf-8");
         const vomdData = this.parseVomd(vomdContent);
         if (!vomdData) continue;
 
@@ -524,13 +581,17 @@ export class UnitParserService {
 
         // Find and read .vocs file for coding scheme
         if (parsed.codingSchemeRef) {
-          const vocsFile = allFiles.find(f => f.originalName === parsed.codingSchemeRef);
+          const vocsFile = allFiles.find(
+            (f) => f.originalName === parsed.codingSchemeRef,
+          );
           if (vocsFile) {
             try {
-              const vocsContent = await fs.readFile(vocsFile.filePath, 'utf-8');
+              const vocsContent = await fs.readFile(vocsFile.filePath, "utf-8");
               codingSchemes[parsed.unitId] = JSON.parse(vocsContent);
             } catch {
-              this.logger.warn(`Could not parse coding scheme ${parsed.codingSchemeRef}`);
+              this.logger.warn(
+                `Could not parse coding scheme ${parsed.codingSchemeRef}`,
+              );
             }
           }
         }
@@ -557,25 +618,38 @@ export class UnitParserService {
 
           let resolvedItemId = item.id;
           if (item.useUnitAliasAsPrefix !== false) {
-             resolvedItemId = `${parsed.unitId}_${item.id}`;
+            resolvedItemId = `${parsed.unitId}_${item.id}`;
           }
 
-          const sourceVariable = item.sourceVariable || item.variableId || item.variableReadOnlyId || '';
+          const sourceVariable =
+            item.sourceVariable ||
+            item.variableId ||
+            item.variableReadOnlyId ||
+            "";
 
           items.push({
             itemId: item.id,
             uuid: item.uuid || `${parsed.unitId}_${item.id}`,
             unitId: parsed.unitId,
             unitLabel: parsed.unitLabel,
-            description: item.description || '',
+            description: item.description || "",
             variableId: sourceVariable,
             sourceVariable: sourceVariable || undefined,
             metadata,
-            empiricalDifficulty: (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) || itemProps[resolvedItemId]?.empiricalDifficulty || itemProps[item.id]?.empiricalDifficulty,
+            empiricalDifficulty:
+              (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) ||
+              itemProps[resolvedItemId]?.empiricalDifficulty ||
+              itemProps[item.id]?.empiricalDifficulty,
             tags:
-              (item.uuid && Array.isArray(itemProps[item.uuid]?.tags) ? itemProps[item.uuid].tags : undefined) ||
-              (Array.isArray(itemProps[resolvedItemId]?.tags) ? itemProps[resolvedItemId].tags : undefined) ||
-              (Array.isArray(itemProps[item.id]?.tags) ? itemProps[item.id].tags : undefined) ||
+              (item.uuid && Array.isArray(itemProps[item.uuid]?.tags)
+                ? itemProps[item.uuid].tags
+                : undefined) ||
+              (Array.isArray(itemProps[resolvedItemId]?.tags)
+                ? itemProps[resolvedItemId].tags
+                : undefined) ||
+              (Array.isArray(itemProps[item.id]?.tags)
+                ? itemProps[item.id].tags
+                : undefined) ||
               [],
           });
         }
@@ -601,13 +675,13 @@ export class UnitParserService {
 
     // Find the .xml file for this unit
     const xmlFile = allFiles.find((f: AcpFile) => {
-      const baseName = f.originalName.replace(/\.xml$/i, '');
+      const baseName = f.originalName.replace(/\.xml$/i, "");
       return baseName === unitId;
     });
     if (!xmlFile) return null;
 
-    const xmlContent = await fs.readFile(xmlFile.filePath, 'utf-8');
-    if (!xmlContent.includes('<Unit')) return null;
+    const xmlContent = await fs.readFile(xmlFile.filePath, "utf-8");
+    if (!xmlContent.includes("<Unit")) return null;
 
     const parsed = this.parseUnitXml(xmlContent, xmlFile.originalName);
     if (!parsed) return null;
@@ -621,10 +695,12 @@ export class UnitParserService {
       allFiles.map((f: AcpFile) => f.originalName),
     );
     if (playerFileName) {
-      const playerFile = allFiles.find((f: AcpFile) => f.originalName === playerFileName);
+      const playerFile = allFiles.find(
+        (f: AcpFile) => f.originalName === playerFileName,
+      );
       if (playerFile) {
         dependencies.push({
-          type: 'PLAYER',
+          type: "PLAYER",
           originalName: playerFile.originalName,
           downloadUrl: `/api/acp/${acpId}/files/${playerFile.id}/download`,
           fileId: playerFile.id,
@@ -634,10 +710,12 @@ export class UnitParserService {
 
     // Definition (.voud) file
     if (parsed.definitionRef) {
-      const defFile = allFiles.find((f: AcpFile) => f.originalName === parsed.definitionRef);
+      const defFile = allFiles.find(
+        (f: AcpFile) => f.originalName === parsed.definitionRef,
+      );
       if (defFile) {
         dependencies.push({
-          type: 'UNIT_DEFINITION',
+          type: "UNIT_DEFINITION",
           originalName: defFile.originalName,
           downloadUrl: `/api/acp/${acpId}/files/${defFile.id}/download`,
           fileId: defFile.id,
@@ -647,10 +725,12 @@ export class UnitParserService {
 
     // Coding scheme (.vocs) file
     if (parsed.codingSchemeRef) {
-      const vocsFile = allFiles.find((f: AcpFile) => f.originalName === parsed.codingSchemeRef);
+      const vocsFile = allFiles.find(
+        (f: AcpFile) => f.originalName === parsed.codingSchemeRef,
+      );
       if (vocsFile) {
         dependencies.push({
-          type: 'CODING_SCHEME',
+          type: "CODING_SCHEME",
           originalName: vocsFile.originalName,
           downloadUrl: `/api/acp/${acpId}/files/${vocsFile.id}/download`,
           fileId: vocsFile.id,
@@ -660,13 +740,14 @@ export class UnitParserService {
 
     // Metadata (.vomd) file
     if (parsed.metadataRef) {
-      const vomdFile = allFiles.find((f: AcpFile) =>
-        f.originalName === parsed.metadataRef ||
-        f.originalName === parsed.metadataRef + '.json',
+      const vomdFile = allFiles.find(
+        (f: AcpFile) =>
+          f.originalName === parsed.metadataRef ||
+          f.originalName === parsed.metadataRef + ".json",
       );
       if (vomdFile) {
         dependencies.push({
-          type: 'METADATA',
+          type: "METADATA",
           originalName: vomdFile.originalName,
           downloadUrl: `/api/acp/${acpId}/files/${vomdFile.id}/download`,
           fileId: vomdFile.id,
@@ -691,7 +772,10 @@ export class UnitParserService {
     const dependencies: { id: string; type: string }[] = [];
 
     if (parsedUnit.definitionRef) {
-      dependencies.push({ id: parsedUnit.definitionRef, type: 'UNIT_DEFINITION' });
+      dependencies.push({
+        id: parsedUnit.definitionRef,
+        type: "UNIT_DEFINITION",
+      });
       if (!fileNameSet.has(parsedUnit.definitionRef)) {
         warningSet.add(
           `Unit "${parsedUnit.unitId}" referenziert fehlende Definitionsdatei: ${parsedUnit.definitionRef}`,
@@ -700,7 +784,10 @@ export class UnitParserService {
     }
 
     if (parsedUnit.codingSchemeRef) {
-      dependencies.push({ id: parsedUnit.codingSchemeRef, type: 'CODING_SCHEME' });
+      dependencies.push({
+        id: parsedUnit.codingSchemeRef,
+        type: "CODING_SCHEME",
+      });
       if (!fileNameSet.has(parsedUnit.codingSchemeRef)) {
         warningSet.add(
           `Unit "${parsedUnit.unitId}" referenziert fehlendes Kodierschema: ${parsedUnit.codingSchemeRef}`,
@@ -715,7 +802,7 @@ export class UnitParserService {
           ? `${parsedUnit.metadataRef}.json`
           : parsedUnit.metadataRef;
 
-      dependencies.push({ id: metadataFileName, type: 'METADATA' });
+      dependencies.push({ id: metadataFileName, type: "METADATA" });
       if (!fileNameSet.has(metadataFileName)) {
         warningSet.add(
           `Unit "${parsedUnit.unitId}" referenziert fehlende Metadaten: ${parsedUnit.metadataRef}`,
@@ -724,9 +811,12 @@ export class UnitParserService {
     }
 
     if (parsedUnit.playerRef) {
-      const playerFileName = this.findPlayerFile(parsedUnit.playerRef, fileNames);
+      const playerFileName = this.findPlayerFile(
+        parsedUnit.playerRef,
+        fileNames,
+      );
       if (playerFileName) {
-        dependencies.push({ id: playerFileName, type: 'PLAYER' });
+        dependencies.push({ id: playerFileName, type: "PLAYER" });
       } else {
         warningSet.add(
           `Unit "${parsedUnit.unitId}" hat keinen passenden Player für Ref "${parsedUnit.playerRef}"`,
@@ -745,9 +835,9 @@ export class UnitParserService {
     const seen = new Set<string>();
 
     const pushIfValid = (dep: any) => {
-      const id = typeof dep?.id === 'string' ? dep.id : '';
+      const id = typeof dep?.id === "string" ? dep.id : "";
       if (!id) return;
-      const type = typeof dep?.type === 'string' ? dep.type : 'FILE';
+      const type = typeof dep?.type === "string" ? dep.type : "FILE";
       const key = `${type}::${id}`;
       if (seen.has(key)) return;
       seen.add(key);
@@ -761,16 +851,16 @@ export class UnitParserService {
   }
 
   private shouldKeepDependency(dep: any, availableFiles: Set<string>): boolean {
-    const id = typeof dep?.id === 'string' ? dep.id.trim() : '';
+    const id = typeof dep?.id === "string" ? dep.id.trim() : "";
     if (!id) return false;
 
-    const type = typeof dep?.type === 'string' ? dep.type : 'FILE';
+    const type = typeof dep?.type === "string" ? dep.type : "FILE";
     const fileBackedTypes = new Set([
-      'UNIT_DEFINITION',
-      'CODING_SCHEME',
-      'METADATA',
-      'PLAYER',
-      'FILE',
+      "UNIT_DEFINITION",
+      "CODING_SCHEME",
+      "METADATA",
+      "PLAYER",
+      "FILE",
     ]);
 
     if (!fileBackedTypes.has(type)) {
@@ -797,14 +887,17 @@ export class UnitParserService {
     for (const part of parts) {
       for (let unitIndex = 0; unitIndex < part.units.length; unitIndex++) {
         const unit = part.units[unitIndex];
-        const dependencies = Array.isArray(unit?.dependencies) ? unit.dependencies : [];
+        const dependencies = Array.isArray(unit?.dependencies)
+          ? unit.dependencies
+          : [];
         if (!dependencies.length) continue;
 
         const filteredDependencies = dependencies.filter((dep: any) =>
           this.shouldKeepDependency(dep, fileNameSet),
         );
 
-        const removedForUnit = dependencies.length - filteredDependencies.length;
+        const removedForUnit =
+          dependencies.length - filteredDependencies.length;
         if (removedForUnit > 0) {
           part.units[unitIndex] = {
             ...unit,
@@ -825,7 +918,11 @@ export class UnitParserService {
       const instruments = [...sourceInstruments];
       let partInstrumentsChanged = false;
 
-      for (let instrumentIndex = 0; instrumentIndex < instruments.length; instrumentIndex++) {
+      for (
+        let instrumentIndex = 0;
+        instrumentIndex < instruments.length;
+        instrumentIndex++
+      ) {
         const instrument = instruments[instrumentIndex];
         const sourceBooklets = Array.isArray(instrument?.testcenterBooklet)
           ? instrument.testcenterBooklet
@@ -837,20 +934,30 @@ export class UnitParserService {
         const booklets = [...sourceBooklets];
         let instrumentChanged = false;
 
-        for (let bookletIndex = 0; bookletIndex < booklets.length; bookletIndex++) {
+        for (
+          let bookletIndex = 0;
+          bookletIndex < booklets.length;
+          bookletIndex++
+        ) {
           const booklet = booklets[bookletIndex];
-          if (!booklet || typeof booklet !== 'object' || Array.isArray(booklet)) {
+          if (
+            !booklet ||
+            typeof booklet !== "object" ||
+            Array.isArray(booklet)
+          ) {
             continue;
           }
 
-          const definitionId = typeof booklet.definitionId === 'string'
-            ? booklet.definitionId.trim()
-            : '';
+          const definitionId =
+            typeof booklet.definitionId === "string"
+              ? booklet.definitionId.trim()
+              : "";
           if (!definitionId || fileNameSet.has(definitionId)) {
             continue;
           }
 
-          const { definitionId: _removed, ...bookletWithoutDefinition } = booklet;
+          const { definitionId: _removed, ...bookletWithoutDefinition } =
+            booklet;
           booklets[bookletIndex] = bookletWithoutDefinition;
           instrumentChanged = true;
           bookletsUpdated++;
@@ -883,10 +990,21 @@ export class UnitParserService {
     parsedUnit: UnitXmlData,
     allFiles: AcpFile[],
     warningSet: Set<string>,
-  ): Promise<Array<{ id: string; name: string; sourceVariable?: string; metadata: Record<string, string>; useUnitAliasAsPrefix?: boolean }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      sourceVariable?: string;
+      metadata: Record<string, string>;
+      useUnitAliasAsPrefix?: boolean;
+    }>
+  > {
     if (!parsedUnit.metadataRef) return [];
 
-    const vomdFile = this.findFileByOriginalName(allFiles, parsedUnit.metadataRef);
+    const vomdFile = this.findFileByOriginalName(
+      allFiles,
+      parsedUnit.metadataRef,
+    );
     if (!vomdFile) {
       warningSet.add(
         `Unit "${parsedUnit.unitId}" referenziert VOMD "${parsedUnit.metadataRef}", die nicht hochgeladen wurde`,
@@ -894,9 +1012,9 @@ export class UnitParserService {
       return [];
     }
 
-    let vomdContent = '';
+    let vomdContent = "";
     try {
-      vomdContent = await fs.readFile(vomdFile.filePath, 'utf-8');
+      vomdContent = await fs.readFile(vomdFile.filePath, "utf-8");
     } catch (e) {
       warningSet.add(
         `VOMD für Unit "${parsedUnit.unitId}" konnte nicht gelesen werden: ${vomdFile.originalName}`,
@@ -907,14 +1025,24 @@ export class UnitParserService {
 
     const vomdData = this.parseVomd(vomdContent);
     if (!vomdData) {
-      warningSet.add(`VOMD für Unit "${parsedUnit.unitId}" ist kein valides JSON: ${vomdFile.originalName}`);
+      warningSet.add(
+        `VOMD für Unit "${parsedUnit.unitId}" ist kein valides JSON: ${vomdFile.originalName}`,
+      );
       return [];
     }
 
-    const parsedItems: Array<{ id: string; name: string; sourceVariable?: string; metadata: Record<string, string>; useUnitAliasAsPrefix?: boolean }> = [];
+    const parsedItems: Array<{
+      id: string;
+      name: string;
+      sourceVariable?: string;
+      metadata: Record<string, string>;
+      useUnitAliasAsPrefix?: boolean;
+    }> = [];
     for (const item of vomdData.items || []) {
       if (!item?.id) {
-        warningSet.add(`Unit "${parsedUnit.unitId}" enthält ein Item ohne ID in ${vomdFile.originalName}`);
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" enthält ein Item ohne ID in ${vomdFile.originalName}`,
+        );
         continue;
       }
 
@@ -929,7 +1057,11 @@ export class UnitParserService {
       parsedItems.push({
         id: item.id,
         name: item.description || item.id,
-        sourceVariable: item.sourceVariable || item.variableId || item.variableReadOnlyId || undefined,
+        sourceVariable:
+          item.sourceVariable ||
+          item.variableId ||
+          item.variableReadOnlyId ||
+          undefined,
         metadata,
         useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
       });
@@ -938,9 +1070,14 @@ export class UnitParserService {
     return parsedItems;
   }
 
-  private findFileByOriginalName(allFiles: AcpFile[], originalName: string): AcpFile | undefined {
+  private findFileByOriginalName(
+    allFiles: AcpFile[],
+    originalName: string,
+  ): AcpFile | undefined {
     return allFiles.find(
-      (f) => f.originalName === originalName || f.originalName === `${originalName}.json`,
+      (f) =>
+        f.originalName === originalName ||
+        f.originalName === `${originalName}.json`,
     );
   }
 
@@ -949,13 +1086,13 @@ export class UnitParserService {
    * Input: [{"lang":"de","value":"Itemformat"}] → "Itemformat"
    */
   private extractLabelText(label: any): string {
-    if (!label) return '';
-    if (typeof label === 'string') return label;
+    if (!label) return "";
+    if (typeof label === "string") return label;
     if (Array.isArray(label)) {
-      const de = label.find((l: any) => l.lang === 'de');
-      return de?.value || label[0]?.value || '';
+      const de = label.find((l: any) => l.lang === "de");
+      return de?.value || label[0]?.value || "";
     }
-    return '';
+    return "";
   }
 
   /**
@@ -963,15 +1100,15 @@ export class UnitParserService {
    * Can be: [{"lang":"de","value":"..."}] or {"lang":"de","value":"..."} or string
    */
   private extractValueText(valueAsText: any): string {
-    if (!valueAsText) return '';
-    if (typeof valueAsText === 'string') return valueAsText;
+    if (!valueAsText) return "";
+    if (typeof valueAsText === "string") return valueAsText;
     if (Array.isArray(valueAsText)) {
-      const de = valueAsText.find((v: any) => v.lang === 'de');
-      return de?.value || valueAsText[0]?.value || '';
+      const de = valueAsText.find((v: any) => v.lang === "de");
+      return de?.value || valueAsText[0]?.value || "";
     }
-    if (typeof valueAsText === 'object' && valueAsText.value) {
+    if (typeof valueAsText === "object" && valueAsText.value) {
       return valueAsText.value;
     }
-    return '';
+    return "";
   }
 }

@@ -4,10 +4,10 @@ import {
   ForbiddenException,
   Injectable,
   UnauthorizedException,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { ServerApiAuthService } from './server-api-auth.service';
-import { SERVER_API_SCOPES_KEY } from './server-api-scopes.decorator';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { ServerApiAuthService } from "./server-api-auth.service";
+import { SERVER_API_SCOPES_KEY } from "./server-api-scopes.decorator";
 
 @Injectable()
 export class ServerApiAuthGuard implements CanActivate {
@@ -20,21 +20,24 @@ export class ServerApiAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest();
     const token = this.extractToken(req);
     if (!token) {
-      throw new UnauthorizedException('Missing server API token');
+      throw new UnauthorizedException("Missing server API token");
     }
 
     const client = this.authService.validateToken(token);
     if (!client) {
-      throw new UnauthorizedException('Invalid server API token');
+      throw new UnauthorizedException("Invalid server API token");
     }
 
-    const requiredScopes = this.reflector.getAllAndOverride<string[]>(
-      SERVER_API_SCOPES_KEY,
-      [context.getHandler(), context.getClass()],
-    ) || [];
+    const requiredScopes =
+      this.reflector.getAllAndOverride<string[]>(SERVER_API_SCOPES_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]) || [];
 
     if (!this.authService.hasScopes(client.scopes, requiredScopes)) {
-      throw new ForbiddenException(`Missing required scopes: ${requiredScopes.join(', ')}`);
+      throw new ForbiddenException(
+        `Missing required scopes: ${requiredScopes.join(", ")}`,
+      );
     }
 
     req.serverApiClient = {
@@ -46,16 +49,17 @@ export class ServerApiAuthGuard implements CanActivate {
   }
 
   private extractToken(req: any): string | null {
-    const xServerToken = (req.headers?.['x-server-token'] as string | undefined) ||
-      (req.headers?.['x-integration-token'] as string | undefined);
+    const xServerToken =
+      (req.headers?.["x-server-token"] as string | undefined) ||
+      (req.headers?.["x-integration-token"] as string | undefined);
 
     if (xServerToken && xServerToken.trim()) {
       return xServerToken.trim();
     }
 
     const authHeader = req.headers?.authorization as string | undefined;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      return authHeader.slice('Bearer '.length).trim();
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      return authHeader.slice("Bearer ".length).trim();
     }
 
     return null;

@@ -4,77 +4,77 @@ import {
   getIndexUnits,
   normalizeIndexForStorage,
   toRuntimeAcpIndex,
-} from './acp-index.utils';
+} from "./acp-index.utils";
 
-describe('acp-index.utils', () => {
-  it('prefers assessmentParts units over top-level units', () => {
+describe("acp-index.utils", () => {
+  it("prefers assessmentParts units over top-level units", () => {
     const index = {
-      units: [{ id: 'legacy-u1' }],
+      units: [{ id: "legacy-u1" }],
       assessmentParts: [
         {
-          id: 'p1',
-          units: [{ id: 'modern-u1' }],
+          id: "p1",
+          units: [{ id: "modern-u1" }],
         },
       ],
     };
 
-    expect(getIndexUnits(index).map((u) => u.id)).toEqual(['modern-u1']);
+    expect(getIndexUnits(index).map((u) => u.id)).toEqual(["modern-u1"]);
   });
 
-  it('falls back to top-level units for legacy ACPs', () => {
+  it("falls back to top-level units for legacy ACPs", () => {
     const index = {
-      units: [{ id: 'legacy-u1' }, { id: 'legacy-u2' }],
+      units: [{ id: "legacy-u1" }, { id: "legacy-u2" }],
       assessmentParts: [],
     };
 
     expect(getIndexUnits(index).map((u) => u.id)).toEqual([
-      'legacy-u1',
-      'legacy-u2',
+      "legacy-u1",
+      "legacy-u2",
     ]);
   });
 
-  it('prefers assessmentParts scales over top-level scales', () => {
+  it("prefers assessmentParts scales over top-level scales", () => {
     const index = {
-      scales: [{ id: 'legacy-s1' }],
+      scales: [{ id: "legacy-s1" }],
       assessmentParts: [
         {
-          id: 'p1',
-          scales: [{ id: 'modern-s1' }],
+          id: "p1",
+          scales: [{ id: "modern-s1" }],
         },
       ],
     };
 
-    expect(getIndexScales(index).map((s) => s.id)).toEqual(['modern-s1']);
+    expect(getIndexScales(index).map((s) => s.id)).toEqual(["modern-s1"]);
   });
 
-  it('normalizes legacy units/scales into assessmentParts', () => {
+  it("normalizes legacy units/scales into assessmentParts", () => {
     const normalized = normalizeIndexForStorage({
-      units: [{ id: 'u1' }],
-      scales: [{ id: 's1' }],
+      units: [{ id: "u1" }],
+      scales: [{ id: "s1" }],
       assessmentParts: [],
     }) as any;
 
     expect(normalized.assessmentParts?.length).toBe(1);
-    expect(normalized.assessmentParts[0].units).toEqual([{ id: 'u1' }]);
-    expect(normalized.assessmentParts[0].scales).toEqual([{ id: 's1' }]);
+    expect(normalized.assessmentParts[0].units).toEqual([{ id: "u1" }]);
+    expect(normalized.assessmentParts[0].scales).toEqual([{ id: "s1" }]);
   });
 
-  it('adds runtime compatibility units/scales for modern ACPs', () => {
+  it("adds runtime compatibility units/scales for modern ACPs", () => {
     const runtime = toRuntimeAcpIndex({
       assessmentParts: [
         {
-          id: 'p1',
-          units: [{ id: 'u1' }],
-          scales: [{ id: 's1' }],
+          id: "p1",
+          units: [{ id: "u1" }],
+          scales: [{ id: "s1" }],
         },
       ],
     }) as any;
 
-    expect(runtime.units).toEqual([{ id: 'u1' }]);
-    expect(runtime.scales).toEqual([{ id: 's1' }]);
+    expect(runtime.units).toEqual([{ id: "u1" }]);
+    expect(runtime.scales).toEqual([{ id: "s1" }]);
   });
 
-  it('defaults version to 0.5.0 if missing', () => {
+  it("defaults version to 0.5.0 if missing", () => {
     const runtime = toRuntimeAcpIndex({
       assessmentParts: [],
     }) as any;

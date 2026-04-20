@@ -3,37 +3,37 @@ import {
   PrimaryGeneratedColumn,
   Column,
   UpdateDateColumn,
-} from 'typeorm';
+} from "typeorm";
 
-@Entity('app_settings')
+@Entity("app_settings")
 export class AppSettings {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ type: 'jsonb', default: {} })
+  @Column({ type: "jsonb", default: {} })
   theme!: Record<string, unknown>;
 
-  @Column({ default: 'de' })
+  @Column({ default: "de" })
   language!: string;
 
-  @Column({ name: 'logo_url', nullable: true })
+  @Column({ name: "logo_url", nullable: true })
   logoUrl?: string;
 
-  @Column({ name: 'landing_page_html', type: 'text', nullable: true })
+  @Column({ name: "landing_page_html", type: "text", nullable: true })
   landingPageHtml?: string;
 
-  @Column({ name: 'imprint_html', type: 'text', nullable: true })
+  @Column({ name: "imprint_html", type: "text", nullable: true })
   imprintHtml?: string;
 
-  @Column({ name: 'privacy_html', type: 'text', nullable: true })
+  @Column({ name: "privacy_html", type: "text", nullable: true })
   privacyHtml?: string;
 
-  @Column({ name: 'accessibility_html', type: 'text', nullable: true })
+  @Column({ name: "accessibility_html", type: "text", nullable: true })
   accessibilityHtml?: string;
 
-  @Column({ name: 'default_acp_index', type: 'jsonb', default: {} })
+  @Column({ name: "default_acp_index", type: "jsonb", default: {} })
   defaultAcpIndex!: Record<string, unknown>;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 }

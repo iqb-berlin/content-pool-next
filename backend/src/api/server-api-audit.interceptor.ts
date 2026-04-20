@@ -3,11 +3,14 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
-} from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import { Observable, catchError, tap, throwError } from 'rxjs';
-import { SERVER_API_AUDIT_KEY, ServerApiAuditMetadata } from './server-api-audit.decorator';
-import { ServerApiAuditService } from './server-api-audit.service';
+} from "@nestjs/common";
+import { Reflector } from "@nestjs/core";
+import { Observable, catchError, tap, throwError } from "rxjs";
+import {
+  SERVER_API_AUDIT_KEY,
+  ServerApiAuditMetadata,
+} from "./server-api-audit.decorator";
+import { ServerApiAuditService } from "./server-api-audit.service";
 
 @Injectable()
 export class ServerApiAuditInterceptor implements NestInterceptor {
@@ -30,10 +33,10 @@ export class ServerApiAuditInterceptor implements NestInterceptor {
     const res = context.switchToHttp().getResponse();
 
     const baseEntry = {
-      clientId: req?.serverApiClient?.id || 'unknown',
+      clientId: req?.serverApiClient?.id || "unknown",
       action: auditMeta.action,
-      method: req?.method || 'UNKNOWN',
-      path: req?.originalUrl || req?.url || '',
+      method: req?.method || "UNKNOWN",
+      path: req?.originalUrl || req?.url || "",
       acpId: req?.params?.acpId,
       resourceId: req?.params?.fileId || req?.params?.acpId,
       details: {
@@ -57,7 +60,7 @@ export class ServerApiAuditInterceptor implements NestInterceptor {
           statusCode: error?.status || 500,
           details: {
             ...(baseEntry.details || {}),
-            errorMessage: error?.message || 'Unknown error',
+            errorMessage: error?.message || "Unknown error",
           },
         });
 

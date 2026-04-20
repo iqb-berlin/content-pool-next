@@ -3,25 +3,33 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import * as crypto from 'crypto';
-import { AcpFile, Acp, AcpAccessConfig, ItemResponseState } from '../database/entities';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { ConfigService } from "@nestjs/config";
+import * as path from "path";
+import * as fs from "fs/promises";
+import * as crypto from "crypto";
+import {
+  AcpFile,
+  Acp,
+  AcpAccessConfig,
+  ItemResponseState,
+} from "../database/entities";
 import {
   findUnitInIndex,
   getAssessmentParts,
   getIndexUnits,
   toRuntimeAcpIndex,
-} from '../acp/acp-index.utils';
-import { normalizeFeatureConfig } from '../acp/feature-config.utils';
-import { UnitParserService } from './unit-parser.service';
-import { ValidationService, AutoValidationSummary } from '../validation/validation.service';
+} from "../acp/acp-index.utils";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
+import { UnitParserService } from "./unit-parser.service";
+import {
+  ValidationService,
+  AutoValidationSummary,
+} from "../validation/validation.service";
 
-type UploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
+type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
 
 @Injectable()
 export class FilesService {
@@ -41,15 +49,15 @@ export class FilesService {
     private readonly validationService: ValidationService,
   ) {
     this.storagePath = this.configService.get<string>(
-      'FILE_STORAGE_PATH',
-      './uploads',
+      "FILE_STORAGE_PATH",
+      "./uploads",
     );
   }
 
   async findByAcp(acpId: string): Promise<AcpFile[]> {
     return this.fileRepository.find({
       where: { acpId },
-      order: { originalName: 'ASC' },
+      order: { originalName: "ASC" },
     });
   }
 
@@ -64,7 +72,9 @@ export class FilesService {
   async findByIdForAcp(acpId: string, id: string): Promise<AcpFile> {
     const file = await this.findById(id);
     if (file.acpId !== acpId) {
-      throw new NotFoundException(`File with ID ${id} not found for ACP ${acpId}`);
+      throw new NotFoundException(
+        `File with ID ${id} not found for ACP ${acpId}`,
+      );
     }
     return file;
   }
@@ -87,9 +97,9 @@ export class FilesService {
 
     // Compute checksum
     const checksum = crypto
-      .createHash('sha256')
+      .createHash("sha256")
       .update(uploadedFile.buffer)
-      .digest('hex');
+      .digest("hex");
 
     // Save metadata
     const file = this.fileRepository.create({
@@ -114,7 +124,7 @@ export class FilesService {
     );
 
     if (!files?.length) {
-      throw new BadRequestException('At least one file is required');
+      throw new BadRequestException("At least one file is required");
     }
 
     const existingFiles = await this.findByAcp(acpId);
@@ -132,10 +142,10 @@ export class FilesService {
     const seenIncomingNames = new Set<string>();
     const conflicts = new Set<string>();
     for (const incoming of files) {
-      const incomingName = String(incoming?.originalname || '').trim();
+      const incomingName = String(incoming?.originalname || "").trim();
       const key = this.normalizeFileName(incomingName);
       if (!key) {
-        throw new BadRequestException('All files must include a filename');
+        throw new BadRequestException("All files must include a filename");
       }
 
       if (existingByName.has(key) || seenIncomingNames.has(key)) {
@@ -144,10 +154,10 @@ export class FilesService {
       seenIncomingNames.add(key);
     }
 
-    if (conflictStrategy === 'reject' && conflicts.size > 0) {
+    if (conflictStrategy === "reject" && conflicts.size > 0) {
       throw new ConflictException({
         message:
-          'File conflicts detected. Resolve duplicates by skipping or uploading with conflictStrategy=overwrite.',
+          "File conflicts detected. Resolve duplicates by skipping or uploading with conflictStrategy=overwrite.",
         conflicts: Array.from(conflicts).sort((a, b) => a.localeCompare(b)),
       });
     }
@@ -157,10 +167,10 @@ export class FilesService {
     for (const file of files) {
       const key = this.normalizeFileName(file.originalname);
       if (!key) {
-        throw new BadRequestException('All files must include a filename');
+        throw new BadRequestException("All files must include a filename");
       }
 
-      if (conflictStrategy === 'overwrite') {
+      if (conflictStrategy === "overwrite") {
         const matches = existingByName.get(key) || [];
         for (const match of matches) {
           await this.deleteForAcp(acpId, match.id);
@@ -170,7 +180,7 @@ export class FilesService {
 
       results.push(await this.upload(acpId, file));
 
-      if (conflictStrategy === 'keep-both') {
+      if (conflictStrategy === "keep-both") {
         const bucket = existingByName.get(key) || [];
         bucket.push(results[results.length - 1]);
         existingByName.set(key, bucket);
@@ -187,17 +197,20 @@ export class FilesService {
       const buffer = await fs.readFile(file.filePath);
       return { buffer, file };
     } catch {
-      throw new NotFoundException('File not found on disk');
+      throw new NotFoundException("File not found on disk");
     }
   }
 
-  async downloadForAcp(acpId: string, id: string): Promise<{ buffer: Buffer; file: AcpFile }> {
+  async downloadForAcp(
+    acpId: string,
+    id: string,
+  ): Promise<{ buffer: Buffer; file: AcpFile }> {
     const file = await this.findByIdForAcp(acpId, id);
     try {
       const buffer = await fs.readFile(file.filePath);
       return { buffer, file };
     } catch {
-      throw new NotFoundException('File not found on disk');
+      throw new NotFoundException("File not found on disk");
     }
   }
 
@@ -233,9 +246,11 @@ export class FilesService {
     await this.fileRepository.remove(files);
   }
 
-  async cleanupOrphanedResponseStates(
-    acpId: string,
-  ): Promise<{ totalStates: number; deletedStates: number; keptStates: number }> {
+  async cleanupOrphanedResponseStates(acpId: string): Promise<{
+    totalStates: number;
+    deletedStates: number;
+    keptStates: number;
+  }> {
     const existingStates = await this.itemResponseStateRepository.find({
       where: { acpId },
       select: {
@@ -253,9 +268,12 @@ export class FilesService {
       };
     }
 
-    const fileItemList = await this.unitParserService.getItemListFromFiles(acpId);
+    const fileItemList =
+      await this.unitParserService.getItemListFromFiles(acpId);
     const validKeys = new Set(
-      (fileItemList.items || []).map((item) => `${item.unitId}::${item.itemId}`),
+      (fileItemList.items || []).map(
+        (item) => `${item.unitId}::${item.itemId}`,
+      ),
     );
 
     const staleStateIds = existingStates
@@ -277,22 +295,24 @@ export class FilesService {
     acpId: string,
     options: { skipValidation?: boolean } = {},
   ): Promise<{
-      cleanupReport: {
-        unitsUpdated: number;
-        dependenciesRemoved: number;
-        bookletsUpdated: number;
-        bookletDefinitionsRemoved: number;
-        indexUpdated: boolean;
-      };
-      responseStateCleanup: {
-        totalStates: number;
-        deletedStates: number;
-        keptStates: number;
-      };
-      validationSummary?: AutoValidationSummary;
-    }> {
-    const cleanupReport = await this.unitParserService.pruneMissingDependencies(acpId);
-    const responseStateCleanup = await this.cleanupOrphanedResponseStates(acpId);
+    cleanupReport: {
+      unitsUpdated: number;
+      dependenciesRemoved: number;
+      bookletsUpdated: number;
+      bookletDefinitionsRemoved: number;
+      indexUpdated: boolean;
+    };
+    responseStateCleanup: {
+      totalStates: number;
+      deletedStates: number;
+      keptStates: number;
+    };
+    validationSummary?: AutoValidationSummary;
+  }> {
+    const cleanupReport =
+      await this.unitParserService.pruneMissingDependencies(acpId);
+    const responseStateCleanup =
+      await this.cleanupOrphanedResponseStates(acpId);
 
     if (options.skipValidation) {
       return {
@@ -301,10 +321,11 @@ export class FilesService {
       };
     }
 
-    const validationRun = await this.validationService.autoValidateUploadedFiles(
-      acpId,
-      await this.findByAcp(acpId),
-    );
+    const validationRun =
+      await this.validationService.autoValidateUploadedFiles(
+        acpId,
+        await this.findByAcp(acpId),
+      );
 
     return {
       cleanupReport,
@@ -313,7 +334,9 @@ export class FilesService {
     };
   }
 
-  async getValidationResult(id: string): Promise<Record<string, unknown> | null> {
+  async getValidationResult(
+    id: string,
+  ): Promise<Record<string, unknown> | null> {
     const file = await this.findById(id);
     return (file.validationResult as Record<string, unknown>) || null;
   }
@@ -335,7 +358,10 @@ export class FilesService {
     return this.fileRepository.save(file);
   }
 
-  async createUnitZip(acpId: string, unitId: string): Promise<{ buffer: Buffer; fileName: string }> {
+  async createUnitZip(
+    acpId: string,
+    unitId: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
     const index = await this.getAcpIndex(acpId);
     const allFiles = await this.findByAcp(acpId);
     const unitFiles = this.collectUnitFiles(index, allFiles, unitId);
@@ -347,7 +373,10 @@ export class FilesService {
     return { buffer, fileName: `acp-${acpId}-unit-${unitId}.zip` };
   }
 
-  async createSequenceZip(acpId: string, sequenceId: string): Promise<{ buffer: Buffer; fileName: string }> {
+  async createSequenceZip(
+    acpId: string,
+    sequenceId: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
     const index = await this.getAcpIndex(acpId);
     const allFiles = await this.findByAcp(acpId);
     const unitIds = this.resolveSequenceUnitIds(index, sequenceId);
@@ -366,7 +395,9 @@ export class FilesService {
 
     const files = Array.from(fileMap.values());
     if (!files.length) {
-      throw new NotFoundException(`No files found for sequence "${sequenceId}"`);
+      throw new NotFoundException(
+        `No files found for sequence "${sequenceId}"`,
+      );
     }
 
     const buffer = await this.createZipBuffer(files);
@@ -374,11 +405,19 @@ export class FilesService {
   }
 
   async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
-    const config = await this.accessConfigRepository.findOne({ where: { acpId } });
-    return normalizeFeatureConfig(config?.featureConfig || {}) as Record<string, any>;
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
+    return normalizeFeatureConfig(config?.featureConfig || {}) as Record<
+      string,
+      any
+    >;
   }
 
-  async isUnitDependencyFile(acpId: string, fileName: string): Promise<boolean> {
+  async isUnitDependencyFile(
+    acpId: string,
+    fileName: string,
+  ): Promise<boolean> {
     const index = await this.getAcpIndex(acpId);
     for (const unit of getIndexUnits(index)) {
       if (`${unit.id}.xml` === fileName) {
@@ -411,14 +450,22 @@ export class FilesService {
             .slice()
             .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
             .map((u: any) => u.id)
-            .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+            .filter(
+              (id: unknown): id is string =>
+                typeof id === "string" && id.length > 0,
+            );
         }
       }
     }
     return [];
   }
 
-  private collectUnitFiles(index: any, allFiles: AcpFile[], unitId: string, throwOnMissingUnit = true): AcpFile[] {
+  private collectUnitFiles(
+    index: any,
+    allFiles: AcpFile[],
+    unitId: string,
+    throwOnMissingUnit = true,
+  ): AcpFile[] {
     const unit = findUnitInIndex(index, unitId);
     if (!unit) {
       if (throwOnMissingUnit) {
@@ -429,7 +476,7 @@ export class FilesService {
 
     const dependencyNames = new Set<string>();
     for (const dep of unit.dependencies || []) {
-      if (dep?.id && typeof dep.id === 'string') {
+      if (dep?.id && typeof dep.id === "string") {
         dependencyNames.add(dep.id);
       }
     }
@@ -443,7 +490,7 @@ export class FilesService {
   private async createZipBuffer(files: AcpFile[]): Promise<Buffer> {
     // JSZip is already part of the backend dependency tree.
     // Use dynamic require here to avoid TypeScript type dependency friction.
-    const JSZip = require('jszip');
+    const JSZip = require("jszip");
     const zip = new JSZip();
 
     let added = 0;
@@ -458,12 +505,14 @@ export class FilesService {
     }
 
     if (added === 0) {
-      throw new NotFoundException('None of the selected files are available on disk');
+      throw new NotFoundException(
+        "None of the selected files are available on disk",
+      );
     }
 
     const buffer = await zip.generateAsync({
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
+      type: "nodebuffer",
+      compression: "DEFLATE",
       compressionOptions: { level: 9 },
     });
 
@@ -473,16 +522,22 @@ export class FilesService {
   private resolveUploadConflictStrategy(
     conflictStrategyInput?: string,
   ): UploadConflictStrategy {
-    const strategy = (conflictStrategyInput || 'reject').trim().toLowerCase();
-    if (strategy === 'reject' || strategy === 'overwrite' || strategy === 'keep-both') {
+    const strategy = (conflictStrategyInput || "reject").trim().toLowerCase();
+    if (
+      strategy === "reject" ||
+      strategy === "overwrite" ||
+      strategy === "keep-both"
+    ) {
       return strategy;
     }
     throw new BadRequestException(
-      'Invalid conflictStrategy. Expected one of: reject, overwrite, keep-both',
+      "Invalid conflictStrategy. Expected one of: reject, overwrite, keep-both",
     );
   }
 
   private normalizeFileName(fileName: string): string {
-    return String(fileName || '').trim().toLowerCase();
+    return String(fileName || "")
+      .trim()
+      .toLowerCase();
   }
 }

@@ -16,7 +16,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 
     <div class="page-header">
       <h1>Snapshots</h1>
-      <button class="btn btn-primary" (click)="showCreate = !showCreate">+ Snapshot erstellen</button>
+      <button class="btn btn-primary" (click)="showCreate = !showCreate">
+        + Snapshot erstellen
+      </button>
     </div>
 
     @if (actionSuccess) {
@@ -27,7 +29,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       <div class="card">
         <div class="form-group">
           <label>Changelog</label>
-          <textarea [(ngModel)]="changelog" rows="3" placeholder="Änderungen beschreiben..."></textarea>
+          <textarea
+            [(ngModel)]="changelog"
+            rows="3"
+            placeholder="Änderungen beschreiben..."
+          ></textarea>
         </div>
         <div class="toolbar">
           <button class="btn btn-primary" (click)="create()">Erstellen</button>
@@ -39,20 +45,31 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     <div class="card">
       <table class="table">
         <thead>
-          <tr><th>Version</th><th>Erstellt</th><th>Changelog</th><th>Aktionen</th></tr>
+          <tr>
+            <th>Version</th>
+            <th>Erstellt</th>
+            <th>Changelog</th>
+            <th>Aktionen</th>
+          </tr>
         </thead>
         <tbody>
           @for (snap of snapshots; track snap.id) {
             <tr>
-              <td><strong>v{{ snap.versionNumber }}</strong></td>
-              <td>{{ snap.createdAt | date:'dd.MM.yyyy HH:mm' }}</td>
+              <td>
+                <strong>v{{ snap.versionNumber }}</strong>
+              </td>
+              <td>{{ snap.createdAt | date: 'dd.MM.yyyy HH:mm' }}</td>
               <td>{{ snap.changelog || '–' }}</td>
               <td>
                 <button class="btn btn-sm btn-outline" (click)="previewDiff(snap)">
                   {{ loadingDiffSnapshotId === snap.id ? 'Lade…' : 'Diff zum aktuellen Stand' }}
                 </button>
-                <button class="btn btn-sm btn-outline" (click)="openRestoreDialog(snap)">Wiederherstellen</button>
-                <button class="btn btn-sm btn-danger" (click)="openDeleteDialog(snap)">Löschen</button>
+                <button class="btn btn-sm btn-outline" (click)="openRestoreDialog(snap)">
+                  Wiederherstellen
+                </button>
+                <button class="btn btn-sm btn-danger" (click)="openDeleteDialog(snap)">
+                  Löschen
+                </button>
               </td>
             </tr>
           }
@@ -86,7 +103,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 
     @if (diffError) {
       <div class="card">
-        <p style="color:#b00020;"><strong>Diff konnte nicht geladen werden:</strong> {{ diffError }}</p>
+        <p style="color:#b00020;">
+          <strong>Diff konnte nicht geladen werden:</strong> {{ diffError }}
+        </p>
       </div>
     }
 
@@ -101,8 +120,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       [confirmLabel]="actionDialogConfirmLabel"
       [confirmVariant]="actionDialogKind === 'delete' ? 'danger' : 'primary'"
       (confirmed)="confirmActionDialog()"
-      (cancelled)="closeActionDialog()" />
-  `
+      (cancelled)="closeActionDialog()"
+    />
+  `,
 })
 export class SnapshotsComponent implements OnInit {
   acpId = '';
@@ -120,7 +140,10 @@ export class SnapshotsComponent implements OnInit {
   actionDialogError = '';
   actionSuccess = '';
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(
+    private route: ActivatedRoute,
+    private api: ApiService,
+  ) {}
 
   ngOnInit() {
     this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
@@ -128,13 +151,17 @@ export class SnapshotsComponent implements OnInit {
   }
 
   load() {
-    this.api.getSnapshots(this.acpId).subscribe(s => this.snapshots = s);
+    this.api.getSnapshots(this.acpId).subscribe((s) => (this.snapshots = s));
   }
 
   create() {
     this.actionSuccess = '';
     this.api.createSnapshot(this.acpId, this.changelog).subscribe({
-      next: () => { this.showCreate = false; this.changelog = ''; this.load(); }
+      next: () => {
+        this.showCreate = false;
+        this.changelog = '';
+        this.load();
+      },
     });
   }
 
@@ -226,7 +253,8 @@ export class SnapshotsComponent implements OnInit {
         },
         error: (err) => {
           this.actionDialogBusy = false;
-          this.actionDialogError = err?.error?.message || 'Unbekannter Fehler beim Wiederherstellen.';
+          this.actionDialogError =
+            err?.error?.message || 'Unbekannter Fehler beim Wiederherstellen.';
         },
       });
       return;

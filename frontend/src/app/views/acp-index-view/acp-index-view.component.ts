@@ -4,10 +4,7 @@ import { CommonModule } from '@angular/common';
 import { catchError, forkJoin, of } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AcpFile } from '../../core/models/api.models';
-import {
-  BreadcrumbComponent,
-  BreadcrumbItem,
-} from '../../shared/components/breadcrumb.component';
+import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 
 type NodeKind = 'object' | 'array' | 'value';
 type ActionKind = 'route' | 'file-view' | 'file-download';
@@ -45,7 +42,9 @@ interface NodeAction {
       <div class="header-actions">
         <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(1)">Ebene 1</button>
         <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(2)">Ebene 2</button>
-        <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(99)">Alles aufklappen</button>
+        <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(99)">
+          Alles aufklappen
+        </button>
         <a [routerLink]="['/view', acpId]" class="btn btn-outline">← Zurück</a>
       </div>
     </div>
@@ -70,7 +69,8 @@ interface NodeAction {
           @for (node of rootNodes; track node.id) {
             <ng-container
               [ngTemplateOutlet]="nodeTemplate"
-              [ngTemplateOutletContext]="{ $implicit: node }">
+              [ngTemplateOutletContext]="{ $implicit: node }"
+            >
             </ng-container>
           }
         </div>
@@ -87,10 +87,7 @@ interface NodeAction {
             <div class="node-actions">
               @for (action of node.actions; track action.id) {
                 @if (action.kind === 'route') {
-                  <a
-                    class="action-chip"
-                    [title]="action.title || ''"
-                    [routerLink]="action.route">
+                  <a class="action-chip" [title]="action.title || ''" [routerLink]="action.route">
                     {{ action.label }}
                   </a>
                 } @else {
@@ -98,7 +95,8 @@ interface NodeAction {
                     class="action-chip"
                     [title]="action.title || ''"
                     [disabled]="busyFileId === action.fileId"
-                    (click)="runFileAction(action, $event)">
+                    (click)="runFileAction(action, $event)"
+                  >
                     {{ busyFileId === action.fileId ? '…' : action.label }}
                   </button>
                 }
@@ -111,7 +109,8 @@ interface NodeAction {
           #detailsEl
           class="node-group"
           [attr.open]="isExpanded(node) ? '' : null"
-          (toggle)="onNodeToggle(node, detailsEl, $event)">
+          (toggle)="onNodeToggle(node, detailsEl, $event)"
+        >
           <summary class="node-row group" [style.padding-left.px]="node.depth * 18">
             <span class="node-key">{{ node.label }}</span>
             <span class="node-sep">:</span>
@@ -125,7 +124,8 @@ interface NodeAction {
             @for (child of node.children; track child.id) {
               <ng-container
                 [ngTemplateOutlet]="nodeTemplate"
-                [ngTemplateOutletContext]="{ $implicit: child }">
+                [ngTemplateOutletContext]="{ $implicit: child }"
+              >
               </ng-container>
             }
           </div>
@@ -133,93 +133,144 @@ interface NodeAction {
       }
     </ng-template>
   `,
-  styles: [`
-    .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .tree-toolbar { margin-bottom: 10px; }
-    .tree-hint { font-size: 0.85rem; color: var(--color-text-secondary); }
+  styles: [
+    `
+      .header-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .tree-toolbar {
+        margin-bottom: 10px;
+      }
+      .tree-hint {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
 
-    .tree-root {
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      overflow: hidden;
-      background: #fff;
-    }
+      .tree-root {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: #fff;
+      }
 
-    .node-group { border-top: 1px solid rgba(0,0,0,0.04); }
-    .node-group:first-child { border-top: none; }
-    .node-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-height: 34px;
-      padding-right: 10px;
-      font-size: 0.84rem;
-    }
-    .node-row.group {
-      cursor: pointer;
-      user-select: none;
-      background: rgba(0, 0, 0, 0.02);
-    }
-    .node-row.group:hover { background: rgba(41,128,185,0.08); }
-    .node-row.leaf { border-top: 1px solid rgba(0,0,0,0.03); }
-    .node-key { font-weight: 600; color: var(--color-text); white-space: nowrap; }
-    .node-sep { color: var(--color-text-secondary); }
-    .node-kind {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 54px;
-      padding: 1px 6px;
-      border-radius: 999px;
-      background: var(--color-bg);
-      color: var(--color-text-secondary);
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-    .node-count { font-size: 0.75rem; color: var(--color-text-secondary); }
-    .node-value {
-      display: inline-block;
-      max-width: min(60vw, 760px);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: var(--color-bg);
-      color: var(--color-text);
-    }
-    .node-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
-    .action-chip {
-      border: 1px solid rgba(41,128,185,0.35);
-      background: rgba(41,128,185,0.08);
-      color: var(--color-primary-light);
-      border-radius: 999px;
-      font-size: 0.72rem;
-      font-weight: 600;
-      line-height: 1;
-      padding: 5px 9px;
-      text-decoration: none;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    .action-chip:hover { background: rgba(41,128,185,0.18); text-decoration: none; }
-    .action-chip:disabled { opacity: 0.55; cursor: wait; }
-    .node-empty {
-      color: var(--color-text-secondary);
-      font-size: 0.8rem;
-      padding-top: 6px;
-      padding-bottom: 8px;
-      font-style: italic;
-    }
-    .node-children { padding-bottom: 4px; }
+      .node-group {
+        border-top: 1px solid rgba(0, 0, 0, 0.04);
+      }
+      .node-group:first-child {
+        border-top: none;
+      }
+      .node-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 34px;
+        padding-right: 10px;
+        font-size: 0.84rem;
+      }
+      .node-row.group {
+        cursor: pointer;
+        user-select: none;
+        background: rgba(0, 0, 0, 0.02);
+      }
+      .node-row.group:hover {
+        background: rgba(41, 128, 185, 0.08);
+      }
+      .node-row.leaf {
+        border-top: 1px solid rgba(0, 0, 0, 0.03);
+      }
+      .node-key {
+        font-weight: 600;
+        color: var(--color-text);
+        white-space: nowrap;
+      }
+      .node-sep {
+        color: var(--color-text-secondary);
+      }
+      .node-kind {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 54px;
+        padding: 1px 6px;
+        border-radius: 999px;
+        background: var(--color-bg);
+        color: var(--color-text-secondary);
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .node-count {
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .node-value {
+        display: inline-block;
+        max-width: min(60vw, 760px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--color-bg);
+        color: var(--color-text);
+      }
+      .node-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-left: auto;
+      }
+      .action-chip {
+        border: 1px solid rgba(41, 128, 185, 0.35);
+        background: rgba(41, 128, 185, 0.08);
+        color: var(--color-primary-light);
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1;
+        padding: 5px 9px;
+        text-decoration: none;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .action-chip:hover {
+        background: rgba(41, 128, 185, 0.18);
+        text-decoration: none;
+      }
+      .action-chip:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .node-empty {
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+        padding-top: 6px;
+        padding-bottom: 8px;
+        font-style: italic;
+      }
+      .node-children {
+        padding-bottom: 4px;
+      }
 
-    @media (max-width: 900px) {
-      .node-row { flex-wrap: wrap; padding-top: 4px; padding-bottom: 4px; }
-      .node-actions { width: 100%; margin-left: 0; }
-      .node-value { max-width: 100%; }
-    }
-  `],
+      @media (max-width: 900px) {
+        .node-row {
+          flex-wrap: wrap;
+          padding-top: 4px;
+          padding-bottom: 4px;
+        }
+        .node-actions {
+          width: 100%;
+          margin-left: 0;
+        }
+        .node-value {
+          max-width: 100%;
+        }
+      }
+    `,
+  ],
 })
 export class AcpIndexViewComponent implements OnInit {
   acpId = '';
@@ -405,9 +456,7 @@ export class AcpIndexViewComponent implements OnInit {
         ? 'object'
         : 'value';
 
-    const children = kind === 'value'
-      ? []
-      : this.buildChildren(value as any, path, depth + 1);
+    const children = kind === 'value' ? [] : this.buildChildren(value as any, path, depth + 1);
 
     return {
       id: path || label,
@@ -436,8 +485,12 @@ export class AcpIndexViewComponent implements OnInit {
         id: `file:${file.id}:${viewable ? 'view' : 'download'}`,
         kind: viewable ? 'file-view' : 'file-download',
         label: bookletPath
-          ? (viewable ? 'Booklet ansehen' : 'Booklet downloaden')
-          : (viewable ? 'Datei ansehen' : 'Datei downloaden'),
+          ? viewable
+            ? 'Booklet ansehen'
+            : 'Booklet downloaden'
+          : viewable
+            ? 'Datei ansehen'
+            : 'Datei downloaden',
         fileId: file.id,
         fileName: file.originalName,
         title: file.originalName,
@@ -498,8 +551,19 @@ export class AcpIndexViewComponent implements OnInit {
     const ext = this.getExtension(file.originalName);
     const mime = (file.fileType || '').toLowerCase();
     const viewableExt = new Set([
-      'htm', 'html', 'xml', 'json', 'txt', 'csv', 'md',
-      'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp',
+      'htm',
+      'html',
+      'xml',
+      'json',
+      'txt',
+      'csv',
+      'md',
+      'png',
+      'jpg',
+      'jpeg',
+      'gif',
+      'svg',
+      'webp',
     ]);
     if (viewableExt.has(ext)) return true;
     if (mime.startsWith('text/')) return true;

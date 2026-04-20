@@ -1,16 +1,21 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
-import { User, AcpCredential, AcpAccessConfig } from '../database/entities';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import * as bcrypt from "bcryptjs";
+import { User, AcpCredential, AcpAccessConfig } from "../database/entities";
 
 export interface JwtPayload {
   sub: string;
   username: string;
   isAppAdmin: boolean;
-  type: 'user' | 'credential' | 'oidc';
-  authType?: 'local' | 'oidc';
+  type: "user" | "credential" | "oidc";
+  authType?: "local" | "oidc";
   acpId?: string;
 }
 
@@ -22,7 +27,10 @@ interface CredentialLoginAttemptState {
 
 @Injectable()
 export class AuthService {
-  private readonly credentialLoginAttempts = new Map<string, CredentialLoginAttemptState>();
+  private readonly credentialLoginAttempts = new Map<
+    string,
+    CredentialLoginAttemptState
+  >();
   private readonly credentialLoginMaxAttempts = this.parsePositiveInt(
     process.env.CREDENTIAL_LOGIN_MAX_ATTEMPTS,
     5,
@@ -49,28 +57,28 @@ export class AuthService {
   async validateUser(username: string, password: string): Promise<User> {
     const user = await this.userRepository.findOne({ where: { username } });
     if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException("Invalid credentials");
     }
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException("Invalid credentials");
     }
     return user;
   }
 
   async login(username: string, password: string) {
     const user = await this.validateUser(username, password);
-    
+
     // Admin users must use OIDC
     if (user.isAppAdmin) {
-      throw new UnauthorizedException('Admin users must login via OIDC');
+      throw new UnauthorizedException("Admin users must login via OIDC");
     }
-    
+
     const payload: JwtPayload = {
       sub: user.id,
       username: user.username,
       isAppAdmin: user.isAppAdmin,
-      type: 'user',
+      type: "user",
     };
     return {
       accessToken: this.jwtService.sign(payload),
@@ -83,34 +91,45 @@ export class AuthService {
     };
   }
 
-  async credentialLogin(acpId: string, username: string, password: string, clientId = 'unknown') {
+  async credentialLogin(
+    acpId: string,
+    username: string,
+    password: string,
+    clientId = "unknown",
+  ) {
     const normalizedClientId = this.normalizeClientId(clientId);
     this.enforceCredentialLoginRateLimit(acpId, username, normalizedClientId);
 
     try {
       // Find active access config for this ACP with credentials
       const accessConfig = await this.accessConfigRepository.findOne({
-        where: { acpId, accessModel: 'CREDENTIALS_LIST' as any },
+        where: { acpId, accessModel: "CREDENTIALS_LIST" as any },
       });
 
       if (!accessConfig) {
-        throw new UnauthorizedException('No credential-based access configured for this ACP');
+        throw new UnauthorizedException(
+          "No credential-based access configured for this ACP",
+        );
       }
 
       // Check time validity
       const now = new Date();
-      console.log('Login check:', {
+      console.log("Login check:", {
         now: now.toISOString(),
         validFrom: accessConfig.validFrom?.toISOString(),
         validUntil: accessConfig.validUntil?.toISOString(),
-        nowLessThanValidFrom: accessConfig.validFrom ? now < accessConfig.validFrom : null,
-        nowGreaterThanValidUntil: accessConfig.validUntil ? now > accessConfig.validUntil : null,
+        nowLessThanValidFrom: accessConfig.validFrom
+          ? now < accessConfig.validFrom
+          : null,
+        nowGreaterThanValidUntil: accessConfig.validUntil
+          ? now > accessConfig.validUntil
+          : null,
       });
       if (accessConfig.validFrom && now < accessConfig.validFrom) {
-        throw new UnauthorizedException('Access period has not started yet');
+        throw new UnauthorizedException("Access period has not started yet");
       }
       if (accessConfig.validUntil && now > accessConfig.validUntil) {
-        throw new UnauthorizedException('Access period has expired');
+        throw new UnauthorizedException("Access period has expired");
       }
 
       // Find credential
@@ -119,12 +138,15 @@ export class AuthService {
       });
 
       if (!credential) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException("Invalid credentials");
       }
 
-      const isPasswordValid = await bcrypt.compare(password, credential.passwordHash);
+      const isPasswordValid = await bcrypt.compare(
+        password,
+        credential.passwordHash,
+      );
       if (!isPasswordValid) {
-        throw new UnauthorizedException('Invalid credentials');
+        throw new UnauthorizedException("Invalid credentials");
       }
 
       this.clearCredentialLoginRateLimit(acpId, username, normalizedClientId);
@@ -133,7 +155,7 @@ export class AuthService {
         sub: credential.id,
         username: credential.username,
         isAppAdmin: false,
-        type: 'credential',
+        type: "credential",
         acpId,
       };
 
@@ -144,7 +166,11 @@ export class AuthService {
       };
     } catch (error) {
       if (error instanceof UnauthorizedException) {
-        this.registerFailedCredentialLoginAttempt(acpId, username, normalizedClientId);
+        this.registerFailedCredentialLoginAttempt(
+          acpId,
+          username,
+          normalizedClientId,
+        );
       }
       throw error;
     }
@@ -153,10 +179,10 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['acpRoles', 'acpRoles.acp'],
+      relations: ["acpRoles", "acpRoles.acp"],
     });
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException("User not found");
     }
     return {
       id: user.id,
@@ -176,8 +202,8 @@ export class AuthService {
       sub: userInfo.sub,
       username: userInfo.username,
       isAppAdmin: userInfo.isAppAdmin,
-      type: 'oidc',
-      authType: 'oidc',
+      type: "oidc",
+      authType: "oidc",
     };
 
     return {
@@ -196,13 +222,17 @@ export class AuthService {
     // Check if user exists
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException("User not found");
     }
 
     // Check if OIDC sub is already linked to another user
-    const existingUser = await this.userRepository.findOne({ where: { oidcSub } });
+    const existingUser = await this.userRepository.findOne({
+      where: { oidcSub },
+    });
     if (existingUser && existingUser.id !== userId) {
-      throw new UnauthorizedException('OIDC account already linked to another user');
+      throw new UnauthorizedException(
+        "OIDC account already linked to another user",
+      );
     }
 
     // Update user with OIDC sub
@@ -210,7 +240,7 @@ export class AuthService {
     await this.userRepository.save(user);
 
     return {
-      message: 'OIDC account linked successfully',
+      message: "OIDC account linked successfully",
       user: {
         id: user.id,
         username: user.username,
@@ -221,17 +251,22 @@ export class AuthService {
 
   async logout(userId: string) {
     // Audit logging - in production, this could write to a database
-    console.log(`[AUDIT] User ${userId} logged out at ${new Date().toISOString()}`);
+    console.log(
+      `[AUDIT] User ${userId} logged out at ${new Date().toISOString()}`,
+    );
 
     return {
-      message: 'Logout recorded',
+      message: "Logout recorded",
       userId,
       timestamp: new Date().toISOString(),
     };
   }
 
-  private parsePositiveInt(value: string | undefined, fallback: number): number {
-    const parsed = Number.parseInt(value || '', 10);
+  private parsePositiveInt(
+    value: string | undefined,
+    fallback: number,
+  ): number {
+    const parsed = Number.parseInt(value || "", 10);
     if (Number.isNaN(parsed) || parsed <= 0) {
       return fallback;
     }
@@ -239,15 +274,23 @@ export class AuthService {
   }
 
   private normalizeClientId(clientId: string | undefined): string {
-    const normalized = (clientId || '').trim().toLowerCase();
-    return normalized.length > 0 ? normalized : 'unknown';
+    const normalized = (clientId || "").trim().toLowerCase();
+    return normalized.length > 0 ? normalized : "unknown";
   }
 
-  private credentialLoginRateLimitKey(acpId: string, username: string, clientId: string): string {
+  private credentialLoginRateLimitKey(
+    acpId: string,
+    username: string,
+    clientId: string,
+  ): string {
     return `${acpId}:${username.toLowerCase()}:${clientId}`;
   }
 
-  private enforceCredentialLoginRateLimit(acpId: string, username: string, clientId: string): void {
+  private enforceCredentialLoginRateLimit(
+    acpId: string,
+    username: string,
+    clientId: string,
+  ): void {
     const now = Date.now();
     this.pruneCredentialLoginAttempts(now);
 
@@ -259,7 +302,7 @@ export class AuthService {
 
     if (attempt.blockedUntil && attempt.blockedUntil > now) {
       throw new HttpException(
-        'Too many failed login attempts. Please try again later.',
+        "Too many failed login attempts. Please try again later.",
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
@@ -269,12 +312,19 @@ export class AuthService {
     }
   }
 
-  private registerFailedCredentialLoginAttempt(acpId: string, username: string, clientId: string): void {
+  private registerFailedCredentialLoginAttempt(
+    acpId: string,
+    username: string,
+    clientId: string,
+  ): void {
     const now = Date.now();
     const key = this.credentialLoginRateLimitKey(acpId, username, clientId);
     const current = this.credentialLoginAttempts.get(key);
 
-    if (!current || now - current.firstAttemptAt > this.credentialLoginWindowMs) {
+    if (
+      !current ||
+      now - current.firstAttemptAt > this.credentialLoginWindowMs
+    ) {
       this.credentialLoginAttempts.set(key, {
         attempts: 1,
         firstAttemptAt: now,
@@ -286,11 +336,18 @@ export class AuthService {
     this.credentialLoginAttempts.set(key, {
       attempts,
       firstAttemptAt: current.firstAttemptAt,
-      blockedUntil: attempts >= this.credentialLoginMaxAttempts ? now + this.credentialLoginBlockMs : undefined,
+      blockedUntil:
+        attempts >= this.credentialLoginMaxAttempts
+          ? now + this.credentialLoginBlockMs
+          : undefined,
     });
   }
 
-  private clearCredentialLoginRateLimit(acpId: string, username: string, clientId: string): void {
+  private clearCredentialLoginRateLimit(
+    acpId: string,
+    username: string,
+    clientId: string,
+  ): void {
     const key = this.credentialLoginRateLimitKey(acpId, username, clientId);
     this.credentialLoginAttempts.delete(key);
   }
@@ -300,7 +357,10 @@ export class AuthService {
       return;
     }
 
-    const staleAfterMs = Math.max(this.credentialLoginWindowMs, this.credentialLoginBlockMs);
+    const staleAfterMs = Math.max(
+      this.credentialLoginWindowMs,
+      this.credentialLoginBlockMs,
+    );
     for (const [key, attempt] of this.credentialLoginAttempts.entries()) {
       const isExpired =
         (attempt.blockedUntil && attempt.blockedUntil <= now) ||

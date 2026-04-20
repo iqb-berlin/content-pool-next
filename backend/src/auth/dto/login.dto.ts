@@ -1,37 +1,37 @@
-import { IsString, IsNotEmpty } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsString, IsNotEmpty } from "class-validator";
+import { ApiProperty } from "@nestjs/swagger";
 
 export class LoginDto {
-  @ApiProperty({ example: 'admin' })
+  @ApiProperty({ example: "admin" })
   @IsString()
   @IsNotEmpty()
   username!: string;
 
-  @ApiProperty({ example: 'password123' })
+  @ApiProperty({ example: "password123" })
   @IsString()
   @IsNotEmpty()
   password!: string;
 }
 
 export class CredentialLoginDto {
-  @ApiProperty({ description: 'ACP ID to access' })
+  @ApiProperty({ description: "ACP ID to access" })
   @IsString()
   @IsNotEmpty()
   acpId!: string;
 
-  @ApiProperty({ example: 'reviewer1' })
+  @ApiProperty({ example: "reviewer1" })
   @IsString()
   @IsNotEmpty()
   username!: string;
 
-  @ApiProperty({ example: 'reviewpass' })
+  @ApiProperty({ example: "reviewpass" })
   @IsString()
   @IsNotEmpty()
   password!: string;
 }
 
 export class OidcCallbackDto {
-  @ApiProperty({ description: 'ID token from OIDC provider' })
+  @ApiProperty({ description: "ID token from OIDC provider" })
   @IsString()
   @IsNotEmpty()
   idToken!: string;

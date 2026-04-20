@@ -4,32 +4,32 @@ import {
   Column,
   ManyToOne,
   JoinColumn,
-} from 'typeorm';
-import { AcpSnapshot } from './acp-snapshot.entity';
+} from "typeorm";
+import { AcpSnapshot } from "./acp-snapshot.entity";
 
-@Entity('acp_snapshot_files')
+@Entity("acp_snapshot_files")
 export class AcpSnapshotFile {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: 'snapshot_id' })
+  @Column({ name: "snapshot_id" })
   snapshotId!: string;
 
-  @Column({ name: 'file_path' })
+  @Column({ name: "file_path" })
   filePath!: string;
 
-  @Column({ name: 'original_name' })
+  @Column({ name: "original_name" })
   originalName!: string;
 
   @Column({ nullable: true })
   checksum?: string;
 
-  @Column({ name: 'file_size', type: 'bigint' })
+  @Column({ name: "file_size", type: "bigint" })
   fileSize!: number;
 
   @ManyToOne(() => AcpSnapshot, (snapshot) => snapshot.snapshotFiles, {
-    onDelete: 'CASCADE',
+    onDelete: "CASCADE",
   })
-  @JoinColumn({ name: 'snapshot_id' })
+  @JoinColumn({ name: "snapshot_id" })
   snapshot!: AcpSnapshot;
 }

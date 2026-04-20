@@ -1,27 +1,50 @@
-import { Controller, Get, Param, Query, Post, Delete, UseInterceptors, UploadedFile, UseGuards, Body, Request, Put, ForbiddenException, BadRequestException } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiConsumes, ApiBody, ApiProperty } from '@nestjs/swagger';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ItemsService } from './items.service';
-import { ItemResponseStateService } from './item-response-state.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { AcpAccessGuard } from '../auth/guards/acp-access.guard';
-import { RolesGuard } from '../auth/guards/roles.guard';
-import { Roles } from '../auth/roles.decorator';
-import { IsObject } from 'class-validator';
-import { ItemExplorerStateService } from '../item-explorer/item-explorer-state.service';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Post,
+  Delete,
+  UseInterceptors,
+  UploadedFile,
+  UseGuards,
+  Body,
+  Request,
+  Put,
+  ForbiddenException,
+  BadRequestException,
+} from "@nestjs/common";
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+  ApiConsumes,
+  ApiBody,
+  ApiProperty,
+} from "@nestjs/swagger";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ItemsService } from "./items.service";
+import { ItemResponseStateService } from "./item-response-state.service";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
+import { RolesGuard } from "../auth/guards/roles.guard";
+import { Roles } from "../auth/roles.decorator";
+import { IsObject } from "class-validator";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
 class SaveItemTagsDto {
   @ApiProperty({
-    description: 'Map of item UUID to tag list',
-    type: 'object',
-    additionalProperties: { type: 'array', items: { type: 'string' } },
+    description: "Map of item UUID to tag list",
+    type: "object",
+    additionalProperties: { type: "array", items: { type: "string" } },
   })
   @IsObject()
   tags!: Record<string, string[]>;
 }
 
-@ApiTags('Items')
-@Controller('acp/:acpId/items')
+@ApiTags("Items")
+@Controller("acp/:acpId/items")
 export class ItemsController {
   constructor(
     private readonly itemsService: ItemsService,
@@ -31,105 +54,121 @@ export class ItemsController {
 
   @Get()
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'List all items in an ACP (with optional filter/sort)' })
-  @ApiQuery({ name: 'filter', required: false })
-  @ApiQuery({ name: 'sortBy', required: false })
-  @ApiQuery({ name: 'sortDir', required: false, enum: ['asc', 'desc'] })
+  @ApiOperation({
+    summary: "List all items in an ACP (with optional filter/sort)",
+  })
+  @ApiQuery({ name: "filter", required: false })
+  @ApiQuery({ name: "sortBy", required: false })
+  @ApiQuery({ name: "sortDir", required: false, enum: ["asc", "desc"] })
   async getItems(
-    @Param('acpId') acpId: string,
-    @Query('filter') filter?: string,
-    @Query('sortBy') sortBy?: string,
-    @Query('sortDir') sortDir?: 'asc' | 'desc',
+    @Param("acpId") acpId: string,
+    @Query("filter") filter?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortDir") sortDir?: "asc" | "desc",
   ) {
     return this.itemsService.getFilteredItems(acpId, filter, sortBy, sortDir);
   }
 
-  @Get('tags')
+  @Get("tags")
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get persisted item tags for an ACP' })
-  async getItemTags(@Param('acpId') acpId: string, @Request() req: any) {
-    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+  @ApiOperation({ summary: "Get persisted item tags for an ACP" })
+  async getItemTags(@Param("acpId") acpId: string, @Request() req: any) {
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
     if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
-      throw new ForbiddenException('Item tags are not enabled for this ACP');
+      throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
     return this.itemsService.getItemTags(acpId);
   }
 
-  @Put('tags')
+  @Put("tags")
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Persist item tags for an ACP' })
+  @ApiOperation({ summary: "Persist item tags for an ACP" })
   async saveItemTags(
-    @Param('acpId') acpId: string,
+    @Param("acpId") acpId: string,
     @Body() dto: SaveItemTagsDto,
     @Request() req: any,
   ) {
-    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === 'MANAGER';
+    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
     if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
-      throw new ForbiddenException('Item tags are not enabled for this ACP');
+      throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
     return this.itemsService.saveItemTags(acpId, dto.tags || {});
   }
 
-  @Get(':itemId')
+  @Get(":itemId")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get a single item by ID' })
+  @ApiOperation({ summary: "Get a single item by ID" })
   async getItem(
-    @Param('acpId') acpId: string,
-    @Param('itemId') itemId: string,
+    @Param("acpId") acpId: string,
+    @Param("itemId") itemId: string,
   ) {
     return this.itemsService.getItem(acpId, itemId);
   }
 
-  @Post('upload-empirical-difficulty')
+  @Post("upload-empirical-difficulty")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ACP_MANAGER')
+  @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Upload a CSV to match empirical item difficulties' })
-  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: "Upload a CSV to match empirical item difficulties",
+  })
+  @ApiConsumes("multipart/form-data")
   @ApiBody({
     schema: {
-      type: 'object',
+      type: "object",
       properties: {
         file: {
-          type: 'string',
-          format: 'binary',
+          type: "string",
+          format: "binary",
         },
       },
     },
   })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor("file"))
   async uploadEmpiricalDifficulties(
-    @Param('acpId') acpId: string,
+    @Param("acpId") acpId: string,
     @UploadedFile() file: Express.Multer.File,
-    @Query('draft') draft?: string,
-    @Query('baseVersion') baseVersion?: string,
+    @Query("draft") draft?: string,
+    @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
   ) {
-    const draftMode = draft === 'true';
-    const parsedBaseVersion = parseInt(baseVersion || '', 10);
+    const draftMode = draft === "true";
+    const parsedBaseVersion = parseInt(baseVersion || "", 10);
 
     if (!draftMode) {
       return this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer);
     }
 
-    const currentState = await this.itemExplorerStateService.getStateForViewer(acpId, true);
-    const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer, {
-      persist: false,
-      itemPropertiesOverride: currentState.draftState.itemProperties,
-    });
+    const currentState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      true,
+    );
+    const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(
+      acpId,
+      file.buffer,
+      {
+        persist: false,
+        itemPropertiesOverride: currentState.draftState.itemProperties,
+      },
+    );
 
     const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
     const explorerState = await this.itemExplorerStateService.patchDraft(
       acpId,
       {
-        itemProperties: uploadResult.nextItemProperties as Record<string, Record<string, unknown>>,
+        itemProperties: uploadResult.nextItemProperties as Record<
+          string,
+          Record<string, unknown>
+        >,
       },
       {
         actor,
-        changeType: 'CSV_UPLOAD_EMPIRICAL_DIFFICULTY',
-        baseVersion: Number.isNaN(parsedBaseVersion) ? undefined : parsedBaseVersion,
+        changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
+        baseVersion: Number.isNaN(parsedBaseVersion)
+          ? undefined
+          : parsedBaseVersion,
       },
     );
 
@@ -141,40 +180,51 @@ export class ItemsController {
     };
   }
 
-  @Delete('empirical-difficulty')
+  @Delete("empirical-difficulty")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ACP_MANAGER')
+  @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Clear all empirical difficulties for an ACP' })
+  @ApiOperation({ summary: "Clear all empirical difficulties for an ACP" })
   async clearEmpiricalDifficulties(
-    @Param('acpId') acpId: string,
-    @Query('draft') draft?: string,
-    @Query('baseVersion') baseVersion?: string,
+    @Param("acpId") acpId: string,
+    @Query("draft") draft?: string,
+    @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
   ) {
-    const draftMode = draft === 'true';
-    const parsedBaseVersion = parseInt(baseVersion || '', 10);
+    const draftMode = draft === "true";
+    const parsedBaseVersion = parseInt(baseVersion || "", 10);
 
     if (!draftMode) {
       return this.itemsService.clearEmpiricalDifficulties(acpId);
     }
 
-    const currentState = await this.itemExplorerStateService.getStateForViewer(acpId, true);
-    const clearResult = await this.itemsService.clearEmpiricalDifficulties(acpId, {
-      persist: false,
-      itemPropertiesOverride: currentState.draftState.itemProperties,
-    });
+    const currentState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      true,
+    );
+    const clearResult = await this.itemsService.clearEmpiricalDifficulties(
+      acpId,
+      {
+        persist: false,
+        itemPropertiesOverride: currentState.draftState.itemProperties,
+      },
+    );
 
     const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
     const explorerState = await this.itemExplorerStateService.patchDraft(
       acpId,
       {
-        itemProperties: clearResult.nextItemProperties as Record<string, Record<string, unknown>>,
+        itemProperties: clearResult.nextItemProperties as Record<
+          string,
+          Record<string, unknown>
+        >,
       },
       {
         actor,
-        changeType: 'CLEAR_EMPIRICAL_DIFFICULTY',
-        baseVersion: Number.isNaN(parsedBaseVersion) ? undefined : parsedBaseVersion,
+        changeType: "CLEAR_EMPIRICAL_DIFFICULTY",
+        baseVersion: Number.isNaN(parsedBaseVersion)
+          ? undefined
+          : parsedBaseVersion,
       },
     );
 
@@ -184,13 +234,15 @@ export class ItemsController {
     };
   }
 
-  @Get('response-state/all')
+  @Get("response-state/all")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ACP_MANAGER')
+  @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get all response states for an ACP (Manager only)' })
+  @ApiOperation({
+    summary: "Get all response states for an ACP (Manager only)",
+  })
   async getAllResponseStates(
-    @Param('acpId') acpId: string,
+    @Param("acpId") acpId: string,
     @Request() _req: any,
   ) {
     return this.stateService.getAllStatesForAcp(acpId, true);
@@ -198,42 +250,56 @@ export class ItemsController {
 
   // Response State Endpoints
 
-  @Post(':itemId/response-state')
+  @Post(":itemId/response-state")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ACP_MANAGER')
+  @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Save response state for an item (Manager only)' })
+  @ApiOperation({ summary: "Save response state for an item (Manager only)" })
   async saveResponseState(
-    @Param('acpId') acpId: string,
-    @Param('itemId') itemId: string,
+    @Param("acpId") acpId: string,
+    @Param("itemId") itemId: string,
     @Body() body: { unitId: string; responseData: Record<string, any> },
     @Request() _req: any,
   ) {
-    return this.stateService.saveResponseState(acpId, itemId, body.unitId, body.responseData, true);
+    return this.stateService.saveResponseState(
+      acpId,
+      itemId,
+      body.unitId,
+      body.responseData,
+      true,
+    );
   }
 
-  @Get(':itemId/response-state')
+  @Get(":itemId/response-state")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get response state for an item' })
+  @ApiOperation({ summary: "Get response state for an item" })
   async getResponseState(
-    @Param('acpId') acpId: string,
-    @Param('itemId') itemId: string,
-    @Query('unitId') unitId?: string,
+    @Param("acpId") acpId: string,
+    @Param("itemId") itemId: string,
+    @Query("unitId") unitId?: string,
   ) {
     if (!unitId) {
       throw new BadRequestException('Query parameter "unitId" is required.');
     }
-    const state = await this.stateService.getResponseState(acpId, itemId, unitId);
+    const state = await this.stateService.getResponseState(
+      acpId,
+      itemId,
+      unitId,
+    );
     return state || { state: null };
   }
 
-  @Post(':itemId/response-state/with-fallback')
+  @Post(":itemId/response-state/with-fallback")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: 'Get response state for an item with fallback to previous items in same unit' })
+  @ApiOperation({
+    summary:
+      "Get response state for an item with fallback to previous items in same unit",
+  })
   async getResponseStateWithFallback(
-    @Param('acpId') acpId: string,
-    @Param('itemId') itemId: string,
-    @Body() body: { unitId: string; itemList: { itemId: string; unitId: string }[] },
+    @Param("acpId") acpId: string,
+    @Param("itemId") itemId: string,
+    @Body()
+    body: { unitId: string; itemList: { itemId: string; unitId: string }[] },
   ) {
     return this.stateService.getResponseStateWithFallback(
       acpId,
@@ -243,15 +309,15 @@ export class ItemsController {
     );
   }
 
-  @Delete(':itemId/response-state')
+  @Delete(":itemId/response-state")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('ACP_MANAGER')
+  @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Delete response state for an item (Manager only)' })
+  @ApiOperation({ summary: "Delete response state for an item (Manager only)" })
   async deleteResponseState(
-    @Param('acpId') acpId: string,
-    @Param('itemId') itemId: string,
-    @Query('unitId') unitId: string | undefined,
+    @Param("acpId") acpId: string,
+    @Param("itemId") itemId: string,
+    @Query("unitId") unitId: string | undefined,
     @Request() _req: any,
   ) {
     if (!unitId) {

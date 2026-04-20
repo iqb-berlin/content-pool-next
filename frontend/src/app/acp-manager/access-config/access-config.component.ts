@@ -17,33 +17,52 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
     <!-- Access Model -->
     <div class="card">
       <h3>Zugriffsmodell</h3>
-      <p class="help-text">Optionen 1 und 3 schließen einander aus. Option 2 kann zusätzlich gewählt werden.</p>
+      <p class="help-text">
+        Optionen 1 und 3 schließen einander aus. Option 2 kann zusätzlich gewählt werden.
+      </p>
 
       <div class="radio-group">
         <label class="radio-option" [class.active]="accessModel === 'PUBLIC'">
-          <input type="radio" name="accessModel" value="PUBLIC" [(ngModel)]="accessModel" (ngModelChange)="onAccessModelChange()">
+          <input
+            type="radio"
+            name="accessModel"
+            value="PUBLIC"
+            [(ngModel)]="accessModel"
+            (ngModelChange)="onAccessModelChange()"
+          />
           <div>
             <strong>1. Öffentlich (Public)</strong>
             <span class="radio-desc">Jede Person hat ohne Anmeldung Zugriff</span>
           </div>
         </label>
         <label class="radio-option" [class.active]="accessModel === 'CREDENTIALS_LIST'">
-          <input type="radio" name="accessModel" value="CREDENTIALS_LIST" [(ngModel)]="accessModel" (ngModelChange)="onAccessModelChange()">
+          <input
+            type="radio"
+            name="accessModel"
+            value="CREDENTIALS_LIST"
+            [(ngModel)]="accessModel"
+            (ngModelChange)="onAccessModelChange()"
+          />
           <div>
             <strong>3. Zugangsliste</strong>
-            <span class="radio-desc">Benutzername/Kennwort-Paare, zeitlich begrenzt (max. 3 Monate)</span>
+            <span class="radio-desc"
+              >Benutzername/Kennwort-Paare, zeitlich begrenzt (max. 3 Monate)</span
+            >
           </div>
         </label>
       </div>
 
       <label class="feature-toggle" style="margin-top:12px">
-        <input type="checkbox" [(ngModel)]="allowRegistered">
+        <input type="checkbox" [(ngModel)]="allowRegistered" />
         <span><strong>2. Registrierte Nutzer</strong> — zusätzlich zu oben</span>
       </label>
 
       @if (allowRegistered) {
         <div class="sub-section">
-          <p class="help-text">Nur Nutzer mit einer zugewiesenen Rolle (Gast, Reviewer, Manager) können auf dieses ACP zugreifen.</p>
+          <p class="help-text">
+            Nur Nutzer mit einer zugewiesenen Rolle (Gast, Reviewer, Manager) können auf dieses ACP
+            zugreifen.
+          </p>
         </div>
       }
 
@@ -53,11 +72,11 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <div class="form-row">
             <div class="form-group">
               <label>Gültig von</label>
-              <input type="datetime-local" [(ngModel)]="validFrom">
+              <input type="datetime-local" [(ngModel)]="validFrom" />
             </div>
             <div class="form-group">
               <label>Gültig bis (max. 3 Monate)</label>
-              <input type="datetime-local" [(ngModel)]="validUntil">
+              <input type="datetime-local" [(ngModel)]="validUntil" />
             </div>
           </div>
           @if (dateError) {
@@ -65,46 +84,79 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           }
 
           <!-- Manual add form -->
-          <div class="manual-add-form" style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);">
-            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">Einzelnes Zugangsdatum hinzufügen</h4>
+          <div
+            class="manual-add-form"
+            style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);"
+          >
+            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">
+              Einzelnes Zugangsdatum hinzufügen
+            </h4>
             <div class="form-row">
               <div class="form-group">
                 <label>Benutzername</label>
-                <input type="text" [(ngModel)]="newUsername" placeholder="Benutzername" maxlength="50">
+                <input
+                  type="text"
+                  [(ngModel)]="newUsername"
+                  placeholder="Benutzername"
+                  maxlength="50"
+                />
               </div>
               <div class="form-group">
                 <label>Kennwort</label>
-                <input type="password" [(ngModel)]="newPassword" placeholder="Kennwort" minlength="12">
+                <input
+                  type="password"
+                  [(ngModel)]="newPassword"
+                  placeholder="Kennwort"
+                  minlength="12"
+                />
               </div>
             </div>
             @if (addError) {
               <div class="alert alert-error" style="margin-top: 8px;">{{ addError }}</div>
             }
-            <button class="btn btn-accent" style="margin-top: 8px;" (click)="addCredential()" [disabled]="!newUsername.trim() || !newPassword.trim() || !isStrongPassword(newPassword)">
+            <button
+              class="btn btn-accent"
+              style="margin-top: 8px;"
+              (click)="addCredential()"
+              [disabled]="
+                !newUsername.trim() || !newPassword.trim() || !isStrongPassword(newPassword)
+              "
+            >
               Hinzufügen
             </button>
           </div>
 
           <!-- CSV Upload with mode selection -->
-          <div style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);">
+          <div
+            style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);"
+          >
             <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">CSV-Import</h4>
             <div class="form-group" style="margin-bottom: 12px;">
               <label>Import-Modus</label>
-              <select [(ngModel)]="csvMode" style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: var(--radius);">
+              <select
+                [(ngModel)]="csvMode"
+                style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: var(--radius);"
+              >
                 <option value="replace">Liste ersetzen (bestehende löschen)</option>
                 <option value="append">Nur neue hinzufügen (Duplikate überspringen)</option>
-                <option value="upsert">Aktualisieren (bestehende Passwörter ändern, neue hinzufügen)</option>
+                <option value="upsert">
+                  Aktualisieren (bestehende Passwörter ändern, neue hinzufügen)
+                </option>
               </select>
               <span class="help-text" style="margin-top: 4px;">
-                {{ csvMode === 'replace' ? 'Alle bestehenden Zugangsdaten werden gelöscht und durch die CSV ersetzt.' :
-                   csvMode === 'append' ? 'Nur neue Benutzernamen werden hinzugefügt. Bereits existierende werden übersprungen.' :
-                   'Bereits existierende Benutzernamen werden mit neuen Passwörtern aktualisiert. Neue werden hinzugefügt.' }}
+                {{
+                  csvMode === 'replace'
+                    ? 'Alle bestehenden Zugangsdaten werden gelöscht und durch die CSV ersetzt.'
+                    : csvMode === 'append'
+                      ? 'Nur neue Benutzernamen werden hinzugefügt. Bereits existierende werden übersprungen.'
+                      : 'Bereits existierende Benutzernamen werden mit neuen Passwörtern aktualisiert. Neue werden hinzugefügt.'
+                }}
               </span>
             </div>
             <div style="display: flex; gap: 12px; align-items: center;">
               <label class="btn btn-accent">
                 CSV hochladen
-                <input type="file" accept=".csv" (change)="previewCSV($event)" hidden>
+                <input type="file" accept=".csv" (change)="previewCSV($event)" hidden />
               </label>
               <span class="help-text">Format: Benutzername, Kennwort pro Zeile</span>
             </div>
@@ -112,29 +164,65 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
           <!-- CSV Preview Modal -->
           @if (csvPreview) {
-            <div class="csv-preview" style="margin-top: 16px; padding: 16px; background: var(--color-bg); border-radius: var(--radius); border: 1px solid var(--color-border);">
+            <div
+              class="csv-preview"
+              style="margin-top: 16px; padding: 16px; background: var(--color-bg); border-radius: var(--radius); border: 1px solid var(--color-border);"
+            >
               <h4 style="margin: 0 0 12px 0;">Vorschau: {{ csvPreview.filename }}</h4>
-              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; font-size: 0.9rem;">
-                <div class="preview-stat" style="text-align: center; padding: 8px; background: white; border-radius: var(--radius);">
-                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-primary);">{{ csvPreview.total }}</div>
-                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Gesamt in CSV</div>
+              <div
+                style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; font-size: 0.9rem;"
+              >
+                <div
+                  class="preview-stat"
+                  style="text-align: center; padding: 8px; background: white; border-radius: var(--radius);"
+                >
+                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-primary);">
+                    {{ csvPreview.total }}
+                  </div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">
+                    Gesamt in CSV
+                  </div>
                 </div>
-                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(46, 204, 113, 0.1); border-radius: var(--radius);">
-                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-success);">{{ csvPreview.toAdd }}</div>
-                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Neu hinzufügen</div>
+                <div
+                  class="preview-stat"
+                  style="text-align: center; padding: 8px; background: rgba(46, 204, 113, 0.1); border-radius: var(--radius);"
+                >
+                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-success);">
+                    {{ csvPreview.toAdd }}
+                  </div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">
+                    Neu hinzufügen
+                  </div>
                 </div>
-                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(241, 196, 15, 0.1); border-radius: var(--radius);">
-                  <div style="font-size: 1.5rem; font-weight: 600; color: #f39c12;">{{ csvPreview.toUpdate }}</div>
-                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Aktualisieren</div>
+                <div
+                  class="preview-stat"
+                  style="text-align: center; padding: 8px; background: rgba(241, 196, 15, 0.1); border-radius: var(--radius);"
+                >
+                  <div style="font-size: 1.5rem; font-weight: 600; color: #f39c12;">
+                    {{ csvPreview.toUpdate }}
+                  </div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">
+                    Aktualisieren
+                  </div>
                 </div>
-                <div class="preview-stat" style="text-align: center; padding: 8px; background: rgba(149, 165, 166, 0.1); border-radius: var(--radius);">
-                  <div style="font-size: 1.5rem; font-weight: 600; color: var(--color-text-secondary);">{{ csvPreview.toSkip }}</div>
-                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">Überspringen</div>
+                <div
+                  class="preview-stat"
+                  style="text-align: center; padding: 8px; background: rgba(149, 165, 166, 0.1); border-radius: var(--radius);"
+                >
+                  <div
+                    style="font-size: 1.5rem; font-weight: 600; color: var(--color-text-secondary);"
+                  >
+                    {{ csvPreview.toSkip }}
+                  </div>
+                  <div style="color: var(--color-text-secondary); font-size: 0.8rem;">
+                    Überspringen
+                  </div>
                 </div>
               </div>
               @if (csvPreview.duplicates.length > 0) {
                 <div class="alert alert-warning" style="margin-bottom: 12px;">
-                  <strong>Warnung:</strong> {{ csvPreview.duplicates.length }} Duplikate im CSV gefunden: {{ csvPreview.duplicates.join(', ') }}
+                  <strong>Warnung:</strong> {{ csvPreview.duplicates.length }} Duplikate im CSV
+                  gefunden: {{ csvPreview.duplicates.join(', ') }}
                 </div>
               }
               @if (csvPreview.conflicts.length > 0) {
@@ -150,7 +238,9 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           }
 
           @if (credentialCount > 0 || credentials.length > 0) {
-            <div class="alert alert-success" style="margin-top:12px">{{ credentialCount || credentials.length }} Zugangsdaten vorhanden.</div>
+            <div class="alert alert-success" style="margin-top:12px">
+              {{ credentialCount || credentials.length }} Zugangsdaten vorhanden.
+            </div>
           }
 
           <!-- Credentials list with edit -->
@@ -168,8 +258,16 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                     <tr>
                       <td>{{ cred.username }}</td>
                       <td>
-                        <button class="btn btn-outline btn-sm" (click)="openEditDialog(cred)" style="margin-right: 4px;">Bearbeiten</button>
-                        <button class="btn btn-outline btn-sm" (click)="deleteCredential(cred.id)">Löschen</button>
+                        <button
+                          class="btn btn-outline btn-sm"
+                          (click)="openEditDialog(cred)"
+                          style="margin-right: 4px;"
+                        >
+                          Bearbeiten
+                        </button>
+                        <button class="btn btn-outline btn-sm" (click)="deleteCredential(cred.id)">
+                          Löschen
+                        </button>
                       </td>
                     </tr>
                   }
@@ -180,7 +278,9 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         </div>
       }
 
-      <button class="btn btn-primary" style="margin-top:16px" (click)="saveAccess()">Zugriffsmodell speichern</button>
+      <button class="btn btn-primary" style="margin-top:16px" (click)="saveAccess()">
+        Zugriffsmodell speichern
+      </button>
       @if (accessSaved) {
         <span class="save-indicator">✓ Gespeichert</span>
       }
@@ -196,7 +296,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <h4>⬇️ Downloads</h4>
         @for (feat of downloadFlags; track feat.key) {
           <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
@@ -207,7 +307,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <h4>📝 Aufgaben-Ansicht</h4>
         @for (feat of unitViewFlags; track feat.key) {
           <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
@@ -218,7 +318,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <h4>🧭 Navigation</h4>
         @for (feat of navFlags; track feat.key) {
           <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
@@ -228,22 +328,34 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
       <div class="feature-section">
         <h4>💬 Kommentare</h4>
         <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig['enableCommenting']">
+          <input type="checkbox" [(ngModel)]="featureConfig['enableCommenting']" />
           <span>Kommentare aktivieren</span>
         </label>
         @if (featureConfig['enableCommenting']) {
           <div class="indent-section">
             <label class="help-text">Kommentierbare Elemente:</label>
             <label class="feature-toggle">
-              <input type="checkbox" [checked]="commentTargets.includes('UNIT')" (change)="toggleCommentTarget('UNIT')">
+              <input
+                type="checkbox"
+                [checked]="commentTargets.includes('UNIT')"
+                (change)="toggleCommentTarget('UNIT')"
+              />
               <span>Aufgaben (Units)</span>
             </label>
             <label class="feature-toggle">
-              <input type="checkbox" [checked]="commentTargets.includes('ITEM')" (change)="toggleCommentTarget('ITEM')">
+              <input
+                type="checkbox"
+                [checked]="commentTargets.includes('ITEM')"
+                (change)="toggleCommentTarget('ITEM')"
+              />
               <span>Items</span>
             </label>
             <label class="feature-toggle">
-              <input type="checkbox" [checked]="commentTargets.includes('TASK_SEQUENCE')" (change)="toggleCommentTarget('TASK_SEQUENCE')">
+              <input
+                type="checkbox"
+                [checked]="commentTargets.includes('TASK_SEQUENCE')"
+                (change)="toggleCommentTarget('TASK_SEQUENCE')"
+              />
               <span>Aufgabenfolgen</span>
             </label>
           </div>
@@ -255,12 +367,12 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <h4>📊 Item-Liste</h4>
         @for (feat of itemFlags; track feat.key) {
           <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
         <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]">
+          <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]" />
           <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
         </label>
 
@@ -275,124 +387,260 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                 </div>
               }
               <div class="tag-add">
-                <input type="text" [(ngModel)]="newTag" placeholder="Neuer Tag..." (keyup.enter)="addTag()" class="tag-input">
-                <button class="btn btn-outline btn-sm" (click)="addTag()" [disabled]="!newTag.trim()">+</button>
+                <input
+                  type="text"
+                  [(ngModel)]="newTag"
+                  placeholder="Neuer Tag..."
+                  (keyup.enter)="addTag()"
+                  class="tag-input"
+                />
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="addTag()"
+                  [disabled]="!newTag.trim()"
+                >
+                  +
+                </button>
               </div>
             </div>
           </div>
         }
 
         <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig['persistUserPreferences']">
+          <input type="checkbox" [(ngModel)]="featureConfig['persistUserPreferences']" />
           <span>Nutzer-Einstellungen speichern (nur bei Anmeldung)</span>
         </label>
       </div>
 
-      <button class="btn btn-primary" style="margin-top:16px" (click)="saveFeatures()">Features speichern</button>
+      <button class="btn btn-primary" style="margin-top:16px" (click)="saveFeatures()">
+        Features speichern
+      </button>
       @if (featuresSaved) {
         <span class="save-indicator">✓ Gespeichert</span>
       }
-    <!-- Edit Dialog -->
-  @if (editingCredential) {
-    <div class="dialog-overlay" (click)="closeEditDialog()">
-      <div class="dialog-content card" (click)="$event.stopPropagation()">
-        <div class="dialog-header">
-          <h3>Zugangsdatum bearbeiten</h3>
-          <button class="btn btn-outline btn-sm" (click)="closeEditDialog()">✕</button>
-        </div>
-        <div class="dialog-body">
-          <div class="form-group">
-            <label>Benutzername</label>
-            <input type="text" [(ngModel)]="editUsername" maxlength="50">
-          </div>
-          <div class="form-group" style="margin-top: 12px;">
-            <label>
-              <input type="checkbox" [(ngModel)]="editChangePassword"> Kennwort ändern
-            </label>
-          </div>
-          @if (editChangePassword) {
-            <div class="form-group" style="margin-top: 8px;">
-              <label>Neues Kennwort (mind. 12 Zeichen, Groß-/Kleinbuchstabe, Zahl, Sonderzeichen)</label>
-              <input type="password" [(ngModel)]="editPassword" minlength="12" placeholder="Neues Kennwort">
+      <!-- Edit Dialog -->
+      @if (editingCredential) {
+        <div class="dialog-overlay" (click)="closeEditDialog()">
+          <div class="dialog-content card" (click)="$event.stopPropagation()">
+            <div class="dialog-header">
+              <h3>Zugangsdatum bearbeiten</h3>
+              <button class="btn btn-outline btn-sm" (click)="closeEditDialog()">✕</button>
             </div>
-          }
-          @if (editError) {
-            <div class="alert alert-error" style="margin-top: 12px;">{{ editError }}</div>
-          }
+            <div class="dialog-body">
+              <div class="form-group">
+                <label>Benutzername</label>
+                <input type="text" [(ngModel)]="editUsername" maxlength="50" />
+              </div>
+              <div class="form-group" style="margin-top: 12px;">
+                <label>
+                  <input type="checkbox" [(ngModel)]="editChangePassword" /> Kennwort ändern
+                </label>
+              </div>
+              @if (editChangePassword) {
+                <div class="form-group" style="margin-top: 8px;">
+                  <label
+                    >Neues Kennwort (mind. 12 Zeichen, Groß-/Kleinbuchstabe, Zahl,
+                    Sonderzeichen)</label
+                  >
+                  <input
+                    type="password"
+                    [(ngModel)]="editPassword"
+                    minlength="12"
+                    placeholder="Neues Kennwort"
+                  />
+                </div>
+              }
+              @if (editError) {
+                <div class="alert alert-error" style="margin-top: 12px;">{{ editError }}</div>
+              }
+            </div>
+            <div
+              class="dialog-footer"
+              style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;"
+            >
+              <button class="btn btn-outline" (click)="closeEditDialog()">Abbrechen</button>
+              <button
+                class="btn btn-primary"
+                (click)="saveEdit()"
+                [disabled]="editChangePassword && !isStrongPassword(editPassword)"
+              >
+                Speichern
+              </button>
+            </div>
+          </div>
         </div>
-        <div class="dialog-footer" style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 16px;">
-          <button class="btn btn-outline" (click)="closeEditDialog()">Abbrechen</button>
-          <button class="btn btn-primary" (click)="saveEdit()" [disabled]="editChangePassword && !isStrongPassword(editPassword)">Speichern</button>
-        </div>
-      </div>
+      }
     </div>
-  }
-
-  </div>
   `,
-  styles: [`
-    .help-text { color: var(--color-text-secondary); font-size: 0.85rem; display: block; margin-bottom: 8px; }
-    .radio-group { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
-    .radio-option {
-      display: flex; align-items: flex-start; gap: 10px;
-      padding: 12px 16px; border: 1px solid var(--color-border);
-      border-radius: var(--radius); cursor: pointer; transition: all 0.15s;
-    }
-    .radio-option:hover { border-color: var(--color-primary-light); }
-    .radio-option.active { border-color: var(--color-primary); background: rgba(26,82,118,0.03); }
-    .radio-option input { margin-top: 3px; }
-    .radio-option strong { display: block; font-size: 0.95rem; }
-    .radio-desc { font-size: 0.8rem; color: var(--color-text-secondary); }
-    .sub-section { margin-top: 16px; padding: 16px; background: var(--color-bg); border-radius: var(--radius); }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  styles: [
+    `
+      .help-text {
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+        display: block;
+        margin-bottom: 8px;
+      }
+      .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 12px 0;
+      }
+      .radio-option {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 16px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .radio-option:hover {
+        border-color: var(--color-primary-light);
+      }
+      .radio-option.active {
+        border-color: var(--color-primary);
+        background: rgba(26, 82, 118, 0.03);
+      }
+      .radio-option input {
+        margin-top: 3px;
+      }
+      .radio-option strong {
+        display: block;
+        font-size: 0.95rem;
+      }
+      .radio-desc {
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
+      .sub-section {
+        margin-top: 16px;
+        padding: 16px;
+        background: var(--color-bg);
+        border-radius: var(--radius);
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
 
-    .feature-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--color-border); }
-    .feature-section:first-of-type { border-top: none; }
-    .feature-section h4 { font-size: 0.95rem; margin-bottom: 8px; }
-    .feature-toggle {
-      display: flex; align-items: center; gap: 8px; padding: 5px 0;
-      cursor: pointer; font-size: 0.9rem;
-    }
-    .feature-toggle input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-primary); }
+      .feature-section {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+      }
+      .feature-section:first-of-type {
+        border-top: none;
+      }
+      .feature-section h4 {
+        font-size: 0.95rem;
+        margin-bottom: 8px;
+      }
+      .feature-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 0;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .feature-toggle input[type='checkbox'] {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--color-primary);
+      }
 
-    .indent-section { margin-left: 26px; padding: 8px 0; }
-    .tags-editor { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
-    .tag-item { display: flex; align-items: center; gap: 4px; }
-    .tag-remove {
-      background: none; border: none; cursor: pointer; font-size: 0.7rem;
-      color: var(--color-text-secondary); padding: 2px;
-    }
-    .tag-remove:hover { color: var(--color-danger); }
-    .tag-add { display: flex; gap: 4px; }
-    .tag-input { width: 120px; padding: 4px 8px; border: 1px solid var(--color-border); border-radius: var(--radius); font-size: 0.85rem; }
+      .indent-section {
+        margin-left: 26px;
+        padding: 8px 0;
+      }
+      .tags-editor {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .tag-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .tag-remove {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 0.7rem;
+        color: var(--color-text-secondary);
+        padding: 2px;
+      }
+      .tag-remove:hover {
+        color: var(--color-danger);
+      }
+      .tag-add {
+        display: flex;
+        gap: 4px;
+      }
+      .tag-input {
+        width: 120px;
+        padding: 4px 8px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.85rem;
+      }
 
-    .save-indicator { margin-left: 12px; color: var(--color-success); font-size: 0.85rem; font-weight: 500; }
-    .credentials-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-    .credentials-table th, .credentials-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--color-border); }
-    .credentials-table th { font-weight: 600; color: var(--color-text-secondary); font-size: 0.85rem; }
-    .credentials-table tr:hover { background: rgba(0,0,0,0.02); }
-    .dialog-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 24px;
-    }
-    .dialog-content {
-      max-width: 400px;
-      width: 100%;
-    }
-    .dialog-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .dialog-header h3 { margin: 0; }
-  `]
+      .save-indicator {
+        margin-left: 12px;
+        color: var(--color-success);
+        font-size: 0.85rem;
+        font-weight: 500;
+      }
+      .credentials-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      .credentials-table th,
+      .credentials-table td {
+        padding: 8px 12px;
+        text-align: left;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .credentials-table th {
+        font-weight: 600;
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+      }
+      .credentials-table tr:hover {
+        background: rgba(0, 0, 0, 0.02);
+      }
+      .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 24px;
+      }
+      .dialog-content {
+        max-width: 400px;
+        width: 100%;
+      }
+      .dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .dialog-header h3 {
+        margin: 0;
+      }
+    `,
+  ],
 })
 export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
@@ -423,7 +671,16 @@ export class AccessConfigComponent implements OnInit {
 
   // CSV upload
   csvMode: 'replace' | 'append' | 'upsert' = 'replace';
-  csvPreview: { filename: string; total: number; toAdd: number; toUpdate: number; toSkip: number; duplicates: string[]; conflicts: string[]; credentials: any[] } | null = null;
+  csvPreview: {
+    filename: string;
+    total: number;
+    toAdd: number;
+    toUpdate: number;
+    toSkip: number;
+    duplicates: string[];
+    conflicts: string[];
+    credentials: any[];
+  } | null = null;
   pendingCSVUpload: any[] = [];
 
   // Edit dialog
@@ -459,7 +716,10 @@ export class AccessConfigComponent implements OnInit {
     { key: 'enableItemListTags', label: 'Item-Tagging erlauben' },
   ];
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(
+    private route: ActivatedRoute,
+    private api: ApiService,
+  ) {}
 
   ngOnInit() {
     this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
@@ -473,14 +733,14 @@ export class AccessConfigComponent implements OnInit {
     const utcDate = new Date(isoDateString);
     if (isNaN(utcDate.getTime())) return '';
     console.log('Loading date from backend:', { isoDateString, utcDate: utcDate.toString() });
-    
+
     // Convert UTC to local time components
     const year = utcDate.getFullYear();
     const month = String(utcDate.getMonth() + 1).padStart(2, '0');
     const day = String(utcDate.getDate()).padStart(2, '0');
     const hours = String(utcDate.getHours()).padStart(2, '0');
     const minutes = String(utcDate.getMinutes()).padStart(2, '0');
-    
+
     const result = `${year}-${month}-${day}T${hours}:${minutes}`;
     console.log('Converted to local:', { result });
     return result;
@@ -501,10 +761,10 @@ export class AccessConfigComponent implements OnInit {
     const [datePart, timePart] = dateTimeLocal.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
     const [hours, minutes] = timePart.split(':').map(Number);
-    
+
     // Create date in local time (months are 0-indexed in JS)
     const localDate = new Date(year, month - 1, day, hours, minutes);
-    
+
     // Convert to UTC ISO string
     const result = localDate.toISOString();
     console.log('Saving date:', { input: dateTimeLocal, localDate: localDate.toString(), result });
@@ -513,7 +773,7 @@ export class AccessConfigComponent implements OnInit {
 
   loadConfig() {
     this.api.getAccessConfig(this.acpId).subscribe({
-      next: config => {
+      next: (config) => {
         if (config) {
           this.accessModel = config.accessModel;
           this.allowRegistered = config.allowRegistered || false;
@@ -524,7 +784,7 @@ export class AccessConfigComponent implements OnInit {
           this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
           this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
         }
-      }
+      },
     });
   }
 
@@ -535,7 +795,7 @@ export class AccessConfigComponent implements OnInit {
       },
       error: () => {
         this.credentials = [];
-      }
+      },
     });
   }
 
@@ -579,9 +839,9 @@ export class AccessConfigComponent implements OnInit {
 
   saveAccess() {
     if (!this.validateDates()) return;
-    const data: any = { 
+    const data: any = {
       accessModel: this.accessModel,
-      allowRegistered: this.allowRegistered
+      allowRegistered: this.allowRegistered,
     };
     if (this.accessModel === 'CREDENTIALS_LIST') {
       data.validFrom = this.dateTimeLocalToIso(this.validFrom);
@@ -590,8 +850,8 @@ export class AccessConfigComponent implements OnInit {
     this.api.updateAccessConfig(this.acpId, data).subscribe({
       next: () => {
         this.accessSaved = true;
-        setTimeout(() => this.accessSaved = false, 3000);
-      }
+        setTimeout(() => (this.accessSaved = false), 3000);
+      },
     });
   }
 
@@ -599,16 +859,18 @@ export class AccessConfigComponent implements OnInit {
     this.applyFeatureConfigDefaults();
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
-    this.api.updateAccessConfig(this.acpId, {
-      accessModel: this.accessModel,
-      allowRegistered: this.allowRegistered,
-      featureConfig: this.featureConfig
-    }).subscribe({
-      next: () => {
-        this.featuresSaved = true;
-        setTimeout(() => this.featuresSaved = false, 3000);
-      }
-    });
+    this.api
+      .updateAccessConfig(this.acpId, {
+        accessModel: this.accessModel,
+        allowRegistered: this.allowRegistered,
+        featureConfig: this.featureConfig,
+      })
+      .subscribe({
+        next: () => {
+          this.featuresSaved = true;
+          setTimeout(() => (this.featuresSaved = false), 3000);
+        },
+      });
   }
 
   private applyFeatureConfigDefaults() {
@@ -651,7 +913,7 @@ export class AccessConfigComponent implements OnInit {
       this.addError = this.strongPasswordHint;
       return;
     }
-    if (this.credentials.some(c => c.username === username)) {
+    if (this.credentials.some((c) => c.username === username)) {
       this.addError = 'Benutzername existiert bereits.';
       return;
     }
@@ -665,7 +927,7 @@ export class AccessConfigComponent implements OnInit {
       },
       error: (err) => {
         this.addError = err.error?.message || 'Fehler beim Hinzufügen.';
-      }
+      },
     });
   }
 
@@ -676,11 +938,13 @@ export class AccessConfigComponent implements OnInit {
 
     const reader = new FileReader();
     reader.onload = () => {
-      const lines = (reader.result as string).split('\n').filter(l => l.trim());
-      const parsed = lines.map(line => {
-        const [username, password] = line.split(',').map(s => s.trim());
-        return { username, password };
-      }).filter(c => c.username && c.password);
+      const lines = (reader.result as string).split('\n').filter((l) => l.trim());
+      const parsed = lines
+        .map((line) => {
+          const [username, password] = line.split(',').map((s) => s.trim());
+          return { username, password };
+        })
+        .filter((c) => c.username && c.password);
 
       // Check for duplicates within CSV
       const seenInCSV = new Set<string>();
@@ -704,7 +968,7 @@ export class AccessConfigComponent implements OnInit {
       for (const cred of parsed) {
         if (duplicates.includes(cred.username)) continue;
 
-        const existing = this.credentials.find(c => c.username === cred.username);
+        const existing = this.credentials.find((c) => c.username === cred.username);
 
         if (this.csvMode === 'replace') {
           toAdd++;
@@ -733,7 +997,7 @@ export class AccessConfigComponent implements OnInit {
         toSkip,
         duplicates,
         conflicts: [...new Set(conflicts)],
-        credentials: parsed
+        credentials: parsed,
       };
       this.pendingCSVUpload = parsed;
     };
@@ -750,13 +1014,18 @@ export class AccessConfigComponent implements OnInit {
   confirmCSVUpload() {
     if (!this.csvPreview || this.pendingCSVUpload.length === 0) return;
 
-    const validCreds = this.pendingCSVUpload.filter(c => !this.csvPreview!.duplicates.includes(c.username));
+    const validCreds = this.pendingCSVUpload.filter(
+      (c) => !this.csvPreview!.duplicates.includes(c.username),
+    );
 
     this.api.uploadCredentials(this.acpId, validCreds, this.csvMode).subscribe({
       next: (res: any) => {
         this.csvPreview = null;
         this.pendingCSVUpload = [];
-        this.credentialCount = res.added + this.credentials.length - (this.csvMode === 'replace' ? this.credentials.length : 0);
+        this.credentialCount =
+          res.added +
+          this.credentials.length -
+          (this.csvMode === 'replace' ? this.credentials.length : 0);
         this.loadCredentials();
 
         // Show success message
@@ -765,7 +1034,7 @@ export class AccessConfigComponent implements OnInit {
       },
       error: (err) => {
         alert('Fehler beim Import: ' + (err.error?.message || 'Unbekannter Fehler'));
-      }
+      },
     });
   }
 
@@ -799,7 +1068,9 @@ export class AccessConfigComponent implements OnInit {
 
     // Check for duplicate username (if changed)
     if (username !== this.editingCredential.username) {
-      if (this.credentials.some(c => c.username === username && c.id !== this.editingCredential!.id)) {
+      if (
+        this.credentials.some((c) => c.username === username && c.id !== this.editingCredential!.id)
+      ) {
         this.editError = 'Benutzername existiert bereits.';
         return;
       }
@@ -824,7 +1095,7 @@ export class AccessConfigComponent implements OnInit {
 
     this.api.updateCredential(this.acpId, this.editingCredential.id, data).subscribe({
       next: (updated) => {
-        const idx = this.credentials.findIndex(c => c.id === updated.id);
+        const idx = this.credentials.findIndex((c) => c.id === updated.id);
         if (idx >= 0) {
           this.credentials[idx] = updated;
         }
@@ -832,7 +1103,7 @@ export class AccessConfigComponent implements OnInit {
       },
       error: (err) => {
         this.editError = err.error?.message || 'Fehler beim Speichern.';
-      }
+      },
     });
   }
 
@@ -846,11 +1117,11 @@ export class AccessConfigComponent implements OnInit {
     if (!confirm('Soll dieses Zugangsdatum wirklich gelöscht werden?')) return;
     this.api.deleteCredential(this.acpId, credentialId).subscribe({
       next: () => {
-        this.credentials = this.credentials.filter(c => c.id !== credentialId);
+        this.credentials = this.credentials.filter((c) => c.id !== credentialId);
       },
       error: () => {
         alert('Fehler beim Löschen des Zugangsdatums');
-      }
+      },
     });
   }
 

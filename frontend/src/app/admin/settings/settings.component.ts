@@ -34,8 +34,12 @@ const THEME_FIELDS: ThemeField[] = [
   imports: [FormsModule],
   template: `
     <div class="page-header"><h1>Einstellungen</h1></div>
-    @if (saved) { <div class="alert alert-success">Einstellungen gespeichert.</div> }
-    @if (error) { <div class="alert alert-error">{{ error }}</div> }
+    @if (saved) {
+      <div class="alert alert-success">Einstellungen gespeichert.</div>
+    }
+    @if (error) {
+      <div class="alert alert-error">{{ error }}</div>
+    }
 
     @if (settings) {
       <div class="card">
@@ -49,7 +53,7 @@ const THEME_FIELDS: ThemeField[] = [
         </div>
         <div class="form-group">
           <label>Logo URL</label>
-          <input [(ngModel)]="settings.logoUrl" name="logoUrl">
+          <input [(ngModel)]="settings.logoUrl" name="logoUrl" />
         </div>
 
         <h3>Farbgebung / Theme</h3>
@@ -62,11 +66,13 @@ const THEME_FIELDS: ThemeField[] = [
                   type="color"
                   [(ngModel)]="theme[field.key]"
                   [name]="'theme-color-' + field.key"
-                  (change)="onThemeChange()">
+                  (change)="onThemeChange()"
+                />
                 <input
                   [(ngModel)]="theme[field.key]"
                   [name]="'theme-text-' + field.key"
-                  (change)="onThemeChange()">
+                  (change)="onThemeChange()"
+                />
               </div>
             </div>
           }
@@ -77,7 +83,11 @@ const THEME_FIELDS: ThemeField[] = [
         <h3>Texte</h3>
         <div class="form-group">
           <label>Startseite (HTML)</label>
-          <textarea [(ngModel)]="settings.landingPageHtml" name="landingPageHtml" rows="4"></textarea>
+          <textarea
+            [(ngModel)]="settings.landingPageHtml"
+            name="landingPageHtml"
+            rows="4"
+          ></textarea>
         </div>
         <div class="form-group">
           <label>Impressum (HTML)</label>
@@ -89,7 +99,11 @@ const THEME_FIELDS: ThemeField[] = [
         </div>
         <div class="form-group">
           <label>Barrierefreiheit (HTML)</label>
-          <textarea [(ngModel)]="settings.accessibilityHtml" name="accessibilityHtml" rows="4"></textarea>
+          <textarea
+            [(ngModel)]="settings.accessibilityHtml"
+            name="accessibilityHtml"
+            rows="4"
+          ></textarea>
         </div>
       </div>
 
@@ -101,59 +115,64 @@ const THEME_FIELDS: ThemeField[] = [
             [(ngModel)]="defaultAcpIndexJson"
             name="defaultAcpIndexJson"
             rows="12"
-            class="json-editor"></textarea>
-          <small class="help-text">Wird beim Anlegen/Import neuer ACPs als Standard verwendet.</small>
+            class="json-editor"
+          ></textarea>
+          <small class="help-text"
+            >Wird beim Anlegen/Import neuer ACPs als Standard verwendet.</small
+          >
         </div>
       </div>
 
       <button class="btn btn-primary" (click)="save()">Speichern</button>
     }
   `,
-  styles: [`
-    .theme-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 12px;
-      margin-top: 8px;
-    }
+  styles: [
+    `
+      .theme-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 12px;
+        margin-top: 8px;
+      }
 
-    .theme-item label {
-      display: block;
-      margin-bottom: 4px;
-      font-size: 0.85rem;
-      color: var(--color-text-secondary);
-    }
+      .theme-item label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
 
-    .theme-input-row {
-      display: grid;
-      grid-template-columns: 64px 1fr;
-      gap: 8px;
-      align-items: center;
-    }
+      .theme-input-row {
+        display: grid;
+        grid-template-columns: 64px 1fr;
+        gap: 8px;
+        align-items: center;
+      }
 
-    .theme-input-row input[type="color"] {
-      width: 64px;
-      height: 36px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 2px;
-      cursor: pointer;
-      background: transparent;
-    }
+      .theme-input-row input[type='color'] {
+        width: 64px;
+        height: 36px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 2px;
+        cursor: pointer;
+        background: transparent;
+      }
 
-    .json-editor {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 0.85rem;
-      line-height: 1.5;
-    }
+      .json-editor {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+      }
 
-    .help-text {
-      display: block;
-      margin-top: 6px;
-      color: var(--color-text-secondary);
-      font-size: 0.8rem;
-    }
-  `]
+      .help-text {
+        display: block;
+        margin-top: 6px;
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+      }
+    `,
+  ],
 })
 export class SettingsComponent implements OnInit {
   settings: AppSettings | null = null;
@@ -174,7 +193,7 @@ export class SettingsComponent implements OnInit {
       },
       error: (err) => {
         this.error = err.error?.message || 'Fehler beim Laden der Einstellungen';
-      }
+      },
     });
   }
 
@@ -226,16 +245,16 @@ export class SettingsComponent implements OnInit {
               logoUrl: settings.logoUrl,
               theme: this.theme,
               language: settings.language,
-            }
-          })
+            },
+          }),
         );
 
         this.saved = true;
-        setTimeout(() => this.saved = false, 3000);
+        setTimeout(() => (this.saved = false), 3000);
       },
       error: (err) => {
         this.error = err.error?.message || 'Fehler beim Speichern';
-      }
+      },
     });
   }
 }

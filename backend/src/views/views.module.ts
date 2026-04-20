@@ -1,7 +1,7 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { ViewsService } from './views.service';
-import { ViewsController } from './views.controller';
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { ViewsService } from "./views.service";
+import { ViewsController } from "./views.controller";
 import {
   Acp,
   AcpAccessConfig,
@@ -9,9 +9,9 @@ import {
   AppSettings,
   AcpUserRole,
   AcpItemPreference,
-} from '../database/entities';
-import { AuthModule } from '../auth/auth.module';
-import { ItemExplorerModule } from '../item-explorer/item-explorer.module';
+} from "../database/entities";
+import { AuthModule } from "../auth/auth.module";
+import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 
 @Module({
   imports: [

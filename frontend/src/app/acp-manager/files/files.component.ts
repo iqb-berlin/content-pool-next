@@ -39,18 +39,18 @@ type FileValidationFilter = 'all' | FileValidationState;
         </button>
         <label class="btn btn-primary">
           📤 Dateien hochladen
-          <input type="file" multiple (change)="upload($event)" hidden>
+          <input type="file" multiple (change)="upload($event)" hidden />
         </label>
         @if (files.length) {
-          <button class="btn btn-danger" (click)="openDeleteAllFilesDialog()">🗑 Alle löschen</button>
+          <button class="btn btn-danger" (click)="openDeleteAllFilesDialog()">
+            🗑 Alle löschen
+          </button>
         }
       </div>
     </div>
 
     @if (uploading) {
-      <div class="alert alert-success">
-        Dateien werden hochgeladen ({{ uploadProgress }})...
-      </div>
+      <div class="alert alert-success">Dateien werden hochgeladen ({{ uploadProgress }})...</div>
     }
 
     @if (uploadError) {
@@ -62,15 +62,15 @@ type FileValidationFilter = 'all' | FileValidationState;
     @if (lastConflictSummary) {
       <div class="alert alert-info">
         Konfliktprüfung: {{ lastConflictSummary.conflicts }} doppelte Datei(en) erkannt,
-        {{ lastConflictSummary.replaced }} ersetzt,
-        {{ lastConflictSummary.skipped }} übersprungen.
+        {{ lastConflictSummary.replaced }} ersetzt, {{ lastConflictSummary.skipped }} übersprungen.
       </div>
     }
 
     @if (lastSyncReport) {
       <div class="alert alert-info">
-        Index-Sync: {{ lastSyncReport.unitsAdded }} Units hinzugefügt, {{ lastSyncReport.unitsUpdated }} Units aktualisiert,
-        {{ lastSyncReport.itemsAdded }} Items hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items aktualisiert.
+        Index-Sync: {{ lastSyncReport.unitsAdded }} Units hinzugefügt,
+        {{ lastSyncReport.unitsUpdated }} Units aktualisiert, {{ lastSyncReport.itemsAdded }} Items
+        hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items aktualisiert.
         @if (lastSyncReport.warnings?.length) {
           <div style="margin-top:6px">
             Warnungen:
@@ -83,14 +83,22 @@ type FileValidationFilter = 'all' | FileValidationState;
     }
 
     @if (lastValidationSummary) {
-      <div class="alert" [class.alert-success]="lastValidationSummary.invalidFiles === 0" [class.alert-warning]="lastValidationSummary.invalidFiles > 0">
-        Auto-Validierung: {{ lastValidationSummary.validFiles }} von {{ lastValidationSummary.totalFiles }} Datei(en) ohne Fehler.
+      <div
+        class="alert"
+        [class.alert-success]="lastValidationSummary.invalidFiles === 0"
+        [class.alert-warning]="lastValidationSummary.invalidFiles > 0"
+      >
+        Auto-Validierung: {{ lastValidationSummary.validFiles }} von
+        {{ lastValidationSummary.totalFiles }} Datei(en) ohne Fehler.
         @if (lastValidationSummary.invalidFiles > 0) {
           <span> {{ lastValidationSummary.invalidFiles }} Datei(en) enthalten Fehler.</span>
         }
         <div style="margin-top:6px">
-          ACP-Semantik: {{ lastValidationSummary.semanticValid ? 'OK' : 'Fehler/Warnungen vorhanden' }}
-          ({{ lastValidationSummary.semanticIssueCount }} Issue(s))
+          ACP-Semantik:
+          {{ lastValidationSummary.semanticValid ? 'OK' : 'Fehler/Warnungen vorhanden' }} ({{
+            lastValidationSummary.semanticIssueCount
+          }}
+          Issue(s))
         </div>
       </div>
     }
@@ -102,7 +110,11 @@ type FileValidationFilter = 'all' | FileValidationState;
         @for (result of validationResults; track result.unitId) {
           <div class="validation-unit" [class.valid]="result.valid" [class.invalid]="!result.valid">
             <div class="validation-header">
-              <span class="badge" [class.badge-success]="result.valid" [class.badge-danger]="!result.valid">
+              <span
+                class="badge"
+                [class.badge-success]="result.valid"
+                [class.badge-danger]="!result.valid"
+              >
                 {{ result.valid ? '✓' : '✗' }}
               </span>
               <strong>{{ result.unitLabel }}</strong>
@@ -111,16 +123,24 @@ type FileValidationFilter = 'all' | FileValidationState;
             @if (!result.valid) {
               <div class="validation-details">
                 @if (!result.files.definition.found) {
-                  <span class="badge badge-danger">Fehlend: {{ result.files.definition.expected }}</span>
+                  <span class="badge badge-danger"
+                    >Fehlend: {{ result.files.definition.expected }}</span
+                  >
                 }
                 @if (!result.files.codingScheme.found) {
-                  <span class="badge badge-warning">Fehlend: {{ result.files.codingScheme.expected }}</span>
+                  <span class="badge badge-warning"
+                    >Fehlend: {{ result.files.codingScheme.expected }}</span
+                  >
                 }
                 @if (!result.files.metadata.found) {
-                  <span class="badge badge-warning">Fehlend: {{ result.files.metadata.expected }}</span>
+                  <span class="badge badge-warning"
+                    >Fehlend: {{ result.files.metadata.expected }}</span
+                  >
                 }
                 @if (!result.files.player.found) {
-                  <span class="badge badge-danger">Fehlend: Player ({{ result.files.player.expected }})</span>
+                  <span class="badge badge-danger"
+                    >Fehlend: Player ({{ result.files.player.expected }})</span
+                  >
                 }
               </div>
             }
@@ -135,7 +155,8 @@ type FileValidationFilter = 'all' | FileValidationState;
           class="filter-input"
           [(ngModel)]="searchQuery"
           (input)="applyFilters()"
-          placeholder="🔎 Nach Dateiname suchen..." />
+          placeholder="🔎 Nach Dateiname suchen..."
+        />
         <select class="filter-select" [(ngModel)]="selectedFileType" (change)="applyFilters()">
           <option [value]="FILE_TYPE_FILTER_ALL">Alle Typen</option>
           @for (fileType of availableFileTypes; track fileType) {
@@ -145,13 +166,21 @@ type FileValidationFilter = 'all' | FileValidationState;
             <option [value]="FILE_TYPE_FILTER_NONE">Ohne Typ</option>
           }
         </select>
-        <select class="filter-select" [(ngModel)]="selectedValidationFilter" (change)="applyFilters()">
+        <select
+          class="filter-select"
+          [(ngModel)]="selectedValidationFilter"
+          (change)="applyFilters()"
+        >
           <option value="all">Alle Prüfzustände</option>
           <option value="ok">OK</option>
           <option value="error">Fehler</option>
           <option value="unchecked">Nicht geprüft</option>
         </select>
-        <button class="btn btn-outline btn-sm" (click)="resetFilters()" [disabled]="!hasActiveFilters()">
+        <button
+          class="btn btn-outline btn-sm"
+          (click)="resetFilters()"
+          [disabled]="!hasActiveFilters()"
+        >
           Filter zurücksetzen
         </button>
       </div>
@@ -177,18 +206,26 @@ type FileValidationFilter = 'all' | FileValidationState;
               <td>{{ formatSize(file.fileSize) }}</td>
               <td>
                 @if (file.validationResult) {
-                  <span class="badge" [class.badge-success]="file.validationResult.valid" [class.badge-danger]="!file.validationResult.valid">
+                  <span
+                    class="badge"
+                    [class.badge-success]="file.validationResult.valid"
+                    [class.badge-danger]="!file.validationResult.valid"
+                  >
                     {{ file.validationResult.valid ? 'OK' : 'Fehler' }}
                   </span>
 
                   @if (file.validationResult.issues.length) {
                     <div class="file-validation-issues">
-                      @for (issue of file.validationResult.issues; track issueTrack(issue, $index)) {
+                      @for (
+                        issue of file.validationResult.issues;
+                        track issueTrack(issue, $index)
+                      ) {
                         <div
                           class="file-validation-issue"
                           [class.issue-error]="issue.severity === 'error'"
                           [class.issue-warning]="issue.severity === 'warning'"
-                          [class.issue-info]="issue.severity === 'info'">
+                          [class.issue-info]="issue.severity === 'info'"
+                        >
                           <span class="issue-tag">{{ issue.severity.toUpperCase() }}</span>
                           <span>{{ issue.message }}</span>
                         </div>
@@ -200,8 +237,16 @@ type FileValidationFilter = 'all' | FileValidationState;
                 }
               </td>
               <td>
-                <a [href]="getDownloadUrl(file)" class="btn btn-sm btn-outline" target="_blank">⬇ Download</a>
-                <button class="btn btn-sm btn-danger" (click)="openDeleteFileDialog(file)" style="margin-left:8px">Löschen</button>
+                <a [href]="getDownloadUrl(file)" class="btn btn-sm btn-outline" target="_blank"
+                  >⬇ Download</a
+                >
+                <button
+                  class="btn btn-sm btn-danger"
+                  (click)="openDeleteFileDialog(file)"
+                  style="margin-left:8px"
+                >
+                  Löschen
+                </button>
               </td>
             </tr>
           }
@@ -225,42 +270,52 @@ type FileValidationFilter = 'all' | FileValidationState;
       [confirmLabel]="deleteDialogConfirmLabel"
       confirmVariant="danger"
       (confirmed)="confirmDeleteDialog()"
-      (cancelled)="closeDeleteDialog()" />
+      (cancelled)="closeDeleteDialog()"
+    />
 
     @if (conflictDialogOpen) {
       <div class="overlay-backdrop" (click)="cancelConflictDialog()">
         <div class="overlay-dialog card" (click)="$event.stopPropagation()">
           <h3 style="margin-top: 0">Dateikonflikte beim Upload</h3>
           <p>
-            Für bereits vorhandene Dateinamen bitte pro Datei entscheiden,
-            ob die vorhandene Datei ersetzt oder der Upload übersprungen wird.
+            Für bereits vorhandene Dateinamen bitte pro Datei entscheiden, ob die vorhandene Datei
+            ersetzt oder der Upload übersprungen wird.
           </p>
 
           <div class="conflict-toolbar">
-            <button class="btn btn-outline btn-sm" (click)="applyDecisionToAll('replace')">Alle ersetzen</button>
-            <button class="btn btn-outline btn-sm" (click)="applyDecisionToAll('skip')">Alle überspringen</button>
+            <button class="btn btn-outline btn-sm" (click)="applyDecisionToAll('replace')">
+              Alle ersetzen
+            </button>
+            <button class="btn btn-outline btn-sm" (click)="applyDecisionToAll('skip')">
+              Alle überspringen
+            </button>
           </div>
 
           <div class="conflict-list">
             @for (entry of conflictEntries; track conflictTrack(entry, $index); let i = $index) {
               <div class="conflict-row">
-                <div class="conflict-name"><strong>{{ entry.incoming.name }}</strong></div>
+                <div class="conflict-name">
+                  <strong>{{ entry.incoming.name }}</strong>
+                </div>
                 <div class="conflict-meta">
-                  Neu: {{ formatSize(entry.incoming.size) }} | Vorhanden: {{ formatSize(entry.existing.fileSize) }}
+                  Neu: {{ formatSize(entry.incoming.size) }} | Vorhanden:
+                  {{ formatSize(entry.existing.fileSize) }}
                 </div>
                 <div class="conflict-actions">
                   <button
                     class="btn btn-sm"
                     [class.btn-primary]="entry.decision === 'replace'"
                     [class.btn-outline]="entry.decision !== 'replace'"
-                    (click)="setConflictDecision(i, 'replace')">
+                    (click)="setConflictDecision(i, 'replace')"
+                  >
                     Ersetzen
                   </button>
                   <button
                     class="btn btn-sm"
                     [class.btn-primary]="entry.decision === 'skip'"
                     [class.btn-outline]="entry.decision !== 'skip'"
-                    (click)="setConflictDecision(i, 'skip')">
+                    (click)="setConflictDecision(i, 'skip')"
+                  >
                     Überspringen
                   </button>
                 </div>
@@ -270,7 +325,11 @@ type FileValidationFilter = 'all' | FileValidationState;
 
           <div class="dialog-actions">
             <button class="btn btn-outline" (click)="cancelConflictDialog()">Abbrechen</button>
-            <button class="btn btn-primary" [disabled]="!canConfirmConflictDialog()" (click)="confirmConflictDialog()">
+            <button
+              class="btn btn-primary"
+              [disabled]="!canConfirmConflictDialog()"
+              (click)="confirmConflictDialog()"
+            >
               Upload starten
             </button>
           </div>
@@ -278,114 +337,164 @@ type FileValidationFilter = 'all' | FileValidationState;
       </div>
     }
   `,
-  styles: [`
-    .validation-unit {
-      padding: 8px 12px; margin-bottom: 6px;
-      border-radius: var(--radius); border-left: 3px solid transparent;
-    }
-    .validation-unit.valid { border-left-color: var(--color-success); background: rgba(39,174,96,0.05); }
-    .validation-unit.invalid { border-left-color: var(--color-danger); background: rgba(231,76,60,0.05); }
-    .validation-header { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
-    .validation-details { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; padding-left: 32px; }
-    .file-validation-issues { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; min-width: 320px; }
-    .file-validation-issue { display: flex; gap: 6px; align-items: flex-start; font-size: 0.75rem; color: var(--color-text-secondary); }
-    .file-validation-issue .issue-tag {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 56px; padding: 1px 6px; border-radius: 4px; font-weight: 700;
-      background: var(--color-bg); color: var(--color-text-secondary);
-    }
-    .file-validation-issue.issue-error .issue-tag { background: rgba(231,76,60,0.15); color: #a93226; }
-    .file-validation-issue.issue-warning .issue-tag { background: rgba(243,156,18,0.18); color: #9c640c; }
-    .file-validation-issue.issue-info .issue-tag { background: rgba(52,152,219,0.16); color: #1f618d; }
-    .filter-card { margin-bottom: 16px; }
-    .filter-toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-    }
-    .filter-input {
-      flex: 1 1 280px;
-      min-width: 220px;
-      padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      font-family: inherit;
-      font-size: 0.9rem;
-    }
-    .filter-select {
-      min-width: 180px;
-      padding: 8px 10px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      font-family: inherit;
-      font-size: 0.85rem;
-      background: #fff;
-    }
-    .filter-summary {
-      margin-top: 8px;
-      font-size: 0.85rem;
-      color: var(--color-text-secondary);
-    }
+  styles: [
+    `
+      .validation-unit {
+        padding: 8px 12px;
+        margin-bottom: 6px;
+        border-radius: var(--radius);
+        border-left: 3px solid transparent;
+      }
+      .validation-unit.valid {
+        border-left-color: var(--color-success);
+        background: rgba(39, 174, 96, 0.05);
+      }
+      .validation-unit.invalid {
+        border-left-color: var(--color-danger);
+        background: rgba(231, 76, 60, 0.05);
+      }
+      .validation-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+      }
+      .validation-details {
+        margin-top: 6px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding-left: 32px;
+      }
+      .file-validation-issues {
+        margin-top: 8px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 320px;
+      }
+      .file-validation-issue {
+        display: flex;
+        gap: 6px;
+        align-items: flex-start;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+      }
+      .file-validation-issue .issue-tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 56px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+        background: var(--color-bg);
+        color: var(--color-text-secondary);
+      }
+      .file-validation-issue.issue-error .issue-tag {
+        background: rgba(231, 76, 60, 0.15);
+        color: #a93226;
+      }
+      .file-validation-issue.issue-warning .issue-tag {
+        background: rgba(243, 156, 18, 0.18);
+        color: #9c640c;
+      }
+      .file-validation-issue.issue-info .issue-tag {
+        background: rgba(52, 152, 219, 0.16);
+        color: #1f618d;
+      }
+      .filter-card {
+        margin-bottom: 16px;
+      }
+      .filter-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .filter-input {
+        flex: 1 1 280px;
+        min-width: 220px;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-family: inherit;
+        font-size: 0.9rem;
+      }
+      .filter-select {
+        min-width: 180px;
+        padding: 8px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-family: inherit;
+        font-size: 0.85rem;
+        background: #fff;
+      }
+      .filter-summary {
+        margin-top: 8px;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
 
-    .overlay-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.45);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 2000;
-      padding: 16px;
-    }
+      .overlay-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        padding: 16px;
+      }
 
-    .overlay-dialog {
-      width: min(780px, 100%);
-      max-height: 85vh;
-      overflow: auto;
-    }
+      .overlay-dialog {
+        width: min(780px, 100%);
+        max-height: 85vh;
+        overflow: auto;
+      }
 
-    .conflict-toolbar {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
+      .conflict-toolbar {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
 
-    .conflict-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
+      .conflict-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
 
-    .conflict-row {
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      padding: 10px;
-      background: var(--color-bg-soft, #f8f9fb);
-    }
+      .conflict-row {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 10px;
+        background: var(--color-bg-soft, #f8f9fb);
+      }
 
-    .conflict-name {
-      margin-bottom: 4px;
-    }
+      .conflict-name {
+        margin-bottom: 4px;
+      }
 
-    .conflict-meta {
-      font-size: 0.85rem;
-      color: var(--color-text-secondary);
-      margin-bottom: 8px;
-    }
+      .conflict-meta {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        margin-bottom: 8px;
+      }
 
-    .conflict-actions {
-      display: flex;
-      gap: 8px;
-    }
+      .conflict-actions {
+        display: flex;
+        gap: 8px;
+      }
 
-    .dialog-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-    }
-  `]
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+    `,
+  ],
 })
 export class FilesComponent implements OnInit {
   readonly FILE_TYPE_FILTER_ALL = 'all';
@@ -415,7 +524,10 @@ export class FilesComponent implements OnInit {
   deleteDialogBusy = false;
   deleteDialogError = '';
 
-  constructor(private route: ActivatedRoute, private api: ApiService) {}
+  constructor(
+    private route: ActivatedRoute,
+    private api: ApiService,
+  ) {}
 
   ngOnInit() {
     this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
@@ -569,10 +681,7 @@ export class FilesComponent implements OnInit {
     let latestValidationSummary: UploadValidationSummary | null = null;
     let processed = 0;
 
-    const uploadInChunks = async (
-      batchFiles: File[],
-      strategy?: 'overwrite',
-    ): Promise<void> => {
+    const uploadInChunks = async (batchFiles: File[], strategy?: 'overwrite'): Promise<void> => {
       for (let i = 0; i < batchFiles.length; i += chunkSize) {
         const chunk = batchFiles.slice(i, i + chunkSize);
         this.uploadProgress = `${processed + chunk.length} von ${totalToUpload}`;
@@ -832,7 +941,9 @@ export class FilesComponent implements OnInit {
   }
 
   private normalizeFileName(fileName: string): string {
-    return String(fileName || '').trim().toLowerCase();
+    return String(fileName || '')
+      .trim()
+      .toLowerCase();
   }
 
   private getValidationState(file: AcpFile): FileValidationState {
@@ -843,7 +954,9 @@ export class FilesComponent implements OnInit {
   }
 
   private normalizeText(value: string | null | undefined): string {
-    return String(value || '').trim().toLowerCase();
+    return String(value || '')
+      .trim()
+      .toLowerCase();
   }
 
   private getUploadErrorMessage(error: unknown): string {

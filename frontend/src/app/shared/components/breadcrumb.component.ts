@@ -22,23 +22,32 @@ export interface BreadcrumbItem {
       }
     </nav>
   `,
-  styles: [`
-    .breadcrumb {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.85rem;
-      margin-bottom: 20px;
-      color: var(--color-text-secondary);
-    }
-    .breadcrumb-link {
-      color: var(--color-primary-light);
-      text-decoration: none;
-    }
-    .breadcrumb-link:hover { text-decoration: underline; }
-    .breadcrumb-sep { color: var(--color-text-secondary); }
-    .breadcrumb-current { font-weight: 500; color: var(--color-text); }
-  `]
+  styles: [
+    `
+      .breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.85rem;
+        margin-bottom: 20px;
+        color: var(--color-text-secondary);
+      }
+      .breadcrumb-link {
+        color: var(--color-primary-light);
+        text-decoration: none;
+      }
+      .breadcrumb-link:hover {
+        text-decoration: underline;
+      }
+      .breadcrumb-sep {
+        color: var(--color-text-secondary);
+      }
+      .breadcrumb-current {
+        font-weight: 500;
+        color: var(--color-text);
+      }
+    `,
+  ],
 })
 export class BreadcrumbComponent {
   @Input() items: BreadcrumbItem[] = [];

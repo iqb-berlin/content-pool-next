@@ -1,12 +1,12 @@
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
 import {
   Acp,
   AcpAccessConfig,
   AcpItemExplorerChangeLog,
   AcpItemExplorerState,
-} from '../database/entities';
-import { ItemExplorerStateService } from './item-explorer-state.service';
+} from "../database/entities";
+import { ItemExplorerStateService } from "./item-explorer-state.service";
 
 @Module({
   imports: [

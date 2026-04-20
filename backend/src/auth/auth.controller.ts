@@ -1,102 +1,121 @@
-import { Controller, Post, Body, Get, UseGuards, Request, UnauthorizedException, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
-import { AuthService } from './auth.service';
-import { OidcValidationService } from './services/oidc-validation.service';
-import { LoginDto, CredentialLoginDto, OidcCallbackDto } from './dto/login.dto';
-import { SyncOidcRolesDto } from './dto/sync-oidc-roles.dto';
-import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RolesGuard } from './guards/roles.guard';
-import { Roles } from './roles.decorator';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Request,
+  UnauthorizedException,
+  Query,
+} from "@nestjs/common";
+import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
+import { AuthService } from "./auth.service";
+import { OidcValidationService } from "./services/oidc-validation.service";
+import { LoginDto, CredentialLoginDto, OidcCallbackDto } from "./dto/login.dto";
+import { SyncOidcRolesDto } from "./dto/sync-oidc-roles.dto";
+import { JwtAuthGuard } from "./guards/jwt-auth.guard";
+import { RolesGuard } from "./guards/roles.guard";
+import { Roles } from "./roles.decorator";
 
-@ApiTags('Authentication')
-@Controller('auth')
+@ApiTags("Authentication")
+@Controller("auth")
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly oidcValidationService: OidcValidationService,
   ) {}
 
-  @Get('oidc-config')
-  @ApiOperation({ summary: 'Get OIDC configuration' })
+  @Get("oidc-config")
+  @ApiOperation({ summary: "Get OIDC configuration" })
   async getOidcConfig() {
     // Use public issuer URL for frontend, fallback to internal URL if not set
-    const publicIssuerUrl = process.env.OIDC_PUBLIC_ISSUER_URL || process.env.OIDC_ISSUER_URL;
-    const redirectUri = process.env.OIDC_REDIRECT_URI || 'http://localhost:4201/auth/callback';
-    const enabled = this.oidcValidationService.isOidcEnabled() && !!publicIssuerUrl && !!redirectUri;
+    const publicIssuerUrl =
+      process.env.OIDC_PUBLIC_ISSUER_URL || process.env.OIDC_ISSUER_URL;
+    const redirectUri =
+      process.env.OIDC_REDIRECT_URI || "http://localhost:4201/auth/callback";
+    const enabled =
+      this.oidcValidationService.isOidcEnabled() &&
+      !!publicIssuerUrl &&
+      !!redirectUri;
 
     return {
       enabled,
       issuerUrl: publicIssuerUrl || null,
       clientId: process.env.OIDC_CLIENT_ID || null,
       redirectUri,
-      scope: process.env.OIDC_SCOPE || 'openid profile email',
+      scope: process.env.OIDC_SCOPE || "openid profile email",
     };
   }
 
-  @Get('context')
-  @ApiOperation({ summary: 'Get available authentication methods for context' })
-  async getAuthContext(@Query('type') type: string) {
+  @Get("context")
+  @ApiOperation({ summary: "Get available authentication methods for context" })
+  async getAuthContext(@Query("type") type: string) {
     const oidcEnabled = this.oidcValidationService.isOidcEnabled();
-    
+
     // Admin context: only OIDC allowed
-    if (type === 'admin') {
+    if (type === "admin") {
       return {
-        allowedMethods: oidcEnabled ? ['oidc'] : [],
+        allowedMethods: oidcEnabled ? ["oidc"] : [],
         oidcEnabled,
-        message: oidcEnabled 
-          ? 'Admin login requires OIDC authentication' 
-          : 'OIDC is not configured',
+        message: oidcEnabled
+          ? "Admin login requires OIDC authentication"
+          : "OIDC is not configured",
       };
     }
-    
+
     // ACP credential context: only credentials allowed
-    if (type === 'acp') {
+    if (type === "acp") {
       return {
-        allowedMethods: ['credentials'],
+        allowedMethods: ["credentials"],
         oidcEnabled: false,
-        message: 'Please login with ACP credentials',
+        message: "Please login with ACP credentials",
       };
     }
-    
+
     // Default: return both if OIDC enabled
     return {
-      allowedMethods: oidcEnabled ? ['oidc', 'credentials'] : ['credentials'],
+      allowedMethods: oidcEnabled ? ["oidc", "credentials"] : ["credentials"],
       oidcEnabled,
-      message: 'Please select authentication method',
+      message: "Please select authentication method",
     };
   }
 
-  @Post('login')
-  @ApiOperation({ summary: 'Login with username and password' })
+  @Post("login")
+  @ApiOperation({ summary: "Login with username and password" })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto.username, loginDto.password);
   }
 
-  @Post('oidc-callback')
-  @ApiOperation({ summary: 'OIDC callback - exchange ID token for JWT' })
+  @Post("oidc-callback")
+  @ApiOperation({ summary: "OIDC callback - exchange ID token for JWT" })
   async oidcCallback(@Body() oidcCallbackDto: OidcCallbackDto) {
     if (!this.oidcValidationService.isOidcEnabled()) {
-      throw new UnauthorizedException('OIDC is not configured');
+      throw new UnauthorizedException("OIDC is not configured");
     }
 
-    const userInfo = await this.oidcValidationService.validateIdToken(oidcCallbackDto.idToken);
-    
+    const userInfo = await this.oidcValidationService.validateIdToken(
+      oidcCallbackDto.idToken,
+    );
+
     // Generate JWT for the authenticated OIDC user
     return this.authService.generateTokenForOidcUser(userInfo);
   }
 
-  @Post('link-oidc')
+  @Post("link-oidc")
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('APP_ADMIN')
+  @Roles("APP_ADMIN")
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Link a user to OIDC account (Admin only)' })
+  @ApiOperation({ summary: "Link a user to OIDC account (Admin only)" })
   async linkOidcAccount(@Body() body: { userId: string; oidcSub: string }) {
     return this.authService.linkOidcAccount(body.userId, body.oidcSub);
   }
 
-  @Post('credential-login')
-  @ApiOperation({ summary: 'Login with ACP credentials' })
-  async credentialLogin(@Body() credentialLoginDto: CredentialLoginDto, @Request() req: any) {
+  @Post("credential-login")
+  @ApiOperation({ summary: "Login with ACP credentials" })
+  async credentialLogin(
+    @Body() credentialLoginDto: CredentialLoginDto,
+    @Request() req: any,
+  ) {
     const clientId = this.extractClientId(req);
     return this.authService.credentialLogin(
       credentialLoginDto.acpId,
@@ -106,38 +125,43 @@ export class AuthController {
     );
   }
 
-  @Post('logout')
+  @Post("logout")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Logout user (audit logging)' })
+  @ApiOperation({ summary: "Logout user (audit logging)" })
   async logout(@Request() req: any) {
     return this.authService.logout(req.user.sub);
   }
 
-  @Get('profile')
+  @Get("profile")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiOperation({ summary: "Get current user profile" })
   async getProfile(@Request() req: any) {
     return this.authService.getProfile(req.user.sub);
   }
 
-  @Post('sync-oidc-roles')
+  @Post("sync-oidc-roles")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Sync OIDC roles with application roles for current user and get new token' })
+  @ApiOperation({
+    summary:
+      "Sync OIDC roles with application roles for current user and get new token",
+  })
   async syncOidcRoles(@Request() req: any, @Body() syncDto: SyncOidcRolesDto) {
     if (!this.oidcValidationService.isOidcEnabled()) {
-      throw new UnauthorizedException('OIDC is not configured');
+      throw new UnauthorizedException("OIDC is not configured");
     }
 
     // Validate the ID token and sync OIDC-derived user information.
     // OIDC admin role can elevate users to app admin but does not remove locally granted app-admin rights.
-    const userInfo = await this.oidcValidationService.validateIdToken(syncDto.idToken);
-    
+    const userInfo = await this.oidcValidationService.validateIdToken(
+      syncDto.idToken,
+    );
+
     // Check that the token belongs to the current user
     if (userInfo.sub !== req.user.sub) {
-      throw new UnauthorizedException('Token does not match current user');
+      throw new UnauthorizedException("Token does not match current user");
     }
 
     // Generate a NEW JWT token with the updated admin status
@@ -145,13 +169,13 @@ export class AuthController {
   }
 
   private extractClientId(req: any): string {
-    const xForwardedFor = req?.headers?.['x-forwarded-for'];
+    const xForwardedFor = req?.headers?.["x-forwarded-for"];
     const rawClient =
       (Array.isArray(xForwardedFor) ? xForwardedFor[0] : xForwardedFor) ||
       req?.ip ||
       req?.socket?.remoteAddress ||
-      'unknown';
-    const firstHop = String(rawClient).split(',')[0].trim();
-    return firstHop || 'unknown';
+      "unknown";
+    const firstHop = String(rawClient).split(",")[0].trim();
+    return firstHop || "unknown";
   }
 }

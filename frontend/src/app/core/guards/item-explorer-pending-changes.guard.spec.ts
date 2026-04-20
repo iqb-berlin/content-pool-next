@@ -10,7 +10,12 @@ describe('itemExplorerPendingChangesGuard', () => {
   it('delegates to component canDeactivate and returns its value', async () => {
     const canDeactivate = vi.fn().mockResolvedValue(false);
     const component = { canDeactivate };
-    const result = itemExplorerPendingChangesGuard(component as any, {} as any, {} as any, {} as any);
+    const result = itemExplorerPendingChangesGuard(
+      component as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
     await expect(Promise.resolve(result)).resolves.toBe(false);
     expect(canDeactivate).toHaveBeenCalledTimes(1);
   });

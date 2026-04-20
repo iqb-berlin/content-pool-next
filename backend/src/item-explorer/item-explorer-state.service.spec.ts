@@ -1,15 +1,15 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { ConflictException } from '@nestjs/common';
-import { ItemExplorerStateService } from './item-explorer-state.service';
+import { Test, TestingModule } from "@nestjs/testing";
+import { getRepositoryToken } from "@nestjs/typeorm";
+import { ConflictException } from "@nestjs/common";
+import { ItemExplorerStateService } from "./item-explorer-state.service";
 import {
   Acp,
   AcpAccessConfig,
   AcpItemExplorerChangeLog,
   AcpItemExplorerState,
-} from '../database/entities';
+} from "../database/entities";
 
-describe('ItemExplorerStateService', () => {
+describe("ItemExplorerStateService", () => {
   let service: ItemExplorerStateService;
   let acpRepo: any;
   let accessConfigRepo: any;
@@ -24,14 +24,16 @@ describe('ItemExplorerStateService', () => {
     itemProperties: {},
   };
 
-  const buildStateRecord = (overrides: Partial<AcpItemExplorerState> = {}): AcpItemExplorerState => {
-    const now = new Date('2026-04-19T10:00:00.000Z');
+  const buildStateRecord = (
+    overrides: Partial<AcpItemExplorerState> = {},
+  ): AcpItemExplorerState => {
+    const now = new Date("2026-04-19T10:00:00.000Z");
     return {
-      id: 'state-1',
-      acpId: 'acp-1',
+      id: "state-1",
+      acpId: "acp-1",
       publishedState: JSON.parse(JSON.stringify(baseSharedState)),
       draftState: JSON.parse(JSON.stringify(baseSharedState)),
-      status: 'CLEAN',
+      status: "CLEAN",
       version: 1,
       publishedVersion: 1,
       updatedByRole: null,
@@ -67,197 +69,242 @@ describe('ItemExplorerStateService', () => {
       providers: [
         ItemExplorerStateService,
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
-        { provide: getRepositoryToken(AcpAccessConfig), useValue: accessConfigRepo },
-        { provide: getRepositoryToken(AcpItemExplorerState), useValue: stateRepo },
-        { provide: getRepositoryToken(AcpItemExplorerChangeLog), useValue: changeLogRepo },
+        {
+          provide: getRepositoryToken(AcpAccessConfig),
+          useValue: accessConfigRepo,
+        },
+        {
+          provide: getRepositoryToken(AcpItemExplorerState),
+          useValue: stateRepo,
+        },
+        {
+          provide: getRepositoryToken(AcpItemExplorerChangeLog),
+          useValue: changeLogRepo,
+        },
       ],
     }).compile();
 
     service = module.get<ItemExplorerStateService>(ItemExplorerStateService);
   });
 
-  it('initializes state for existing ACP and returns published state for read-only viewers', async () => {
+  it("initializes state for existing ACP and returns published state for read-only viewers", async () => {
     stateRepo.findOne.mockResolvedValue(null);
     acpRepo.findOne.mockResolvedValue({
-      id: 'acp-1',
+      id: "acp-1",
       itemProperties: {
-        'unit1_item1': { tags: ['A'], empiricalDifficulty: 1.2 },
+        unit1_item1: { tags: ["A"], empiricalDifficulty: 1.2 },
       },
     });
     accessConfigRepo.findOne.mockResolvedValue({
-      acpId: 'acp-1',
+      acpId: "acp-1",
       featureConfig: {
         metadataColumns: {
-          visible: ['subject'],
-          order: ['subject'],
+          visible: ["subject"],
+          order: ["subject"],
         },
       },
     });
     stateRepo.save.mockImplementation(async (record: any) => ({
       ...record,
-      id: 'state-new',
-      updatedAt: new Date('2026-04-19T10:01:00.000Z'),
-      createdAt: new Date('2026-04-19T10:01:00.000Z'),
+      id: "state-new",
+      updatedAt: new Date("2026-04-19T10:01:00.000Z"),
+      createdAt: new Date("2026-04-19T10:01:00.000Z"),
     }));
 
-    const envelope = await service.getStateForViewer('acp-1', false);
+    const envelope = await service.getStateForViewer("acp-1", false);
 
     expect(envelope.canEdit).toBe(false);
     expect(envelope.canPublish).toBe(false);
     expect(envelope.activeState).toEqual(envelope.publishedState);
-    expect(envelope.publishedState.metadataColumns.visible).toEqual(['subject']);
-    expect(envelope.publishedState.itemProperties['unit1_item1'].empiricalDifficulty).toBe(1.2);
+    expect(envelope.publishedState.metadataColumns.visible).toEqual([
+      "subject",
+    ]);
+    expect(
+      envelope.publishedState.itemProperties["unit1_item1"].empiricalDifficulty,
+    ).toBe(1.2);
     expect(stateRepo.save).toHaveBeenCalledTimes(1);
   });
 
-  it('returns conflict on outdated draft version', async () => {
+  it("returns conflict on outdated draft version", async () => {
     stateRepo.findOne.mockResolvedValue(buildStateRecord({ version: 7 }));
 
-    await expect(service.patchDraft('acp-1', { ui: { filterText: 'x' } }, {
-      baseVersion: 6,
-      actor: { userId: '1f2e3d4c-1234-4f56-8a90-abcdef123456', username: 'manager' },
-      changeType: 'UI_STATE_CHANGED',
-    })).rejects.toThrow(ConflictException);
+    await expect(
+      service.patchDraft(
+        "acp-1",
+        { ui: { filterText: "x" } },
+        {
+          baseVersion: 6,
+          actor: {
+            userId: "1f2e3d4c-1234-4f56-8a90-abcdef123456",
+            username: "manager",
+          },
+          changeType: "UI_STATE_CHANGED",
+        },
+      ),
+    ).rejects.toThrow(ConflictException);
 
     expect(stateRepo.save).not.toHaveBeenCalled();
     expect(changeLogRepo.save).not.toHaveBeenCalled();
   });
 
-  it('patches draft, increments version and writes audit log entry', async () => {
+  it("patches draft, increments version and writes audit log entry", async () => {
     const record = buildStateRecord();
     stateRepo.findOne.mockResolvedValue(record);
     stateRepo.save.mockImplementation(async (entity: any) => ({
       ...entity,
-      updatedAt: new Date('2026-04-19T11:00:00.000Z'),
+      updatedAt: new Date("2026-04-19T11:00:00.000Z"),
     }));
     changeLogRepo.save.mockResolvedValue(undefined);
 
-    const envelope = await service.patchDraft('acp-1', { tags: { item1: ['tag-x'] } }, {
-      baseVersion: 1,
-      actor: {
-        userId: '11111111-1111-4111-8111-111111111111',
-        username: 'alice',
-        role: 'ACP_MANAGER',
+    const envelope = await service.patchDraft(
+      "acp-1",
+      { tags: { item1: ["tag-x"] } },
+      {
+        baseVersion: 1,
+        actor: {
+          userId: "11111111-1111-4111-8111-111111111111",
+          username: "alice",
+          role: "ACP_MANAGER",
+        },
+        changeType: "TAGS_CHANGED",
       },
-      changeType: 'TAGS_CHANGED',
-    });
+    );
 
-    expect(envelope.status).toBe('DIRTY');
+    expect(envelope.status).toBe("DIRTY");
     expect(envelope.version).toBe(2);
-    expect(changeLogRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      acpId: 'acp-1',
-      changeType: 'TAGS_CHANGED',
-      actorUsername: 'alice',
-      actorRole: 'ACP_MANAGER',
-    }));
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acpId: "acp-1",
+        changeType: "TAGS_CHANGED",
+        actorUsername: "alice",
+        actorRole: "ACP_MANAGER",
+      }),
+    );
     expect(changeLogRepo.save).toHaveBeenCalledTimes(1);
   });
 
-  it('publishes draft atomically into ACP domain data and feature config', async () => {
+  it("publishes draft atomically into ACP domain data and feature config", async () => {
     const draftState = {
       ...baseSharedState,
-      metadataColumns: { visible: ['subject'], order: ['subject'] },
+      metadataColumns: { visible: ["subject"], order: ["subject"] },
       itemProperties: {
-        item1: { empiricalDifficulty: 2.5, tags: ['x'] },
+        item1: { empiricalDifficulty: 2.5, tags: ["x"] },
       },
     };
     const record = buildStateRecord({
       draftState: JSON.parse(JSON.stringify(draftState)),
-      status: 'DIRTY',
+      status: "DIRTY",
       version: 3,
       publishedVersion: 2,
     });
 
     stateRepo.findOne.mockResolvedValue(record);
-    acpRepo.findOne.mockResolvedValue({ id: 'acp-1', itemProperties: {} });
+    acpRepo.findOne.mockResolvedValue({ id: "acp-1", itemProperties: {} });
     accessConfigRepo.findOne.mockResolvedValue({
-      acpId: 'acp-1',
+      acpId: "acp-1",
       featureConfig: {},
     });
     stateRepo.save.mockImplementation(async (entity: any) => ({
       ...entity,
-      updatedAt: new Date('2026-04-19T12:00:00.000Z'),
+      updatedAt: new Date("2026-04-19T12:00:00.000Z"),
     }));
     changeLogRepo.save.mockResolvedValue(undefined);
 
-    const envelope = await service.saveDraft('acp-1', {
+    const envelope = await service.saveDraft("acp-1", {
       baseVersion: 3,
-      actor: { username: 'bob', role: 'ACP_MANAGER' },
+      actor: { username: "bob", role: "ACP_MANAGER" },
     });
 
-    expect(acpRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      itemProperties: draftState.itemProperties,
-    }));
-    expect(accessConfigRepo.save).toHaveBeenCalledWith(expect.objectContaining({
-      featureConfig: expect.objectContaining({
-        metadataColumns: draftState.metadataColumns,
+    expect(acpRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: draftState.itemProperties,
       }),
-    }));
-    expect(envelope.status).toBe('CLEAN');
+    );
+    expect(accessConfigRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          metadataColumns: draftState.metadataColumns,
+        }),
+      }),
+    );
+    expect(envelope.status).toBe("CLEAN");
     expect(envelope.version).toBe(4);
     expect(envelope.publishedVersion).toBe(3);
-    expect(changeLogRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      changeType: 'SAVE_DRAFT',
-      publishedVersion: 3,
-    }));
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: "SAVE_DRAFT",
+        publishedVersion: 3,
+      }),
+    );
   });
 
-  it('discard resets draft to published and logs change', async () => {
+  it("discard resets draft to published and logs change", async () => {
     const publishedState = {
       ...baseSharedState,
-      ui: { filterText: 'abc' },
+      ui: { filterText: "abc" },
     };
     const record = buildStateRecord({
       publishedState: JSON.parse(JSON.stringify(publishedState)),
       draftState: {
         ...baseSharedState,
-        ui: { filterText: 'xyz' },
+        ui: { filterText: "xyz" },
       },
-      status: 'DIRTY',
+      status: "DIRTY",
       version: 5,
       publishedVersion: 4,
     });
     stateRepo.findOne.mockResolvedValue(record);
     stateRepo.save.mockImplementation(async (entity: any) => ({
       ...entity,
-      updatedAt: new Date('2026-04-19T13:00:00.000Z'),
+      updatedAt: new Date("2026-04-19T13:00:00.000Z"),
     }));
     changeLogRepo.save.mockResolvedValue(undefined);
 
-    const envelope = await service.discardDraft('acp-1', {
+    const envelope = await service.discardDraft("acp-1", {
       baseVersion: 5,
-      actor: { username: 'carol', role: 'ACP_MANAGER' },
+      actor: { username: "carol", role: "ACP_MANAGER" },
     });
 
-    expect(envelope.status).toBe('CLEAN');
+    expect(envelope.status).toBe("CLEAN");
     expect(envelope.version).toBe(6);
     expect(envelope.draftState.ui).toEqual(publishedState.ui);
-    expect(changeLogRepo.create).toHaveBeenCalledWith(expect.objectContaining({
-      changeType: 'DISCARD_DRAFT',
-      actorUsername: 'carol',
-    }));
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: "DISCARD_DRAFT",
+        actorUsername: "carol",
+      }),
+    );
   });
 
-  it('resolves actor role for app admin, manager and credentials', () => {
-    const appAdminActor = service.resolveActor({
-      sub: 'u-admin',
-      username: 'admin',
-      isAppAdmin: true,
-    }, 'acp-1');
-    expect(appAdminActor.role).toBe('APP_ADMIN');
+  it("resolves actor role for app admin, manager and credentials", () => {
+    const appAdminActor = service.resolveActor(
+      {
+        sub: "u-admin",
+        username: "admin",
+        isAppAdmin: true,
+      },
+      "acp-1",
+    );
+    expect(appAdminActor.role).toBe("APP_ADMIN");
 
-    const managerActor = service.resolveActor({
-      sub: 'u-manager',
-      username: 'manager',
-      acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }],
-    }, 'acp-1');
-    expect(managerActor.role).toBe('ACP_MANAGER');
+    const managerActor = service.resolveActor(
+      {
+        sub: "u-manager",
+        username: "manager",
+        acpRoles: [{ acpId: "acp-1", role: "ACP_MANAGER" }],
+      },
+      "acp-1",
+    );
+    expect(managerActor.role).toBe("ACP_MANAGER");
 
-    const credentialActor = service.resolveActor({
-      sub: 'cred-user',
-      username: 'credential',
-      type: 'credential',
-    }, 'acp-1');
-    expect(credentialActor.role).toBe('CREDENTIAL');
+    const credentialActor = service.resolveActor(
+      {
+        sub: "cred-user",
+        username: "credential",
+        type: "credential",
+      },
+      "acp-1",
+    );
+    expect(credentialActor.role).toBe("CREDENTIAL");
   });
 });

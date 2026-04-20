@@ -222,9 +222,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
   it('logs out on OIDC sync failure during profile load', () => {
     localStorage.setItem('cp_auth_type', 'oidc');
     localStorage.setItem('cp_oidc_id_token', 'id-token');
-    vi.spyOn(service, 'syncOidcRoles').mockReturnValue(
-      throwError(() => new Error('sync failed')),
-    );
+    vi.spyOn(service, 'syncOidcRoles').mockReturnValue(throwError(() => new Error('sync failed')));
     const logoutSpy = vi.spyOn(service, 'logout').mockImplementation(() => undefined);
 
     service.loadProfile();
@@ -282,9 +280,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
     const hashHex = Array.from(hash)
       .map((b: number) => b.toString(16).padStart(2, '0'))
       .join('');
-    expect(hashHex).toBe(
-      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
-    );
+    expect(hashHex).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
 
     const challengeWithSubtle = await (service as any).generateCodeChallenge('verifier-subtle');
     expect(challengeWithSubtle).toMatch(/^[A-Za-z0-9_-]+$/);

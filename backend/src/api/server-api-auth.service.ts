@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as crypto from "crypto";
 
 export interface ServerApiClient {
   id: string;
@@ -9,14 +9,14 @@ export interface ServerApiClient {
 }
 
 export const ALL_SERVER_API_SCOPES = [
-  'acp.read',
-  'transfer.read',
-  'transfer.write',
-  'index.read',
-  'index.write',
-  'files.read',
-  'files.write',
-  'audit.read',
+  "acp.read",
+  "transfer.read",
+  "transfer.write",
+  "index.read",
+  "index.write",
+  "files.read",
+  "files.write",
+  "audit.read",
 ] as const;
 
 @Injectable()
@@ -27,11 +27,13 @@ export class ServerApiAuthService {
   constructor(private readonly configService: ConfigService) {
     this.clients = this.loadClients();
     if (!this.clients.length) {
-      this.logger.warn('No server API tokens configured. All integration requests will be rejected.');
+      this.logger.warn(
+        "No server API tokens configured. All integration requests will be rejected.",
+      );
     }
   }
 
-  validateToken(token: string): Omit<ServerApiClient, 'token'> | null {
+  validateToken(token: string): Omit<ServerApiClient, "token"> | null {
     for (const client of this.clients) {
       if (this.tokensEqual(client.token, token)) {
         return {
@@ -47,7 +49,7 @@ export class ServerApiAuthService {
   hasScopes(clientScopes: string[], requiredScopes: string[]): boolean {
     if (!requiredScopes.length) return true;
     const normalized = new Set(clientScopes);
-    return requiredScopes.every(scope => normalized.has(scope));
+    return requiredScopes.every((scope) => normalized.has(scope));
   }
 
   private loadClients(): ServerApiClient[] {
@@ -57,20 +59,26 @@ export class ServerApiAuthService {
     }
 
     // Fallback for simple setup
-    const legacyToken = (this.configService.get<string>('SERVER_API_KEY', '') || '').trim();
+    const legacyToken = (
+      this.configService.get<string>("SERVER_API_KEY", "") || ""
+    ).trim();
     if (legacyToken) {
-      return [{
-        id: 'legacy',
-        token: legacyToken,
-        scopes: [...ALL_SERVER_API_SCOPES],
-      }];
+      return [
+        {
+          id: "legacy",
+          token: legacyToken,
+          scopes: [...ALL_SERVER_API_SCOPES],
+        },
+      ];
     }
 
     return [];
   }
 
   private loadClientsFromJson(): ServerApiClient[] {
-    const raw = (this.configService.get<string>('SERVER_API_TOKENS', '') || '').trim();
+    const raw = (
+      this.configService.get<string>("SERVER_API_TOKENS", "") || ""
+    ).trim();
     if (!raw) {
       return [];
     }
@@ -78,22 +86,28 @@ export class ServerApiAuthService {
     try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
-        this.logger.warn('SERVER_API_TOKENS must be a JSON array. Ignoring malformed config.');
+        this.logger.warn(
+          "SERVER_API_TOKENS must be a JSON array. Ignoring malformed config.",
+        );
         return [];
       }
 
       const clients: ServerApiClient[] = [];
       for (const entry of parsed) {
-        if (!entry || typeof entry !== 'object') continue;
+        if (!entry || typeof entry !== "object") continue;
 
-        const id = String((entry as any).id || '').trim();
-        const token = String((entry as any).token || '').trim();
-        const scopesInput = Array.isArray((entry as any).scopes) ? (entry as any).scopes : [];
-        const scopes = Array.from(new Set<string>(
-          scopesInput
-            .map((scope: unknown) => String(scope || '').trim())
-            .filter((scope: string) => scope.length > 0),
-        ));
+        const id = String((entry as any).id || "").trim();
+        const token = String((entry as any).token || "").trim();
+        const scopesInput = Array.isArray((entry as any).scopes)
+          ? (entry as any).scopes
+          : [];
+        const scopes = Array.from(
+          new Set<string>(
+            scopesInput
+              .map((scope: unknown) => String(scope || "").trim())
+              .filter((scope: string) => scope.length > 0),
+          ),
+        );
 
         if (!id || !token) {
           continue;
@@ -108,7 +122,9 @@ export class ServerApiAuthService {
 
       return clients;
     } catch {
-      this.logger.warn('SERVER_API_TOKENS contains invalid JSON. Ignoring malformed config.');
+      this.logger.warn(
+        "SERVER_API_TOKENS contains invalid JSON. Ignoring malformed config.",
+      );
       return [];
     }
   }

@@ -25,7 +25,11 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             </button>
           }
           @if (showMetadataToggle && panelVisible) {
-            <select class="btn btn-outline btn-sm panel-mode-select" [(ngModel)]="panelMode" [disabled]="isNarrowLayout">
+            <select
+              class="btn btn-outline btn-sm panel-mode-select"
+              [(ngModel)]="panelMode"
+              [disabled]="isNarrowLayout"
+            >
               <option value="split">Panel: Split</option>
               <option value="overlay">Panel: Overlay</option>
             </select>
@@ -36,7 +40,11 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           @if (showDownloadBtn) {
             <button class="btn btn-outline btn-sm" (click)="downloadUnit()">⬇️ Download</button>
           }
-          <select class="btn btn-outline btn-sm" [(ngModel)]="printMode" (change)="onPrintModeChange()">
+          <select
+            class="btn btn-outline btn-sm"
+            [(ngModel)]="printMode"
+            (change)="onPrintModeChange()"
+          >
             <option value="off">Print: Aus</option>
             <option value="on">Print: Ein</option>
             <option value="on-with-ids">Print: Ein + IDs</option>
@@ -55,7 +63,8 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
                 [style.height]="playerHeight"
                 [class.print-mode]="printMode !== 'off'"
                 sandbox="allow-scripts allow-same-origin allow-downloads"
-                (load)="onPlayerLoaded()">
+                (load)="onPlayerLoaded()"
+              >
               </iframe>
             } @else {
               <div class="empty-state">
@@ -68,9 +77,21 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 
           @if (totalPages > 1 && printMode === 'off') {
             <div class="page-nav">
-              <button class="btn btn-outline" [disabled]="currentPage <= 1" (click)="navigateToPage(currentPage - 1)">← Vorherige Seite</button>
+              <button
+                class="btn btn-outline"
+                [disabled]="currentPage <= 1"
+                (click)="navigateToPage(currentPage - 1)"
+              >
+                ← Vorherige Seite
+              </button>
               <span class="page-info">Seite {{ currentPage }} / {{ totalPages }}</span>
-              <button class="btn btn-outline" [disabled]="currentPage >= totalPages" (click)="navigateToPage(currentPage + 1)">Nächste Seite →</button>
+              <button
+                class="btn btn-outline"
+                [disabled]="currentPage >= totalPages"
+                (click)="navigateToPage(currentPage + 1)"
+              >
+                Nächste Seite →
+              </button>
             </div>
           }
 
@@ -97,28 +118,57 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       <ng-template #panelContent>
         <div class="panel-tabs">
           @if (featureConfig.showMetadata) {
-            <button class="tab" [class.active]="activeTab === 'metadata'" (click)="activeTab = 'metadata'">Metadaten</button>
+            <button
+              class="tab"
+              [class.active]="activeTab === 'metadata'"
+              (click)="activeTab = 'metadata'"
+            >
+              Metadaten
+            </button>
           }
           @if (featureConfig.showCodingScheme) {
-            <button class="tab" [class.active]="activeTab === 'coding'" (click)="activeTab = 'coding'">Kodierschema</button>
+            <button
+              class="tab"
+              [class.active]="activeTab === 'coding'"
+              (click)="activeTab = 'coding'"
+            >
+              Kodierschema
+            </button>
           }
           @if (featureConfig.showRichText) {
-            <button class="tab" [class.active]="activeTab === 'richtext'" (click)="activeTab = 'richtext'">RichText</button>
+            <button
+              class="tab"
+              [class.active]="activeTab === 'richtext'"
+              (click)="activeTab = 'richtext'"
+            >
+              RichText
+            </button>
           }
         </div>
 
         <div class="panel-content">
           @if (activeTab === 'metadata') {
             <dl class="meta-dl">
-              <dt>ID</dt><dd><code>{{ unit.id }}</code></dd>
-              @if (unit.lang) { <dt>Sprache</dt><dd>{{ unit.lang }}</dd> }
-              @if (unit.description) { <dt>Beschreibung</dt><dd>{{ unit.description }}</dd> }
+              <dt>ID</dt>
+              <dd>
+                <code>{{ unit.id }}</code>
+              </dd>
+              @if (unit.lang) {
+                <dt>Sprache</dt>
+                <dd>{{ unit.lang }}</dd>
+              }
+              @if (unit.description) {
+                <dt>Beschreibung</dt>
+                <dd>{{ unit.description }}</dd>
+              }
             </dl>
             @if (unit.items && unit.items.length) {
               <h4>Items ({{ unit.items.length }})</h4>
               <div class="items-list">
                 @for (item of unit.items; track item.id) {
-                  <a [routerLink]="['/view', acpId, 'item', item.id]" class="item-badge">{{ item.name || item.id }}</a>
+                  <a [routerLink]="['/view', acpId, 'item', item.id]" class="item-badge">{{
+                    item.name || item.id
+                  }}</a>
                 }
               </div>
             }
@@ -151,7 +201,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             @for (dep of unit.dependencies; track dep.fileId) {
               <div class="dep-item">
                 <span class="badge badge-info">{{ dep.type }}</span>
-                <a [href]="api.appendAuthToken(dep.downloadUrl)" target="_blank">{{ dep.originalName }}</a>
+                <a [href]="api.appendAuthToken(dep.downloadUrl)" target="_blank">{{
+                  dep.originalName
+                }}</a>
               </div>
             }
           </div>
@@ -166,127 +218,236 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       [targetType]="'UNIT'"
       [targetId]="unitId"
       (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false">
+      (closed)="commentOpen = false"
+    >
     </app-comment-dialog>
   `,
-  styles: [`
-    .unit-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 16px;
-    }
-    .unit-header h1 { margin-bottom: 0; }
-    .unit-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .panel-mode-select { min-width: 150px; }
+  styles: [
+    `
+      .unit-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .unit-header h1 {
+        margin-bottom: 0;
+      }
+      .unit-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .panel-mode-select {
+        min-width: 150px;
+      }
 
-    .unit-layout { display: grid; grid-template-columns: 1fr; gap: 16px; }
-    .unit-layout.with-panel { grid-template-columns: 1fr 380px; }
+      .unit-layout {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+      }
+      .unit-layout.with-panel {
+        grid-template-columns: 1fr 380px;
+      }
 
-    .player-area { position: relative; }
-    .player-container { padding: 0; overflow: auto; min-height: 600px; }
-    .player-container.print-mode { display: block; overflow: visible; flex: none; height: auto; min-height: 1000px; border: none; }
-    .player-iframe {
-      width: 100%; min-height: 550px; border: none;
-      display: block;
-    }
-    .player-iframe.print-mode { min-height: 1000px; height: auto; }
-
-    .page-nav {
-      display: flex; align-items: center; justify-content: center;
-      gap: 16px; margin-top: 12px;
-    }
-    .page-info {
-      font-size: 0.9rem; font-weight: 500;
-      color: var(--color-text-secondary);
-    }
-
-    .meta-panel { max-height: calc(100vh - 180px); overflow-y: auto; }
-    .meta-panel.split { max-height: calc(100vh - 180px); }
-
-    .panel-overlay-backdrop {
-      position: absolute;
-      inset: 0;
-      border-radius: var(--radius);
-      background: rgba(15, 23, 42, 0.18);
-      display: flex;
-      justify-content: flex-end;
-      z-index: 25;
-    }
-    .meta-panel.overlay {
-      width: min(420px, 100%);
-      height: 100%;
-      max-height: none;
-      margin: 0;
-      border-radius: 0 var(--radius) var(--radius) 0;
-      border-left: 1px solid var(--color-border);
-    }
-    .overlay-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin: -24px -24px 12px;
-      padding: 16px 24px 8px;
-      border-bottom: 1px solid var(--color-border);
-      background: #fff;
-      position: sticky;
-      top: -24px;
-      z-index: 2;
-    }
-
-    .panel-tabs {
-      display: flex; gap: 0; border-bottom: 1px solid var(--color-border);
-      margin: -24px -24px 16px; padding: 0 24px;
-    }
-    .tab {
-      background: none; border: none; padding: 10px 16px;
-      font-size: 0.85rem; font-weight: 500; cursor: pointer;
-      color: var(--color-text-secondary); border-bottom: 2px solid transparent;
-      font-family: inherit; transition: all 0.15s;
-    }
-    .tab:hover { color: var(--color-text); }
-    .tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
-
-    .meta-dl {
-      display: grid; grid-template-columns: auto 1fr;
-      gap: 8px 20px; font-size: 0.9rem;
-    }
-    .meta-dl dt { font-weight: 600; color: var(--color-text-secondary); }
-    .meta-dl dd { margin: 0; }
-
-    h4 { font-size: 0.95rem; margin: 16px 0 8px; }
-    .items-list { display: flex; flex-wrap: wrap; gap: 6px; }
-    .item-badge {
-      display: inline-block; padding: 4px 10px;
-      background: var(--color-bg); border-radius: 4px;
-      font-size: 0.8rem; text-decoration: none; color: var(--color-primary-light);
-      transition: background 0.15s;
-    }
-    .item-badge:hover { background: rgba(41,128,185,0.1); text-decoration: none; }
-
-    .deps-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--color-border); }
-    .dep-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.85rem; }
-
-    .coding-content, .richtext-content { font-size: 0.9rem; }
-    .coding-content :first-child, .richtext-content :first-child { margin-top: 0; }
-    .help-text { color: var(--color-text-secondary); font-size: 0.85rem; }
-
-    @media (max-width: 1100px) {
-      .unit-layout.with-panel { grid-template-columns: 1fr; }
-      .panel-mode-select { opacity: 0.7; }
-      .meta-panel.overlay {
+      .player-area {
+        position: relative;
+      }
+      .player-container {
+        padding: 0;
+        overflow: auto;
+        min-height: 600px;
+      }
+      .player-container.print-mode {
+        display: block;
+        overflow: visible;
+        flex: none;
+        height: auto;
+        min-height: 1000px;
+        border: none;
+      }
+      .player-iframe {
         width: 100%;
+        min-height: 550px;
+        border: none;
+        display: block;
+      }
+      .player-iframe.print-mode {
+        min-height: 1000px;
+        height: auto;
+      }
+
+      .page-nav {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        margin-top: 12px;
+      }
+      .page-info {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+      }
+
+      .meta-panel {
+        max-height: calc(100vh - 180px);
+        overflow-y: auto;
+      }
+      .meta-panel.split {
+        max-height: calc(100vh - 180px);
+      }
+
+      .panel-overlay-backdrop {
+        position: absolute;
+        inset: 0;
         border-radius: var(--radius);
-        border-left: none;
+        background: rgba(15, 23, 42, 0.18);
+        display: flex;
+        justify-content: flex-end;
+        z-index: 25;
+      }
+      .meta-panel.overlay {
+        width: min(420px, 100%);
+        height: 100%;
+        max-height: none;
+        margin: 0;
+        border-radius: 0 var(--radius) var(--radius) 0;
+        border-left: 1px solid var(--color-border);
       }
       .overlay-header {
-        position: static;
-        margin-top: -24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: -24px -24px 12px;
+        padding: 16px 24px 8px;
+        border-bottom: 1px solid var(--color-border);
+        background: #fff;
+        position: sticky;
+        top: -24px;
+        z-index: 2;
       }
-    }
 
-    @media (max-width: 900px) {
-      .unit-header { flex-direction: column; gap: 12px; align-items: flex-start; }
-    }
-  `]
+      .panel-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--color-border);
+        margin: -24px -24px 16px;
+        padding: 0 24px;
+      }
+      .tab {
+        background: none;
+        border: none;
+        padding: 10px 16px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        border-bottom: 2px solid transparent;
+        font-family: inherit;
+        transition: all 0.15s;
+      }
+      .tab:hover {
+        color: var(--color-text);
+      }
+      .tab.active {
+        color: var(--color-primary);
+        border-bottom-color: var(--color-primary);
+      }
+
+      .meta-dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 20px;
+        font-size: 0.9rem;
+      }
+      .meta-dl dt {
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .meta-dl dd {
+        margin: 0;
+      }
+
+      h4 {
+        font-size: 0.95rem;
+        margin: 16px 0 8px;
+      }
+      .items-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .item-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        background: var(--color-bg);
+        border-radius: 4px;
+        font-size: 0.8rem;
+        text-decoration: none;
+        color: var(--color-primary-light);
+        transition: background 0.15s;
+      }
+      .item-badge:hover {
+        background: rgba(41, 128, 185, 0.1);
+        text-decoration: none;
+      }
+
+      .deps-section {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+      }
+      .dep-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        font-size: 0.85rem;
+      }
+
+      .coding-content,
+      .richtext-content {
+        font-size: 0.9rem;
+      }
+      .coding-content :first-child,
+      .richtext-content :first-child {
+        margin-top: 0;
+      }
+      .help-text {
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+      }
+
+      @media (max-width: 1100px) {
+        .unit-layout.with-panel {
+          grid-template-columns: 1fr;
+        }
+        .panel-mode-select {
+          opacity: 0.7;
+        }
+        .meta-panel.overlay {
+          width: 100%;
+          border-radius: var(--radius);
+          border-left: none;
+        }
+        .overlay-header {
+          position: static;
+          margin-top: -24px;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .unit-header {
+          flex-direction: column;
+          gap: 12px;
+          align-items: flex-start;
+        }
+      }
+    `,
+  ],
 })
 export class UnitViewComponent implements OnInit, OnDestroy {
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -343,14 +504,20 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     window.addEventListener('resize', this.resizeHandler);
     window.addEventListener('message', this.messageHandler);
 
-    this.api.getAcpStartPage(this.acpId).subscribe(data => {
+    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       this.featureConfig = data?.featureConfig || {};
-      this.showMetadataToggle = !!(this.featureConfig.showMetadata || this.featureConfig.showCodingScheme || this.featureConfig.showRichText);
+      this.showMetadataToggle = !!(
+        this.featureConfig.showMetadata ||
+        this.featureConfig.showCodingScheme ||
+        this.featureConfig.showRichText
+      );
 
       const commentTargets = Array.isArray(this.featureConfig.commentTargets)
         ? this.featureConfig.commentTargets
         : [];
-      this.showCommentBtn = !!(this.featureConfig.enableCommenting && commentTargets.includes('UNIT'));
+      this.showCommentBtn = !!(
+        this.featureConfig.enableCommenting && commentTargets.includes('UNIT')
+      );
       this.showDownloadBtn = !!this.featureConfig.allowUnitDownload;
 
       if (this.featureConfig.showMetadata) this.activeTab = 'metadata';
@@ -358,7 +525,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       else if (this.featureConfig.showRichText) this.activeTab = 'richtext';
     });
 
-    this.api.getViewUnit(this.acpId, this.unitId).subscribe(u => {
+    this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
       this.unit = u;
       this.breadcrumbs = [
         { label: 'Assessment Content Pool', route: ['/'] },
@@ -366,9 +533,9 @@ export class UnitViewComponent implements OnInit, OnDestroy {
         { label: u.name },
       ];
 
-      u.dependencies = (u.dependencies || []).map(d => ({
+      u.dependencies = (u.dependencies || []).map((d) => ({
         ...d,
-        downloadUrl: this.api.appendAuthToken(d.downloadUrl)
+        downloadUrl: this.api.appendAuthToken(d.downloadUrl),
       }));
 
       this.currentPage = 1;
@@ -487,8 +654,8 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   }
 
   private findDependency(types: string[]): any | undefined {
-    const typeSet = new Set(types.map(t => t.toLowerCase()));
-    return this.unit?.dependencies?.find(d => typeSet.has((d.type || '').toLowerCase()));
+    const typeSet = new Set(types.map((t) => t.toLowerCase()));
+    return this.unit?.dependencies?.find((d) => typeSet.has((d.type || '').toLowerCase()));
   }
 
   private loadPlayerSource(dependencies: any[], token: number) {
@@ -503,8 +670,8 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     }
 
     fetch(playerDep.downloadUrl)
-      .then(res => res.text())
-      .then(html => {
+      .then((res) => res.text())
+      .then((html) => {
         if (token !== this.unitLoadToken) return;
         this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
       })
@@ -526,8 +693,8 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     }
 
     fetch(definitionDep.downloadUrl)
-      .then(res => res.text())
-      .then(definition => {
+      .then((res) => res.text())
+      .then((definition) => {
         if (token !== this.unitLoadToken) return;
         this.definitionContent = definition;
         this.startPlayerIfReady();

@@ -20,19 +20,21 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         <form (ngSubmit)="createUser()">
           <div class="form-group">
             <label>Benutzername</label>
-            <input [(ngModel)]="newUser.username" name="username" required>
+            <input [(ngModel)]="newUser.username" name="username" required />
           </div>
           <div class="form-group">
             <label>Kennwort</label>
-            <input type="password" [(ngModel)]="newUser.password" name="password" required>
+            <input type="password" [(ngModel)]="newUser.password" name="password" required />
           </div>
           <div class="form-group">
             <label>Anzeigename</label>
-            <input [(ngModel)]="newUser.displayName" name="displayName">
+            <input [(ngModel)]="newUser.displayName" name="displayName" />
           </div>
           <div class="toolbar">
             <button type="submit" class="btn btn-primary">Anlegen</button>
-            <button type="button" class="btn btn-outline" (click)="showCreate = false">Abbrechen</button>
+            <button type="button" class="btn btn-outline" (click)="showCreate = false">
+              Abbrechen
+            </button>
           </div>
         </form>
       </div>
@@ -45,13 +47,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     <div class="card">
       <table class="table">
         <thead>
-        <tr>
-          <th>Benutzername</th>
-          <th>Anzeigename</th>
-          <th>Admin</th>
-          <th>OIDC</th>
-          <th>Aktionen</th>
-        </tr>
+          <tr>
+            <th>Benutzername</th>
+            <th>Anzeigename</th>
+            <th>Admin</th>
+            <th>OIDC</th>
+            <th>Aktionen</th>
+          </tr>
         </thead>
         <tbody>
           @for (user of users; track user.id) {
@@ -59,7 +61,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               <td>{{ user.username }}</td>
               <td>{{ user.displayName || '–' }}</td>
               <td>
-                <span class="badge" [class.badge-success]="user.isAppAdmin" [class.badge-info]="!user.isAppAdmin">
+                <span
+                  class="badge"
+                  [class.badge-success]="user.isAppAdmin"
+                  [class.badge-info]="!user.isAppAdmin"
+                >
                   {{ user.isAppAdmin ? 'Admin' : 'Nutzer' }}
                 </span>
               </td>
@@ -74,7 +80,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                 <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
                   {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
                 </button>
-                <button class="btn btn-sm btn-danger" (click)="openDeleteUserDialog(user)" style="margin-left:8px">Löschen
+                <button
+                  class="btn btn-sm btn-danger"
+                  (click)="openDeleteUserDialog(user)"
+                  style="margin-left:8px"
+                >
+                  Löschen
                 </button>
               </td>
             </tr>
@@ -97,8 +108,9 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       confirmLabel="Nutzer löschen"
       confirmVariant="danger"
       (confirmed)="confirmDeleteUser()"
-      (cancelled)="closeDeleteUserDialog()" />
-  `
+      (cancelled)="closeDeleteUserDialog()"
+    />
+  `,
 })
 export class UsersComponent implements OnInit {
   users: User[] = [];
@@ -112,12 +124,14 @@ export class UsersComponent implements OnInit {
 
   constructor(private api: ApiService) {}
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+  }
 
   load() {
     this.api.getUsers().subscribe({
-      next: users => this.users = users,
-      error: err => this.error = err.error?.message || 'Fehler beim Laden'
+      next: (users) => (this.users = users),
+      error: (err) => (this.error = err.error?.message || 'Fehler beim Laden'),
     });
   }
 
@@ -129,8 +143,12 @@ export class UsersComponent implements OnInit {
 
     this.error = '';
     this.api.createUser(this.newUser).subscribe({
-      next: () => { this.showCreate = false; this.newUser = { username: '', password: '', displayName: '' }; this.load(); },
-      error: err => this.error = err.error?.message || 'Fehler beim Anlegen'
+      next: () => {
+        this.showCreate = false;
+        this.newUser = { username: '', password: '', displayName: '' };
+        this.load();
+      },
+      error: (err) => (this.error = err.error?.message || 'Fehler beim Anlegen'),
     });
   }
 

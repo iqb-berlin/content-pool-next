@@ -39,39 +39,41 @@ type AccessContext = 'admin' | 'acp' | 'view' | 'manage' | null;
       </div>
     </div>
   `,
-  styles: [`
-    .access-wrapper {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: calc(100vh - 200px);
-      padding: 16px;
-    }
+  styles: [
+    `
+      .access-wrapper {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: calc(100vh - 200px);
+        padding: 16px;
+      }
 
-    .access-card {
-      width: 100%;
-      max-width: 560px;
-      text-align: left;
-      border-left: 4px solid #f39c12;
-    }
+      .access-card {
+        width: 100%;
+        max-width: 560px;
+        text-align: left;
+        border-left: 4px solid #f39c12;
+      }
 
-    .access-card h1 {
-      margin-bottom: 8px;
-    }
+      .access-card h1 {
+        margin-bottom: 8px;
+      }
 
-    .subtitle {
-      color: var(--color-text-secondary);
-      margin-bottom: 16px;
-      line-height: 1.5;
-    }
+      .subtitle {
+        color: var(--color-text-secondary);
+        margin-bottom: 16px;
+        line-height: 1.5;
+      }
 
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 16px;
-    }
-  `],
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 16px;
+      }
+    `,
+  ],
 })
 export class AccessComponent implements OnInit {
   reason: AccessReason = 'insufficient_rights';
@@ -164,7 +166,8 @@ export class AccessComponent implements OnInit {
       default:
         this.title = 'Kein Zugriff';
         this.subtitle = 'Sie haben aktuell keine ausreichenden Rechte für diese Seite.';
-        this.detail = 'Bitte melden Sie sich mit einem berechtigten Konto an oder kontaktieren Sie die Administration.';
+        this.detail =
+          'Bitte melden Sie sich mit einem berechtigten Konto an oder kontaktieren Sie die Administration.';
         break;
     }
   }

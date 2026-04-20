@@ -30,28 +30,30 @@ interface AcpRoleAssignment {
       </div>
     </div>
   `,
-  styles: [`
-    .acp-context {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
+  styles: [
+    `
+      .acp-context {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
 
-    .context-meta {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
+      .context-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
 
-    .context-name {
-      font-weight: 600;
-      font-size: 0.95rem;
-    }
-  `]
+      .context-name {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+    `,
+  ],
 })
 export class AcpManagerContextComponent implements OnInit {
   acpId = '';
@@ -66,25 +68,28 @@ export class AcpManagerContextComponent implements OnInit {
     private route: ActivatedRoute,
     private api: ApiService,
     private auth: AuthService,
-    private destroyRef: DestroyRef
+    private destroyRef: DestroyRef,
   ) {}
 
   ngOnInit() {
-    this.acpId = this.route.parent?.snapshot.paramMap.get('acpId')
-      || this.route.snapshot.paramMap.get('acpId')
-      || '';
+    this.acpId =
+      this.route.parent?.snapshot.paramMap.get('acpId') ||
+      this.route.snapshot.paramMap.get('acpId') ||
+      '';
     if (!this.acpId) return;
 
     this.setBackNavigation();
     this.updateRoleLabel();
 
-    this.api.getAcp(this.acpId)
+    this.api
+      .getAcp(this.acpId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((acp) => {
         this.acp = acp;
       });
 
-    this.api.getAcpRoles(this.acpId)
+    this.api
+      .getAcpRoles(this.acpId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((roles: AcpRoleAssignment[]) => {
         this.roleAssignments = roles;
@@ -105,7 +110,9 @@ export class AcpManagerContextComponent implements OnInit {
       return;
     }
 
-    const myRole = this.roleAssignments.find((assignment) => assignment.userId === currentUser.id)?.role;
+    const myRole = this.roleAssignments.find(
+      (assignment) => assignment.userId === currentUser.id,
+    )?.role;
     this.roleLabel = getAcpRoleLabel(myRole, isAppAdmin);
   }
 

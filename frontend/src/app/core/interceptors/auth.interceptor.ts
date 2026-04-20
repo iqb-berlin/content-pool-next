@@ -11,7 +11,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const token = auth.getToken();
   if (token) {
     req = req.clone({
-      setHeaders: { Authorization: `Bearer ${token}` }
+      setHeaders: { Authorization: `Bearer ${token}` },
     });
   }
 
@@ -42,9 +42,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
       if (status === 403 && !req.url.startsWith('/api/auth/') && !!auth.getToken()) {
         const message = String(error.error?.message || '').toLowerCase();
-        const reason = message.includes('not enabled')
-          ? 'feature_disabled'
-          : 'insufficient_rights';
+        const reason = message.includes('not enabled') ? 'feature_disabled' : 'insufficient_rights';
 
         void access.redirectToAccess(reason, {
           nextUrl,

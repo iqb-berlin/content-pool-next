@@ -1,11 +1,11 @@
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { AppModule } from './app.module';
+import { NestFactory } from "@nestjs/core";
+import { ValidationPipe } from "@nestjs/common";
+import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  const isProduction = process.env.NODE_ENV === 'production';
+  const isProduction = process.env.NODE_ENV === "production";
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -17,8 +17,8 @@ async function bootstrap() {
   );
 
   // CORS
-  const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:4200')
-    .split(',')
+  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:4200")
+    .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
 
@@ -28,21 +28,23 @@ async function bootstrap() {
   });
 
   // API prefix
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix("api");
 
   // Swagger documentation (disabled in production by default)
   const swaggerEnabled =
-    (process.env.SWAGGER_ENABLED || (!isProduction ? 'true' : 'false')).toLowerCase() === 'true';
+    (
+      process.env.SWAGGER_ENABLED || (!isProduction ? "true" : "false")
+    ).toLowerCase() === "true";
 
   if (swaggerEnabled) {
     const config = new DocumentBuilder()
-      .setTitle('IQB ContentPool API')
-      .setDescription('API for managing Assessment Content Packages')
-      .setVersion('0.1.0')
+      .setTitle("IQB ContentPool API")
+      .setDescription("API for managing Assessment Content Packages")
+      .setVersion("0.1.0")
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);
-    SwaggerModule.setup('api/docs', app, document);
+    SwaggerModule.setup("api/docs", app, document);
   }
 
   const port = process.env.PORT || 3000;

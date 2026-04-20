@@ -3,16 +3,16 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Acp, AcpFile } from '../database/entities';
-import { FilesService } from '../files/files.service';
-import { SnapshotsService } from '../snapshots/snapshots.service';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Acp, AcpFile } from "../database/entities";
+import { FilesService } from "../files/files.service";
+import { SnapshotsService } from "../snapshots/snapshots.service";
 
-export type ConflictStrategy = 'reject' | 'overwrite' | 'merge';
-export type IndexUpdateStrategy = 'overwrite' | 'merge';
-export type FileConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
+export type ConflictStrategy = "reject" | "overwrite" | "merge";
+export type IndexUpdateStrategy = "overwrite" | "merge";
+export type FileConflictStrategy = "reject" | "overwrite" | "keep-both";
 
 export interface ServerImportAcpPayload {
   packageId: string;
@@ -42,19 +42,23 @@ export class ServerApiService {
   /**
    * List all ACPs available for server-to-server transfer.
    */
-  async listAcps(): Promise<{
-    id: string;
-    packageId: string;
-    name: string;
-    version: string;
-    updatedAt: string;
-  }[]> {
-    const acps = await this.acpRepository.find({ order: { updatedAt: 'DESC' } });
-    return acps.map(acp => ({
+  async listAcps(): Promise<
+    {
+      id: string;
+      packageId: string;
+      name: string;
+      version: string;
+      updatedAt: string;
+    }[]
+  > {
+    const acps = await this.acpRepository.find({
+      order: { updatedAt: "DESC" },
+    });
+    return acps.map((acp) => ({
       id: acp.id,
       packageId: acp.packageId,
       name: acp.name,
-      version: (acp.acpIndex as any)?.version || '0.0.0',
+      version: (acp.acpIndex as any)?.version || "0.0.0",
       updatedAt: acp.updatedAt.toISOString(),
     }));
   }
@@ -77,7 +81,12 @@ export class ServerApiService {
     };
   }
 
-  async getAcpIndex(acpId: string): Promise<{ acpId: string; packageId: string; updatedAt: string; acpIndex: Record<string, unknown> }> {
+  async getAcpIndex(acpId: string): Promise<{
+    acpId: string;
+    packageId: string;
+    updatedAt: string;
+    acpIndex: Record<string, unknown>;
+  }> {
     const acp = await this.getAcpOrFail(acpId);
     return {
       acpId: acp.id,
@@ -92,18 +101,24 @@ export class ServerApiService {
     acpIndex: Record<string, any>,
     strategyInput?: string,
     expectedUpdatedAt?: string,
-  ): Promise<{ acpId: string; packageId: string; updatedAt: string; conflictStrategy: IndexUpdateStrategy }> {
-    if (!acpIndex || typeof acpIndex !== 'object' || Array.isArray(acpIndex)) {
-      throw new BadRequestException('acpIndex must be an object');
+  ): Promise<{
+    acpId: string;
+    packageId: string;
+    updatedAt: string;
+    conflictStrategy: IndexUpdateStrategy;
+  }> {
+    if (!acpIndex || typeof acpIndex !== "object" || Array.isArray(acpIndex)) {
+      throw new BadRequestException("acpIndex must be an object");
     }
 
     const acp = await this.getAcpOrFail(acpId);
     this.assertExpectedUpdatedAt(acp, expectedUpdatedAt);
 
     const strategy = this.resolveIndexUpdateStrategy(strategyInput);
-    acp.acpIndex = strategy === 'merge'
-      ? this.deepMergeObjects(acp.acpIndex as Record<string, any>, acpIndex)
-      : acpIndex;
+    acp.acpIndex =
+      strategy === "merge"
+        ? this.deepMergeObjects(acp.acpIndex as Record<string, any>, acpIndex)
+        : acpIndex;
 
     const saved = await this.acpRepository.save(acp);
     return {
@@ -114,21 +129,50 @@ export class ServerApiService {
     };
   }
 
-  async listFiles(acpId: string): Promise<Array<{ id: string; originalName: string; fileType?: string; fileSize: number; checksum?: string; uploadedAt: string; downloadUrl: string }>> {
+  async listFiles(acpId: string): Promise<
+    Array<{
+      id: string;
+      originalName: string;
+      fileType?: string;
+      fileSize: number;
+      checksum?: string;
+      uploadedAt: string;
+      downloadUrl: string;
+    }>
+  > {
     await this.getAcpOrFail(acpId);
-    const files = await this.fileRepository.find({ where: { acpId }, order: { originalName: 'ASC' } });
-    return files.map(file => this.toTransferFileMeta(file));
+    const files = await this.fileRepository.find({
+      where: { acpId },
+      order: { originalName: "ASC" },
+    });
+    return files.map((file) => this.toTransferFileMeta(file));
   }
 
-  async getFile(acpId: string, fileId: string): Promise<{ id: string; originalName: string; fileType?: string; fileSize: number; checksum?: string; uploadedAt: string; downloadUrl: string }> {
-    const file = await this.fileRepository.findOne({ where: { id: fileId, acpId } });
+  async getFile(
+    acpId: string,
+    fileId: string,
+  ): Promise<{
+    id: string;
+    originalName: string;
+    fileType?: string;
+    fileSize: number;
+    checksum?: string;
+    uploadedAt: string;
+    downloadUrl: string;
+  }> {
+    const file = await this.fileRepository.findOne({
+      where: { id: fileId, acpId },
+    });
     if (!file) {
-      throw new NotFoundException('File not found');
+      throw new NotFoundException("File not found");
     }
     return this.toTransferFileMeta(file);
   }
 
-  async downloadFile(acpId: string, fileId: string): Promise<{ buffer: Buffer; file: AcpFile }> {
+  async downloadFile(
+    acpId: string,
+    fileId: string,
+  ): Promise<{ buffer: Buffer; file: AcpFile }> {
     await this.getAcpOrFail(acpId);
     return this.filesService.downloadForAcp(acpId, fileId);
   }
@@ -137,12 +181,24 @@ export class ServerApiService {
     acpId: string,
     files: Express.Multer.File[],
     conflictStrategyInput?: string,
-  ): Promise<Array<{ id: string; originalName: string; fileType?: string; fileSize: number; checksum?: string; uploadedAt: string; downloadUrl: string }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      originalName: string;
+      fileType?: string;
+      fileSize: number;
+      checksum?: string;
+      uploadedAt: string;
+      downloadUrl: string;
+    }>
+  > {
     await this.getAcpOrFail(acpId);
 
-    const conflictStrategy = this.resolveFileConflictStrategy(conflictStrategyInput);
+    const conflictStrategy = this.resolveFileConflictStrategy(
+      conflictStrategyInput,
+    );
     if (!files?.length) {
-      throw new BadRequestException('At least one file is required');
+      throw new BadRequestException("At least one file is required");
     }
 
     const existingFiles = await this.fileRepository.find({ where: { acpId } });
@@ -158,13 +214,13 @@ export class ServerApiService {
       const existing = byName.get(incoming.originalname);
 
       if (existing) {
-        if (conflictStrategy === 'reject') {
+        if (conflictStrategy === "reject") {
           throw new ConflictException(
             `File conflict: ${incoming.originalname} already exists (use conflictStrategy=overwrite or keep-both)`,
           );
         }
 
-        if (conflictStrategy === 'overwrite') {
+        if (conflictStrategy === "overwrite") {
           await this.filesService.deleteForAcp(acpId, existing.id);
           byName.delete(incoming.originalname);
           deletedAny = true;
@@ -182,7 +238,7 @@ export class ServerApiService {
       });
     }
 
-    return uploaded.map(file => this.toTransferFileMeta(file));
+    return uploaded.map((file) => this.toTransferFileMeta(file));
   }
 
   async replaceCodingSchemeFiles(
@@ -190,27 +246,27 @@ export class ServerApiService {
     files: Express.Multer.File[],
     options: ReplaceCodingSchemeOptions = {},
   ): Promise<{
-      acpId: string;
-      packageId: string;
-      updatedAt: string;
-      replacedFiles: Array<{
-        id: string;
-        originalName: string;
-        fileType?: string;
-        fileSize: number;
-        checksum?: string;
-        uploadedAt: string;
-        downloadUrl: string;
-      }>;
-      snapshot: {
-        id: string;
-        versionNumber: number;
-        changelog?: string;
-        createdAt: string;
-      };
-    }> {
+    acpId: string;
+    packageId: string;
+    updatedAt: string;
+    replacedFiles: Array<{
+      id: string;
+      originalName: string;
+      fileType?: string;
+      fileSize: number;
+      checksum?: string;
+      uploadedAt: string;
+      downloadUrl: string;
+    }>;
+    snapshot: {
+      id: string;
+      versionNumber: number;
+      changelog?: string;
+      createdAt: string;
+    };
+  }> {
     if (!files?.length) {
-      throw new BadRequestException('At least one file is required');
+      throw new BadRequestException("At least one file is required");
     }
 
     const acp = await this.getAcpOrFail(acpId);
@@ -233,9 +289,9 @@ export class ServerApiService {
     }> = [];
 
     for (const incoming of files) {
-      const incomingName = String(incoming?.originalname || '').trim();
+      const incomingName = String(incoming?.originalname || "").trim();
       if (!incomingName) {
-        throw new BadRequestException('All files must include a filename');
+        throw new BadRequestException("All files must include a filename");
       }
       if (!this.isVocsFileName(incomingName)) {
         throw new BadRequestException(
@@ -245,7 +301,9 @@ export class ServerApiService {
 
       const lookupKey = incomingName.toLowerCase();
       if (seenIncoming.has(lookupKey)) {
-        throw new BadRequestException(`Duplicate coding scheme in request: ${incomingName}`);
+        throw new BadRequestException(
+          `Duplicate coding scheme in request: ${incomingName}`,
+        );
       }
       seenIncoming.add(lookupKey);
 
@@ -290,7 +348,10 @@ export class ServerApiService {
       replacedFiles.map((file) => file.originalName),
       options.sourceClientId,
     );
-    const snapshot = await this.snapshotsService.create(acpId, resolvedChangelog);
+    const snapshot = await this.snapshotsService.create(
+      acpId,
+      resolvedChangelog,
+    );
     acp.updatedAt = new Date();
     const savedAcp = await this.acpRepository.save(acp);
 
@@ -315,35 +376,47 @@ export class ServerApiService {
   async receiveAcp(
     data: ServerImportAcpPayload,
     conflictStrategyInput?: string,
-  ): Promise<{ acp: Acp; operation: 'created' | 'updated'; conflictStrategy: ConflictStrategy }> {
+  ): Promise<{
+    acp: Acp;
+    operation: "created" | "updated";
+    conflictStrategy: ConflictStrategy;
+  }> {
     if (!data.packageId || !data.packageId.trim()) {
-      throw new BadRequestException('packageId is required');
+      throw new BadRequestException("packageId is required");
     }
     if (!data.name || !data.name.trim()) {
-      throw new BadRequestException('name is required');
+      throw new BadRequestException("name is required");
     }
-    if (!data.acpIndex || typeof data.acpIndex !== 'object' || Array.isArray(data.acpIndex)) {
-      throw new BadRequestException('acpIndex must be an object');
+    if (
+      !data.acpIndex ||
+      typeof data.acpIndex !== "object" ||
+      Array.isArray(data.acpIndex)
+    ) {
+      throw new BadRequestException("acpIndex must be an object");
     }
 
-    const conflictStrategy = this.resolveConflictStrategy(conflictStrategyInput);
+    const conflictStrategy = this.resolveConflictStrategy(
+      conflictStrategyInput,
+    );
 
-    let acp = await this.acpRepository.findOne({ where: { packageId: data.packageId } });
+    let acp = await this.acpRepository.findOne({
+      where: { packageId: data.packageId },
+    });
     if (!acp) {
       acp = this.acpRepository.create({
         packageId: data.packageId,
         name: data.name,
-        description: data.description || '',
+        description: data.description || "",
         acpIndex: data.acpIndex,
         settings: {},
       });
       const saved = await this.acpRepository.save(acp);
-      return { acp: saved, operation: 'created', conflictStrategy };
+      return { acp: saved, operation: "created", conflictStrategy };
     }
 
     this.assertExpectedUpdatedAt(acp, data.expectedUpdatedAt);
 
-    if (conflictStrategy === 'reject') {
+    if (conflictStrategy === "reject") {
       throw new ConflictException(
         `ACP with packageId \"${data.packageId}\" already exists. Use conflictStrategy=overwrite or conflictStrategy=merge.`,
       );
@@ -354,12 +427,16 @@ export class ServerApiService {
       acp.description = data.description;
     }
 
-    acp.acpIndex = conflictStrategy === 'merge'
-      ? this.deepMergeObjects(acp.acpIndex as Record<string, any>, data.acpIndex)
-      : data.acpIndex;
+    acp.acpIndex =
+      conflictStrategy === "merge"
+        ? this.deepMergeObjects(
+            acp.acpIndex as Record<string, any>,
+            data.acpIndex,
+          )
+        : data.acpIndex;
 
     const saved = await this.acpRepository.save(acp);
-    return { acp: saved, operation: 'updated', conflictStrategy };
+    return { acp: saved, operation: "updated", conflictStrategy };
   }
 
   private async getAcpOrFail(acpId: string): Promise<Acp> {
@@ -397,50 +474,58 @@ export class ServerApiService {
 
     const parsed = new Date(expectedUpdatedAt);
     if (Number.isNaN(parsed.getTime())) {
-      throw new BadRequestException('expectedUpdatedAt must be a valid ISO timestamp');
+      throw new BadRequestException(
+        "expectedUpdatedAt must be a valid ISO timestamp",
+      );
     }
 
     if (acp.updatedAt.toISOString() !== parsed.toISOString()) {
       throw new ConflictException(
-        'ACP was modified since the expected version timestamp',
+        "ACP was modified since the expected version timestamp",
       );
     }
   }
 
   private resolveConflictStrategy(value?: string): ConflictStrategy {
-    switch ((value || 'reject').trim().toLowerCase()) {
-      case 'reject':
-        return 'reject';
-      case 'overwrite':
-        return 'overwrite';
-      case 'merge':
-        return 'merge';
+    switch ((value || "reject").trim().toLowerCase()) {
+      case "reject":
+        return "reject";
+      case "overwrite":
+        return "overwrite";
+      case "merge":
+        return "merge";
       default:
-        throw new BadRequestException('conflictStrategy must be one of: reject, overwrite, merge');
+        throw new BadRequestException(
+          "conflictStrategy must be one of: reject, overwrite, merge",
+        );
     }
   }
 
   private resolveIndexUpdateStrategy(value?: string): IndexUpdateStrategy {
-    switch ((value || 'overwrite').trim().toLowerCase()) {
-      case 'overwrite':
-        return 'overwrite';
-      case 'merge':
-        return 'merge';
+    switch ((value || "overwrite").trim().toLowerCase()) {
+      case "overwrite":
+        return "overwrite";
+      case "merge":
+        return "merge";
       default:
-        throw new BadRequestException('strategy must be one of: overwrite, merge');
+        throw new BadRequestException(
+          "strategy must be one of: overwrite, merge",
+        );
     }
   }
 
   private resolveFileConflictStrategy(value?: string): FileConflictStrategy {
-    switch ((value || 'keep-both').trim().toLowerCase()) {
-      case 'reject':
-        return 'reject';
-      case 'overwrite':
-        return 'overwrite';
-      case 'keep-both':
-        return 'keep-both';
+    switch ((value || "keep-both").trim().toLowerCase()) {
+      case "reject":
+        return "reject";
+      case "overwrite":
+        return "overwrite";
+      case "keep-both":
+        return "keep-both";
       default:
-        throw new BadRequestException('conflictStrategy must be one of: reject, overwrite, keep-both');
+        throw new BadRequestException(
+          "conflictStrategy must be one of: reject, overwrite, keep-both",
+        );
     }
   }
 
@@ -466,11 +551,11 @@ export class ServerApiService {
   }
 
   private isRecord(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 
   private isVocsFileName(fileName: string): boolean {
-    return fileName.trim().toLowerCase().endsWith('.vocs');
+    return fileName.trim().toLowerCase().endsWith(".vocs");
   }
 
   private resolveCodingSchemeChangelog(
@@ -478,13 +563,13 @@ export class ServerApiService {
     fileNames: string[],
     sourceClientId?: string,
   ): string {
-    const explicit = (changelogInput || '').trim();
+    const explicit = (changelogInput || "").trim();
     if (explicit) {
       return explicit;
     }
 
-    const fileList = fileNames.length ? fileNames.join(', ') : 'unknown .vocs';
-    const sourceSuffix = sourceClientId ? ` via ${sourceClientId}` : '';
+    const fileList = fileNames.length ? fileNames.join(", ") : "unknown .vocs";
+    const sourceSuffix = sourceClientId ? ` via ${sourceClientId}` : "";
     return `Kodierschema ersetzt${sourceSuffix}: ${fileList}`;
   }
 }

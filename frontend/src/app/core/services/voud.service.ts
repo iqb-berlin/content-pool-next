@@ -39,21 +39,23 @@ export class VoudService {
       return {
         variable_page: i,
         variable_ref,
-        variable_page_always_visible
+        variable_page_always_visible,
       };
     });
 
-    const unnestedVariablePages: any[] = rawVariablePagesData.flatMap(
-      (pageData: any) => pageData.variable_ref.map((refItem: string) => ({
+    const unnestedVariablePages: any[] = rawVariablePagesData.flatMap((pageData: any) =>
+      pageData.variable_ref.map((refItem: string) => ({
         variable_page: pageData.variable_page,
         variable_ref_item: refItem,
-        grouping_key_always_visible: JSON.stringify(pageData.variable_page_always_visible.slice().sort()),
-        original_always_visible: pageData.variable_page_always_visible
-      }))
+        grouping_key_always_visible: JSON.stringify(
+          pageData.variable_page_always_visible.slice().sort(),
+        ),
+        original_always_visible: pageData.variable_page_always_visible,
+      })),
     );
 
     const grouped = new Map<string, any[]>();
-    unnestedVariablePages.forEach(item => {
+    unnestedVariablePages.forEach((item) => {
       const groupList = grouped.get(item.grouping_key_always_visible);
       if (groupList) {
         groupList.push(item);
@@ -63,23 +65,23 @@ export class VoudService {
     });
 
     const mutatedVariablePages: TransformedVariablePage[] = [];
-    grouped.forEach(groupItems => {
+    grouped.forEach((groupItems) => {
       if (groupItems.length === 0) return;
 
-      const minVariablePage = Math.min(...groupItems.map(item => item.variable_page));
+      const minVariablePage = Math.min(...groupItems.map((item) => item.variable_page));
 
-      groupItems.forEach(item => {
+      groupItems.forEach((item) => {
         mutatedVariablePages.push({
           variable_page_always_visible: item.original_always_visible,
           variable_page: item.variable_page - minVariablePage,
-          variable_ref: item.variable_ref_item
+          variable_ref: item.variable_ref_item,
         });
       });
     });
 
     return {
       unitDefinition,
-      variablePages: mutatedVariablePages
+      variablePages: mutatedVariablePages,
     };
   }
 
@@ -99,7 +101,10 @@ export class VoudService {
 
       const targetLower = target.toLowerCase();
       const normalizedMatch = variablePages.find(
-        (p) => String(p.variable_ref || '').trim().toLowerCase() === targetLower,
+        (p) =>
+          String(p.variable_ref || '')
+            .trim()
+            .toLowerCase() === targetLower,
       );
       return normalizedMatch ? normalizedMatch.variable_page : undefined;
     } catch (e) {
@@ -141,7 +146,7 @@ export class VoudService {
   private listSimplify(arr: any[]): string[] {
     return arr
       .flat(Infinity)
-      .filter(item => typeof item === 'string' || typeof item === 'number')
+      .filter((item) => typeof item === 'string' || typeof item === 'number')
       .map(String);
   }
 }

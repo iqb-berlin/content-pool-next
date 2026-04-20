@@ -10,17 +10,22 @@ import { catchError, map, of } from 'rxjs';
  * Public access and credential-based access (via token) are handled by the backend.
  * Registered users are also checked against their roles for the ACP.
  */
-export const acpViewGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state: RouterStateSnapshot) => {
+export const acpViewGuard: CanActivateFn = (
+  route: ActivatedRouteSnapshot,
+  state: RouterStateSnapshot,
+) => {
   const auth = inject(AuthService);
   const api = inject(ApiService);
   const access = inject(AccessService);
   const acpId = route.paramMap.get('acpId');
 
   if (!acpId) {
-    return of(access.createAccessUrlTree('insufficient_rights', {
-      context: 'view',
-      nextUrl: state.url,
-    }));
+    return of(
+      access.createAccessUrlTree('insufficient_rights', {
+        context: 'view',
+        nextUrl: state.url,
+      }),
+    );
   }
 
   // If already logged in (JWT or Credential Token), we let the request through
@@ -34,18 +39,22 @@ export const acpViewGuard: CanActivateFn = (route: ActivatedRouteSnapshot, state
     map(() => true),
     catchError((err) => {
       if (err.status === 401 || err.status === 403) {
-        return of(access.createAccessUrlTree('login_required', {
+        return of(
+          access.createAccessUrlTree('login_required', {
+            context: 'view',
+            acpId,
+            nextUrl: state.url,
+          }),
+        );
+      }
+
+      return of(
+        access.createAccessUrlTree('insufficient_rights', {
           context: 'view',
           acpId,
           nextUrl: state.url,
-        }));
-      }
-
-      return of(access.createAccessUrlTree('insufficient_rights', {
-        context: 'view',
-        acpId,
-        nextUrl: state.url,
-      }));
-    })
+        }),
+      );
+    }),
   );
 };

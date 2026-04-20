@@ -32,11 +32,13 @@ describe('acpViewGuard', () => {
     authMock.isLoggedIn = true;
 
     const result = await firstValueFrom(
-      runInInjectionContext(injector, () =>
-        acpViewGuard(
-          { paramMap: { get: () => 'acp-1' } } as any,
-          { url: '/view/acp-1' } as any,
-        ) as any,
+      runInInjectionContext(
+        injector,
+        () =>
+          acpViewGuard(
+            { paramMap: { get: () => 'acp-1' } } as any,
+            { url: '/view/acp-1' } as any,
+          ) as any,
       ),
     );
 
@@ -46,11 +48,13 @@ describe('acpViewGuard', () => {
 
   it('checks ACP visibility for anonymous users', async () => {
     const result = await firstValueFrom(
-      runInInjectionContext(injector, () =>
-        acpViewGuard(
-          { paramMap: { get: () => 'acp-1' } } as any,
-          { url: '/view/acp-1' } as any,
-        ) as any,
+      runInInjectionContext(
+        injector,
+        () =>
+          acpViewGuard(
+            { paramMap: { get: () => 'acp-1' } } as any,
+            { url: '/view/acp-1' } as any,
+          ) as any,
       ),
     );
 
@@ -62,11 +66,13 @@ describe('acpViewGuard', () => {
     apiMock.getAcpStartPage.mockReturnValue(throwError(() => ({ status: 403 })));
 
     const result = await firstValueFrom(
-      runInInjectionContext(injector, () =>
-        acpViewGuard(
-          { paramMap: { get: () => 'acp-2' } } as any,
-          { url: '/view/acp-2/units' } as any,
-        ) as any,
+      runInInjectionContext(
+        injector,
+        () =>
+          acpViewGuard(
+            { paramMap: { get: () => 'acp-2' } } as any,
+            { url: '/view/acp-2/units' } as any,
+          ) as any,
       ),
     );
 

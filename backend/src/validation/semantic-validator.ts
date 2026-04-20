@@ -1,16 +1,20 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Acp, AcpFile } from '../database/entities';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Acp, AcpFile } from "../database/entities";
 import {
   getAssessmentParts,
   getIndexUnits,
   toRuntimeAcpIndex,
-} from '../acp/acp-index.utils';
+} from "../acp/acp-index.utils";
 
 export interface SemanticValidationResult {
   valid: boolean;
-  issues: { severity: 'error' | 'warning' | 'info'; message: string; path?: string }[];
+  issues: {
+    severity: "error" | "warning" | "info";
+    message: string;
+    path?: string;
+  }[];
 }
 
 /**
@@ -32,20 +36,26 @@ export class SemanticValidator {
    * Validate semantic consistency of the entire ACP.
    */
   async validate(acpId: string): Promise<SemanticValidationResult> {
-    const issues: SemanticValidationResult['issues'] = [];
+    const issues: SemanticValidationResult["issues"] = [];
 
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
-      return { valid: false, issues: [{ severity: 'error', message: 'ACP not found' }] };
+      return {
+        valid: false,
+        issues: [{ severity: "error", message: "ACP not found" }],
+      };
     }
 
     const index = toRuntimeAcpIndex(acp.acpIndex);
     if (!index) {
-      return { valid: false, issues: [{ severity: 'error', message: 'ACP-Index is empty' }] };
+      return {
+        valid: false,
+        issues: [{ severity: "error", message: "ACP-Index is empty" }],
+      };
     }
 
     const files = await this.fileRepository.find({ where: { acpId } });
-    const fileNames = new Set(files.map(f => f.originalName));
+    const fileNames = new Set(files.map((f) => f.originalName));
 
     // Collect all unit IDs
     const units = getIndexUnits(index);
@@ -56,7 +66,7 @@ export class SemanticValidator {
       for (const dep of unit.dependencies || []) {
         if (dep.id && !fileNames.has(dep.id)) {
           issues.push({
-            severity: 'error',
+            severity: "error",
             message: `Unit "${unit.id}" references file "${dep.id}" (type: ${dep.type}) which is not uploaded`,
             path: `units.${unit.id}.dependencies`,
           });
@@ -68,10 +78,10 @@ export class SemanticValidator {
     for (const part of getAssessmentParts(index)) {
       for (const instrument of part.instruments || []) {
         for (const unitRef of instrument.units || []) {
-          const refId = typeof unitRef === 'string' ? unitRef : unitRef.id;
+          const refId = typeof unitRef === "string" ? unitRef : unitRef.id;
           if (refId && !unitIds.has(refId)) {
             issues.push({
-              severity: 'error',
+              severity: "error",
               message: `Instrument "${instrument.id}" references unit "${refId}" which is not defined`,
               path: `assessmentParts.${part.id}.instruments.${instrument.id}`,
             });
@@ -86,7 +96,7 @@ export class SemanticValidator {
         // Check that items have required identifiers
         if (!item.id) {
           issues.push({
-            severity: 'warning',
+            severity: "warning",
             message: `Unit "${unit.id}" has an item without an ID`,
             path: `units.${unit.id}.items`,
           });
@@ -99,9 +109,9 @@ export class SemanticValidator {
     for (const unit of units) {
       if (seenUnitIds.has(unit.id)) {
         issues.push({
-          severity: 'error',
+          severity: "error",
           message: `Duplicate unit ID: "${unit.id}"`,
-          path: 'units',
+          path: "units",
         });
       }
       seenUnitIds.add(unit.id);
@@ -113,7 +123,7 @@ export class SemanticValidator {
       for (const item of unit.items || []) {
         if (item.id && seenItems.has(item.id)) {
           issues.push({
-            severity: 'warning',
+            severity: "warning",
             message: `Duplicate item ID "${item.id}" in unit "${unit.id}"`,
             path: `units.${unit.id}.items`,
           });
@@ -122,7 +132,7 @@ export class SemanticValidator {
       }
     }
 
-    const hasErrors = issues.some(i => i.severity === 'error');
+    const hasErrors = issues.some((i) => i.severity === "error");
     return { valid: !hasErrors, issues };
   }
 }

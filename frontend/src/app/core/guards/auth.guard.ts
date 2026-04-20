@@ -61,18 +61,22 @@ export const acpManagerGuard: CanActivateFn = (route, state) => {
     map(() => true),
     catchError((err) => {
       if (err?.status === 401) {
-        return of(accessService.createAccessUrlTree('login_required', {
+        return of(
+          accessService.createAccessUrlTree('login_required', {
+            context: 'manage',
+            acpId,
+            nextUrl: state.url,
+          }),
+        );
+      }
+
+      return of(
+        accessService.createAccessUrlTree('insufficient_rights', {
           context: 'manage',
           acpId,
           nextUrl: state.url,
-        }));
-      }
-
-      return of(accessService.createAccessUrlTree('insufficient_rights', {
-        context: 'manage',
-        acpId,
-        nextUrl: state.url,
-      }));
+        }),
+      );
     }),
   );
 };

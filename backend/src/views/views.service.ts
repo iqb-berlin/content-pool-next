@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 import {
   Acp,
   AcpAccessConfig,
@@ -8,14 +8,14 @@ import {
   AcpFile,
   AppSettings,
   AcpItemPreference,
-} from '../database/entities';
+} from "../database/entities";
 import {
   findUnitInIndex,
   getAssessmentParts,
   getIndexUnits,
   toRuntimeAcpIndex,
-} from '../acp/acp-index.utils';
-import { normalizeFeatureConfig } from '../acp/feature-config.utils';
+} from "../acp/acp-index.utils";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
 
 export interface ItemPreferencesPayload {
   [key: string]: unknown;
@@ -49,7 +49,15 @@ export class ViewsService {
   async getPublicSettings(): Promise<any> {
     const settings = await this.settingsRepository.findOne({ where: {} });
     if (!settings) {
-      return { theme: {}, language: 'de', logoUrl: null, landingPageHtml: null, imprintHtml: null, privacyHtml: null, accessibilityHtml: null };
+      return {
+        theme: {},
+        language: "de",
+        logoUrl: null,
+        landingPageHtml: null,
+        imprintHtml: null,
+        privacyHtml: null,
+        accessibilityHtml: null,
+      };
     }
     return {
       theme: settings.theme,
@@ -68,11 +76,11 @@ export class ViewsService {
   async getPublicAcps(): Promise<any[]> {
     const publicConfigs = await this.accessConfigRepository.find({
       where: { accessModel: AccessModel.PUBLIC },
-      relations: ['acp'],
+      relations: ["acp"],
     });
     const credentialConfigs = await this.accessConfigRepository.find({
       where: { accessModel: AccessModel.CREDENTIALS_LIST },
-      relations: ['acp'],
+      relations: ["acp"],
     });
     const now = new Date();
     const activeCredentialConfigs = credentialConfigs.filter((cfg) => {
@@ -81,11 +89,20 @@ export class ViewsService {
       return startsOk && endsOk;
     });
 
-    console.log('[DEBUG] getPublicAcps - PUBLIC configs:', publicConfigs.length);
-    console.log('[DEBUG] getPublicAcps - CREDENTIALS_LIST configs:', credentialConfigs.length);
-    console.log('[DEBUG] getPublicAcps - active CREDENTIALS_LIST configs:', activeCredentialConfigs.length);
+    console.log(
+      "[DEBUG] getPublicAcps - PUBLIC configs:",
+      publicConfigs.length,
+    );
+    console.log(
+      "[DEBUG] getPublicAcps - CREDENTIALS_LIST configs:",
+      credentialConfigs.length,
+    );
+    console.log(
+      "[DEBUG] getPublicAcps - active CREDENTIALS_LIST configs:",
+      activeCredentialConfigs.length,
+    );
     for (const cfg of activeCredentialConfigs) {
-      console.log('[DEBUG] Credential config:', {
+      console.log("[DEBUG] Credential config:", {
         id: cfg.id,
         acpId: cfg.acpId,
         acpName: cfg.acp?.name,
@@ -104,7 +121,7 @@ export class ViewsService {
           id: config.acp.id,
           name: config.acp.name,
           description: config.acp.description,
-          accessModel: 'PUBLIC',
+          accessModel: "PUBLIC",
         });
         seenIds.add(config.acp.id);
       }
@@ -118,14 +135,14 @@ export class ViewsService {
           id: config.acp.id,
           name: config.acp.name,
           description: config.acp.description,
-          accessModel: 'CREDENTIALS_LIST',
+          accessModel: "CREDENTIALS_LIST",
           requiresLogin: true,
         });
         seenIds.add(config.acp.id);
       }
     }
 
-    console.log('[DEBUG] getPublicAcps - final results:', results.length);
+    console.log("[DEBUG] getPublicAcps - final results:", results.length);
     return results;
   }
 
@@ -156,7 +173,7 @@ export class ViewsService {
     for (const part of parts) {
       const modulesById = new Map<string, any>();
       for (const module of part.bookletModules || []) {
-        if (!module?.id || typeof module.id !== 'string') continue;
+        if (!module?.id || typeof module.id !== "string") continue;
         modulesById.set(module.id, module);
         if (!sequenceMap.has(module.id)) {
           sequenceMap.set(module.id, {
@@ -181,7 +198,7 @@ export class ViewsService {
               instrumentName: existing.instrumentName || instrument.name,
               bookletDefinitionId:
                 existing.bookletDefinitionId ||
-                (typeof booklet.definitionId === 'string'
+                (typeof booklet.definitionId === "string"
                   ? booklet.definitionId
                   : undefined),
             });
@@ -262,9 +279,10 @@ export class ViewsService {
 
     for (const unit of getIndexUnits(index)) {
       for (const item of unit.items || []) {
-        const itemId = item.useUnitAliasAsPrefix !== false
-          ? `${unit.id}_${item.id}`
-          : item.id;
+        const itemId =
+          item.useUnitAliasAsPrefix !== false
+            ? `${unit.id}_${item.id}`
+            : item.id;
 
         items.push({
           itemId,
@@ -327,7 +345,11 @@ export class ViewsService {
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
-    const record = await this.findPreferenceRecord(acpId, normalizedViewId, identity);
+    const record = await this.findPreferenceRecord(
+      acpId,
+      normalizedViewId,
+      identity,
+    );
     return this.normalizeItemPreferences(record?.preferences);
   }
 
@@ -344,7 +366,11 @@ export class ViewsService {
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
-    let record = await this.findPreferenceRecord(acpId, normalizedViewId, identity);
+    let record = await this.findPreferenceRecord(
+      acpId,
+      normalizedViewId,
+      identity,
+    );
 
     if (!record) {
       record = this.itemPreferenceRepository.create({
@@ -361,15 +387,15 @@ export class ViewsService {
   }
 
   private getModuleReferenceId(moduleRef: unknown): string | null {
-    if (typeof moduleRef === 'string' && moduleRef.trim().length > 0) {
+    if (typeof moduleRef === "string" && moduleRef.trim().length > 0) {
       return moduleRef.trim();
     }
-    if (moduleRef && typeof moduleRef === 'object') {
+    if (moduleRef && typeof moduleRef === "object") {
       const ref = moduleRef as { moduleId?: unknown; id?: unknown };
-      if (typeof ref.moduleId === 'string' && ref.moduleId.trim().length > 0) {
+      if (typeof ref.moduleId === "string" && ref.moduleId.trim().length > 0) {
         return ref.moduleId.trim();
       }
-      if (typeof ref.id === 'string' && ref.id.trim().length > 0) {
+      if (typeof ref.id === "string" && ref.id.trim().length > 0) {
         return ref.id.trim();
       }
     }
@@ -377,23 +403,23 @@ export class ViewsService {
   }
 
   private normalizeViewId(viewId?: string): string {
-    const normalized = (viewId || '').trim();
-    return normalized.length > 0 ? normalized.slice(0, 120) : 'item-list';
+    const normalized = (viewId || "").trim();
+    return normalized.length > 0 ? normalized.slice(0, 120) : "item-list";
   }
 
   private resolvePreferenceIdentity(user: any): PreferenceIdentity | null {
-    if (!user || typeof user !== 'object') {
+    if (!user || typeof user !== "object") {
       return null;
     }
 
-    if (user.type === 'credential' && typeof user.username === 'string') {
+    if (user.type === "credential" && typeof user.username === "string") {
       const credentialUsername = user.username.trim();
       if (credentialUsername.length > 0) {
         return { credentialUsername };
       }
     }
 
-    if (typeof user.sub === 'string' && user.sub.trim().length > 0) {
+    if (typeof user.sub === "string" && user.sub.trim().length > 0) {
       return { userId: user.sub.trim() };
     }
 
@@ -445,7 +471,7 @@ export class ViewsService {
     const tags: Record<string, string[]> = {};
 
     for (const [itemKey, values] of Object.entries(rawTags)) {
-      const normalizedItemKey = String(itemKey || '').trim();
+      const normalizedItemKey = String(itemKey || "").trim();
       if (!normalizedItemKey) {
         continue;
       }
@@ -454,11 +480,13 @@ export class ViewsService {
         continue;
       }
 
-      const normalizedValues = Array.from(new Set(
-        values
-          .map((value) => String(value || '').trim())
-          .filter((value) => value.length > 0),
-      ));
+      const normalizedValues = Array.from(
+        new Set(
+          values
+            .map((value) => String(value || "").trim())
+            .filter((value) => value.length > 0),
+        ),
+      );
 
       if (normalizedValues.length) {
         tags[normalizedItemKey] = normalizedValues;
@@ -469,6 +497,6 @@ export class ViewsService {
   }
 
   private isRecord(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
   }
 }

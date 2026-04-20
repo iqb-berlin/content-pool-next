@@ -1,6 +1,6 @@
-import { SemanticValidator } from './semantic-validator';
+import { SemanticValidator } from "./semantic-validator";
 
-describe('SemanticValidator', () => {
+describe("SemanticValidator", () => {
   let validator: SemanticValidator;
   let acpRepository: { findOne: jest.Mock };
   let fileRepository: { find: jest.Mock };
@@ -8,45 +8,45 @@ describe('SemanticValidator', () => {
   beforeEach(() => {
     acpRepository = { findOne: jest.fn() };
     fileRepository = { find: jest.fn() };
-    validator = new SemanticValidator(acpRepository as any, fileRepository as any);
+    validator = new SemanticValidator(
+      acpRepository as any,
+      fileRepository as any,
+    );
   });
 
-  it('returns error when ACP is missing', async () => {
+  it("returns error when ACP is missing", async () => {
     acpRepository.findOne.mockResolvedValue(null);
 
-    const result = await validator.validate('acp-1');
+    const result = await validator.validate("acp-1");
 
     expect(result).toEqual({
       valid: false,
-      issues: [{ severity: 'error', message: 'ACP not found' }],
+      issues: [{ severity: "error", message: "ACP not found" }],
     });
   });
 
-  it('collects semantic issues for missing files, unit refs and duplicate item ids', async () => {
+  it("collects semantic issues for missing files, unit refs and duplicate item ids", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: 'acp-1',
+      id: "acp-1",
       acpIndex: {
         assessmentParts: [
           {
-            id: 'part-1',
+            id: "part-1",
             units: [
               {
-                id: 'unit-1',
-                dependencies: [{ id: 'missing.xml', type: 'xml' }],
-                items: [
-                  { id: 'item-1' },
-                  { name: 'missing-id' },
-                ],
+                id: "unit-1",
+                dependencies: [{ id: "missing.xml", type: "xml" }],
+                items: [{ id: "item-1" }, { name: "missing-id" }],
               },
               {
-                id: 'unit-2',
-                items: [{ id: 'dup' }, { id: 'dup' }],
+                id: "unit-2",
+                items: [{ id: "dup" }, { id: "dup" }],
               },
             ],
             instruments: [
               {
-                id: 'instrument-1',
-                units: ['unit-1', { id: 'missing-unit' }],
+                id: "instrument-1",
+                units: ["unit-1", { id: "missing-unit" }],
               },
             ],
           },
@@ -54,51 +54,51 @@ describe('SemanticValidator', () => {
       },
     });
 
-    fileRepository.find.mockResolvedValue([{ originalName: 'present.xml' }]);
+    fileRepository.find.mockResolvedValue([{ originalName: "present.xml" }]);
 
-    const result = await validator.validate('acp-1');
+    const result = await validator.validate("acp-1");
 
     expect(result.valid).toBe(false);
     expect(result.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          severity: 'error',
+          severity: "error",
           message: expect.stringContaining('references file "missing.xml"'),
         }),
         expect.objectContaining({
-          severity: 'error',
+          severity: "error",
           message: expect.stringContaining('references unit "missing-unit"'),
         }),
         expect.objectContaining({
-          severity: 'warning',
-          message: expect.stringContaining('item without an ID'),
+          severity: "warning",
+          message: expect.stringContaining("item without an ID"),
         }),
         expect.objectContaining({
-          severity: 'warning',
+          severity: "warning",
           message: expect.stringContaining('Duplicate item ID "dup"'),
         }),
       ]),
     );
   });
 
-  it('returns valid result when ACP references are consistent', async () => {
+  it("returns valid result when ACP references are consistent", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: 'acp-1',
+      id: "acp-1",
       acpIndex: {
         assessmentParts: [
           {
-            id: 'part-1',
+            id: "part-1",
             units: [
               {
-                id: 'unit-1',
-                dependencies: [{ id: 'unit.xml', type: 'xml' }],
-                items: [{ id: 'item-1' }],
+                id: "unit-1",
+                dependencies: [{ id: "unit.xml", type: "xml" }],
+                items: [{ id: "item-1" }],
               },
             ],
             instruments: [
               {
-                id: 'instrument-1',
-                units: [{ id: 'unit-1' }],
+                id: "instrument-1",
+                units: [{ id: "unit-1" }],
               },
             ],
           },
@@ -106,9 +106,9 @@ describe('SemanticValidator', () => {
       },
     });
 
-    fileRepository.find.mockResolvedValue([{ originalName: 'unit.xml' }]);
+    fileRepository.find.mockResolvedValue([{ originalName: "unit.xml" }]);
 
-    const result = await validator.validate('acp-1');
+    const result = await validator.validate("acp-1");
 
     expect(result).toEqual({ valid: true, issues: [] });
   });

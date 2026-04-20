@@ -31,10 +31,18 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
           @for (acp of acps; track acp.id) {
             <div class="card acp-card">
               <div class="acp-card-header">
-                <span class="badge"
-                  [class.badge-success]="acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST'"
-                  [class.badge-info]="acp.accessModel !== 'PUBLIC' && acp.accessModel !== 'CREDENTIALS_LIST' && acp.accessModel !== 'ADMIN'"
-                  [class.badge-warning]="acp.accessModel === 'ADMIN'">
+                <span
+                  class="badge"
+                  [class.badge-success]="
+                    acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST'
+                  "
+                  [class.badge-info]="
+                    acp.accessModel !== 'PUBLIC' &&
+                    acp.accessModel !== 'CREDENTIALS_LIST' &&
+                    acp.accessModel !== 'ADMIN'
+                  "
+                  [class.badge-warning]="acp.accessModel === 'ADMIN'"
+                >
                   @if (acp.accessModel === 'PUBLIC' || acp.accessModel === 'CREDENTIALS_LIST') {
                     Öffentlich
                   } @else if (acp.accessModel === 'ADMIN') {
@@ -63,7 +71,8 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
                             placeholder="Benutzername"
                             class="login-input"
                             [disabled]="loginLoading"
-                            required>
+                            required
+                          />
                           <input
                             type="password"
                             [(ngModel)]="loginPassword"
@@ -71,13 +80,15 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
                             placeholder="Kennwort"
                             class="login-input"
                             [disabled]="loginLoading"
-                            required>
+                            required
+                          />
                         </div>
                         <div class="login-actions">
                           <button
                             type="submit"
                             class="btn btn-primary btn-sm"
-                            [disabled]="loginLoading || !loginUsername || !loginPassword">
+                            [disabled]="loginLoading || !loginUsername || !loginPassword"
+                          >
                             @if (loginLoading) {
                               <span class="spinner-inline"></span> Anmelden...
                             } @else {
@@ -88,7 +99,8 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
                             type="button"
                             class="btn btn-outline btn-sm"
                             [disabled]="loginLoading"
-                            (click)="cancelLogin()">
+                            (click)="cancelLogin()"
+                          >
                             Abbrechen
                           </button>
                         </div>
@@ -138,7 +150,9 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
             <button class="footer-link" (click)="showLegalDialog('privacy')">Datenschutz</button>
           }
           @if (accessibilityHtml) {
-            <button class="footer-link" (click)="showLegalDialog('accessibility')">Barrierefreiheit</button>
+            <button class="footer-link" (click)="showLegalDialog('accessibility')">
+              Barrierefreiheit
+            </button>
           }
         </div>
         <p class="footer-credit">IQB · Humboldt-Universität zu Berlin</p>
@@ -158,214 +172,237 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
       }
     </div>
   `,
-  styles: [`
-    .landing {
-      display: flex;
-      flex-direction: column;
-      min-height: calc(100vh - 56px - 48px);
-    }
+  styles: [
+    `
+      .landing {
+        display: flex;
+        flex-direction: column;
+        min-height: calc(100vh - 56px - 48px);
+      }
 
-    /* Hero */
-    .hero {
-      text-align: center;
-      padding: 56px 24px 40px;
-      background: linear-gradient(135deg, rgba(26,82,118,0.06) 0%, rgba(41,128,185,0.08) 100%);
-      border-radius: var(--radius);
-      margin-bottom: 32px;
-    }
-    .hero h1 {
-      font-size: 2.5rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      margin-bottom: 8px;
-    }
-    .hero-sub {
-      color: var(--color-text-secondary);
-      font-size: 1.15rem;
-      font-weight: 300;
-    }
+      /* Hero */
+      .hero {
+        text-align: center;
+        padding: 56px 24px 40px;
+        background: linear-gradient(
+          135deg,
+          rgba(26, 82, 118, 0.06) 0%,
+          rgba(41, 128, 185, 0.08) 100%
+        );
+        border-radius: var(--radius);
+        margin-bottom: 32px;
+      }
+      .hero h1 {
+        font-size: 2.5rem;
+        font-weight: 700;
+        background: linear-gradient(
+          135deg,
+          var(--color-primary) 0%,
+          var(--color-primary-light) 100%
+        );
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 8px;
+      }
+      .hero-sub {
+        color: var(--color-text-secondary);
+        font-size: 1.15rem;
+        font-weight: 300;
+      }
 
-    /* Custom content */
-    .custom-content {
-      margin-bottom: 32px;
-      line-height: 1.7;
-    }
+      /* Custom content */
+      .custom-content {
+        margin-bottom: 32px;
+        line-height: 1.7;
+      }
 
-    /* ACP Section */
-    .acp-section { flex: 1; }
-    .acp-section h2 {
-      font-size: 1.4rem;
-      margin-bottom: 20px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .acp-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 20px;
-    }
+      /* ACP Section */
+      .acp-section {
+        flex: 1;
+      }
+      .acp-section h2 {
+        font-size: 1.4rem;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .acp-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 20px;
+      }
 
-    /* ACP Card */
-    .acp-card {
-      display: flex;
-      flex-direction: column;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      border: 1px solid var(--color-border);
-    }
-    .acp-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-    }
-    .acp-card-header {
-      margin-bottom: 12px;
-    }
-    .acp-card h3 {
-      font-size: 1.15rem;
-      font-weight: 600;
-      margin-bottom: 8px;
-    }
-    .desc {
-      color: var(--color-text-secondary);
-      font-size: 0.9rem;
-      line-height: 1.5;
-      flex: 1;
-    }
-    .card-footer {
-      display: flex;
-      justify-content: flex-end;
-      align-items: center;
-      margin-top: 20px;
-      padding-top: 16px;
-      border-top: 1px solid var(--color-border);
-    }
-    .btn-icon { margin-right: 4px; }
+      /* ACP Card */
+      .acp-card {
+        display: flex;
+        flex-direction: column;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+        border: 1px solid var(--color-border);
+      }
+      .acp-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+      }
+      .acp-card-header {
+        margin-bottom: 12px;
+      }
+      .acp-card h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .desc {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        flex: 1;
+      }
+      .card-footer {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 1px solid var(--color-border);
+      }
+      .btn-icon {
+        margin-right: 4px;
+      }
 
-    /* Empty state */
-    .empty-state {
-      text-align: center;
-      padding: 64px 24px;
-      color: var(--color-text-secondary);
-    }
-    .empty-icon {
-      font-size: 3rem;
-      margin-bottom: 16px;
-    }
-    .empty-state h3 {
-      color: var(--color-text);
-      margin-bottom: 8px;
-    }
-    .empty-state p {
-      font-size: 0.95rem;
-    }
+      /* Empty state */
+      .empty-state {
+        text-align: center;
+        padding: 64px 24px;
+        color: var(--color-text-secondary);
+      }
+      .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 16px;
+      }
+      .empty-state h3 {
+        color: var(--color-text);
+        margin-bottom: 8px;
+      }
+      .empty-state p {
+        font-size: 0.95rem;
+      }
 
-    /* Footer */
-    .landing-footer {
-      margin-top: 48px;
-      padding: 24px 0;
-      border-top: 1px solid var(--color-border);
-      text-align: center;
-    }
-    .footer-links {
-      display: flex;
-      justify-content: center;
-      gap: 24px;
-      margin-bottom: 12px;
-    }
-    .footer-link {
-      background: none;
-      border: none;
-      color: var(--color-primary-light);
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-family: inherit;
-      padding: 0;
-    }
-    .footer-link:hover {
-      text-decoration: underline;
-    }
-    .footer-credit {
-      font-size: 0.8rem;
-      color: var(--color-text-secondary);
-    }
+      /* Footer */
+      .landing-footer {
+        margin-top: 48px;
+        padding: 24px 0;
+        border-top: 1px solid var(--color-border);
+        text-align: center;
+      }
+      .footer-links {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        margin-bottom: 12px;
+      }
+      .footer-link {
+        background: none;
+        border: none;
+        color: var(--color-primary-light);
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-family: inherit;
+        padding: 0;
+      }
+      .footer-link:hover {
+        text-decoration: underline;
+      }
+      .footer-credit {
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
 
-    /* Legal dialog */
-    .dialog-overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0,0,0,0.5);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      padding: 24px;
-    }
-    .dialog-content {
-      max-width: 680px;
-      width: 100%;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
-    .dialog-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .dialog-header h2 { margin-bottom: 0; }
-    .dialog-body { line-height: 1.7; font-size: 0.95rem; }
+      /* Legal dialog */
+      .dialog-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 24px;
+      }
+      .dialog-content {
+        max-width: 680px;
+        width: 100%;
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      .dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      .dialog-header h2 {
+        margin-bottom: 0;
+      }
+      .dialog-body {
+        line-height: 1.7;
+        font-size: 0.95rem;
+      }
 
-    /* Inline login form styles */
-    .inline-login-form {
-      width: 100%;
-    }
-    .login-error {
-      color: #e74c3c;
-      font-size: 0.85rem;
-      margin-bottom: 8px;
-      padding: 4px 8px;
-      background: rgba(231, 76, 60, 0.08);
-      border-radius: 4px;
-    }
-    .login-fields {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-    .login-input {
-      padding: 8px 12px;
-      border: 1px solid var(--color-border);
-      border-radius: var(--radius);
-      font-size: 0.9rem;
-      font-family: inherit;
-    }
-    .login-input:focus {
-      outline: none;
-      border-color: var(--color-primary-light);
-      box-shadow: 0 0 0 2px rgba(41,128,185,0.15);
-    }
-    .login-actions {
-      display: flex;
-      gap: 8px;
-      justify-content: flex-end;
-    }
-    .spinner-inline {
-      display: inline-block;
-      width: 14px;
-      height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-  `]
+      /* Inline login form styles */
+      .inline-login-form {
+        width: 100%;
+      }
+      .login-error {
+        color: #e74c3c;
+        font-size: 0.85rem;
+        margin-bottom: 8px;
+        padding: 4px 8px;
+        background: rgba(231, 76, 60, 0.08);
+        border-radius: 4px;
+      }
+      .login-fields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .login-input {
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        font-family: inherit;
+      }
+      .login-input:focus {
+        outline: none;
+        border-color: var(--color-primary-light);
+        box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.15);
+      }
+      .login-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .spinner-inline {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    `,
+  ],
 })
 export class LandingComponent implements OnInit {
   acps: PublicAcp[] = [];
@@ -399,17 +436,17 @@ export class LandingComponent implements OnInit {
   ngOnInit() {
     const acpsRequest = this.authService.isAdmin
       ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
-          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) =>
+          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[]; all: Acp[] }) =>
             this.mergeForAdmin(publicAcps, allAcps),
-          )
+          ),
         )
       : this.authService.isLoggedIn
-      ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
-          map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[], all: Acp[] }) =>
-            this.mergeForLoggedUsers(publicAcps, allAcps),
+        ? forkJoin({ public: this.api.getPublicAcps(), all: this.api.getAcps() }).pipe(
+            map(({ public: publicAcps, all: allAcps }: { public: PublicAcp[]; all: Acp[] }) =>
+              this.mergeForLoggedUsers(publicAcps, allAcps),
+            ),
           )
-        )
-      : this.api.getPublicAcps();
+        : this.api.getPublicAcps();
 
     forkJoin({
       settings: this.api.getPublicSettings(),
@@ -432,8 +469,16 @@ export class LandingComponent implements OnInit {
   }
 
   showLegalDialog(type: 'imprint' | 'privacy' | 'accessibility') {
-    const titles = { imprint: 'Impressum', privacy: 'Datenschutz', accessibility: 'Barrierefreiheit' };
-    const contents = { imprint: this.imprintHtml, privacy: this.privacyHtml, accessibility: this.accessibilityHtml };
+    const titles = {
+      imprint: 'Impressum',
+      privacy: 'Datenschutz',
+      accessibility: 'Barrierefreiheit',
+    };
+    const contents = {
+      imprint: this.imprintHtml,
+      privacy: this.privacyHtml,
+      accessibility: this.accessibilityHtml,
+    };
     this.activeLegalTitle = titles[type];
     this.activeLegalContent = contents[type];
     this.activeLegalDialog = true;
@@ -474,7 +519,7 @@ export class LandingComponent implements OnInit {
       error: (err) => {
         this.loginError = err.error?.message || 'Anmeldung fehlgeschlagen';
         this.loginLoading = false;
-      }
+      },
     });
   }
 

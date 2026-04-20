@@ -4,12 +4,17 @@ import {
   ExecutionContext,
   ForbiddenException,
   NotFoundException,
-} from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AcpUserRole, AcpRole, AcpAccessConfig, AccessModel } from '../../database/entities';
-import { User } from '../../database/entities/user.entity';
+} from "@nestjs/common";
+import { JwtService } from "@nestjs/jwt";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import {
+  AcpUserRole,
+  AcpRole,
+  AcpAccessConfig,
+  AccessModel,
+} from "../../database/entities";
+import { User } from "../../database/entities/user.entity";
 
 /**
  * Guard that checks if the current user has access to the ACP specified by :acpId param.
@@ -36,7 +41,7 @@ export class AcpAccessGuard implements CanActivate {
     const acpId = request.params.acpId || request.params.id;
 
     if (!acpId) {
-      throw new NotFoundException('ACP ID not found in request');
+      throw new NotFoundException("ACP ID not found in request");
     }
 
     // Try to resolve user from JWT even if no JwtAuthGuard is attached.
@@ -49,24 +54,30 @@ export class AcpAccessGuard implements CanActivate {
     if (user) {
       // App Admin has full access
       if (user.isAppAdmin) {
-        request.acpAccessLevel = 'ADMIN';
+        request.acpAccessLevel = "ADMIN";
         return true;
       }
 
       // Credential-based access
-      console.log('Checking credential access:', { userType: user.type, userAcpId: user.acpId, requestedAcpId: acpId, match: user.acpId === acpId });
-      if (user.type === 'credential' && user.acpId === acpId) {
-        request.acpAccessLevel = 'CREDENTIAL';
+      console.log("Checking credential access:", {
+        userType: user.type,
+        userAcpId: user.acpId,
+        requestedAcpId: acpId,
+        match: user.acpId === acpId,
+      });
+      if (user.type === "credential" && user.acpId === acpId) {
+        request.acpAccessLevel = "CREDENTIAL";
         return true;
       }
 
       // User role-based access (local users and OIDC users)
-      if (user.type === 'user' || user.type === 'oidc') {
+      if (user.type === "user" || user.type === "oidc") {
         const role = await this.acpUserRoleRepository.findOne({
           where: { userId: user.sub, acpId },
         });
         if (role) {
-          request.acpAccessLevel = role.role === AcpRole.ACP_MANAGER ? 'MANAGER' : 'READ_ONLY';
+          request.acpAccessLevel =
+            role.role === AcpRole.ACP_MANAGER ? "MANAGER" : "READ_ONLY";
           return true;
         }
       }
@@ -77,23 +88,27 @@ export class AcpAccessGuard implements CanActivate {
       where: { acpId, accessModel: AccessModel.PUBLIC },
     });
     if (publicConfig) {
-      request.acpAccessLevel = 'PUBLIC';
+      request.acpAccessLevel = "PUBLIC";
       return true;
     }
 
     // For non-public ACPs, authentication is required.
     if (!user) {
-      throw new ForbiddenException('Authentication required');
+      throw new ForbiddenException("Authentication required");
     }
 
-    throw new ForbiddenException('No access to this ACP');
+    throw new ForbiddenException("No access to this ACP");
   }
 
   private async resolveUserFromRequestToken(request: any): Promise<any | null> {
     const authHeader = request.headers?.authorization as string | undefined;
     const bearerToken =
-      authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : null;
-    const queryToken = (request.query?.token || request.query?.auth_token) as string | undefined;
+      authHeader && authHeader.startsWith("Bearer ")
+        ? authHeader.slice("Bearer ".length).trim()
+        : null;
+    const queryToken = (request.query?.token || request.query?.auth_token) as
+      | string
+      | undefined;
     const token = bearerToken || queryToken;
 
     if (!token) {
@@ -104,7 +119,7 @@ export class AcpAccessGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync<any>(token);
 
       // Credential users are not persisted in user table.
-      if (payload.type === 'credential') {
+      if (payload.type === "credential") {
         return {
           sub: payload.sub,
           username: payload.username,
@@ -118,7 +133,7 @@ export class AcpAccessGuard implements CanActivate {
 
       const user = await this.userRepository.findOne({
         where: { id: payload.sub },
-        relations: ['acpRoles', 'acpRoles.acp'],
+        relations: ["acpRoles", "acpRoles.acp"],
       });
 
       if (!user) {

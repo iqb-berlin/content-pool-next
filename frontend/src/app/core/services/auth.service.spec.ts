@@ -60,6 +60,39 @@ describe('AuthService', () => {
     expect(service).toBeTruthy();
   });
 
+  describe('initFromStorage', () => {
+    it('should not load profile during construction, even when token exists', () => {
+      localStorage.setItem('cp_token', 'persisted-token');
+      const localHttpMock = {
+        post: vi.fn().mockReturnValue(of({})),
+        get: vi.fn().mockReturnValue(of(mockUserProfile)),
+      };
+
+      const constructedService = new AuthService(localHttpMock as any);
+
+      expect(localHttpMock.get).not.toHaveBeenCalled();
+      expect(constructedService.currentUser).toBeNull();
+    });
+
+    it('should load profile when token exists in storage', () => {
+      localStorage.setItem('cp_token', 'persisted-token');
+      httpClientMock.get.mockReturnValue(of(mockUserProfile));
+
+      service.initFromStorage();
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/profile');
+      expect(service.currentUser).toEqual(mockUserProfile);
+    });
+
+    it('should skip profile load when no token exists in storage', () => {
+      localStorage.removeItem('cp_token');
+
+      service.initFromStorage();
+
+      expect(httpClientMock.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getToken', () => {
     it('should return null when no token in localStorage', () => {
       expect(service.getToken()).toBeNull();

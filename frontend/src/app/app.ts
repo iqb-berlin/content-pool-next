@@ -91,6 +91,7 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     window.addEventListener('cp-settings-updated', this.settingsUpdatedListener as EventListener);
+    this.auth.initFromStorage();
 
     this.api.getPublicSettings().subscribe(settings => {
       applyTheme(settings.theme);

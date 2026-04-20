@@ -25,6 +25,9 @@ export class AuthService {
 
   constructor(private http: HttpClient) {
     this.initBroadcastChannel();
+  }
+
+  initFromStorage(): void {
     if (this.getToken()) {
       this.loadProfile();
     }

@@ -336,4 +336,134 @@ describe('ItemExplorerComponent', () => {
     expect(selectors).toContain('[data-list-alias="alias-1"]');
     expect(selectors).toContain('[id="element-id-1"]');
   });
+
+  it('supports keyboard navigation in the item list', () => {
+    const component = createComponent();
+    component.filteredItems = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'First item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Second item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_3',
+        uuid: 'uuid-3',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Third item',
+        variableId: '',
+        metadata: {},
+      },
+    ] as any;
+
+    const downEvent = {
+      key: 'ArrowDown',
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+      target: null,
+    } as any;
+    component.onTableKeydown(downEvent);
+
+    expect(component.selectedIndex).toBe(0);
+    expect(component.selectedItem?.uuid).toBe('uuid-1');
+    expect(downEvent.preventDefault).toHaveBeenCalled();
+
+    const endEvent = {
+      key: 'End',
+      ctrlKey: false,
+      metaKey: false,
+      preventDefault: vi.fn(),
+      target: null,
+    } as any;
+    component.onTableKeydown(endEvent);
+
+    expect(component.selectedIndex).toBe(2);
+    expect(component.selectedItem?.uuid).toBe('uuid-3');
+  });
+
+  it('routes manual ordering shortcuts to moveSelectedItem', () => {
+    const component = createComponent();
+    component.filteredItems = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'First item',
+        variableId: '',
+        metadata: {},
+      },
+    ] as any;
+    const moveSelectedItem = vi.spyOn(component, 'moveSelectedItem');
+
+    component.onTableKeydown({
+      key: 'ArrowUp',
+      ctrlKey: true,
+      metaKey: false,
+      preventDefault: vi.fn(),
+      target: null,
+    } as any);
+
+    expect(moveSelectedItem).toHaveBeenCalledWith(-1);
+  });
+
+  it('opens the draft save preview with Ctrl/Cmd+S', () => {
+    const component = createComponent();
+    component.canPublishExplorer = true;
+    const openSavePreviewDialog = vi
+      .spyOn(component, 'openSavePreviewDialog')
+      .mockImplementation(() => {});
+
+    const event = {
+      key: 's',
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      target: null,
+    } as any;
+
+    component.handleWindowKeydown(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(openSavePreviewDialog).toHaveBeenCalled();
+  });
+
+  it('closes open overlays with Escape', () => {
+    const component = createComponent();
+    component.showHistoryOverlay = true;
+
+    const event = {
+      key: 'Escape',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+      target: null,
+    } as any;
+
+    component.handleWindowKeydown(event);
+
+    expect(component.showHistoryOverlay).toBe(false);
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.stopPropagation).toHaveBeenCalled();
+  });
 });

@@ -75,6 +75,40 @@ Typical manager loop:
 5. save draft to publish changes,
 6. or discard the draft to revert to published state.
 
+## Keyboard Interaction
+
+The Item Explorer supports keyboard-first work for the most common navigation tasks.
+
+### Focus model
+
+- `Tab` moves between toolbar, filter fields, item list, preview actions, and dialogs.
+- The item list itself is a dedicated focus target. Once focused, list navigation works without
+  moving focus into every single table row.
+- Keyboard shortcuts are intentionally ignored while typing in inputs, selects, or textareas.
+
+### Item list shortcuts
+
+- `/` focuses the global item filter and selects its current content.
+- `ArrowUp` / `ArrowDown` move the current item selection within the filtered result set.
+- `Home` / `End` jump to the first or last visible item.
+- `PageUp` / `PageDown` jump by 10 items.
+- `Enter` or `Space` activates the current list selection.
+
+### Editing shortcuts
+
+- `Ctrl+S` / `Cmd+S` opens the existing draft save preview instead of triggering the browser's
+  page-save dialog.
+- In manual ordering mode, `Ctrl+ArrowUp` / `Cmd+ArrowUp` and
+  `Ctrl+ArrowDown` / `Cmd+ArrowDown` move the selected item within the shared order.
+- `Escape` closes the currently open overlay or dialog and returns focus to the previously active
+  control when possible.
+
+### Selection behavior
+
+- Sorting and filtering keep the current selection as long as the selected item is still visible.
+- If the selected item disappears from the current result set, the explorer falls back to the
+  first visible item so keyboard navigation remains continuous.
+
 ## Supported Change Types
 
 The client sends a `changeType` label with draft patches. This improves the usefulness of

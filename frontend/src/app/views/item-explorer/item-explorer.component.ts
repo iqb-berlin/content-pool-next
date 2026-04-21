@@ -79,7 +79,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
           >
             🗑️ Werte bereinigen
           </button>
-          <button class="btn btn-outline btn-sm" (click)="showColumnManager = true">
+          <button class="btn btn-outline btn-sm" (click)="openColumnManager()">
             👁️ Spalten verwalten
           </button>
           <button
@@ -248,14 +248,26 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
       <div left class="table-panel">
         <div class="table-toolbar">
           <input
+            #globalFilterInput
             class="filter-input"
             [(ngModel)]="filterText"
             placeholder="🔍 Items filtern..."
             (input)="applyFilter()"
           />
+          <div class="help-text">
+            Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
+            <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
+          </div>
         </div>
 
-        <div class="table-scroll">
+        <div
+          #tableScroll
+          class="table-scroll"
+          tabindex="0"
+          role="region"
+          aria-label="Item-Liste"
+          (keydown)="onTableKeydown($event)"
+        >
           <table class="table explorer-table">
             <thead>
               <tr>
@@ -332,8 +344,10 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             <tbody>
               @for (item of filteredItems; track item.unitId + '_' + item.itemId; let i = $index) {
                 <tr
+                  [id]="getItemRowId(item)"
                   [class.active]="selectedItem?.uuid === item.uuid"
                   [class.no-preview]="!canPreviewItem(item)"
+                  [attr.aria-selected]="selectedItem?.uuid === item.uuid"
                   (click)="selectItem(item, i)"
                 >
                   <td class="sticky-col">
@@ -519,7 +533,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <option value="view-all">Paging: Alles (Print)</option>
               <option value="print-ids">Paging: Alles + IDs (Print)</option>
             </select>
-            <button class="btn btn-outline btn-sm" (click)="showOverlay = 'coding'">
+            <button class="btn btn-outline btn-sm" (click)="openCodingOverlay()">
               📋 Kodierung
             </button>
             <button
@@ -566,11 +580,13 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Coding Scheme -->
     @if (showOverlay === 'coding') {
-      <div class="overlay-backdrop" (click)="showOverlay = null">
+      <div class="overlay-backdrop" (click)="closeCodingOverlay()">
         <div class="overlay-dialog" (click)="$event.stopPropagation()">
           <div class="overlay-header">
             <h2>Kodierung – {{ selectedItem?.unitLabel }}</h2>
-            <button class="btn btn-sm btn-outline" (click)="showOverlay = null">✕ Schließen</button>
+            <button class="btn btn-sm btn-outline" (click)="closeCodingOverlay()">
+              ✕ Schließen
+            </button>
           </div>
           <div class="overlay-content">
             @if (currentCodingSchemeAsText) {
@@ -847,7 +863,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Column Manager -->
     @if (showColumnManager) {
-      <div class="overlay-backdrop" (click)="showColumnManager = false">
+      <div class="overlay-backdrop" (click)="closeColumnManager()">
         <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
           <div class="overlay-header">
             <div class="drawer-title">
@@ -857,7 +873,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
               </div>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="showColumnManager = false">✕</button>
+            <button class="btn btn-sm btn-outline" (click)="closeColumnManager()">✕</button>
           </div>
           <div class="overlay-content">
             <div class="column-manager-toolbar">
@@ -932,7 +948,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 {{ metadataSettings.visible.length }} von {{ allColumns.length }} Spalten gewählt
               </div>
               <div class="footer-actions">
-                <button class="btn btn-outline" (click)="showColumnManager = false">
+                <button class="btn btn-outline" (click)="closeColumnManager()">
                   Abbrechen
                 </button>
                 <button class="btn btn-primary" (click)="saveMetadataSettings()">
@@ -949,7 +965,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
     @if (showSaveConfirmDialog) {
       <div
         class="overlay-backdrop"
-        (click)="!confirmDialogState && (showSaveConfirmDialog = false)"
+        (click)="!confirmDialogState && closeSaveConfirmDialog()"
       >
         <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
           <div
@@ -970,7 +986,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             <button
               class="btn btn-sm btn-outline"
               [disabled]="confirmDialogState === 'saving'"
-              (click)="showSaveConfirmDialog = false"
+              (click)="closeSaveConfirmDialog()"
             >
               ✕
             </button>
@@ -994,7 +1010,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <button
                 class="btn btn-outline"
                 [disabled]="confirmDialogState === 'saving'"
-                (click)="showSaveConfirmDialog = false"
+                (click)="closeSaveConfirmDialog()"
               >
                 Abbrechen
               </button>
@@ -1015,7 +1031,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
     @if (showDeleteConfirmDialog) {
       <div
         class="overlay-backdrop"
-        (click)="!confirmDialogState && (showDeleteConfirmDialog = false)"
+        (click)="!confirmDialogState && closeDeleteConfirmDialog()"
       >
         <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
           <div
@@ -1036,7 +1052,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
             <button
               class="btn btn-sm btn-outline"
               [disabled]="confirmDialogState === 'deleting'"
-              (click)="showDeleteConfirmDialog = false"
+              (click)="closeDeleteConfirmDialog()"
             >
               ✕
             </button>
@@ -1065,7 +1081,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
               <button
                 class="btn btn-outline"
                 [disabled]="confirmDialogState === 'deleting'"
-                (click)="showDeleteConfirmDialog = false"
+                (click)="closeDeleteConfirmDialog()"
               >
                 Abbrechen
               </button>
@@ -1085,7 +1101,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Raw Response State Data -->
     @if (showRawDataOverlay) {
-      <div class="overlay-backdrop" (click)="showRawDataOverlay = false">
+      <div class="overlay-backdrop" (click)="closeRawDataOverlay()">
         <div class="overlay-dialog" style="max-width: 900px;" (click)="$event.stopPropagation()">
           <div class="overlay-header">
             <div class="drawer-title">
@@ -1095,7 +1111,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <small>Alle gespeicherten Response States</small>
               </div>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="showRawDataOverlay = false">✕</button>
+            <button class="btn btn-sm btn-outline" (click)="closeRawDataOverlay()">✕</button>
           </div>
           <div class="overlay-content">
             @if (allResponseStates.length === 0) {
@@ -1123,7 +1139,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
     <!-- OVERLAY: Explorer Change History -->
     @if (showHistoryOverlay) {
-      <div class="overlay-backdrop" (click)="showHistoryOverlay = false">
+      <div class="overlay-backdrop" (click)="closeHistoryOverlay()">
         <div class="overlay-dialog" style="max-width: 980px;" (click)="$event.stopPropagation()">
           <div class="overlay-header">
             <div class="drawer-title">
@@ -1133,7 +1149,7 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
                 <small>Wer hat wann was geändert</small>
               </div>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="showHistoryOverlay = false">✕</button>
+            <button class="btn btn-sm btn-outline" (click)="closeHistoryOverlay()">✕</button>
           </div>
           <div class="overlay-content">
             <div class="column-manager-toolbar">
@@ -1347,6 +1363,9 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
         overflow: hidden;
       }
       .table-toolbar {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
         padding: 12px 16px;
         border-bottom: 1px solid var(--color-border);
         background: var(--color-surface);
@@ -1374,6 +1393,12 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
         /* Fix corner and layout shift */
         scrollbar-gutter: stable;
         position: relative;
+      }
+      .table-scroll:focus {
+        outline: none;
+        box-shadow:
+          var(--shadow),
+          inset 0 0 0 2px rgba(41, 128, 185, 0.35);
       }
       /* Better scrollbar styling to avoid 'messy' intersection */
       .table-scroll::-webkit-scrollbar {
@@ -2188,6 +2213,8 @@ type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
   ],
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
+  @ViewChild('globalFilterInput') globalFilterInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('tableScroll') tableScroll?: ElementRef<HTMLDivElement>;
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
 
   acpId = '';
@@ -2249,11 +2276,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private legacyPageNavigationTimers: ReturnType<typeof setTimeout>[] = [];
   private readonly legacyPageNavigationDelaysMs = [160, 520, 1100];
+  private readonly listPageSize = 10;
   private definitionContent: string | null = null;
   private playerFrameReady = false;
   private responseStateReady = false;
   private unitLoadToken = 0;
   private startSessionCounter = 0;
+  private overlayReturnFocus: HTMLElement | null = null;
 
   // File Upload
   showUploadReport = false;
@@ -2545,6 +2574,40 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     event.returnValue = true;
   }
 
+  @HostListener('window:keydown', ['$event'])
+  handleWindowKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented) {
+      return;
+    }
+
+    const lowerKey = event.key.toLowerCase();
+    if (lowerKey === 'escape' && this.closeTopmostOverlay()) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && lowerKey === 's' && this.canPublishExplorer) {
+      event.preventDefault();
+      if (!this.hasModalOverlay()) {
+        this.openSavePreviewDialog();
+      }
+      return;
+    }
+
+    if (this.hasModalOverlay()) {
+      return;
+    }
+
+    if (event.key === '/' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      if (this.isEditableTarget(event.target)) {
+        return;
+      }
+      event.preventDefault();
+      this.focusGlobalFilter();
+    }
+  }
+
   canDeactivate(): boolean | Promise<boolean> {
     if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
       return true;
@@ -2601,6 +2664,59 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   // --- Sorting ---
+  onTableKeydown(event: KeyboardEvent) {
+    if (this.filteredItems.length === 0 || this.isEditableTarget(event.target)) {
+      return;
+    }
+
+    const hasModifier = event.ctrlKey || event.metaKey;
+    if (hasModifier && event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.moveSelectedItem(-1);
+      return;
+    }
+    if (hasModifier && event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.moveSelectedItem(1);
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.getKeyboardNavigationIndex(1), true);
+        return;
+      case 'ArrowUp':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.getKeyboardNavigationIndex(-1), true);
+        return;
+      case 'Home':
+        event.preventDefault();
+        this.selectFilteredItemAt(0, true);
+        return;
+      case 'End':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.filteredItems.length - 1, true);
+        return;
+      case 'PageDown':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.getKeyboardNavigationIndex(this.listPageSize), true);
+        return;
+      case 'PageUp':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.getKeyboardNavigationIndex(-this.listPageSize), true);
+        return;
+      case 'Enter':
+      case ' ':
+      case 'Spacebar':
+        event.preventDefault();
+        this.selectFilteredItemAt(this.getKeyboardNavigationIndex(0), true);
+        return;
+      default:
+        return;
+    }
+  }
+
   sortBy(field: string) {
     if (this.sortField === field && !this.sortIsMeta) {
       this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
@@ -2632,6 +2748,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         const posB = rank.has(b.uuid) ? (rank.get(b.uuid) as number) : Number.MAX_SAFE_INTEGER;
         return posA - posB;
       });
+      this.syncSelectionAfterListMutation();
       if (shouldPersist) {
         this.saveUiPreferences();
       }
@@ -2663,6 +2780,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
+
+    this.syncSelectionAfterListMutation();
 
     if (shouldPersist) {
       this.saveUiPreferences();
@@ -2710,6 +2829,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   openClearEmpiricalDifficultiesDialog() {
+    this.rememberFocusBeforeOverlay();
     this.showClearEmpiricalDifficultiesDialog = true;
     this.clearEmpiricalDifficultiesBusy = false;
     this.clearEmpiricalDifficultiesError = '';
@@ -2719,6 +2839,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (this.clearEmpiricalDifficultiesBusy) return;
     this.showClearEmpiricalDifficultiesDialog = false;
     this.clearEmpiricalDifficultiesError = '';
+    this.restoreFocusAfterOverlayClose();
   }
 
   confirmClearEmpiricalDifficulties() {
@@ -2739,7 +2860,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           }
           this.reloadItems();
           this.clearEmpiricalDifficultiesBusy = false;
-          this.showClearEmpiricalDifficultiesDialog = false;
+          this.closeClearEmpiricalDifficultiesDialog();
         },
         error: (err) => {
           console.error(err);
@@ -2781,7 +2902,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Item Selection ---
   selectItem(item: ExplorerItem, index: number) {
-    if (this.selectedItem?.uuid === item.uuid) return;
+    if (this.selectedItem?.uuid === item.uuid) {
+      this.selectedIndex = index;
+      return;
+    }
 
     this.selectedItem = item;
     this.selectedIndex = index;
@@ -2899,6 +3023,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   saveCurrentResponseState() {
+    this.rememberFocusBeforeOverlay();
     if (!this.selectedItem || !this.currentResponseData) {
       this.confirmDialogError =
         'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
@@ -2926,7 +3051,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.hasResponseState = true;
           this.isFallbackState = false;
           this.confirmDialogState = 'idle';
-          this.showSaveConfirmDialog = false;
+          this.closeSaveConfirmDialog();
         },
         error: (err) => {
           console.error('Error saving response state:', err);
@@ -2938,6 +3063,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   resetResponseState() {
     if (!this.selectedItem) return;
+    this.rememberFocusBeforeOverlay();
     this.confirmDialogError = '';
     this.showDeleteConfirmDialog = true;
   }
@@ -2955,7 +3081,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.isFallbackState = false;
           this.currentResponseData = null;
           this.confirmDialogState = 'idle';
-          this.showDeleteConfirmDialog = false;
+          this.closeDeleteConfirmDialog();
         },
         error: (err) => {
           console.error('Error deleting response state:', err);
@@ -2966,6 +3092,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   loadAllResponseStates() {
+    this.rememberFocusBeforeOverlay();
     this.api.getAllResponseStates(this.acpId).subscribe({
       next: (states) => {
         this.allResponseStates = states;
@@ -2979,15 +3106,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   navigateItem(delta: number) {
-    const newIndex = this.selectedIndex + delta;
-    if (newIndex < 0 || newIndex >= this.filteredItems.length) return;
-    this.selectItem(this.filteredItems[newIndex], newIndex);
-
-    // Scroll table row into view
-    setTimeout(() => {
-      const row = document.querySelector('tr.active');
-      row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }, 50);
+    this.selectFilteredItemAt(this.selectedIndex + delta, true);
   }
 
   onPlayerLoaded() {
@@ -3676,6 +3795,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   saveMetadataSettings() {
     this.columns = this.filterVisibleColumns(this.allColumns);
     this.showColumnManager = false;
+    this.restoreFocusAfterOverlayClose();
     this.queueDraftPatch(
       'METADATA_COLUMNS_CHANGED',
       {
@@ -3777,6 +3897,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return false;
     }
 
+    this.rememberFocusBeforeOverlay();
     this.showLeaveWithChangesDialog = true;
     this.leaveWithChangesDialogState = 'idle';
     this.leaveWithChangesDialogError = '';
@@ -3823,6 +3944,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.showLeaveWithChangesDialog = false;
     this.leaveWithChangesDialogState = 'idle';
     this.leaveWithChangesDialogError = '';
+    if (!result) {
+      this.restoreFocusAfterOverlayClose();
+    }
     resolver?.(result);
   }
 
@@ -4004,12 +4128,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
       return;
     }
+    this.rememberFocusBeforeOverlay();
     this.draftPreviewSummary = this.buildDraftPreviewSummary();
     this.showSavePreviewDialog = true;
   }
 
   cancelSavePreviewDialog() {
     this.showSavePreviewDialog = false;
+    this.restoreFocusAfterOverlayClose();
   }
 
   confirmSaveExplorerDraft() {
@@ -4021,6 +4147,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
       return;
     }
+    this.rememberFocusBeforeOverlay();
     this.showDiscardDraftDialog = true;
     this.discardDraftDialogBusy = false;
     this.discardDraftDialogError = '';
@@ -4030,6 +4157,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (this.discardDraftDialogBusy) return;
     this.showDiscardDraftDialog = false;
     this.discardDraftDialogError = '';
+    this.restoreFocusAfterOverlayClose();
   }
 
   async confirmDiscardDraftDialog() {
@@ -4039,7 +4167,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const discarded = await this.discardExplorerDraft(true);
     this.discardDraftDialogBusy = false;
     if (discarded) {
-      this.showDiscardDraftDialog = false;
+      this.closeDiscardDraftDialog();
       return;
     }
     this.discardDraftDialogError =
@@ -4069,6 +4197,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.applySharedExplorerEnvelope(envelope, true);
       this.reloadItems();
       this.lastDraftOperationError = '';
+      if (!this.showLeaveWithChangesDialog) {
+        this.restoreFocusAfterOverlayClose();
+      }
       return true;
     } catch (error: any) {
       console.error('Failed to save draft', error);
@@ -4110,6 +4241,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.applySharedExplorerEnvelope(envelope, true);
       this.reloadItems();
       this.lastDraftOperationError = '';
+      if (!this.showLeaveWithChangesDialog) {
+        this.restoreFocusAfterOverlayClose();
+      }
       return true;
     } catch (error: any) {
       console.error('Failed to discard draft', error);
@@ -4134,6 +4268,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   showHistory() {
+    this.rememberFocusBeforeOverlay();
     this.showHistoryOverlay = true;
     this.historyLoading = true;
     this.historyError = '';
@@ -4148,6 +4283,71 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         this.historyError = 'Änderungsverlauf konnte nicht geladen werden.';
       },
     });
+  }
+
+  openCodingOverlay() {
+    this.rememberFocusBeforeOverlay();
+    this.showOverlay = 'coding';
+  }
+
+  closeCodingOverlay() {
+    if (this.showOverlay !== 'coding') {
+      return;
+    }
+    this.showOverlay = null;
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  openColumnManager() {
+    this.rememberFocusBeforeOverlay();
+    this.showColumnManager = true;
+  }
+
+  closeColumnManager() {
+    if (!this.showColumnManager) {
+      return;
+    }
+    this.showColumnManager = false;
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  closeSaveConfirmDialog() {
+    if (this.confirmDialogState !== 'idle') {
+      return;
+    }
+    this.showSaveConfirmDialog = false;
+    this.confirmDialogError = '';
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  closeDeleteConfirmDialog() {
+    if (this.confirmDialogState !== 'idle') {
+      return;
+    }
+    this.showDeleteConfirmDialog = false;
+    this.confirmDialogError = '';
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  closeRawDataOverlay() {
+    if (!this.showRawDataOverlay) {
+      return;
+    }
+    this.showRawDataOverlay = false;
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  closeHistoryOverlay() {
+    if (!this.showHistoryOverlay) {
+      return;
+    }
+    this.showHistoryOverlay = false;
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  getItemRowId(item: ExplorerItem): string {
+    const rawId = item.uuid || `${item.unitId}_${item.itemId}`;
+    return `item-explorer-row-${String(rawId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   }
 
   exportHistoryCsv() {
@@ -4233,6 +4433,216 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     return summary;
+  }
+
+  private selectFilteredItemAt(index: number, shouldScroll = false) {
+    if (this.filteredItems.length === 0) {
+      this.clearSelectedItem();
+      return;
+    }
+
+    const targetIndex = Math.max(0, Math.min(index, this.filteredItems.length - 1));
+    this.selectItem(this.filteredItems[targetIndex], targetIndex);
+    if (shouldScroll) {
+      this.scrollActiveRowIntoView();
+    }
+  }
+
+  private getKeyboardNavigationIndex(delta: number): number {
+    const currentIndex = this.getSelectedFilteredIndex();
+    if (currentIndex === -1) {
+      return delta < 0 ? this.filteredItems.length - 1 : 0;
+    }
+    return currentIndex + delta;
+  }
+
+  private getSelectedFilteredIndex(): number {
+    if (this.selectedIndex >= 0 && this.selectedIndex < this.filteredItems.length) {
+      const itemAtIndex = this.filteredItems[this.selectedIndex];
+      if (itemAtIndex?.uuid === this.selectedItem?.uuid) {
+        return this.selectedIndex;
+      }
+    }
+
+    if (!this.selectedItem) {
+      return -1;
+    }
+
+    return this.filteredItems.findIndex((item) => item.uuid === this.selectedItem?.uuid);
+  }
+
+  private scrollActiveRowIntoView() {
+    setTimeout(() => {
+      const row = this.tableScroll?.nativeElement.querySelector('tr.active') as HTMLElement | null;
+      row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 50);
+  }
+
+  private syncSelectionAfterListMutation() {
+    if (this.filteredItems.length === 0) {
+      this.clearSelectedItem();
+      return;
+    }
+
+    if (!this.selectedItem) {
+      this.selectedIndex = -1;
+      return;
+    }
+
+    const selectedIndex = this.filteredItems.findIndex(
+      (item) => item.uuid === this.selectedItem?.uuid,
+    );
+    if (selectedIndex >= 0) {
+      this.selectItem(this.filteredItems[selectedIndex], selectedIndex);
+      return;
+    }
+
+    this.selectFilteredItemAt(0);
+  }
+
+  private clearSelectedItem() {
+    if (!this.selectedItem && this.selectedIndex === -1) {
+      return;
+    }
+
+    this.selectedItem = null;
+    this.selectedIndex = -1;
+    this.currentUnitMetadata = [];
+    this.currentCodingScheme = null;
+    this.currentCodingSchemeAsText = null;
+    this.currentResponseData = null;
+    this.hasResponseState = false;
+    this.isFallbackState = false;
+    this.previewUnavailableReason = '';
+    this.resetPlayer();
+  }
+
+  private focusGlobalFilter() {
+    const input = this.globalFilterInput?.nativeElement;
+    if (!input) {
+      return;
+    }
+    input.focus();
+    input.select();
+  }
+
+  private rememberFocusBeforeOverlay() {
+    if (
+      this.hasModalOverlay() ||
+      typeof document === 'undefined' ||
+      typeof HTMLElement === 'undefined'
+    ) {
+      return;
+    }
+    const activeElement = document.activeElement;
+    this.overlayReturnFocus = activeElement instanceof HTMLElement ? activeElement : null;
+  }
+
+  private restoreFocusAfterOverlayClose() {
+    if (this.hasModalOverlay()) {
+      return;
+    }
+
+    const fallbackTarget =
+      this.tableScroll?.nativeElement || this.globalFilterInput?.nativeElement || null;
+    const target =
+      this.overlayReturnFocus && this.overlayReturnFocus.isConnected
+        ? this.overlayReturnFocus
+        : fallbackTarget;
+    this.overlayReturnFocus = null;
+
+    if (!target) {
+      return;
+    }
+
+    setTimeout(() => {
+      target.focus({ preventScroll: true });
+    }, 0);
+  }
+
+  private hasModalOverlay(): boolean {
+    return (
+      this.showOverlay === 'coding' ||
+      this.showUploadReport ||
+      this.showErrorDialog ||
+      this.showColumnManager ||
+      this.showSaveConfirmDialog ||
+      this.showDeleteConfirmDialog ||
+      this.showRawDataOverlay ||
+      this.showHistoryOverlay ||
+      this.showSavePreviewDialog ||
+      this.showDiscardDraftDialog ||
+      this.showClearEmpiricalDifficultiesDialog ||
+      this.showLeaveWithChangesDialog
+    );
+  }
+
+  private closeTopmostOverlay(): boolean {
+    if (this.showLeaveWithChangesDialog) {
+      this.stayOnPage();
+      return true;
+    }
+    if (this.showClearEmpiricalDifficultiesDialog) {
+      this.closeClearEmpiricalDifficultiesDialog();
+      return true;
+    }
+    if (this.showDiscardDraftDialog) {
+      this.closeDiscardDraftDialog();
+      return true;
+    }
+    if (this.showSavePreviewDialog) {
+      this.cancelSavePreviewDialog();
+      return true;
+    }
+    if (this.showDeleteConfirmDialog) {
+      this.closeDeleteConfirmDialog();
+      return true;
+    }
+    if (this.showSaveConfirmDialog) {
+      this.closeSaveConfirmDialog();
+      return true;
+    }
+    if (this.showHistoryOverlay) {
+      this.closeHistoryOverlay();
+      return true;
+    }
+    if (this.showRawDataOverlay) {
+      this.closeRawDataOverlay();
+      return true;
+    }
+    if (this.showColumnManager) {
+      this.closeColumnManager();
+      return true;
+    }
+    if (this.showErrorDialog) {
+      this.showErrorDialog = false;
+      this.restoreFocusAfterOverlayClose();
+      return true;
+    }
+    if (this.showUploadReport) {
+      this.showUploadReport = false;
+      this.restoreFocusAfterOverlayClose();
+      return true;
+    }
+    if (this.showOverlay === 'coding') {
+      this.closeCodingOverlay();
+      return true;
+    }
+    if (this.showMetadataDrawer) {
+      this.showMetadataDrawer = false;
+      return true;
+    }
+    return false;
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) {
+      return false;
+    }
+    if (target.isContentEditable) {
+      return true;
+    }
+    return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
   }
 
   private queueDraftPatch(

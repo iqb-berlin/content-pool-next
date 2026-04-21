@@ -2246,6 +2246,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private suppressDraftPatch = false;
   private saveStatusResetTimeout: ReturnType<typeof setTimeout> | null = null;
   private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private legacyPageNavigationTimers: ReturnType<typeof setTimeout>[] = [];
+  private readonly legacyPageNavigationDelaysMs = [160, 520, 1100];
   private definitionContent: string | null = null;
   private playerFrameReady = false;
   private responseStateReady = false;
@@ -2519,6 +2521,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
     if (this.draftPatchTimeout) {
       clearTimeout(this.draftPatchTimeout);
       this.draftPatchTimeout = null;
@@ -2763,6 +2766,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   resetPlayer() {
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
     this.playerSrcDoc = null;
     this.unit = null;
     this.definitionContent = null;
@@ -2990,6 +2994,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   onPagingModeChange() {
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
     const src = this.playerSrcDoc;
     this.playerFrameReady = false;
     this.playerSrcDoc = null;
@@ -3150,11 +3155,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return;
     }
     this.previewUnavailableReason = '';
+    const sessionId = `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter + 1}`;
+    const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
 
     this.startSessionCounter += 1;
     this.sendToPlayer({
       type: 'vopStartCommand',
-      sessionId: `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter}`,
+      sessionId,
       unitDefinition: this.definitionContent,
       unitState: {
         dataParts:
@@ -3177,8 +3184,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },
     });
+    this.scheduleLegacyPageNavigation(sessionId, startPage, usesPagedNavigation);
 
-    if (this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids') {
+    if (usesPagedNavigation) {
       this.playerHeight = '100%';
       this.stopAutoResize();
     } else {
@@ -3186,6 +3194,27 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.startAutoResize();
     }
     this.schedulePlayerFocus();
+  }
+
+  private scheduleLegacyPageNavigation(
+    sessionId: string,
+    startPage: number | undefined,
+    enabled: boolean,
+  ) {
+    this.clearLegacyPageNavigationTimers();
+    if (!enabled || startPage === undefined) return;
+
+    const target = startPage.toString();
+    this.legacyPageNavigationDelaysMs.forEach((delayMs) => {
+      const timer = setTimeout(() => {
+        this.sendToPlayer({
+          type: 'vopPageNavigationCommand',
+          sessionId,
+          target,
+        });
+      }, delayMs);
+      this.legacyPageNavigationTimers.push(timer);
+    });
   }
 
   private getFocusSelectors(): string[] {
@@ -3205,9 +3234,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       );
     }
 
-    const variableRef = this.escapeSelectorValue(this.resolveVariableRef(selectedItem));
-    if (variableRef) {
+    this.getResolvedVariableRefs(selectedItem).forEach((identifier) => {
+      const variableRef = this.escapeSelectorValue(identifier);
+      if (!variableRef) return;
       selectors.push(
+        `[data-element-id="${variableRef}"]`,
+        `[data-element-alias="${variableRef}"]`,
+        `[data-list-alias="${variableRef}"]`,
         `[data-variable-id="${variableRef}"]`,
         `[data-variable="${variableRef}"]`,
         `[data-alias="${variableRef}"]`,
@@ -3216,9 +3249,17 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         `[name="${variableRef}"]`,
         `[id="${variableRef}"]`,
       );
-    }
+    });
 
     return Array.from(new Set(selectors));
+  }
+
+  private getResolvedVariableRefs(item?: ExplorerItem | null): string[] {
+    const variableRef = this.resolveVariableRef(item);
+    if (!variableRef) return [];
+    if (!this.definitionContent) return [variableRef];
+
+    return this.voudService.getFocusIdentifiers(this.definitionContent, variableRef);
   }
 
   private resolveVariableRef(item?: ExplorerItem | null): string {
@@ -3355,6 +3396,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       clearTimeout(this.focusRetryTimer);
       this.focusRetryTimer = null;
     }
+  }
+
+  private clearLegacyPageNavigationTimers() {
+    this.legacyPageNavigationTimers.forEach((timer) => clearTimeout(timer));
+    this.legacyPageNavigationTimers = [];
   }
 
   private sendToPlayer(msg: any) {

@@ -132,6 +132,61 @@ the result later.
 
 The same distinction exists when clearing empirical difficulty values.
 
+## Player Preview and Legacy Player Compatibility
+
+The Item Explorer and the item detail view both embed the unit player inside an iframe and
+try to focus the currently selected item automatically.
+
+The preview pipeline is intentionally defensive because ACPs can reference different
+generations of Aspect player builds:
+
+1. the client resolves the preview target from `sourceVariable` or `variableId`,
+2. `VoudService.getStartPage(...)` derives the page from the VOUD definition,
+3. `VoudService.getFocusIdentifiers(...)` resolves equivalent `alias` and `id` values from
+   the same VOUD element,
+4. the iframe DOM is searched using both newer and older marker conventions.
+
+The current DOM lookup covers:
+
+- `data-element-id`
+- `data-element-alias`
+- `data-list-alias`
+- `data-variable-id`
+- `data-variable`
+- `data-alias`
+- `data-ref`
+- `data-source-variable`
+- `name`
+- `id`
+
+If none of those selectors match, the client falls back to a text-based lookup.
+
+### Legacy page-navigation fallback
+
+Newer Aspect players respect `playerConfig.startPage` directly. Older releases do not.
+
+To keep previews usable with older players, the frontend sends the normal
+`vopStartCommand` first and then, in paged preview modes, repeats
+`vopPageNavigationCommand` with the same target page after short delays.
+
+This fallback is applied only for paged previews:
+
+- item detail view with `printMode = off`
+- item explorer with paging modes other than `view-all` and `print-ids`
+
+The repeated command is mainly there for older players such as `player/2.4.11`, where the
+page-layout component already accepts `vopPageNavigationCommand` but the unit component still
+ignores `playerConfig.startPage`.
+
+### Compatibility guidance
+
+- `player/2.4.11`: best effort only. Page navigation can be nudged through the fallback, but
+  DOM focus is still limited because stable `data-element-*` markers are missing.
+- `player/2.9.4`: reliable for normal paged preview because `startPage` and stable element
+  marker attributes are both available.
+- `player/2.10.0` and newer: recommended when `view-all` or print rendering also needs to be
+  targetable.
+
 ## History and Auditing
 
 Every explorer change is written to `AcpItemExplorerChangeLog`.

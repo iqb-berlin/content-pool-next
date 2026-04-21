@@ -45,3 +45,54 @@ describe('VoudService.getStartPage', () => {
     expect(service.getStartPage(definition, 'b2')).toBe(3);
   });
 });
+
+describe('VoudService.getFocusIdentifiers', () => {
+  const service = new VoudService();
+
+  it('returns both alias and id for a matching element', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [{ elements: [{ alias: 'A1', id: 'text-field-1' }] }],
+        },
+      ],
+    });
+
+    expect(service.getFocusIdentifiers(definition, 'A1')).toEqual(['A1', 'text-field-1']);
+  });
+
+  it('matches identifiers case-insensitively and trims values', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [{ elements: [{ alias: '  DhB00102  ', id: 'text-field-2' }] }],
+        },
+      ],
+    });
+
+    expect(service.getFocusIdentifiers(definition, 'dhb00102')).toEqual(
+      expect.arrayContaining(['dhb00102', 'DhB00102', 'text-field-2']),
+    );
+  });
+
+  it('ignores visibility rule references when resolving identifiers', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              visibilityRules: [{ id: 'RULE_TARGET' }],
+              elements: [{ alias: 'visible-target', id: 'text-field-3' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.getFocusIdentifiers(definition, 'RULE_TARGET')).toEqual(['RULE_TARGET']);
+    expect(service.getFocusIdentifiers(definition, 'visible-target')).toEqual([
+      'visible-target',
+      'text-field-3',
+    ]);
+  });
+});

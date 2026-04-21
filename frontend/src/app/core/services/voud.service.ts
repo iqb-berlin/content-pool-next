@@ -11,6 +11,11 @@ export interface PrepareDefinitionOutput {
   variablePages: TransformedVariablePage[];
 }
 
+interface IdentifierBearingNode {
+  id?: unknown;
+  alias?: unknown;
+}
+
 @Injectable({ providedIn: 'root' })
 export class VoudService {
   private parseDefinition(definition: string): any {
@@ -112,6 +117,35 @@ export class VoudService {
     }
   }
 
+  /**
+   * Resolves equivalent identifiers for a target variable by inspecting the VOUD.
+   * This helps consumers support players that expose either `id` or `alias` in the DOM.
+   */
+  getFocusIdentifiers(definition: string, variableId: string): string[] {
+    const target = String(variableId || '').trim();
+    if (!target) return [];
+
+    try {
+      const unitDefinition = this.parseDefinition(definition);
+      const identifiers = new Set<string>([target]);
+      const normalizedTarget = target.toLowerCase();
+
+      this.visitNodes(unitDefinition, (node) => {
+        const nodeIdentifiers = this.getNodeIdentifiers(node);
+        if (!nodeIdentifiers.length) return;
+
+        if (nodeIdentifiers.some((identifier) => identifier.toLowerCase() === normalizedTarget)) {
+          nodeIdentifiers.forEach((identifier) => identifiers.add(identifier));
+        }
+      });
+
+      return Array.from(identifiers);
+    } catch (e) {
+      console.error('Error resolving focus identifiers from VOUD:', e);
+      return [target];
+    }
+  }
+
   private getPageVariableRefs(page: any): string[] {
     const aliases = this.listSimplify(this.getDeepestElements(page, 'alias', ['visibilityRules']));
     const ids = this.listSimplify(this.getDeepestElements(page, 'id', ['visibilityRules']));
@@ -122,6 +156,41 @@ export class VoudService {
           .filter((value) => value.length > 0),
       ),
     );
+  }
+
+  private getNodeIdentifiers(node: IdentifierBearingNode): string[] {
+    return Array.from(
+      new Set(
+        [node?.id, node?.alias]
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+  }
+
+  private visitNodes(
+    node: unknown,
+    visitor: (node: IdentifierBearingNode) => void,
+    noParent: string[] = ['visibilityRules'],
+  ): void {
+    if (typeof node !== 'object' || node === null) {
+      return;
+    }
+
+    if (!Array.isArray(node)) {
+      visitor(node as IdentifierBearingNode);
+    }
+
+    if (Array.isArray(node)) {
+      node.forEach((item) => this.visitNodes(item, visitor, noParent));
+      return;
+    }
+
+    Object.entries(node).forEach(([key, value]) => {
+      if (!noParent.includes(key)) {
+        this.visitNodes(value, visitor, noParent);
+      }
+    });
   }
 
   private getDeepestElements(x: any, label: string, noParent: string[] = []): any[] {

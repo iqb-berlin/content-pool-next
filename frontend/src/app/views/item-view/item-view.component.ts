@@ -209,7 +209,9 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   private playerFrameReady = false;
   private unitLoadToken = 0;
   private startSessionCounter = 0;
-  private focusRetryTimer: any = null;
+  private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private legacyPageNavigationTimers: ReturnType<typeof setTimeout>[] = [];
+  private readonly legacyPageNavigationDelaysMs = [160, 520, 1100];
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
@@ -269,6 +271,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
   }
 
   onPlayerLoaded() {
@@ -285,6 +288,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     this.highlightApplied = false;
     this.focusWarning = '';
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
     setTimeout(() => {
       this.playerSrcDoc = src;
     }, 50);
@@ -331,6 +335,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     this.responseStateData = null;
     this.playerHeight = '100%';
     this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
   }
 
   private loadPlayerHtml(dependencies: any[], token: number) {
@@ -392,11 +397,12 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     const startPage = variableRef
       ? this.voudService.getStartPage(this.definitionContent, variableRef)
       : undefined;
+    const sessionId = `review-item-${this.itemId}-${this.startSessionCounter + 1}`;
 
     this.startSessionCounter += 1;
     this.sendToPlayer({
       type: 'vopStartCommand',
-      sessionId: `review-item-${this.itemId}-${this.startSessionCounter}`,
+      sessionId,
       unitDefinition: this.definitionContent,
       unitState: {
         dataParts:
@@ -413,6 +419,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },
     });
+    this.scheduleLegacyPageNavigation(sessionId, startPage, this.printMode === 'off');
 
     if (this.printMode === 'off') {
       this.playerHeight = '100%';
@@ -423,6 +430,27 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     }
 
     this.schedulePlayerFocus();
+  }
+
+  private scheduleLegacyPageNavigation(
+    sessionId: string,
+    startPage: number | undefined,
+    enabled: boolean,
+  ) {
+    this.clearLegacyPageNavigationTimers();
+    if (!enabled || startPage === undefined) return;
+
+    const target = startPage.toString();
+    this.legacyPageNavigationDelaysMs.forEach((delayMs) => {
+      const timer = setTimeout(() => {
+        this.sendToPlayer({
+          type: 'vopPageNavigationCommand',
+          sessionId,
+          target,
+        });
+      }, delayMs);
+      this.legacyPageNavigationTimers.push(timer);
+    });
   }
 
   private schedulePlayerFocus() {
@@ -491,11 +519,13 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       );
     }
 
-    const variableRef = this.escapeSelectorValue(
-      this.item?.sourceVariable || this.item?.variableId || '',
-    );
-    if (variableRef) {
+    this.getResolvedVariableRefs().forEach((identifier) => {
+      const variableRef = this.escapeSelectorValue(identifier);
+      if (!variableRef) return;
       selectors.push(
+        `[data-element-id="${variableRef}"]`,
+        `[data-element-alias="${variableRef}"]`,
+        `[data-list-alias="${variableRef}"]`,
         `[data-variable-id="${variableRef}"]`,
         `[data-variable="${variableRef}"]`,
         `[data-alias="${variableRef}"]`,
@@ -504,9 +534,17 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         `[name="${variableRef}"]`,
         `[id="${variableRef}"]`,
       );
-    }
+    });
 
     return Array.from(new Set(selectors));
+  }
+
+  private getResolvedVariableRefs(): string[] {
+    const variableRef = String(this.item?.sourceVariable || this.item?.variableId || '').trim();
+    if (!variableRef) return [];
+    if (!this.definitionContent) return [variableRef];
+
+    return this.voudService.getFocusIdentifiers(this.definitionContent, variableRef);
   }
 
   private findElementByText(
@@ -667,6 +705,11 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       clearTimeout(this.focusRetryTimer);
       this.focusRetryTimer = null;
     }
+  }
+
+  private clearLegacyPageNavigationTimers() {
+    this.legacyPageNavigationTimers.forEach((timer) => clearTimeout(timer));
+    this.legacyPageNavigationTimers = [];
   }
 
   private startAutoResize() {

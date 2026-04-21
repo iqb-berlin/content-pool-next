@@ -3,13 +3,17 @@ import { ItemExplorerComponent } from './item-explorer.component';
 
 function createComponent(options?: {
   getStartPage?: (definition: string, variableId: string) => number | undefined;
+  getFocusIdentifiers?: (definition: string, variableId: string) => string[];
   api?: Record<string, unknown>;
 }) {
   const route = { snapshot: { paramMap: { get: () => 'acp-1' } } };
   const router = { navigate: () => Promise.resolve(true) };
   const api = options?.api || {};
   const sanitizer = { bypassSecurityTrustHtml: (html: string) => html };
-  const voudService = { getStartPage: options?.getStartPage || (() => 0) };
+  const voudService = {
+    getStartPage: options?.getStartPage || (() => 0),
+    getFocusIdentifiers: options?.getFocusIdentifiers || ((_definition: string, variableId: string) => [variableId]),
+  };
   const authService = {};
 
   return new ItemExplorerComponent(
@@ -52,41 +56,67 @@ describe('ItemExplorerComponent', () => {
   });
 
   it('waits for response state before starting the player preview', () => {
+    vi.useFakeTimers();
     const component = createComponent({ getStartPage: () => 2 });
     const postMessage = vi.fn();
 
-    component.selectedItem = {
-      itemId: 'ITEM_1',
-      uuid: 'uuid-1',
-      unitId: 'UNIT_1',
-      unitLabel: 'Unit 1',
-      description: 'Item 1',
-      variableId: 'VAR_1',
-      metadata: {},
-    };
-    component.playerFrame = {
-      nativeElement: {
-        contentWindow: { postMessage },
-      },
-    } as any;
-    (component as any).unit = { id: 'UNIT_1', dependencies: [] };
-    (component as any).definitionContent = JSON.stringify({ pages: [] });
-    (component as any).playerFrameReady = true;
-    (component as any).responseStateReady = false;
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Item 1',
+        variableId: 'VAR_1',
+        metadata: {},
+      };
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_1', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = false;
 
-    (component as any).startPlayerIfReady();
-    expect(postMessage).not.toHaveBeenCalled();
+      (component as any).startPlayerIfReady();
+      expect(postMessage).not.toHaveBeenCalled();
 
-    (component as any).responseStateReady = true;
-    (component as any).startPlayerIfReady();
+      (component as any).responseStateReady = true;
+      (component as any).startPlayerIfReady();
 
-    expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage.mock.calls[0][0]).toMatchObject({
-      type: 'vopStartCommand',
-      playerConfig: expect.objectContaining({
-        startPage: '2',
-      }),
-    });
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        sessionId: 'explorer-uuid-1-1',
+        playerConfig: expect.objectContaining({
+          startPage: '2',
+        }),
+      });
+
+      vi.runAllTimers();
+
+      expect(postMessage.mock.calls.slice(1).map((call) => call[0])).toEqual([
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-1-1',
+          target: '2',
+        },
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-1-1',
+          target: '2',
+        },
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-1-1',
+          target: '2',
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows player target diagnostics for privileged users when enabled', () => {
@@ -189,5 +219,29 @@ describe('ItemExplorerComponent', () => {
       'Für dieses Item ist keine zielgenaue Player-Vorschau verfügbar.',
     );
     expect(component.previewUnavailableMessage).not.toContain('VAR_404');
+  });
+
+  it('uses resolved VOUD identifiers and legacy player attributes for focus selection', () => {
+    const component = createComponent({
+      getFocusIdentifiers: () => ['alias-1', 'element-id-1'],
+    });
+
+    component.selectedItem = {
+      itemId: 'ITEM_4',
+      uuid: 'uuid-4',
+      unitId: 'UNIT_4',
+      unitLabel: 'Unit 4',
+      description: 'Focusable item',
+      variableId: 'alias-1',
+      metadata: {},
+    } as any;
+    (component as any).definitionContent = JSON.stringify({ pages: [] });
+
+    const selectors = (component as any).getFocusSelectors();
+
+    expect(selectors).toContain('[data-element-id="element-id-1"]');
+    expect(selectors).toContain('[data-element-alias="alias-1"]');
+    expect(selectors).toContain('[data-list-alias="alias-1"]');
+    expect(selectors).toContain('[id="element-id-1"]');
   });
 });

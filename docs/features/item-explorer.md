@@ -58,7 +58,7 @@ ACP data:
 
 - item tags are derived from `acp.itemProperties`,
 - metadata columns are derived from normalized `featureConfig.metadataColumns`,
-- UI state starts empty,
+- UI state starts empty, so the client falls back to sorting by task (`unitLabel`),
 - item order starts empty,
 - item properties are taken from the ACP record.
 

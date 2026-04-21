@@ -43,6 +43,9 @@ interface MetadataSettings {
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
+const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
+const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+
 @Component({
   selector: 'app-item-explorer',
   standalone: true,
@@ -2223,9 +2226,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   filteredItems: ExplorerItem[] = [];
   hasEmpiricalDifficulty = false;
   filterText = '';
-  sortField = 'itemId';
+  sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
-  sortDir: 'asc' | 'desc' = 'asc';
+  sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
 
@@ -2770,15 +2773,20 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         bVal = (b as any)[this.sortField] || '';
       }
 
-      // Handing numbers
-      if (typeof aVal === 'number' && typeof bVal === 'number') {
-        return this.sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+      const primaryCmp = this.compareSortValues(aVal, bVal, this.sortDir);
+      if (primaryCmp !== 0) {
+        return primaryCmp;
       }
 
-      aVal = aVal.toString().toLowerCase();
-      bVal = bVal.toString().toLowerCase();
-      const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
-      return this.sortDir === 'asc' ? cmp : -cmp;
+      if (!this.sortIsMeta && this.sortField === 'unitLabel') {
+        const unitCmp = this.compareSortText(a.unitId, b.unitId);
+        if (unitCmp !== 0) {
+          return unitCmp;
+        }
+        return this.compareSortText(a.itemId, b.itemId);
+      }
+
+      return 0;
     });
 
     this.syncSelectionAfterListMutation();
@@ -2786,6 +2794,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (shouldPersist) {
       this.saveUiPreferences();
     }
+  }
+
+  private compareSortValues(aVal: unknown, bVal: unknown, direction: 'asc' | 'desc'): number {
+    if (typeof aVal === 'number' && typeof bVal === 'number') {
+      return direction === 'asc' ? aVal - bVal : bVal - aVal;
+    }
+
+    const cmp = this.compareSortText(aVal, bVal);
+    return direction === 'asc' ? cmp : -cmp;
+  }
+
+  private compareSortText(aVal: unknown, bVal: unknown): number {
+    return String(aVal ?? '')
+      .toLowerCase()
+      .localeCompare(String(bVal ?? '').toLowerCase(), undefined, { numeric: true });
   }
 
   // --- CSV Upload Handling ---

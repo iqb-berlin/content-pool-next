@@ -32,6 +32,79 @@ function createComponent(options?: {
 }
 
 describe('ItemExplorerComponent', () => {
+  it('defaults to sorting by task label', () => {
+    const component = createComponent();
+
+    expect(component.sortField).toBe('unitLabel');
+    expect(component.sortDir).toBe('asc');
+    expect(component.sortIsMeta).toBe(false);
+  });
+
+  it('keeps the task default when shared ui state is empty', () => {
+    const component = createComponent();
+
+    (component as any).applyUiPreferences({});
+
+    expect(component.sortField).toBe('unitLabel');
+    expect(component.sortDir).toBe('asc');
+    expect(component.sortIsMeta).toBe(false);
+  });
+
+  it('lets shared ui preferences override the default sorting', () => {
+    const component = createComponent();
+
+    (component as any).applyUiPreferences({
+      sortField: 'itemId',
+      sortDir: 'desc',
+      sortIsMeta: false,
+    });
+
+    expect(component.sortField).toBe('itemId');
+    expect(component.sortDir).toBe('desc');
+    expect(component.sortIsMeta).toBe(false);
+  });
+
+  it('sorts by task label and then item id by default', () => {
+    const component = createComponent();
+    component.filteredItems = [
+      {
+        itemId: 'ITEM_20',
+        uuid: 'uuid-20',
+        unitId: 'UNIT_B',
+        unitLabel: 'B Task',
+        description: 'Second task item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_3',
+        uuid: 'uuid-3',
+        unitId: 'UNIT_A',
+        unitLabel: 'A Task',
+        description: 'Third item in first task',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_A',
+        unitLabel: 'A Task',
+        description: 'First item in first task',
+        variableId: '',
+        metadata: {},
+      },
+    ] as any;
+
+    (component as any).applySort(false);
+
+    expect(component.filteredItems.map((item) => `${item.unitLabel}:${item.itemId}`)).toEqual([
+      'A Task:ITEM_1',
+      'A Task:ITEM_3',
+      'B Task:ITEM_20',
+    ]);
+  });
+
   it('shows audio/video coding variables by default', () => {
     const component = createComponent();
     component.currentCodingSchemeAsText = [

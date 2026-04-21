@@ -189,10 +189,19 @@ The preview pipeline is intentionally defensive because ACPs can reference diffe
 generations of Aspect player builds:
 
 1. the client resolves the preview target from `sourceVariable` or `variableId`,
+   optionally overridden by a per-item manual preview target from the shared explorer state,
 2. `VoudService.getStartPage(...)` derives the page from the VOUD definition,
 3. `VoudService.getFocusIdentifiers(...)` resolves equivalent `alias` and `id` values from
    the same VOUD element,
 4. the iframe DOM is searched using both newer and older marker conventions.
+
+ACP managers can override the preview target per item in two ways:
+
+- select a known variable from the coding scheme,
+- enter a free-text VOUD identifier or alias manually.
+
+The override is stored as part of the shared draft/published item explorer state and can be
+reset back to the standard target at any time.
 
 The current DOM lookup covers:
 

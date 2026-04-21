@@ -219,6 +219,42 @@ describe("ItemExplorerStateService", () => {
     );
   });
 
+  it("removes cleared preview target overrides while keeping other item properties", async () => {
+    const record = buildStateRecord({
+      draftState: {
+        ...baseSharedState,
+        itemProperties: {
+          item1: {
+            previewTargetId: "BASE_A",
+            empiricalDifficulty: 2.5,
+          },
+        },
+      } as any,
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:07:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        itemPropertiesPatch: {
+          item1: { previewTargetId: "   " },
+        },
+      },
+      {
+        baseVersion: 1,
+        changeType: "PREVIEW_TARGET_CHANGED",
+      },
+    );
+
+    expect(envelope.draftState.itemProperties.item1.previewTargetId).toBeUndefined();
+    expect(envelope.draftState.itemProperties.item1.empiricalDifficulty).toBe(2.5);
+  });
+
   it("drops false exclusion flags while keeping other item properties intact", async () => {
     const record = buildStateRecord({
       draftState: {

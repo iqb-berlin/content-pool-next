@@ -57,6 +57,7 @@ interface PreviewTargetResolution {
   itemTarget: string;
   isDerived: boolean;
   options: PreviewTargetOption[];
+  defaultTargetId: string;
 }
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
@@ -465,7 +466,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       <!-- RIGHT: Preview -->
       <div right class="preview-panel">
         @if (selectedItem) {
-          @if (showPlayerTargetInfo) {
+          @if (canEditExplorer) {
             <div
               class="preview-target-info card"
               [class.unavailable]="!canPreviewSelectedItem || !!previewUnavailableReason"
@@ -476,11 +477,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                 @if (isItemExcluded(selectedItem)) {
                   <span class="excluded-item-badge">Ausgeschlossen</span>
                 }
-                @if (
-                  selectedItemUsesDerivedTarget &&
-                  selectedItemTarget &&
-                  selectedItemTarget !== selectedPreviewTarget
-                ) {
+                @if (selectedItemTarget && selectedItemTarget !== selectedPreviewTarget) {
                   <span class="player-target-badge secondary">
                     Kodierschema {{ selectedItemTarget }}
                   </span>
@@ -491,51 +488,101 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                   <span class="player-target-badge unmapped">Kein Player-Ziel</span>
                 }
               </div>
-              @if (selectedItemUsesDerivedTarget && selectedItemTarget && selectedPreviewTarget) {
-                <p>
-                  Das Item referenziert im Kodierschema die abhängige Variable
-                  <code>{{ selectedItemTarget }}</code
-                  >. Für die Vorschau wird aktuell zur Basisvariable
-                  <code>{{ selectedPreviewTarget }}</code> gesprungen.
-                </p>
+              @if (showPlayerTargetInfo) {
+                @if (hasStoredPreviewTargetOverride && selectedItemTarget && selectedPreviewTarget) {
+                  <p>
+                    Das Item referenziert standardmäßig
+                    <code>{{ selectedItemTarget }}</code
+                    >. Für die Vorschau wird aktuell manuell
+                    <code>{{ selectedPreviewTarget }}</code> verwendet.
+                  </p>
+                } @else if (selectedItemUsesDerivedTarget && selectedItemTarget && selectedPreviewTarget) {
+                  <p>
+                    Das Item referenziert im Kodierschema die abhängige Variable
+                    <code>{{ selectedItemTarget }}</code
+                    >. Für die Vorschau wird standardmäßig zur Basisvariable
+                    <code>{{ selectedPreviewTarget }}</code> gesprungen.
+                  </p>
+                } @else if (selectedPreviewTarget && !previewUnavailableReason) {
+                  <p>
+                    Der Listeneintrag springt im Player zur Variable
+                    <code>{{ selectedPreviewTarget }}</code
+                    >.
+                  </p>
+                } @else if (selectedPreviewTarget) {
+                  <p>
+                    Für diesen Listeneintrag ist die Player-Variable
+                    <code>{{ selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht
+                    zuverlässig in der Unit-Definition aufgelöst werden.
+                  </p>
+                } @else {
+                  <p>
+                    Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können unten
+                    ein alternatives Sprungziel auswählen oder manuell eintragen.
+                  </p>
+                }
+              }
+
+              <div class="preview-target-controls">
                 @if (showPreviewTargetSelector) {
                   <div class="preview-target-selector">
-                    <label for="item-explorer-preview-target-select">Sprungziel im Player</label>
+                    <label for="item-explorer-preview-target-select">Sprungziel aus Kodierschema</label>
                     <select
                       id="item-explorer-preview-target-select"
                       class="preview-target-select"
                       [(ngModel)]="selectedPreviewTargetId"
                       (ngModelChange)="onPreviewTargetSelectionChange()"
                     >
+                      <option value="">{{ previewTargetDefaultOptionLabel }}</option>
                       @for (option of previewTargetOptions; track option.id) {
                         <option [value]="option.id">{{ option.label }}</option>
                       }
                     </select>
                     <small>
-                      {{ previewTargetOptions.length }} Basisvariablen aus dem Kodierschema
+                      {{ previewTargetOptions.length }} bekannte Variablen aus dem Kodierschema
                       verfügbar.
                     </small>
                   </div>
                 }
-              } @else if (selectedPreviewTarget && !previewUnavailableReason) {
-                <p>
-                  Der Listeneintrag springt im Player zur Variable
-                  <code>{{ selectedPreviewTarget }}</code
-                  >.
-                </p>
-              } @else if (selectedPreviewTarget) {
-                <p>
-                  Für diesen Listeneintrag ist die Player-Variable
-                  <code>{{ selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht zuverlässig
-                  in der Unit-Definition aufgelöst werden.
-                </p>
-              } @else {
-                <p>
-                  Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Die Vorschau bleibt
-                  daher deaktiviert, damit nicht versehentlich das falsche Item angezeigt wird.
-                </p>
-              }
-              @if (previewUnavailableReason) {
+
+                <div class="preview-target-selector">
+                  <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
+                  <div class="preview-target-custom-row">
+                    <input
+                      id="item-explorer-custom-preview-target"
+                      type="text"
+                      class="preview-target-input"
+                      placeholder="z.B. VAR_12 oder alias_12"
+                      [(ngModel)]="customPreviewTargetDraft"
+                      (keydown.enter)="applyCustomPreviewTarget()"
+                    />
+                    <button class="btn btn-outline btn-sm" (click)="applyCustomPreviewTarget()">
+                      Übernehmen
+                    </button>
+                  </div>
+                  <small>
+                    Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden.
+                  </small>
+                </div>
+
+                <div class="preview-target-actions">
+                  <button
+                    class="btn btn-outline btn-sm"
+                    [disabled]="!hasStoredPreviewTargetOverride"
+                    (click)="resetPreviewTargetSelection()"
+                  >
+                    Standardziel verwenden
+                  </button>
+                  @if (hasStoredPreviewTargetOverride && selectedPreviewTarget) {
+                    <small>
+                      Manueller Override aktiv:
+                      <code>{{ selectedPreviewTarget }}</code>
+                    </small>
+                  }
+                </div>
+              </div>
+
+              @if (previewUnavailableReason && showPlayerTargetInfo) {
                 <p class="preview-warning">{{ previewUnavailableMessage }}</p>
               }
             </div>
@@ -1740,6 +1787,11 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         flex-direction: column;
         gap: 6px;
       }
+      .preview-target-controls {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
       .preview-target-selector label {
         font-size: 0.8rem;
         font-weight: 600;
@@ -1763,6 +1815,37 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         outline: none;
         border-color: var(--color-primary-light);
         box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.12);
+      }
+      .preview-target-custom-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .preview-target-input {
+        width: 100%;
+        max-width: 360px;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: var(--color-surface);
+      }
+      .preview-target-input:focus {
+        outline: none;
+        border-color: var(--color-primary-light);
+        box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.12);
+      }
+      .preview-target-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .preview-target-actions small {
+        color: var(--color-text-secondary);
+        font-size: 0.78rem;
       }
       .player-container {
         padding: 0;
@@ -2498,10 +2581,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   allResponseStates: any[] = [];
   previewUnavailableReason = '';
   selectedPreviewTargetId = '';
+  customPreviewTargetDraft = '';
   private previewTargetResolution: PreviewTargetResolution = {
     itemTarget: '',
     isDerived: false,
     options: [],
+    defaultTargetId: '',
   };
 
   // Response State Confirmation Dialogs
@@ -2543,11 +2628,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   get selectedPreviewTarget(): string {
-    const selectedId = String(this.selectedPreviewTargetId || '').trim();
-    if (selectedId && this.previewTargetOptions.some((option) => option.id === selectedId)) {
-      return selectedId;
+    const storedId = this.getStoredPreviewTargetId(this.selectedItem);
+    if (storedId) {
+      return storedId;
     }
-    return this.previewTargetOptions[0]?.id || this.getPlayerTarget(this.selectedItem);
+    return this.previewTargetResolution.defaultTargetId || this.getPlayerTarget(this.selectedItem);
   }
 
   get selectedItemTarget(): string {
@@ -2563,7 +2648,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   get showPreviewTargetSelector(): boolean {
-    return this.selectedItemUsesDerivedTarget && this.previewTargetOptions.length > 1;
+    return this.previewTargetOptions.length > 0;
+  }
+
+  get hasStoredPreviewTargetOverride(): boolean {
+    return this.getStoredPreviewTargetId(this.selectedItem).length > 0;
+  }
+
+  get previewTargetDefaultOptionLabel(): string {
+    if (this.previewTargetResolution.defaultTargetId) {
+      return `Standardziel verwenden (${this.previewTargetResolution.defaultTargetId})`;
+    }
+    return 'Kein Standardziel hinterlegt';
   }
 
   get showPlayerTargetInfo(): boolean {
@@ -3174,15 +3270,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     if (!this.canPreviewItem(item)) {
       this.loadingUnit = false;
-      this.previewUnavailableReason =
-        'Für dieses Item ist in den Explorer-Daten keine Player-Variable hinterlegt.';
+      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
       return;
     }
 
-    // Load response state for this item (with fallback to previous item in same unit)
+    this.loadPreviewContext(item, token);
+  }
+
+  // --- Response State ---
+  private loadPreviewContext(item: ExplorerItem, token: number) {
+    this.loadingUnit = true;
     this.loadResponseStateForItem(item, token);
 
-    // Load unit view data from files (for player + dependencies)
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
       next: (u: any) => {
         if (token !== this.unitLoadToken) return;
@@ -3191,7 +3290,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
         if (!u) return;
 
-        // Map dependency URLs with tokens
         const deps = (u.dependencies || []).map((d: any) => ({
           ...d,
           downloadUrl: this.api.appendAuthToken(d.downloadUrl),
@@ -3207,7 +3305,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
-  // --- Response State ---
   private loadResponseStateForItem(item: ExplorerItem, token: number) {
     // Build item list from filteredItems for fallback lookup
     const itemList = this.filteredItems.map((i) => ({ itemId: i.itemId, unitId: i.unitId }));
@@ -3334,12 +3431,47 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   onPreviewTargetSelectionChange() {
+    this.customPreviewTargetDraft = '';
+    this.updatePreviewTargetSelection(this.selectedPreviewTargetId);
+  }
+
+  applyCustomPreviewTarget() {
+    const customTarget = String(this.customPreviewTargetDraft || '').trim();
+    if (!customTarget) {
+      if (this.hasStoredPreviewTargetOverride) {
+        this.resetPreviewTargetSelection();
+      }
+      return;
+    }
+
+    this.selectedPreviewTargetId = '';
+    this.updatePreviewTargetSelection(customTarget);
+  }
+
+  resetPreviewTargetSelection() {
+    this.selectedPreviewTargetId = '';
+    this.customPreviewTargetDraft = '';
+    this.updatePreviewTargetSelection('');
+  }
+
+  private updatePreviewTargetSelection(targetId: string) {
     this.previewUnavailableReason = '';
     if (!this.selectedItem) {
       return;
     }
 
-    this.persistPreviewTargetSelection(this.selectedItem, this.selectedPreviewTarget);
+    this.persistPreviewTargetSelection(this.selectedItem, targetId);
+    this.syncPreviewTargetResolution(this.selectedItem);
+
+    if (!this.canPreviewItem(this.selectedItem)) {
+      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      return;
+    }
+
+    if (!this.loadingUnit && (!this.unit || !this.responseStateReady)) {
+      this.loadPreviewContext(this.selectedItem, this.unitLoadToken);
+      return;
+    }
 
     if (
       !this.playerFrameReady ||
@@ -3514,6 +3646,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     const selectedItem = this.selectedItem;
     const previewTarget = this.getEffectivePlayerTarget(selectedItem);
+    if (!previewTarget) {
+      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      return;
+    }
     const startPage = this.voudService.getStartPage(this.definitionContent, previewTarget);
     if (startPage === undefined) {
       this.previewUnavailableReason =
@@ -3642,6 +3778,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.getEffectivePlayerTarget(item);
   }
 
+  private getPersistedOrDefaultPlayerTarget(item?: ExplorerItem | null): string {
+    const storedTarget = this.getStoredPreviewTargetId(item);
+    if (storedTarget) {
+      return storedTarget;
+    }
+    return this.getPlayerTarget(item);
+  }
+
   getPlayerTarget(item?: ExplorerItem | null): string {
     if (!item) return '';
     return String(item.sourceVariable || item.variableId || '').trim();
@@ -3650,40 +3794,43 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private getEffectivePlayerTarget(item?: ExplorerItem | null): string {
     if (!item) return '';
     if (this.selectedItem?.uuid === item.uuid) {
-      return this.selectedPreviewTarget || this.getPlayerTarget(item);
+      return this.selectedPreviewTarget;
     }
-    return this.getPlayerTarget(item);
+    return this.getPersistedOrDefaultPlayerTarget(item);
   }
 
   canPreviewItem(item?: ExplorerItem | null): boolean {
-    return this.getPlayerTarget(item).length > 0;
+    return this.getEffectivePlayerTarget(item).length > 0;
   }
 
   private syncPreviewTargetResolution(item?: ExplorerItem | null) {
     const resolution = this.buildPreviewTargetResolution(item);
     const selectedId = this.getStoredPreviewTargetId(item);
     this.previewTargetResolution = resolution;
-    this.selectedPreviewTargetId = resolution.options.some((option) => option.id === selectedId)
-      ? selectedId
-      : resolution.options[0]?.id || '';
+    const matchesKnownOption = resolution.options.some((option) => option.id === selectedId);
+    this.selectedPreviewTargetId = matchesKnownOption ? selectedId : '';
+    this.customPreviewTargetDraft = selectedId && !matchesKnownOption ? selectedId : '';
   }
 
   private buildPreviewTargetResolution(item?: ExplorerItem | null): PreviewTargetResolution {
+    const codingVariables = this.getCurrentCodingVariables();
+    const fallbackOptions = this.getAllPreviewTargetOptions(codingVariables);
     const itemTarget = this.getPlayerTarget(item);
     if (!itemTarget) {
       return {
         itemTarget: '',
         isDerived: false,
-        options: [],
+        options: fallbackOptions,
+        defaultTargetId: '',
       };
     }
 
-    const codingVariables = this.getCurrentCodingVariables();
     if (!codingVariables.length) {
       return {
         itemTarget,
         isDerived: false,
         options: [this.createFallbackPreviewTargetOption(itemTarget)],
+        defaultTargetId: itemTarget,
       };
     }
 
@@ -3693,21 +3840,29 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return {
         itemTarget,
         isDerived: false,
-        options: [this.createFallbackPreviewTargetOption(itemTarget)],
+        options: this.dedupePreviewTargetOptions([
+          ...fallbackOptions,
+          this.createFallbackPreviewTargetOption(itemTarget),
+        ]),
+        defaultTargetId: itemTarget,
       };
     }
 
     const resolvedItemTarget = this.getCodingVariableId(selectedCodingVariable, itemTarget);
     const derivedOptions = this.collectBasePreviewTargetOptions(selectedCodingVariable, variableLookup);
+    const isDerived = this.isDerivedCodingVariable(selectedCodingVariable);
+    const defaultTargetId =
+      isDerived && derivedOptions.length ? derivedOptions[0].id : resolvedItemTarget;
 
     return {
       itemTarget: resolvedItemTarget,
-      isDerived: this.isDerivedCodingVariable(selectedCodingVariable),
-      options: this.dedupePreviewTargetOptions(
-        derivedOptions.length
-          ? derivedOptions
-          : [this.createPreviewTargetOption(selectedCodingVariable, resolvedItemTarget)],
-      ),
+      isDerived,
+      options: this.dedupePreviewTargetOptions([
+        ...derivedOptions,
+        ...fallbackOptions,
+        this.createPreviewTargetOption(selectedCodingVariable, resolvedItemTarget),
+      ]),
+      defaultTargetId,
     };
   }
 
@@ -3731,6 +3886,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       });
     });
     return lookup;
+  }
+
+  private getAllPreviewTargetOptions(variables: any[]): PreviewTargetOption[] {
+    return this.dedupePreviewTargetOptions(
+      variables.map((variable) => this.createPreviewTargetOption(variable)),
+    );
   }
 
   private collectBasePreviewTargetOptions(
@@ -3879,10 +4040,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private persistPreviewTargetSelection(item: ExplorerItem, targetId: string) {
+    const previousTargetId = this.getStoredPreviewTargetId(item);
     const normalizedTargetId = String(targetId || '').trim();
+    if (previousTargetId === normalizedTargetId) {
+      return;
+    }
     item.previewTargetId = normalizedTargetId || undefined;
 
-    if (!this.canEditExplorer || this.suppressDraftPatch || !normalizedTargetId) {
+    if (!this.canEditExplorer || this.suppressDraftPatch) {
       return;
     }
 
@@ -3967,6 +4132,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     return '';
+  }
+
+  private getMissingPreviewTargetMessage(): string {
+    return 'Für dieses Item ist in den Explorer-Daten keine Player-Variable hinterlegt. Sie können ein manuelles Sprungziel setzen.';
   }
 
   private getCandidateItemIds(): string[] {
@@ -5106,6 +5275,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.previewUnavailableReason = '';
+    this.selectedPreviewTargetId = '';
+    this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);
     this.resetPlayer();
   }

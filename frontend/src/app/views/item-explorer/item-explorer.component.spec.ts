@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { of } from 'rxjs';
 import { ItemExplorerComponent } from './item-explorer.component';
 import { VoudService } from '../../core/services/voud.service';
 
@@ -596,12 +597,43 @@ describe('ItemExplorerComponent', () => {
     expect(component.selectedItemUsesDerivedTarget).toBe(true);
     expect(component.showPreviewTargetSelector).toBe(true);
     expect(component.selectedItemTarget).toBe('TOTAL');
-    expect(component.previewTargetOptions.map((option) => option.id)).toEqual(['BASE_A', 'BASE_B']);
-    expect(component.previewTargetOptions.map((option) => option.label)).toEqual([
-      'Teil A (BASE_A)',
-      'Teil B (BASE_B)',
+    expect(component.previewTargetOptions.map((option) => option.id)).toEqual([
+      'BASE_A',
+      'BASE_B',
+      'GROUP',
+      'TOTAL',
     ]);
     expect(component.selectedPreviewTarget).toBe('BASE_A');
+  });
+
+  it('offers known coding variables even when no standard preview target exists', () => {
+    const component = createComponent();
+
+    component.selectedItem = {
+      itemId: 'ITEM_5',
+      uuid: 'uuid-5',
+      unitId: 'UNIT_5',
+      unitLabel: 'Unit 5',
+      description: 'Item without mapped target',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', label: 'Teil A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'BASE_B', label: 'Teil B', sourceType: 'BASE', deriveSources: [] },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Teil A', codes: [] },
+      { id: 'BASE_B', label: 'Teil B', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.previewTargetOptions.map((option) => option.id)).toEqual(['BASE_A', 'BASE_B']);
+    expect(component.selectedPreviewTarget).toBe('');
+    expect(component.previewTargetDefaultOptionLabel).toBe('Kein Standardziel hinterlegt');
   });
 
   it('stores the selected base variable as shared item state', () => {
@@ -642,6 +674,7 @@ describe('ItemExplorerComponent', () => {
     };
     (component as any).queueDraftPatch = queueDraftPatch;
     (component as any).startPlayerIfReady = startPlayerIfReady;
+    (component as any).loadingUnit = true;
 
     (component as any).syncPreviewTargetResolution(component.selectedItem);
     component.selectedPreviewTargetId = 'BASE_B';
@@ -660,6 +693,95 @@ describe('ItemExplorerComponent', () => {
       true,
     );
     expect(startPlayerIfReady).not.toHaveBeenCalled();
+  });
+
+  it('stores a manual preview target outside the coding scheme as shared item state', () => {
+    const component = createComponent();
+    const queueDraftPatch = vi.fn();
+
+    component.canEditExplorer = true;
+    component.selectedItem = {
+      itemId: 'ITEM_6',
+      uuid: 'uuid-6',
+      unitId: 'UNIT_6',
+      unitLabel: 'Unit 6',
+      description: 'Manual preview target',
+      variableId: 'TOTAL',
+      metadata: {},
+    } as any;
+    (component as any).latestExplorerState = {
+      activeState: {
+        itemProperties: {
+          UNIT_6_ITEM_6: {
+            empiricalDifficulty: 1.5,
+          },
+        },
+      },
+    };
+    (component as any).queueDraftPatch = queueDraftPatch;
+    (component as any).loadingUnit = true;
+
+    component.customPreviewTargetDraft = '  alias.custom.target  ';
+    component.applyCustomPreviewTarget();
+
+    expect(component.selectedItem?.previewTargetId).toBe('alias.custom.target');
+    expect(component.selectedPreviewTarget).toBe('alias.custom.target');
+    expect(component.customPreviewTargetDraft).toBe('alias.custom.target');
+    expect(queueDraftPatch).toHaveBeenCalledWith(
+      'PREVIEW_TARGET_CHANGED',
+      {
+        itemPropertiesPatch: {
+          UNIT_6_ITEM_6: {
+            previewTargetId: 'alias.custom.target',
+          },
+        },
+      },
+      true,
+    );
+  });
+
+  it('removes the stored preview target override when reset is triggered', () => {
+    const component = createComponent();
+    const queueDraftPatch = vi.fn();
+
+    component.canEditExplorer = true;
+    component.selectedItem = {
+      itemId: 'ITEM_6',
+      uuid: 'uuid-6',
+      unitId: 'UNIT_6',
+      unitLabel: 'Unit 6',
+      description: 'Manual preview target',
+      variableId: 'TOTAL',
+      previewTargetId: 'BASE_B',
+      metadata: {},
+    } as any;
+    (component as any).latestExplorerState = {
+      activeState: {
+        itemProperties: {
+          UNIT_6_ITEM_6: {
+            previewTargetId: 'BASE_B',
+          },
+        },
+      },
+    };
+    (component as any).queueDraftPatch = queueDraftPatch;
+    (component as any).loadingUnit = true;
+
+    component.resetPreviewTargetSelection();
+
+    expect(component.selectedItem?.previewTargetId).toBeUndefined();
+    expect(component.selectedPreviewTarget).toBe('TOTAL');
+    expect(queueDraftPatch).toHaveBeenCalledWith(
+      'PREVIEW_TARGET_CHANGED',
+      {
+        itemPropertiesPatch: {
+          UNIT_6_ITEM_6: {
+            previewTargetId: '',
+          },
+        },
+      },
+      true,
+    );
   });
 
   it('restores the persisted base variable selection from shared explorer state', () => {
@@ -790,6 +912,47 @@ describe('ItemExplorerComponent', () => {
       vi.runAllTimers();
       vi.useRealTimers();
     }
+  });
+
+  it('loads preview context after setting a manual target for an unmapped item', () => {
+    const getResponseStateWithFallback = vi.fn(() => of({ state: null, isFallback: false }));
+    const getFileUnitView = vi.fn(() => of({ id: 'UNIT_9', dependencies: [] }));
+    const component = createComponent({
+      api: {
+        getResponseStateWithFallback,
+        getFileUnitView,
+        appendAuthToken: (url: string) => url,
+      },
+    });
+    component.acpId = 'acp-1';
+
+    component.selectedItem = {
+      itemId: 'ITEM_9',
+      uuid: 'uuid-9',
+      unitId: 'UNIT_9',
+      unitLabel: 'Unit 9',
+      description: 'Item without mapped target',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [{ id: 'BASE_A', label: 'Teil A', sourceType: 'BASE', deriveSources: [] }],
+    };
+    component.currentCodingSchemeAsText = [{ id: 'BASE_A', label: 'Teil A', codes: [] }] as any;
+    component.selectedIndex = 0;
+    (component as any).unitLoadToken = 7;
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    component.customPreviewTargetDraft = 'BASE_A';
+    component.applyCustomPreviewTarget();
+
+    expect(getResponseStateWithFallback).toHaveBeenCalledWith(
+      'acp-1',
+      'ITEM_9',
+      'UNIT_9',
+      [],
+    );
+    expect(getFileUnitView).toHaveBeenCalledWith('acp-1', 'UNIT_9');
   });
 
   it('uses a generic preview warning when diagnostics are hidden', () => {

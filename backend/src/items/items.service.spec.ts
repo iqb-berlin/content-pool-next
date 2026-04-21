@@ -1,10 +1,15 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ItemsService } from "./items.service";
+import { AccessModel } from "../database/entities";
 
 describe("ItemsService", () => {
   let service: ItemsService;
   let acpRepository: { findOne: jest.Mock; save: jest.Mock };
-  let accessConfigRepository: { findOne: jest.Mock };
+  let accessConfigRepository: {
+    findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
   let unitParserService: { getItemListFromFiles: jest.Mock };
 
   beforeEach(() => {
@@ -15,6 +20,8 @@ describe("ItemsService", () => {
 
     accessConfigRepository = {
       findOne: jest.fn(),
+      create: jest.fn().mockImplementation((value) => value),
+      save: jest.fn().mockImplementation(async (value) => value),
     };
 
     unitParserService = {
@@ -279,6 +286,67 @@ describe("ItemsService", () => {
     );
 
     expect(acpRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("enables the empirical difficulty filter when it is not configured yet", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      acpId: "acp-1",
+      accessModel: AccessModel.PUBLIC,
+      allowRegistered: false,
+      featureConfig: {
+        enableItemList: true,
+      },
+    });
+
+    await expect(
+      service.ensureShowOnlyItemsWithEmpiricalDifficulty("acp-1"),
+    ).resolves.toBe(true);
+
+    expect(accessConfigRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enableItemList: true,
+          showOnlyItemsWithEmpiricalDifficulty: true,
+        }),
+      }),
+    );
+  });
+
+  it("preserves an explicit opt-out for the empirical difficulty filter", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      acpId: "acp-1",
+      accessModel: AccessModel.PUBLIC,
+      allowRegistered: false,
+      featureConfig: {
+        showOnlyItemsWithEmpiricalDifficulty: false,
+      },
+    });
+
+    await expect(
+      service.ensureShowOnlyItemsWithEmpiricalDifficulty("acp-1"),
+    ).resolves.toBe(false);
+
+    expect(accessConfigRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("creates a default private access config when enabling the empirical difficulty filter", async () => {
+    accessConfigRepository.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.ensureShowOnlyItemsWithEmpiricalDifficulty("acp-1"),
+    ).resolves.toBe(true);
+
+    expect(accessConfigRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acpId: "acp-1",
+        accessModel: AccessModel.PRIVATE,
+        allowRegistered: false,
+        featureConfig: expect.objectContaining({
+          showOnlyItemsWithEmpiricalDifficulty: true,
+        }),
+      }),
+    );
+    expect(accessConfigRepository.save).toHaveBeenCalled();
   });
 
   it("rejects clearing empirical difficulties for missing ACP", async () => {

@@ -138,7 +138,21 @@ export class ItemsController {
     const parsedBaseVersion = parseInt(baseVersion || "", 10);
 
     if (!draftMode) {
-      return this.itemsService.uploadEmpiricalDifficulties(acpId, file.buffer);
+      const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(
+        acpId,
+        file.buffer,
+      );
+      const showOnlyItemsWithEmpiricalDifficulty =
+        uploadResult.updated > 0
+          ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+              acpId,
+            )
+          : undefined;
+
+      return {
+        ...uploadResult,
+        showOnlyItemsWithEmpiricalDifficulty,
+      };
     }
 
     const currentState = await this.itemExplorerStateService.getStateForViewer(
@@ -171,11 +185,18 @@ export class ItemsController {
           : parsedBaseVersion,
       },
     );
+    const showOnlyItemsWithEmpiricalDifficulty =
+      uploadResult.updated > 0
+        ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+            acpId,
+          )
+        : undefined;
 
     return {
       updated: uploadResult.updated,
       failed: uploadResult.failed,
       successes: uploadResult.successes,
+      showOnlyItemsWithEmpiricalDifficulty,
       explorerState,
     };
   }

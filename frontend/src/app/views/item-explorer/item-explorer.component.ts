@@ -2494,6 +2494,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   itemExplorerConditionalVisibilityEnabled = false;
   playerFocusHighlightEnabled = true;
   itemExplorerPlayerTargetInfoEnabled = true;
+  showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
   useServerPreferences = false;
@@ -2793,6 +2794,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         fc.enableItemExplorerConditionalVisibility === true;
       this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight !== false;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
+      this.showOnlyItemsWithEmpiricalDifficulty =
+        fc.showOnlyItemsWithEmpiricalDifficulty === true;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
@@ -2896,6 +2899,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.filteredItems = this.items.filter((item) => {
       if (!this.showExcludedItems && this.isItemExcluded(item)) {
+        return false;
+      }
+
+      if (
+        this.showOnlyItemsWithEmpiricalDifficulty &&
+        this.hasEmpiricalDifficulty &&
+        (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
+      ) {
         return false;
       }
 
@@ -3124,6 +3135,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.isUploading = false;
           this.uploadResult = result;
           this.showUploadReport = true;
+          if (typeof result.showOnlyItemsWithEmpiricalDifficulty === 'boolean') {
+            this.showOnlyItemsWithEmpiricalDifficulty = result.showOnlyItemsWithEmpiricalDifficulty;
+          }
           if (result.explorerState) {
             this.applySharedExplorerEnvelope(result.explorerState, true);
           }

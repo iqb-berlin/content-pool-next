@@ -331,6 +331,7 @@ export interface FeatureConfig {
   enableItemListFilter?: boolean;
   enableItemListSort?: boolean;
   enableItemListTags?: boolean;
+  showOnlyItemsWithEmpiricalDifficulty?: boolean;
   showAudioVideoCodingVariables?: boolean;
   enableItemExplorerConditionalVisibility?: boolean;
   enablePlayerFocusHighlight?: boolean;

@@ -5,9 +5,17 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { Acp, AcpAccessConfig } from "../database/entities";
+import {
+  Acp,
+  AcpAccessConfig,
+  AccessModel,
+} from "../database/entities";
 import { UnitParserService } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
+
+const SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY =
+  "showOnlyItemsWithEmpiricalDifficulty";
 
 export interface ItemData {
   itemId: string;
@@ -300,6 +308,61 @@ export class ItemsService {
     acp.itemProperties = itemProperties;
     await this.acpRepository.save(acp);
     return normalizedTags;
+  }
+
+  async ensureShowOnlyItemsWithEmpiricalDifficulty(
+    acpId: string,
+  ): Promise<boolean> {
+    let config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
+
+    if (!config) {
+      config = this.accessConfigRepository.create({
+        acpId,
+        accessModel: AccessModel.PRIVATE,
+        allowRegistered: false,
+        featureConfig: normalizeFeatureConfig({
+          [SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY]: true,
+        }),
+      });
+      await this.accessConfigRepository.save(config);
+      return true;
+    }
+
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      config.featureConfig || {},
+    ) as Record<string, unknown>;
+    const currentValue =
+      normalizedFeatureConfig[SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY];
+
+    if (currentValue === false) {
+      if (
+        JSON.stringify(config.featureConfig || {}) !==
+        JSON.stringify(normalizedFeatureConfig)
+      ) {
+        config.featureConfig = normalizedFeatureConfig;
+        await this.accessConfigRepository.save(config);
+      }
+      return false;
+    }
+
+    if (currentValue === true) {
+      if (
+        JSON.stringify(config.featureConfig || {}) !==
+        JSON.stringify(normalizedFeatureConfig)
+      ) {
+        config.featureConfig = normalizedFeatureConfig;
+        await this.accessConfigRepository.save(config);
+      }
+      return true;
+    }
+
+    normalizedFeatureConfig[SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY] =
+      true;
+    config.featureConfig = normalizedFeatureConfig;
+    await this.accessConfigRepository.save(config);
+    return true;
   }
 
   private extractTags(

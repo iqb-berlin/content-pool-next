@@ -396,6 +396,7 @@ export class ApiService {
     updated: number;
     failed: any[];
     successes: any[];
+    showOnlyItemsWithEmpiricalDifficulty?: boolean;
     explorerState?: ItemExplorerStateEnvelope;
   }> {
     const formData = new FormData();

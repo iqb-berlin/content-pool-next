@@ -237,4 +237,24 @@ describe('AccessConfigComponent', () => {
       }),
     );
   });
+
+  it('persists the empirical difficulty item filter when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      showOnlyItemsWithEmpiricalDifficulty: true,
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          showOnlyItemsWithEmpiricalDifficulty: true,
+        }),
+      }),
+    );
+  });
 });

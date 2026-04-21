@@ -408,6 +408,13 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <span>Bedingte Sichtbarkeit im Item-Explorer-Player anwenden</span>
         </label>
         <label class="feature-toggle">
+          <input
+            type="checkbox"
+            [(ngModel)]="featureConfig[showOnlyItemsWithEmpiricalDifficultyKey]"
+          />
+          <span>Im Item-Explorer nur Items mit Itemschwierigkeit anzeigen</span>
+        </label>
+        <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enablePlayerFocusHighlightKey]" />
           <span>Item im Player hervorheben (Explorer + Item-Ansicht)</span>
         </label>
@@ -694,6 +701,7 @@ export class AccessConfigComponent implements OnInit {
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
   readonly enableItemExplorerConditionalVisibilityKey =
     'enableItemExplorerConditionalVisibility';
+  readonly showOnlyItemsWithEmpiricalDifficultyKey = 'showOnlyItemsWithEmpiricalDifficulty';
   readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
 

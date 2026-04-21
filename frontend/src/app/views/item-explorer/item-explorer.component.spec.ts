@@ -66,6 +66,67 @@ describe('ItemExplorerComponent', () => {
     expect(component.sortIsMeta).toBe(false);
   });
 
+  it('hides items without empirical difficulty when the ACP filter is enabled', () => {
+    const component = createComponent();
+    component.showOnlyItemsWithEmpiricalDifficulty = true;
+    component.hasEmpiricalDifficulty = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'With difficulty',
+        variableId: 'VAR_1',
+        metadata: {},
+        empiricalDifficulty: 0.4,
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Without difficulty',
+        variableId: 'VAR_2',
+        metadata: {},
+      },
+    ] as any;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['ITEM_1']);
+  });
+
+  it('keeps all items visible when no empirical difficulties were imported yet', () => {
+    const component = createComponent();
+    component.showOnlyItemsWithEmpiricalDifficulty = true;
+    component.hasEmpiricalDifficulty = false;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'First item',
+        variableId: 'VAR_1',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Second item',
+        variableId: 'VAR_2',
+        metadata: {},
+      },
+    ] as any;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['ITEM_1', 'ITEM_2']);
+  });
+
   it('sorts by task label and then item id by default', () => {
     const component = createComponent();
     component.filteredItems = [

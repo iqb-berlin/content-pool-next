@@ -27,6 +27,9 @@ describe("ItemsController", () => {
           "item-1": { id: "item-1" },
         },
       }),
+      ensureShowOnlyItemsWithEmpiricalDifficulty: jest
+        .fn()
+        .mockResolvedValue(true),
     };
 
     stateService = {
@@ -148,12 +151,16 @@ describe("ItemsController", () => {
         updated: 2,
         failed: ["item-x"],
         successes: ["item-1"],
+        showOnlyItemsWithEmpiricalDifficulty: true,
       }),
     );
     expect(itemsService.uploadEmpiricalDifficulties).toHaveBeenCalledWith(
       "acp-1",
       file.buffer,
     );
+    expect(
+      itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty,
+    ).toHaveBeenCalledWith("acp-1");
     expect(itemExplorerStateService.getStateForViewer).not.toHaveBeenCalled();
   });
 
@@ -196,9 +203,13 @@ describe("ItemsController", () => {
     expect(result).toEqual(
       expect.objectContaining({
         updated: 2,
+        showOnlyItemsWithEmpiricalDifficulty: true,
         explorerState: { status: "DIRTY", version: 5 },
       }),
     );
+    expect(
+      itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty,
+    ).toHaveBeenCalledWith("acp-1");
   });
 
   it("uses undefined baseVersion when draft upload baseVersion is invalid", async () => {

@@ -2234,6 +2234,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   enableTags = false;
   availableTags: string[] = [];
   showAudioVideoCodingVariables = true;
+  itemExplorerConditionalVisibilityEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = true;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -2485,6 +2486,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
       this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
+      this.itemExplorerConditionalVisibilityEnabled =
+        fc.enableItemExplorerConditionalVisibility === true;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
@@ -2493,6 +2496,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
       this.loadSharedExplorerState();
+      this.startPlayerIfReady();
     });
 
     this.reloadItems();
@@ -3157,12 +3161,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.previewUnavailableReason = '';
     const sessionId = `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
+    const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
-      unitDefinition: this.definitionContent,
+      unitDefinition: playerDefinition,
       unitState: {
         dataParts:
           this.hasResponseState && this.currentResponseData ? this.currentResponseData : {},
@@ -3194,6 +3199,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.startAutoResize();
     }
     this.schedulePlayerFocus();
+  }
+
+  private getPlayerDefinitionContent(): string {
+    if (!this.definitionContent) return '';
+    if (this.itemExplorerConditionalVisibilityEnabled) {
+      return this.definitionContent;
+    }
+    return this.voudService.stripConditionalVisibility(this.definitionContent);
   }
 
   private scheduleLegacyPageNavigation(

@@ -137,6 +137,15 @@ The same distinction exists when clearing empirical difficulty values.
 The Item Explorer and the item detail view both embed the unit player inside an iframe and
 try to focus the currently selected item automatically.
 
+By default, the Item Explorer preview neutralizes conditional visibility logic from the VOUD so
+that managers can inspect all relevant content even when the original unit would hide parts
+of it behind section visibility rules or media dependencies. ACP managers can re-enable the
+original conditional behavior through the ACP access-config feature flag
+`enableItemExplorerConditionalVisibility`.
+
+The preview keeps the corresponding schema fields in place with neutral default values so the
+embedded Aspect player can still parse the generated unit definition reliably.
+
 The preview pipeline is intentionally defensive because ACPs can reference different
 generations of Aspect player builds:
 

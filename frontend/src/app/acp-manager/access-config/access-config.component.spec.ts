@@ -79,6 +79,38 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
   });
 
+  it('keeps item explorer conditional visibility disabled when the flag is missing', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(
+      component.featureConfig[component.enableItemExplorerConditionalVisibilityKey],
+    ).toBeUndefined();
+  });
+
+  it('keeps explicit true for item explorer conditional visibility', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: {
+          enableItemExplorerConditionalVisibility: true,
+        },
+      }),
+    );
+
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.enableItemExplorerConditionalVisibilityKey]).toBe(
+      true,
+    );
+  });
+
   it('keeps explicit false for showItemExplorerPlayerTargetInfo', () => {
     api.getAccessConfig.mockReturnValue(
       of({
@@ -133,6 +165,26 @@ describe('AccessConfigComponent', () => {
       expect.objectContaining({
         featureConfig: expect.objectContaining({
           showItemExplorerPlayerTargetInfo: false,
+        }),
+      }),
+    );
+  });
+
+  it('persists item explorer conditional visibility when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      enableItemExplorerConditionalVisibility: true,
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enableItemExplorerConditionalVisibility: true,
         }),
       }),
     );

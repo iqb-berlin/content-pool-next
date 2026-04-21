@@ -4,6 +4,7 @@ import { ItemExplorerComponent } from './item-explorer.component';
 function createComponent(options?: {
   getStartPage?: (definition: string, variableId: string) => number | undefined;
   getFocusIdentifiers?: (definition: string, variableId: string) => string[];
+  stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
 }) {
   const route = { snapshot: { paramMap: { get: () => 'acp-1' } } };
@@ -12,7 +13,11 @@ function createComponent(options?: {
   const sanitizer = { bypassSecurityTrustHtml: (html: string) => html };
   const voudService = {
     getStartPage: options?.getStartPage || (() => 0),
-    getFocusIdentifiers: options?.getFocusIdentifiers || ((_definition: string, variableId: string) => [variableId]),
+    getFocusIdentifiers:
+      options?.getFocusIdentifiers ||
+      ((_definition: string, variableId: string) => [variableId]),
+    stripConditionalVisibility:
+      options?.stripConditionalVisibility || ((definition: string) => definition),
   };
   const authService = {};
 
@@ -114,6 +119,93 @@ describe('ItemExplorerComponent', () => {
           target: '2',
         },
       ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('strips conditional visibility from the item explorer preview by default', () => {
+    vi.useFakeTimers();
+    const stripConditionalVisibility = vi.fn().mockReturnValue('sanitized-definition');
+    const component = createComponent({
+      getStartPage: () => 2,
+      stripConditionalVisibility,
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Item 1',
+        variableId: 'VAR_1',
+        metadata: {},
+      } as any;
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_1', dependencies: [] };
+      (component as any).definitionContent = 'original-definition';
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = true;
+
+      (component as any).startPlayerIfReady();
+
+      expect(stripConditionalVisibility).toHaveBeenCalledWith('original-definition');
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        unitDefinition: 'sanitized-definition',
+      });
+
+      vi.runAllTimers();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps conditional visibility when the ACP flag is enabled', () => {
+    vi.useFakeTimers();
+    const stripConditionalVisibility = vi.fn().mockReturnValue('sanitized-definition');
+    const component = createComponent({
+      getStartPage: () => 2,
+      stripConditionalVisibility,
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.itemExplorerConditionalVisibilityEnabled = true;
+      component.selectedItem = {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Item 1',
+        variableId: 'VAR_1',
+        metadata: {},
+      } as any;
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_1', dependencies: [] };
+      (component as any).definitionContent = 'original-definition';
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = true;
+
+      (component as any).startPlayerIfReady();
+
+      expect(stripConditionalVisibility).not.toHaveBeenCalled();
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        unitDefinition: 'original-definition',
+      });
+
+      vi.runAllTimers();
     } finally {
       vi.useRealTimers();
     }

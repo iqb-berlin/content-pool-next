@@ -403,6 +403,13 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <label class="feature-toggle">
           <input
             type="checkbox"
+            [(ngModel)]="featureConfig[enableItemExplorerConditionalVisibilityKey]"
+          />
+          <span>Bedingte Sichtbarkeit im Item-Explorer-Player anwenden</span>
+        </label>
+        <label class="feature-toggle">
+          <input
+            type="checkbox"
             [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]"
           />
           <span>
@@ -681,6 +688,8 @@ export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
+  readonly enableItemExplorerConditionalVisibilityKey =
+    'enableItemExplorerConditionalVisibility';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
 
   acpId = '';

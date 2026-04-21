@@ -96,3 +96,77 @@ describe('VoudService.getFocusIdentifiers', () => {
     ]);
   });
 });
+
+describe('VoudService.stripConditionalVisibility', () => {
+  const service = new VoudService();
+
+  it('removes section-level visibility controls for preview rendering', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              activeAfterID: 'legacy-trigger',
+              activeAfterIdDelay: 250,
+              visibilityRules: [{ id: 'RULE_TARGET', operator: '=', value: '1' }],
+              visibilityDelay: 500,
+              animatedVisibility: true,
+              enableReHide: true,
+              logicalConnectiveOfRules: 'conjunction',
+              elements: [{ alias: 'A1', id: 'field-1' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    const sanitized = JSON.parse(service.stripConditionalVisibility(definition));
+    const section = sanitized.pages[0].sections[0];
+
+    expect(section).toMatchObject({
+      activeAfterID: '',
+      activeAfterIdDelay: 0,
+      visibilityRules: [],
+      visibilityDelay: 0,
+      animatedVisibility: false,
+      enableReHide: false,
+      logicalConnectiveOfRules: 'disjunction',
+    });
+    expect(section.elements[0]).toMatchObject({ alias: 'A1', id: 'field-1' });
+  });
+
+  it('removes legacy media dependencies but keeps unrelated player settings', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              elements: [
+                {
+                  alias: 'AUDIO_1',
+                  id: 'audio-1',
+                  player: {
+                    activeAfter: 'legacy-audio',
+                    activeAfterID: 'audio-0',
+                    startControl: true,
+                    showRestRuns: true,
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const sanitized = JSON.parse(service.stripConditionalVisibility(definition));
+    const player = sanitized.pages[0].sections[0].elements[0].player;
+
+    expect(player).toMatchObject({
+      activeAfter: '',
+      activeAfterID: '',
+      startControl: true,
+      showRestRuns: true,
+    });
+  });
+});

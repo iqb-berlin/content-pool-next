@@ -18,6 +18,17 @@ interface IdentifierBearingNode {
 
 @Injectable({ providedIn: 'root' })
 export class VoudService {
+  private readonly conditionalVisibilityDefaults = new Map<string, unknown>([
+    ['visibilityRules', []],
+    ['visibilityDelay', 0],
+    ['animatedVisibility', false],
+    ['enableReHide', false],
+    ['logicalConnectiveOfRules', 'disjunction'],
+    ['activeAfterID', ''],
+    ['activeAfterIdDelay', 0],
+    ['activeAfter', ''],
+  ]);
+
   private parseDefinition(definition: string): any {
     try {
       return JSON.parse(definition);
@@ -146,6 +157,21 @@ export class VoudService {
     }
   }
 
+  /**
+   * Returns a preview-safe VOUD definition without conditional visibility rules.
+   * This is used by the Item Explorer when conditional rendering should be ignored.
+   */
+  stripConditionalVisibility(definition: string): string {
+    try {
+      const unitDefinition = this.parseDefinition(definition);
+      const sanitizedDefinition = this.removeConditionalVisibility(unitDefinition);
+      return JSON.stringify(sanitizedDefinition);
+    } catch (e) {
+      console.error('Error stripping conditional visibility from VOUD:', e);
+      return definition;
+    }
+  }
+
   private getPageVariableRefs(page: any): string[] {
     const aliases = this.listSimplify(this.getDeepestElements(page, 'alias', ['visibilityRules']));
     const ids = this.listSimplify(this.getDeepestElements(page, 'id', ['visibilityRules']));
@@ -191,6 +217,33 @@ export class VoudService {
         this.visitNodes(value, visitor, noParent);
       }
     });
+  }
+
+  private removeConditionalVisibility(node: unknown): unknown {
+    if (Array.isArray(node)) {
+      return node.map((item) => this.removeConditionalVisibility(item));
+    }
+
+    if (typeof node !== 'object' || node === null) {
+      return node;
+    }
+
+    return Object.entries(node).reduce<Record<string, unknown>>((acc, [key, value]) => {
+      if (this.conditionalVisibilityDefaults.has(key)) {
+        acc[key] = this.cloneConditionalVisibilityDefault(key);
+      } else {
+        acc[key] = this.removeConditionalVisibility(value);
+      }
+      return acc;
+    }, {});
+  }
+
+  private cloneConditionalVisibilityDefault(key: string): unknown {
+    const value = this.conditionalVisibilityDefaults.get(key);
+    if (Array.isArray(value)) {
+      return [...value];
+    }
+    return value;
   }
 
   private getDeepestElements(x: any, label: string, noParent: string[] = []): any[] {

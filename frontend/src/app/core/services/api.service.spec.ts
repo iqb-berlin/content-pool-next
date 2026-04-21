@@ -311,6 +311,33 @@ describe('ApiService', () => {
       const url = service.getFileDownloadUrl('acp1', 'file1');
       expect(url).toBe('/api/acp/acp1/files/file1/download');
     });
+
+    it('should get inline file content URL', () => {
+      localStorage.setItem('cp_token', 'preview-token');
+      const url = service.getFileContentUrl('acp1', 'file1', { disposition: 'inline' });
+
+      expect(url).toContain('/api/acp/acp1/files/file1/download');
+      expect(url).toContain('auth_token=preview-token');
+      expect(url).toContain('disposition=inline');
+    });
+
+    it('should request file preview metadata', () => {
+      httpClientMock.get.mockReturnValue(
+        of({
+          fileId: 'file1',
+          originalName: 'test.json',
+          extension: 'json',
+          mode: 'text',
+          truncated: false,
+        }),
+      );
+
+      service.getFilePreview('acp1', 'file1').subscribe((result) => {
+        expect(result.fileId).toBe('file1');
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/files/file1/preview');
+    });
   });
 
   describe('ACP Index', () => {

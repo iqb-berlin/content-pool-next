@@ -93,6 +93,27 @@ describe("FilesService", () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
     unitParserService = {
+      parseUnitXml: jest.fn().mockImplementation((content: string) => ({
+        unitId: content.match(/<Id>([^<]+)<\/Id>/)?.[1] || "",
+        unitLabel: content.match(/<Label>([^<]+)<\/Label>/)?.[1] || "",
+        description: content.match(/<Description>([^<]+)<\/Description>/)?.[1],
+        definitionRef:
+          content.match(/<DefinitionRef[^>]*>([^<]+)<\/DefinitionRef>/)?.[1] || "",
+        playerRef:
+          content.match(/<DefinitionRef[^>]*player="([^"]+)"/)?.[1] || "",
+        codingSchemeRef:
+          content.match(/<CodingSchemeRef>([^<]+)<\/CodingSchemeRef>/)?.[1],
+        metadataRef: content.match(/<Reference>([^<]+)<\/Reference>/)?.[1],
+      })),
+      parseVomd: jest
+        .fn()
+        .mockImplementation((content: string) => {
+          const data = JSON.parse(content);
+          return {
+            unitProfiles: data.profiles || [],
+            items: data.items || [],
+          };
+        }),
       pruneMissingDependencies: jest.fn().mockResolvedValue({
         unitsUpdated: 0,
         dependenciesRemoved: 0,
@@ -439,6 +460,160 @@ describe("FilesService", () => {
       await expect(
         service.getValidationResultForAcp("acp-1", "file-1"),
       ).resolves.toEqual({ valid: true });
+    });
+  });
+
+  describe("getPreviewForAcp", () => {
+    it("builds a structured preview for unit XML files", async () => {
+      repo.findOne.mockResolvedValueOnce({
+        ...mockFile,
+        originalName: "unit-1.xml",
+        filePath: "/uploads/acp-1/unit-1.xml",
+        fileType: "application/xml",
+      });
+      (fs.readFile as jest.Mock).mockResolvedValueOnce(`<?xml version="1.0"?>
+<Unit>
+  <Id>unit-1</Id>
+  <Label>Unit 1</Label>
+  <DefinitionRef player="iqb-player-aspect@2.11">unit-1.voud</DefinitionRef>
+  <CodingSchemeRef>unit-1.vocs</CodingSchemeRef>
+  <Reference>unit-1.vomd</Reference>
+</Unit>`);
+
+      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+
+      expect(preview).toEqual(
+        expect.objectContaining({
+          mode: "structured",
+          textFormat: "xml",
+          structuredData: expect.objectContaining({
+            type: "unit-xml",
+            unitId: "unit-1",
+          }),
+        }),
+      );
+      expect(preview.textContent).toContain("<Unit>");
+    });
+
+    it("builds a structured preview for VOMD files", async () => {
+      repo.findOne.mockResolvedValueOnce({
+        ...mockFile,
+        originalName: "unit-1.vomd",
+        filePath: "/uploads/acp-1/unit-1.vomd",
+        fileType: "application/json",
+      });
+      (fs.readFile as jest.Mock).mockResolvedValueOnce(
+        JSON.stringify({
+          profiles: [
+            {
+              entries: [
+                {
+                  id: "difficulty",
+                  label: [{ lang: "de", value: "Schwierigkeit" }],
+                  valueAsText: [{ lang: "de", value: "mittel" }],
+                },
+              ],
+            },
+          ],
+          items: [
+            {
+              id: "item-1",
+              description: "Aufgabe 1",
+              variableId: "VAR_1",
+              profiles: [
+                {
+                  entries: [
+                    {
+                      id: "format",
+                      label: [{ lang: "de", value: "Format" }],
+                      valueAsText: [{ lang: "de", value: "MC" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        }),
+      );
+
+      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+
+      expect(preview).toEqual(
+        expect.objectContaining({
+          mode: "structured",
+          textFormat: "json",
+          structuredData: expect.objectContaining({
+            type: "vomd",
+            itemCount: 1,
+            unitProfiles: [
+              expect.objectContaining({
+                id: "difficulty",
+                value: "mittel",
+              }),
+            ],
+          }),
+        }),
+      );
+    });
+
+    it("returns all VOCS variables and codes without preview truncation", async () => {
+      const variables = Array.from({ length: 25 }, (_, variableIndex) => ({
+        id: `VAR_${variableIndex + 1}`,
+        label: [{ lang: "de", value: `Variable ${variableIndex + 1}` }],
+        codes: Array.from({ length: 15 }, (_, codeIndex) => ({
+          id: codeIndex,
+          score: codeIndex,
+          label: [{ lang: "de", value: `Code ${codeIndex}` }],
+        })),
+      }));
+
+      repo.findOne.mockResolvedValueOnce({
+        ...mockFile,
+        originalName: "unit-1.vocs",
+        filePath: "/uploads/acp-1/unit-1.vocs",
+        fileType: "application/json",
+      });
+      (fs.readFile as jest.Mock).mockResolvedValueOnce(
+        JSON.stringify({ variableCodings: variables }),
+      );
+
+      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+
+      expect(preview).toEqual(
+        expect.objectContaining({
+          mode: "structured",
+          structuredData: expect.objectContaining({
+            type: "vocs",
+            variableCount: 25,
+            codeCount: 375,
+          }),
+        }),
+      );
+
+      const structured = preview.structuredData as any;
+      expect(structured.variables).toHaveLength(25);
+      expect(structured.variables[0].codes).toHaveLength(15);
+      expect(structured.variables[24].id).toBe("VAR_25");
+    });
+
+    it("returns image previews without loading file contents", async () => {
+      repo.findOne.mockResolvedValueOnce({
+        ...mockFile,
+        originalName: "diagram.png",
+        filePath: "/uploads/acp-1/diagram.png",
+        fileType: "image/png",
+      });
+      (fs.readFile as jest.Mock).mockClear();
+
+      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+
+      expect(preview).toEqual(
+        expect.objectContaining({
+          mode: "image",
+          truncated: false,
+        }),
+      );
+      expect(fs.readFile).not.toHaveBeenCalled();
     });
   });
 

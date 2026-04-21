@@ -50,6 +50,13 @@ describe("FilesController", () => {
         deletedStates: 1,
         keptStates: 1,
       }),
+      getPreviewForAcp: jest.fn().mockResolvedValue({
+        fileId: "file-1",
+        originalName: "unit-1.xml",
+        extension: "xml",
+        mode: "structured",
+        truncated: false,
+      }),
       downloadForAcp: jest
         .fn()
         .mockResolvedValue({ buffer: Buffer.from("file-body") }),
@@ -332,6 +339,33 @@ describe("FilesController", () => {
     });
   });
 
+  it("returns preview data for managers", async () => {
+    await expect(
+      controller.getPreview("acp-1", "file-1", { acpAccessLevel: "MANAGER" }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        fileId: "file-1",
+        mode: "structured",
+      }),
+    );
+
+    expect(filesService.getPreviewForAcp).toHaveBeenCalledWith("acp-1", "file-1");
+  });
+
+  it("blocks preview access when file download and unit view access are disabled", async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      allowUnitDownload: false,
+      allowFileDownload: false,
+      enableItemList: true,
+      enableUnitView: false,
+    });
+    filesService.isUnitDependencyFile.mockResolvedValueOnce(false);
+
+    await expect(
+      controller.getPreview("acp-1", "file-1", { acpAccessLevel: "PUBLIC" }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
   it("blocks file download when all relevant features are disabled", async () => {
     filesService.getFeatureConfig.mockResolvedValueOnce({
       allowUnitDownload: false,
@@ -342,7 +376,7 @@ describe("FilesController", () => {
     filesService.isUnitDependencyFile.mockResolvedValueOnce(false);
 
     await expect(
-      controller.download("acp-1", "file-1", { acpAccessLevel: "PUBLIC" }, {
+      controller.download("acp-1", "file-1", undefined, { acpAccessLevel: "PUBLIC" }, {
         setHeader: jest.fn(),
         send: jest.fn(),
       } as any),
@@ -362,6 +396,7 @@ describe("FilesController", () => {
     await controller.download(
       "acp-1",
       "file-1",
+      undefined,
       { acpAccessLevel: "PUBLIC" },
       res,
     );
@@ -385,6 +420,7 @@ describe("FilesController", () => {
     await controller.download(
       "acp-1",
       "file-1",
+      undefined,
       { acpAccessLevel: "PUBLIC" },
       res,
     );
@@ -398,12 +434,42 @@ describe("FilesController", () => {
     await controller.download(
       "acp-1",
       "file-1",
+      undefined,
       { acpAccessLevel: "MANAGER" },
       res,
     );
 
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
     expect(filesService.downloadForAcp).toHaveBeenCalledWith("acp-1", "file-1");
+  });
+
+  it("supports inline disposition for previews", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.download(
+      "acp-1",
+      "file-1",
+      "inline",
+      { acpAccessLevel: "MANAGER" },
+      res,
+    );
+
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'inline; filename="unit-1.xml"',
+    );
+  });
+
+  it("rejects invalid content disposition", async () => {
+    await expect(
+      controller.download(
+        "acp-1",
+        "file-1",
+        "sideways",
+        { acpAccessLevel: "MANAGER" },
+        { setHeader: jest.fn(), send: jest.fn() } as any,
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 
   it("deletes a single file and returns cleanup + validation summary", async () => {

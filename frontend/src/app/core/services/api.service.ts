@@ -22,6 +22,7 @@ import {
   ItemExplorerChangeLogEntry,
   ItemExplorerSharedState,
   ValidateUnitsResponse,
+  FilePreviewResponse,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -175,8 +176,26 @@ export class ApiService {
     return this.http.get(`${this.API}/acp/${acpId}/files/${fileId}/validation`);
   }
   getFileDownloadUrl(acpId: string, fileId: string): string {
+    return this.getFileContentUrl(acpId, fileId);
+  }
+  getFileContentUrl(
+    acpId: string,
+    fileId: string,
+    options?: { disposition?: 'attachment' | 'inline' },
+  ): string {
     const token = localStorage.getItem('cp_token');
-    return `${this.API}/acp/${acpId}/files/${fileId}/download${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
+    const query: string[] = [];
+    if (token) {
+      query.push(`auth_token=${encodeURIComponent(token)}`);
+    }
+    if (options?.disposition) {
+      query.push(`disposition=${encodeURIComponent(options.disposition)}`);
+    }
+    const suffix = query.length ? `?${query.join('&')}` : '';
+    return `${this.API}/acp/${acpId}/files/${fileId}/download${suffix}`;
+  }
+  getFilePreview(acpId: string, fileId: string): Observable<FilePreviewResponse> {
+    return this.http.get<FilePreviewResponse>(`${this.API}/acp/${acpId}/files/${fileId}/preview`);
   }
   validateUnitFiles(acpId: string): Observable<ValidateUnitsResponse> {
     return this.http.get<ValidateUnitsResponse>(`${this.API}/acp/${acpId}/files/validate-units`);

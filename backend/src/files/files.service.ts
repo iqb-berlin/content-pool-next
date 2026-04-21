@@ -30,6 +30,114 @@ import {
 } from "../validation/validation.service";
 
 type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
+export type FilePreviewMode =
+  | "text"
+  | "image"
+  | "pdf"
+  | "audio"
+  | "video"
+  | "structured"
+  | "binary";
+export type FilePreviewTextFormat =
+  | "text"
+  | "json"
+  | "xml"
+  | "csv"
+  | "html"
+  | "markdown";
+
+export interface FilePreviewUnitXmlData {
+  type: "unit-xml";
+  unitId: string;
+  unitLabel: string;
+  description?: string;
+  references: {
+    definition?: string;
+    player?: string;
+    codingScheme?: string;
+    metadata?: string;
+  };
+}
+
+export interface FilePreviewVomdData {
+  type: "vomd";
+  itemCount: number;
+  unitProfileCount: number;
+  metadataColumns: { id: string; label: string }[];
+  unitProfiles: { id: string; label: string; value: string }[];
+  items: {
+    id: string;
+    description: string;
+    variableId?: string;
+    metadata: Record<string, string>;
+  }[];
+}
+
+export interface FilePreviewVocsData {
+  type: "vocs";
+  variableCount: number;
+  codeCount: number;
+  variables: {
+    id: string;
+    label: string;
+    manualInstruction?: string;
+    codeCount: number;
+    codes: {
+      id: string;
+      label: string;
+      score: string;
+      manualInstruction?: string;
+    }[];
+  }[];
+}
+
+export interface FilePreviewVoudData {
+  type: "voud";
+  pageCount: number;
+  variableRefCount: number;
+  topLevelKeys: string[];
+  identifierPreview: string[];
+  pages: {
+    pageNumber: number;
+    variableRefs: string[];
+    alwaysVisible: string[];
+  }[];
+}
+
+export interface FilePreviewCsvData {
+  type: "csv";
+  delimiter: string;
+  rowCount: number;
+  columnCount: number;
+  headers: string[];
+  rows: string[][];
+}
+
+export type FileStructuredPreviewData =
+  | FilePreviewUnitXmlData
+  | FilePreviewVomdData
+  | FilePreviewVocsData
+  | FilePreviewVoudData
+  | FilePreviewCsvData;
+
+export interface FilePreviewResponse {
+  fileId: string;
+  originalName: string;
+  mimeType: string | null;
+  extension: string;
+  mode: FilePreviewMode;
+  textFormat?: FilePreviewTextFormat;
+  textContent?: string;
+  truncated: boolean;
+  lineCount?: number;
+  characterCount?: number;
+  structuredData?: FileStructuredPreviewData | null;
+}
+
+const TEXT_PREVIEW_MAX_CHARACTERS = 50000;
+const STRUCTURED_PREVIEW_MAX_ITEMS = 20;
+const STRUCTURED_PREVIEW_MAX_COLUMNS = 12;
+const STRUCTURED_PREVIEW_MAX_PAGES = 12;
 
 @Injectable()
 export class FilesService {
@@ -358,6 +466,92 @@ export class FilesService {
     return this.fileRepository.save(file);
   }
 
+  async getPreviewForAcp(
+    acpId: string,
+    id: string,
+  ): Promise<FilePreviewResponse> {
+    const file = await this.findByIdForAcp(acpId, id);
+    const extension = this.getFileExtension(file.originalName);
+    const mimeType = this.normalizeMimeType(file.fileType);
+
+    if (this.isImagePreview(extension, mimeType)) {
+      return this.buildBasePreview(file, extension, "image");
+    }
+
+    if (this.isPdfPreview(extension, mimeType)) {
+      return this.buildBasePreview(file, extension, "pdf");
+    }
+
+    if (this.isAudioPreview(extension, mimeType)) {
+      return this.buildBasePreview(file, extension, "audio");
+    }
+
+    if (this.isVideoPreview(extension, mimeType)) {
+      return this.buildBasePreview(file, extension, "video");
+    }
+
+    if (!this.isTextPreviewCandidate(extension, mimeType)) {
+      return this.buildBasePreview(file, extension, "binary");
+    }
+
+    const rawContent = await this.readTextFileForPreview(file);
+    const textFormat = this.getTextFormat(extension);
+    let formattedContent = rawContent;
+    let structuredData: FileStructuredPreviewData | null = null;
+    let mode: FilePreviewMode = "text";
+
+    if (textFormat === "json") {
+      const parsedJson = this.tryParseJson(rawContent);
+      if (parsedJson !== null) {
+        formattedContent = JSON.stringify(parsedJson, null, 2);
+      }
+    }
+
+    if (extension === "xml") {
+      const structuredXml = this.buildUnitXmlPreview(rawContent);
+      if (structuredXml) {
+        structuredData = structuredXml;
+        mode = "structured";
+      }
+    } else if (extension === "vomd") {
+      const structuredVomd = this.buildVomdPreview(rawContent);
+      if (structuredVomd) {
+        structuredData = structuredVomd;
+        mode = "structured";
+        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+      }
+    } else if (extension === "vocs") {
+      const structuredVocs = this.buildVocsPreview(rawContent);
+      if (structuredVocs) {
+        structuredData = structuredVocs;
+        mode = "structured";
+        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+      }
+    } else if (extension === "voud") {
+      const structuredVoud = this.buildVoudPreview(rawContent);
+      if (structuredVoud) {
+        structuredData = structuredVoud;
+        mode = "structured";
+        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+      }
+    } else if (extension === "csv" || extension === "tsv") {
+      const structuredCsv = this.buildCsvPreview(rawContent, extension);
+      if (structuredCsv) {
+        structuredData = structuredCsv;
+        mode = "structured";
+      }
+    }
+
+    return this.buildTextPreview(
+      file,
+      extension,
+      formattedContent,
+      textFormat,
+      mode,
+      structuredData,
+    );
+  }
+
   async createUnitZip(
     acpId: string,
     unitId: string,
@@ -431,6 +625,536 @@ export class FilesService {
       }
     }
     return false;
+  }
+
+  private buildBasePreview(
+    file: AcpFile,
+    extension: string,
+    mode: FilePreviewMode,
+  ): FilePreviewResponse {
+    return {
+      fileId: file.id,
+      originalName: file.originalName,
+      mimeType: file.fileType || null,
+      extension,
+      mode,
+      truncated: false,
+    };
+  }
+
+  private buildTextPreview(
+    file: AcpFile,
+    extension: string,
+    fullContent: string,
+    textFormat: FilePreviewTextFormat,
+    mode: FilePreviewMode = "text",
+    structuredData: FileStructuredPreviewData | null = null,
+  ): FilePreviewResponse {
+    const characterCount = fullContent.length;
+    const truncated = characterCount > TEXT_PREVIEW_MAX_CHARACTERS;
+    const textContent = truncated
+      ? fullContent.slice(0, TEXT_PREVIEW_MAX_CHARACTERS)
+      : fullContent;
+
+    return {
+      fileId: file.id,
+      originalName: file.originalName,
+      mimeType: file.fileType || null,
+      extension,
+      mode,
+      textFormat,
+      textContent,
+      truncated,
+      lineCount: this.countLines(fullContent),
+      characterCount,
+      structuredData,
+    };
+  }
+
+  private async readTextFileForPreview(file: AcpFile): Promise<string> {
+    try {
+      return await fs.readFile(file.filePath, "utf-8");
+    } catch {
+      throw new NotFoundException("File not found on disk");
+    }
+  }
+
+  private buildUnitXmlPreview(content: string): FilePreviewUnitXmlData | null {
+    if (!content.includes("<Unit")) {
+      return null;
+    }
+
+    const parsed = this.unitParserService.parseUnitXml(content, "preview.xml");
+    if (!parsed) {
+      return null;
+    }
+
+    return {
+      type: "unit-xml",
+      unitId: parsed.unitId,
+      unitLabel: parsed.unitLabel,
+      description: parsed.description,
+      references: {
+        definition: parsed.definitionRef || undefined,
+        player: parsed.playerRef || undefined,
+        codingScheme: parsed.codingSchemeRef,
+        metadata: parsed.metadataRef,
+      },
+    };
+  }
+
+  private buildVomdPreview(content: string): FilePreviewVomdData | null {
+    const parsed = this.unitParserService.parseVomd(content);
+    if (!parsed) {
+      return null;
+    }
+
+    const metadataColumns = new Map<string, string>();
+    const unitProfiles = this.extractPreviewEntries(
+      (parsed.unitProfiles || []).flatMap((profile: any) =>
+        Array.isArray(profile?.entries) ? profile.entries : [],
+      ),
+    ).slice(0, STRUCTURED_PREVIEW_MAX_COLUMNS);
+
+    const items = (parsed.items || [])
+      .slice(0, STRUCTURED_PREVIEW_MAX_ITEMS)
+      .map((item: any) => {
+        const entries = this.extractPreviewEntries(
+          (item?.profiles || []).flatMap((profile: any) =>
+            Array.isArray(profile?.entries) ? profile.entries : [],
+          ),
+        );
+
+        const metadata = entries.reduce<Record<string, string>>((acc, entry) => {
+          if (entry.id && !metadataColumns.has(entry.id)) {
+            metadataColumns.set(entry.id, entry.label || entry.id);
+          }
+          if (entry.id) {
+            acc[entry.id] = entry.value;
+          }
+          return acc;
+        }, {});
+
+        return {
+          id: String(item?.id || ""),
+          description: String(item?.description || item?.label || ""),
+          variableId: this.pickFirstNonEmptyString([
+            item?.sourceVariable,
+            item?.variableId,
+            item?.variableReadOnlyId,
+          ]),
+          metadata,
+        };
+      });
+
+    return {
+      type: "vomd",
+      itemCount: Array.isArray(parsed.items) ? parsed.items.length : 0,
+      unitProfileCount: Array.isArray(parsed.unitProfiles)
+        ? parsed.unitProfiles.length
+        : 0,
+      metadataColumns: Array.from(metadataColumns.entries()).map(
+        ([id, label]) => ({
+          id,
+          label,
+        }),
+      ),
+      unitProfiles,
+      items,
+    };
+  }
+
+  private buildVocsPreview(content: string): FilePreviewVocsData | null {
+    const parsed = this.tryParseJson(content);
+    if (!parsed) {
+      return null;
+    }
+
+    const variablesRaw = Array.isArray(parsed)
+      ? parsed
+      : Array.isArray((parsed as Record<string, unknown>)?.variableCodings)
+        ? ((parsed as Record<string, unknown>).variableCodings as any[])
+        : [];
+
+    const variableCount = variablesRaw.length;
+    const codeCount = variablesRaw.reduce((sum, variable: any) => {
+      const codesRaw = Array.isArray(variable?.codes) ? variable.codes : [];
+      return sum + codesRaw.length;
+    }, 0);
+
+    const variables = variablesRaw.map((variable: any) => {
+        const codesRaw = Array.isArray(variable?.codes) ? variable.codes : [];
+
+        return {
+          id: String(variable?.id || ""),
+          label:
+            this.readLocalizedText(variable?.label) ||
+            String(variable?.id || "Variable"),
+          manualInstruction: this.readTextValue(variable?.manualInstruction),
+          codeCount: codesRaw.length,
+          codes: codesRaw.map((code: any) => ({
+            id:
+              code?.id === null || typeof code?.id === "undefined"
+                ? "null"
+                : String(code.id),
+            label:
+              this.readLocalizedText(code?.label) ||
+              this.readTextValue(code?.manualInstruction) ||
+              "",
+            score:
+              code?.score === null || typeof code?.score === "undefined"
+                ? ""
+                : String(code.score),
+            manualInstruction: this.readTextValue(code?.manualInstruction),
+          })),
+        };
+      });
+
+    return {
+      type: "vocs",
+      variableCount,
+      codeCount,
+      variables,
+    };
+  }
+
+  private buildVoudPreview(content: string): FilePreviewVoudData | null {
+    const parsed = this.tryParseJson(content);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+
+    const pages = Array.isArray((parsed as Record<string, unknown>).pages)
+      ? ((parsed as Record<string, unknown>).pages as any[])
+      : [];
+    const identifiers = this.collectNestedStringValues(parsed, ["id", "alias"], [
+      "visibilityRules",
+    ]);
+
+    return {
+      type: "voud",
+      pageCount: pages.length,
+      variableRefCount: identifiers.length,
+      topLevelKeys: Object.keys(parsed).slice(0, STRUCTURED_PREVIEW_MAX_COLUMNS),
+      identifierPreview: identifiers.slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
+      pages: pages.slice(0, STRUCTURED_PREVIEW_MAX_PAGES).map((page, index) => ({
+        pageNumber: index + 1,
+        variableRefs: this.collectNestedStringValues(page, ["id", "alias"], [
+          "visibilityRules",
+        ]).slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
+        alwaysVisible: this.collectNestedStringValues(page, ["alwaysVisible"]).slice(
+          0,
+          STRUCTURED_PREVIEW_MAX_ITEMS,
+        ),
+      })),
+    };
+  }
+
+  private buildCsvPreview(
+    content: string,
+    extension: string,
+  ): FilePreviewCsvData | null {
+    const lines = content
+      .split(/\r?\n/)
+      .map((line) => line.replace(/\r/g, ""))
+      .filter((line) => line.length > 0);
+
+    if (!lines.length) {
+      return {
+        type: "csv",
+        delimiter: extension === "tsv" ? "\\t" : ",",
+        rowCount: 0,
+        columnCount: 0,
+        headers: [],
+        rows: [],
+      };
+    }
+
+    const delimiter =
+      extension === "tsv" ? "\t" : this.detectCsvDelimiter(lines[0]);
+    const parsedRows = lines.map((line) => this.parseCsvLine(line, delimiter));
+    const headers = parsedRows[0] || [];
+
+    return {
+      type: "csv",
+      delimiter: delimiter === "\t" ? "\\t" : delimiter,
+      rowCount: Math.max(parsedRows.length - 1, 0),
+      columnCount: headers.length,
+      headers,
+      rows: parsedRows.slice(1, STRUCTURED_PREVIEW_MAX_ITEMS + 1),
+    };
+  }
+
+  private extractPreviewEntries(
+    entries: unknown[],
+  ): { id: string; label: string; value: string }[] {
+    return (entries || [])
+      .map((entry: any) => {
+        const id = String(entry?.id || "").trim();
+        if (!id) {
+          return null;
+        }
+
+        return {
+          id,
+          label: this.readLocalizedText(entry?.label) || id,
+          value:
+            this.readLocalizedText(entry?.valueAsText) ||
+            this.readTextValue(entry?.value) ||
+            "",
+        };
+      })
+      .filter(
+        (
+          entry,
+        ): entry is { id: string; label: string; value: string } =>
+          entry !== null,
+      );
+  }
+
+  private collectNestedStringValues(
+    node: unknown,
+    targetKeys: string[],
+    ignoredParents: string[] = [],
+  ): string[] {
+    const values = new Set<string>();
+    const ignoredParentSet = new Set(ignoredParents);
+
+    const visit = (value: unknown, parentKey?: string) => {
+      if (ignoredParentSet.has(parentKey || "")) {
+        return;
+      }
+
+      if (Array.isArray(value)) {
+        value.forEach((entry) => visit(entry, parentKey));
+        return;
+      }
+
+      if (typeof value !== "object" || value === null) {
+        return;
+      }
+
+      for (const [key, child] of Object.entries(value)) {
+        if (targetKeys.includes(key)) {
+          this.asStringList(child).forEach((entry) => values.add(entry));
+        }
+
+        if (!ignoredParentSet.has(key)) {
+          visit(child, key);
+        }
+      }
+    };
+
+    visit(node);
+    return Array.from(values);
+  }
+
+  private asStringList(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.flatMap((entry) => this.asStringList(entry));
+    }
+
+    const normalized = this.readTextValue(value);
+    return normalized ? [normalized] : [];
+  }
+
+  private readLocalizedText(value: unknown): string {
+    if (Array.isArray(value)) {
+      const localized = value
+        .map((entry) => {
+          if (typeof entry === "string") {
+            return entry.trim();
+          }
+          if (typeof entry === "object" && entry !== null && "value" in entry) {
+            return this.readTextValue((entry as Record<string, unknown>).value);
+          }
+          return "";
+        })
+        .find((entry) => entry.length > 0);
+
+      return localized || "";
+    }
+
+    if (typeof value === "object" && value !== null && "value" in value) {
+      return this.readTextValue((value as Record<string, unknown>).value);
+    }
+
+    return this.readTextValue(value);
+  }
+
+  private readTextValue(value: unknown): string {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return String(value).trim();
+    }
+    return "";
+  }
+
+  private pickFirstNonEmptyString(values: unknown[]): string | undefined {
+    return values
+      .map((value) => this.readTextValue(value))
+      .find((value) => value.length > 0);
+  }
+
+  private tryParseJson(content: string): unknown | null {
+    try {
+      return JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+
+  private getFileExtension(fileName: string): string {
+    return path.extname(fileName).replace(/^\./, "").trim().toLowerCase();
+  }
+
+  private normalizeMimeType(mimeType?: string): string {
+    return String(mimeType || "")
+      .trim()
+      .toLowerCase();
+  }
+
+  private isImagePreview(extension: string, mimeType: string): boolean {
+    return (
+      mimeType.startsWith("image/") ||
+      [
+        "png",
+        "jpg",
+        "jpeg",
+        "gif",
+        "webp",
+        "bmp",
+        "svg",
+        "svgz",
+      ].includes(extension)
+    );
+  }
+
+  private isPdfPreview(extension: string, mimeType: string): boolean {
+    return extension === "pdf" || mimeType === "application/pdf";
+  }
+
+  private isAudioPreview(extension: string, mimeType: string): boolean {
+    return (
+      mimeType.startsWith("audio/") ||
+      ["mp3", "wav", "ogg", "m4a", "aac"].includes(extension)
+    );
+  }
+
+  private isVideoPreview(extension: string, mimeType: string): boolean {
+    return (
+      mimeType.startsWith("video/") ||
+      ["mp4", "webm", "mov", "m4v", "ogv"].includes(extension)
+    );
+  }
+
+  private isTextPreviewCandidate(
+    extension: string,
+    mimeType: string,
+  ): boolean {
+    if (mimeType.startsWith("text/")) {
+      return true;
+    }
+
+    if (
+      mimeType.includes("json") ||
+      mimeType.includes("xml") ||
+      mimeType.includes("javascript")
+    ) {
+      return true;
+    }
+
+    return [
+      "txt",
+      "json",
+      "xml",
+      "csv",
+      "tsv",
+      "md",
+      "html",
+      "htm",
+      "voud",
+      "vomd",
+      "vocs",
+      "log",
+      "yml",
+      "yaml",
+      "ini",
+      "properties",
+    ].includes(extension);
+  }
+
+  private getTextFormat(extension: string): FilePreviewTextFormat {
+    if (["json", "voud", "vomd", "vocs"].includes(extension)) {
+      return "json";
+    }
+    if (extension === "xml") {
+      return "xml";
+    }
+    if (extension === "csv" || extension === "tsv") {
+      return "csv";
+    }
+    if (extension === "html" || extension === "htm") {
+      return "html";
+    }
+    if (extension === "md") {
+      return "markdown";
+    }
+    return "text";
+  }
+
+  private countLines(content: string): number {
+    if (!content) {
+      return 0;
+    }
+    return content.split(/\r?\n/).length;
+  }
+
+  private detectCsvDelimiter(headerLine: string): string {
+    const candidates = [",", ";", "\t"];
+    const ranked = candidates
+      .map((delimiter) => ({
+        delimiter,
+        columns: this.parseCsvLine(headerLine, delimiter).length,
+      }))
+      .sort((a, b) => b.columns - a.columns);
+
+    return ranked[0]?.columns > 1 ? ranked[0].delimiter : ",";
+  }
+
+  private parseCsvLine(line: string, delimiter: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < line.length; index += 1) {
+      const char = line[index];
+      const next = line[index + 1];
+
+      if (char === '"') {
+        if (inQuotes && next === '"') {
+          current += '"';
+          index += 1;
+          continue;
+        }
+        inQuotes = !inQuotes;
+        continue;
+      }
+
+      if (char === delimiter && !inQuotes) {
+        result.push(current.trim());
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    result.push(current.trim());
+    return result;
   }
 
   private async getAcpIndex(acpId: string): Promise<any> {

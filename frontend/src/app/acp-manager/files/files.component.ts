@@ -5,12 +5,14 @@ import { ActivatedRoute } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import {
   AcpFile,
+  FilePreviewResponse,
   UploadValidationSummary,
   UnitFileValidationResult,
 } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
+import { FilePreviewPanelComponent } from './file-preview-panel.component';
 
 type UploadConflictDecision = 'replace' | 'skip';
 
@@ -27,7 +29,12 @@ type FileValidationFilter = 'all' | FileValidationState;
 @Component({
   selector: 'app-files',
   standalone: true,
-  imports: [FormsModule, AcpManagerContextComponent, ConfirmDialogComponent],
+  imports: [
+    FormsModule,
+    AcpManagerContextComponent,
+    ConfirmDialogComponent,
+    FilePreviewPanelComponent,
+  ],
   template: `
     <app-acp-manager-context />
 
@@ -187,76 +194,93 @@ type FileValidationFilter = 'all' | FileValidationState;
       <div class="filter-summary">{{ filteredFiles.length }} von {{ files.length }} Dateien</div>
     </div>
 
-    <div class="card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Dateiname</th>
-            <th>Typ</th>
-            <th>Größe</th>
-            <th>Validierung</th>
-            <th>Aktionen</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (file of filteredFiles; track file.id) {
+    <div class="files-layout">
+      <div class="card table-card">
+        <table class="table">
+          <thead>
             <tr>
-              <td>{{ file.originalName }}</td>
-              <td>{{ file.fileType || '–' }}</td>
-              <td>{{ formatSize(file.fileSize) }}</td>
-              <td>
-                @if (file.validationResult) {
-                  <span
-                    class="badge"
-                    [class.badge-success]="file.validationResult.valid"
-                    [class.badge-danger]="!file.validationResult.valid"
-                  >
-                    {{ file.validationResult.valid ? 'OK' : 'Fehler' }}
-                  </span>
-
-                  @if (file.validationResult.issues.length) {
-                    <div class="file-validation-issues">
-                      @for (
-                        issue of file.validationResult.issues;
-                        track issueTrack(issue, $index)
-                      ) {
-                        <div
-                          class="file-validation-issue"
-                          [class.issue-error]="issue.severity === 'error'"
-                          [class.issue-warning]="issue.severity === 'warning'"
-                          [class.issue-info]="issue.severity === 'info'"
-                        >
-                          <span class="issue-tag">{{ issue.severity.toUpperCase() }}</span>
-                          <span>{{ issue.message }}</span>
-                        </div>
-                      }
-                    </div>
-                  }
-                } @else {
-                  <span class="badge badge-warning">Nicht geprüft</span>
-                }
-              </td>
-              <td>
-                <a [href]="getDownloadUrl(file)" class="btn btn-sm btn-outline" target="_blank"
-                  >⬇ Download</a
-                >
-                <button
-                  class="btn btn-sm btn-danger"
-                  (click)="openDeleteFileDialog(file)"
-                  style="margin-left:8px"
-                >
-                  Löschen
-                </button>
-              </td>
+              <th>Dateiname</th>
+              <th>Typ</th>
+              <th>Größe</th>
+              <th>Validierung</th>
+              <th>Aktionen</th>
             </tr>
-          }
-        </tbody>
-      </table>
-      @if (!files.length) {
-        <div class="empty-state"><h3>Keine Dateien vorhanden</h3></div>
-      } @else if (!filteredFiles.length) {
-        <div class="empty-state"><h3>Keine Treffer für die aktuellen Filter</h3></div>
-      }
+          </thead>
+          <tbody>
+            @for (file of filteredFiles; track file.id) {
+              <tr [class.is-selected]="selectedPreviewFile?.id === file.id">
+                <td>{{ file.originalName }}</td>
+                <td>{{ file.fileType || '–' }}</td>
+                <td>{{ formatSize(file.fileSize) }}</td>
+                <td>
+                  @if (file.validationResult) {
+                    <span
+                      class="badge"
+                      [class.badge-success]="file.validationResult.valid"
+                      [class.badge-danger]="!file.validationResult.valid"
+                    >
+                      {{ file.validationResult.valid ? 'OK' : 'Fehler' }}
+                    </span>
+
+                    @if (file.validationResult.issues.length) {
+                      <div class="file-validation-issues">
+                        @for (
+                          issue of file.validationResult.issues;
+                          track issueTrack(issue, $index)
+                        ) {
+                          <div
+                            class="file-validation-issue"
+                            [class.issue-error]="issue.severity === 'error'"
+                            [class.issue-warning]="issue.severity === 'warning'"
+                            [class.issue-info]="issue.severity === 'info'"
+                          >
+                            <span class="issue-tag">{{ issue.severity.toUpperCase() }}</span>
+                            <span>{{ issue.message }}</span>
+                          </div>
+                        }
+                      </div>
+                    }
+                  } @else {
+                    <span class="badge badge-warning">Nicht geprüft</span>
+                  }
+                </td>
+                <td>
+                  <div class="action-row">
+                    <button
+                      class="btn btn-sm"
+                      [class.btn-primary]="selectedPreviewFile?.id === file.id"
+                      [class.btn-outline]="selectedPreviewFile?.id !== file.id"
+                      (click)="openPreview(file)"
+                    >
+                      {{ selectedPreviewFile?.id === file.id ? 'Schließen' : 'Ansehen' }}
+                    </button>
+                    <a [href]="getDownloadUrl(file)" class="btn btn-sm btn-outline" target="_blank"
+                      >⬇ Download</a
+                    >
+                    <button class="btn btn-sm btn-danger" (click)="openDeleteFileDialog(file)">
+                      Löschen
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+        @if (!files.length) {
+          <div class="empty-state"><h3>Keine Dateien vorhanden</h3></div>
+        } @else if (!filteredFiles.length) {
+          <div class="empty-state"><h3>Keine Treffer für die aktuellen Filter</h3></div>
+        }
+      </div>
+
+      <app-file-preview-panel
+        [file]="selectedPreviewFile"
+        [preview]="selectedPreview"
+        [inlineUrl]="selectedPreviewInlineUrl"
+        [downloadUrl]="selectedPreviewDownloadUrl"
+        [loading]="previewLoading"
+        [error]="previewError"
+      />
     </div>
 
     <app-confirm-dialog
@@ -435,6 +459,23 @@ type FileValidationFilter = 'all' | FileValidationState;
         font-size: 0.85rem;
         color: var(--color-text-secondary);
       }
+      .files-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
+        gap: 16px;
+        align-items: start;
+      }
+      .table-card {
+        overflow: hidden;
+      }
+      .action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .table tbody tr.is-selected {
+        background: rgba(41, 128, 185, 0.08);
+      }
 
       .overlay-backdrop {
         position: fixed;
@@ -493,6 +534,11 @@ type FileValidationFilter = 'all' | FileValidationState;
         justify-content: flex-end;
         gap: 8px;
       }
+      @media (max-width: 1180px) {
+        .files-layout {
+          grid-template-columns: 1fr;
+        }
+      }
     `,
   ],
 })
@@ -514,6 +560,10 @@ export class FilesComponent implements OnInit {
   lastSyncReport: any = null;
   lastValidationSummary: UploadValidationSummary | null = null;
   lastConflictSummary: { conflicts: number; replaced: number; skipped: number } | null = null;
+  selectedPreviewFile: AcpFile | null = null;
+  selectedPreview: FilePreviewResponse | null = null;
+  previewLoading = false;
+  previewError = '';
 
   conflictDialogOpen = false;
   conflictEntries: UploadConflictEntry[] = [];
@@ -538,6 +588,33 @@ export class FilesComponent implements OnInit {
     this.api.getFiles(this.acpId).subscribe((f) => {
       this.files = f;
       this.applyFilters();
+      if (!this.selectedPreviewFile) {
+        return;
+      }
+
+      const updatedSelection = f.find((file) => file.id === this.selectedPreviewFile?.id) || null;
+      if (!updatedSelection) {
+        this.clearPreview();
+        return;
+      }
+
+      this.selectedPreviewFile = updatedSelection;
+    });
+  }
+
+  get selectedPreviewDownloadUrl(): string {
+    if (!this.selectedPreviewFile) {
+      return '';
+    }
+    return this.getDownloadUrl(this.selectedPreviewFile);
+  }
+
+  get selectedPreviewInlineUrl(): string {
+    if (!this.selectedPreviewFile) {
+      return '';
+    }
+    return this.api.getFileContentUrl(this.acpId, this.selectedPreviewFile.id, {
+      disposition: 'inline',
     });
   }
 
@@ -814,6 +891,9 @@ export class FilesComponent implements OnInit {
         next: () => {
           this.deleteDialogBusy = false;
           this.deleteDialogOpen = false;
+          if (this.selectedPreviewFile?.id === this.deleteDialogTarget?.id) {
+            this.clearPreview();
+          }
           this.deleteDialogTarget = null;
           this.load();
         },
@@ -830,6 +910,7 @@ export class FilesComponent implements OnInit {
         this.deleteDialogBusy = false;
         this.deleteDialogOpen = false;
         this.validationResults = [];
+        this.clearPreview();
         this.load();
       },
       error: (err) => {
@@ -841,6 +922,44 @@ export class FilesComponent implements OnInit {
 
   getDownloadUrl(file: AcpFile): string {
     return this.api.getFileDownloadUrl(this.acpId, file.id);
+  }
+
+  openPreview(file: AcpFile) {
+    if (this.selectedPreviewFile?.id === file.id) {
+      if (!this.previewLoading) {
+        this.clearPreview();
+      }
+      return;
+    }
+
+    this.selectedPreviewFile = file;
+    this.previewLoading = true;
+    this.previewError = '';
+    this.selectedPreview = null;
+
+    this.api.getFilePreview(this.acpId, file.id).subscribe({
+      next: (preview) => {
+        if (this.selectedPreviewFile?.id !== file.id) {
+          return;
+        }
+        this.selectedPreview = preview;
+        this.previewLoading = false;
+      },
+      error: (err) => {
+        if (this.selectedPreviewFile?.id !== file.id) {
+          return;
+        }
+        this.previewError = err?.error?.message || 'Die Vorschau konnte nicht geladen werden.';
+        this.previewLoading = false;
+      },
+    });
+  }
+
+  clearPreview() {
+    this.selectedPreviewFile = null;
+    this.selectedPreview = null;
+    this.previewLoading = false;
+    this.previewError = '';
   }
 
   formatSize(bytes: number): string {

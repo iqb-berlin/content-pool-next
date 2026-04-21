@@ -95,6 +95,111 @@ export interface ValidateUnitsResponse {
   validationSummary: UploadValidationSummary;
 }
 
+export type FilePreviewMode =
+  | 'text'
+  | 'image'
+  | 'pdf'
+  | 'audio'
+  | 'video'
+  | 'structured'
+  | 'binary';
+
+export type FilePreviewTextFormat =
+  | 'text'
+  | 'json'
+  | 'xml'
+  | 'csv'
+  | 'html'
+  | 'markdown';
+
+export interface FilePreviewUnitXmlData {
+  type: 'unit-xml';
+  unitId: string;
+  unitLabel: string;
+  description?: string;
+  references: {
+    definition?: string;
+    player?: string;
+    codingScheme?: string;
+    metadata?: string;
+  };
+}
+
+export interface FilePreviewVomdData {
+  type: 'vomd';
+  itemCount: number;
+  unitProfileCount: number;
+  metadataColumns: { id: string; label: string }[];
+  unitProfiles: { id: string; label: string; value: string }[];
+  items: {
+    id: string;
+    description: string;
+    variableId?: string;
+    metadata: Record<string, string>;
+  }[];
+}
+
+export interface FilePreviewVocsData {
+  type: 'vocs';
+  variableCount: number;
+  codeCount: number;
+  variables: {
+    id: string;
+    label: string;
+    manualInstruction?: string;
+    codeCount: number;
+    codes: {
+      id: string;
+      label: string;
+      score: string;
+      manualInstruction?: string;
+    }[];
+  }[];
+}
+
+export interface FilePreviewVoudData {
+  type: 'voud';
+  pageCount: number;
+  variableRefCount: number;
+  topLevelKeys: string[];
+  identifierPreview: string[];
+  pages: {
+    pageNumber: number;
+    variableRefs: string[];
+    alwaysVisible: string[];
+  }[];
+}
+
+export interface FilePreviewCsvData {
+  type: 'csv';
+  delimiter: string;
+  rowCount: number;
+  columnCount: number;
+  headers: string[];
+  rows: string[][];
+}
+
+export type FileStructuredPreviewData =
+  | FilePreviewUnitXmlData
+  | FilePreviewVomdData
+  | FilePreviewVocsData
+  | FilePreviewVoudData
+  | FilePreviewCsvData;
+
+export interface FilePreviewResponse {
+  fileId: string;
+  originalName: string;
+  mimeType: string | null;
+  extension: string;
+  mode: FilePreviewMode;
+  textFormat?: FilePreviewTextFormat;
+  textContent?: string;
+  truncated: boolean;
+  lineCount?: number;
+  characterCount?: number;
+  structuredData?: FileStructuredPreviewData | null;
+}
+
 export interface ValidationResult {
   valid: boolean;
   issues: ValidationIssue[];

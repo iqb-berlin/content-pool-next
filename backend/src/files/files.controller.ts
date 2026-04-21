@@ -184,6 +184,19 @@ export class FilesController {
     return this.filesService.findByIdForAcp(acpId, fileId);
   }
 
+  @Get(":fileId/preview")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Get preview data for a file" })
+  async getPreview(
+    @Param("acpId") acpId: string,
+    @Param("fileId") fileId: string,
+    @Request() req: any,
+  ) {
+    const file = await this.filesService.findByIdForAcp(acpId, fileId);
+    await this.ensureFileContentAccess(acpId, file.originalName, req);
+    return this.filesService.getPreviewForAcp(acpId, fileId);
+  }
+
   @Post("upload")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")
@@ -241,36 +254,27 @@ export class FilesController {
 
   @Get(":fileId/download")
   @UseGuards(AcpAccessGuard)
+  @ApiQuery({
+    name: "disposition",
+    required: false,
+    description: "attachment | inline",
+  })
   @ApiOperation({ summary: "Download a file" })
   async download(
     @Param("acpId") acpId: string,
     @Param("fileId") fileId: string,
+    @Query("disposition") disposition: string | undefined,
     @Request() req: any,
     @Res() res: Response,
   ) {
-    const isManager =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
     const file = await this.filesService.findByIdForAcp(acpId, fileId);
-
-    if (!isManager) {
-      const featureConfig = await this.filesService.getFeatureConfig(acpId);
-      const isDependency = await this.filesService.isUnitDependencyFile(
-        acpId,
-        file.originalName,
-      );
-      const canDownloadForView =
-        featureConfig.enableUnitView !== false && isDependency;
-      if (!featureConfig.allowFileDownload && !canDownloadForView) {
-        throw new ForbiddenException(
-          "File download is not enabled for this ACP",
-        );
-      }
-    }
+    await this.ensureFileContentAccess(acpId, file.originalName, req);
 
     const { buffer } = await this.filesService.downloadForAcp(acpId, fileId);
+    const resolvedDisposition = this.resolveDisposition(disposition);
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${file.originalName}"`,
+      `${resolvedDisposition}; filename="${file.originalName}"`,
     );
     res.setHeader("Content-Type", file.fileType || "application/octet-stream");
     res.send(buffer);
@@ -303,5 +307,43 @@ export class FilesController {
     @Param("fileId") fileId: string,
   ) {
     return this.filesService.getValidationResultForAcp(acpId, fileId);
+  }
+
+  private async ensureFileContentAccess(
+    acpId: string,
+    originalName: string,
+    req: any,
+  ): Promise<void> {
+    const isManager =
+      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    if (isManager) {
+      return;
+    }
+
+    const featureConfig = await this.filesService.getFeatureConfig(acpId);
+    const isDependency = await this.filesService.isUnitDependencyFile(
+      acpId,
+      originalName,
+    );
+    const canDownloadForView =
+      featureConfig.enableUnitView !== false && isDependency;
+
+    if (!featureConfig.allowFileDownload && !canDownloadForView) {
+      throw new ForbiddenException("File download is not enabled for this ACP");
+    }
+  }
+
+  private resolveDisposition(disposition: string | undefined): "attachment" | "inline" {
+    const normalized = String(disposition || "attachment")
+      .trim()
+      .toLowerCase();
+
+    if (normalized === "attachment" || normalized === "inline") {
+      return normalized;
+    }
+
+    throw new BadRequestException(
+      'Invalid disposition. Expected "attachment" or "inline".',
+    );
   }
 }

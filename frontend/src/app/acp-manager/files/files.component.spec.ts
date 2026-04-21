@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { of } from 'rxjs';
 import { FilesComponent } from './files.component';
-import { AcpFile } from '../../core/models/api.models';
+import { AcpFile, FilePreviewResponse } from '../../core/models/api.models';
 
 function createFile(overrides: Partial<AcpFile>): AcpFile {
   return {
@@ -51,6 +51,8 @@ describe('FilesComponent filtering', () => {
 
   let api: {
     getFiles: ReturnType<typeof vi.fn>;
+    getFilePreview: ReturnType<typeof vi.fn>;
+    getFileContentUrl: ReturnType<typeof vi.fn>;
   };
 
   let route: {
@@ -68,6 +70,18 @@ describe('FilesComponent filtering', () => {
   beforeEach(() => {
     api = {
       getFiles: vi.fn().mockReturnValue(of(seedFiles)),
+      getFilePreview: vi.fn().mockReturnValue(
+        of({
+          fileId: 'f-json-error',
+          originalName: 'metadata.json',
+          extension: 'json',
+          mode: 'text',
+          textFormat: 'json',
+          textContent: '{"hello":true}',
+          truncated: false,
+        } satisfies FilePreviewResponse),
+      ),
+      getFileContentUrl: vi.fn().mockReturnValue('/api/acp/acp-1/files/f-json-error/download'),
     };
 
     route = {
@@ -181,5 +195,39 @@ describe('FilesComponent filtering', () => {
     component.openDeleteAllFilesDialog();
 
     expect(component.deleteDialogDetails[0]).toContain('3 Datei(en)');
+  });
+
+  it('loads a preview for the selected file', () => {
+    component.acpId = 'acp-1';
+    component.openPreview(seedFiles[1]);
+
+    expect(api.getFilePreview).toHaveBeenCalledWith('acp-1', 'f-json-error');
+    expect(component.selectedPreviewFile?.id).toBe('f-json-error');
+    expect(component.selectedPreview?.textFormat).toBe('json');
+    expect(component.previewLoading).toBe(false);
+    expect(component.selectedPreviewInlineUrl).toContain('download');
+  });
+
+  it('toggles the active preview off when selecting the same file again', () => {
+    component.acpId = 'acp-1';
+    component.openPreview(seedFiles[1]);
+    expect(component.selectedPreviewFile?.id).toBe('f-json-error');
+
+    component.openPreview(seedFiles[1]);
+
+    expect(component.selectedPreviewFile).toBeNull();
+    expect(component.selectedPreview).toBeNull();
+  });
+
+  it('clears the preview when the selected file disappears on reload', () => {
+    component.acpId = 'acp-1';
+    component.openPreview(seedFiles[1]);
+    expect(component.selectedPreviewFile?.id).toBe('f-json-error');
+
+    api.getFiles.mockReturnValue(of([seedFiles[0]]));
+    component.load();
+
+    expect(component.selectedPreviewFile).toBeNull();
+    expect(component.selectedPreview).toBeNull();
   });
 });

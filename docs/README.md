@@ -15,6 +15,10 @@ If you are new to the project, read the documentation in this order:
 4. [ACP Workflows](features/acp-workflows.md)
 5. [Deployment](operations/deployment.md)
 
+For ACP managers who need a task-oriented user guide, see:
+
+- [ACP-Manager Handbuch](manuals/acp-manager-manual.md)
+
 ## Documentation Map
 
 ### Architecture
@@ -47,6 +51,11 @@ If you are new to the project, read the documentation in this order:
   Shared draft state, publish/discard flow, metadata columns, tags, and empirical difficulty workflows.
 - [Integrations and API](features/integrations-and-api.md)
   Public view endpoints, management endpoints, server-to-server API tokens, scopes, and transfer workflows.
+
+### Manuals
+
+- [ACP-Manager Handbuch](manuals/acp-manager-manual.md)
+  Task-oriented guide for day-to-day ACP management in the current UI.
 
 ### Operations
 

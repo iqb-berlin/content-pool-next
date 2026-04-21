@@ -1,6 +1,14 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { BehaviorSubject, Observable, map, switchMap, tap, throwError } from 'rxjs';
+import {
+  BehaviorSubject,
+  Observable,
+  firstValueFrom,
+  map,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
 import {
   LoginResponse,
   CredentialLoginResponse,
@@ -12,6 +20,7 @@ import {
 interface OidcTokenResponse {
   access_token: string;
   id_token?: string;
+  refresh_token?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -23,8 +32,13 @@ export class AuthService {
   private readonly OIDC_CODE_VERIFIER_KEY = 'oidc_code_verifier';
   private readonly ID_TOKEN_KEY = 'cp_oidc_id_token';
   private readonly ACCESS_TOKEN_KEY = 'cp_oidc_access_token';
+  private readonly REFRESH_TOKEN_KEY = 'cp_oidc_refresh_token';
   private readonly AUTH_TYPE_KEY = 'cp_auth_type';
+  private readonly OIDC_REFRESH_LEEWAY_MS = 60_000;
+  private readonly OIDC_REFRESH_FALLBACK_MS = 5 * 60 * 1000;
   private logoutChannel: BroadcastChannel | null = null;
+  private oidcRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
+  private oidcRefreshPromise: Promise<void> | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
 
   currentUser$ = this.currentUserSubject.asObservable();
@@ -34,6 +48,11 @@ export class AuthService {
   }
 
   initFromStorage(): void {
+    if (this.isOidcUser && this.hasStoredOidcSession()) {
+      void this.restoreOidcSession();
+      return;
+    }
+
     if (this.getToken()) {
       this.loadProfile();
     }
@@ -147,25 +166,42 @@ export class AuthService {
           return throwError(() => new Error('Kein Token aus OIDC-Antwort erhalten'));
         }
 
-        return this.handleOidcCallback(tokenForBackend, accessToken, idToken);
+        return this.handleOidcCallback(
+          tokenForBackend,
+          accessToken,
+          idToken,
+          tokenResponse.refresh_token,
+        );
       }),
     );
   }
 
   handleOidcCallback(
-    idToken: string,
+    tokenForBackend: string,
     accessToken?: string,
-    originalIdToken?: string,
+    idToken?: string,
+    refreshToken?: string,
   ): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken }).pipe(
+    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken: tokenForBackend }).pipe(
       tap((res) => {
         localStorage.setItem(this.tokenKey, res.accessToken);
         if (accessToken) {
           localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
+        } else {
+          localStorage.removeItem(this.ACCESS_TOKEN_KEY);
         }
-        localStorage.setItem(this.ID_TOKEN_KEY, originalIdToken || idToken);
+        const resolvedIdToken = idToken || (!accessToken ? tokenForBackend : undefined);
+        if (resolvedIdToken) {
+          localStorage.setItem(this.ID_TOKEN_KEY, resolvedIdToken);
+        } else {
+          localStorage.removeItem(this.ID_TOKEN_KEY);
+        }
+        if (refreshToken) {
+          localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
+        }
         localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
-        this.loadProfile();
+        this.currentUserSubject.next(this.normalizeUserProfile(res.user));
+        this.scheduleOidcTokenRefresh();
       }),
     );
   }
@@ -258,9 +294,11 @@ export class AuthService {
   }
 
   private performLogout(broadcast = true): void {
+    this.clearOidcRefreshTimer();
     localStorage.removeItem(this.tokenKey);
     localStorage.removeItem(this.ID_TOKEN_KEY);
     localStorage.removeItem(this.ACCESS_TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
     localStorage.removeItem(this.AUTH_TYPE_KEY);
     sessionStorage.removeItem(this.OIDC_REDIRECT_KEY);
     sessionStorage.removeItem(this.OIDC_STATE_KEY);
@@ -294,10 +332,7 @@ export class AuthService {
       tap((res) => {
         localStorage.setItem(this.tokenKey, res.accessToken);
       }),
-      map((res) => ({
-        ...(res.user as UserProfile),
-        acpRoles: (res.user as UserProfile).acpRoles || [],
-      })),
+      map((res) => this.normalizeUserProfile(res.user)),
     );
   }
 
@@ -339,6 +374,183 @@ export class AuthService {
 
   private generateCodeVerifier(): string {
     return this.generateRandomValue(48);
+  }
+
+  private hasStoredOidcSession(): boolean {
+    return !!(
+      localStorage.getItem(this.REFRESH_TOKEN_KEY) ||
+      localStorage.getItem(this.ACCESS_TOKEN_KEY) ||
+      localStorage.getItem(this.ID_TOKEN_KEY)
+    );
+  }
+
+  private async restoreOidcSession(): Promise<void> {
+    try {
+      const didRefresh = await this.refreshOidcTokensIfNeeded(!this.getToken());
+      if (!didRefresh && this.getToken()) {
+        this.scheduleOidcTokenRefresh();
+        this.loadProfile();
+        return;
+      }
+
+      if (!this.getToken()) {
+        this.clearSession();
+      }
+    } catch {
+      this.clearSession();
+    }
+  }
+
+  private async refreshOidcTokensIfNeeded(force = false): Promise<boolean> {
+    const refreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    if (!this.isOidcUser || !refreshToken) {
+      this.scheduleOidcTokenRefresh();
+      return false;
+    }
+
+    if (
+      !force &&
+      !this.isTokenExpiringSoon(this.getToken()) &&
+      !this.isTokenExpiringSoon(this.getPrimaryOidcToken())
+    ) {
+      this.scheduleOidcTokenRefresh();
+      return false;
+    }
+
+    await this.refreshOidcTokens();
+    return true;
+  }
+
+  private async refreshOidcTokens(): Promise<void> {
+    if (this.oidcRefreshPromise) {
+      return this.oidcRefreshPromise;
+    }
+
+    this.oidcRefreshPromise = this.performOidcRefresh().finally(() => {
+      this.oidcRefreshPromise = null;
+    });
+
+    return this.oidcRefreshPromise;
+  }
+
+  private async performOidcRefresh(): Promise<void> {
+    const refreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    if (!refreshToken) {
+      throw new Error('OIDC-Refresh-Token fehlt');
+    }
+
+    const config = await firstValueFrom(this.getOidcConfig());
+    if (!config.enabled || !config.issuerUrl || !config.clientId) {
+      throw new Error('OIDC ist nicht konfiguriert');
+    }
+
+    const tokenUrl = `${config.issuerUrl}/protocol/openid-connect/token`;
+    const body = new URLSearchParams();
+    body.set('grant_type', 'refresh_token');
+    body.set('refresh_token', refreshToken);
+    body.set('client_id', config.clientId);
+
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
+
+    const tokenResponse = await firstValueFrom(
+      this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers }),
+    );
+
+    const accessToken = tokenResponse.access_token;
+    const idToken = tokenResponse.id_token;
+    const tokenForBackend = idToken || accessToken;
+
+    if (!tokenForBackend) {
+      throw new Error('Kein Token aus OIDC-Refresh erhalten');
+    }
+
+    await firstValueFrom(
+      this.handleOidcCallback(
+        tokenForBackend,
+        accessToken,
+        idToken,
+        tokenResponse.refresh_token || refreshToken,
+      ),
+    );
+  }
+
+  private scheduleOidcTokenRefresh(): void {
+    this.clearOidcRefreshTimer();
+
+    if (!this.isOidcUser || !localStorage.getItem(this.REFRESH_TOKEN_KEY)) {
+      return;
+    }
+
+    const token = this.getPrimaryOidcToken() || this.getToken();
+    const expiresAt = this.getTokenExpiry(token);
+    const delay = expiresAt
+      ? Math.max(expiresAt - Date.now() - this.OIDC_REFRESH_LEEWAY_MS, 0)
+      : this.OIDC_REFRESH_FALLBACK_MS;
+
+    this.oidcRefreshTimeout = setTimeout(() => {
+      void this.refreshOidcTokens().catch(() => this.clearSession());
+    }, delay);
+  }
+
+  private clearOidcRefreshTimer(): void {
+    if (this.oidcRefreshTimeout) {
+      clearTimeout(this.oidcRefreshTimeout);
+      this.oidcRefreshTimeout = null;
+    }
+  }
+
+  private getPrimaryOidcToken(): string | null {
+    return localStorage.getItem(this.ACCESS_TOKEN_KEY) || localStorage.getItem(this.ID_TOKEN_KEY);
+  }
+
+  private isTokenExpiringSoon(token: string | null): boolean {
+    if (!token) {
+      return true;
+    }
+
+    const expiresAt = this.getTokenExpiry(token);
+    if (!expiresAt) {
+      return false;
+    }
+
+    return expiresAt - Date.now() <= this.OIDC_REFRESH_LEEWAY_MS;
+  }
+
+  private getTokenExpiry(token: string | null): number | null {
+    if (!token) {
+      return null;
+    }
+
+    const parts = token.split('.');
+    if (parts.length < 2) {
+      return null;
+    }
+
+    try {
+      const payload = JSON.parse(this.base64UrlDecode(parts[1])) as { exp?: number };
+      if (typeof payload.exp !== 'number') {
+        return null;
+      }
+
+      return payload.exp * 1000;
+    } catch {
+      return null;
+    }
+  }
+
+  private base64UrlDecode(value: string): string {
+    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    return atob(padded);
+  }
+
+  private normalizeUserProfile(user: LoginResponse['user']): UserProfile {
+    return {
+      ...(user as UserProfile),
+      acpRoles: (user as UserProfile).acpRoles || [],
+    };
   }
 
   private async generateCodeChallenge(codeVerifier: string): Promise<string> {

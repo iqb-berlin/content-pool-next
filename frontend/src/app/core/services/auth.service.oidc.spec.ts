@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import type { LoginResponse, OidcConfig, UserProfile } from '../models/api.models';
 import { AuthService } from './auth.service';
@@ -26,7 +26,24 @@ describe('AuthService OIDC and Crypto Paths', () => {
     scope: 'openid profile email',
   };
 
+  const createJwt = (expiresInSeconds: number) => {
+    const header = btoa(JSON.stringify({ alg: 'none', typ: 'JWT' }))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+    const payload = btoa(
+      JSON.stringify({
+        exp: Math.floor(Date.now() / 1000) + expiresInSeconds,
+      }),
+    )
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+    return `${header}.${payload}.sig`;
+  };
+
   beforeEach(() => {
+    vi.useFakeTimers();
     localStorage.clear();
     sessionStorage.clear();
 
@@ -78,6 +95,11 @@ describe('AuthService OIDC and Crypto Paths', () => {
     };
 
     service = new AuthService(httpClientMock as any);
+  });
+
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
   });
 
   it('builds OIDC config and context endpoints', () => {
@@ -152,6 +174,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
         return of({
           access_token: 'oidc-access',
           id_token: 'oidc-id',
+          refresh_token: 'oidc-refresh',
         });
       }
       if (url === '/api/auth/oidc-callback') {
@@ -162,7 +185,6 @@ describe('AuthService OIDC and Crypto Paths', () => {
       }
       return of({});
     });
-    const loadProfileSpy = vi.spyOn(service, 'loadProfile').mockImplementation(() => undefined);
 
     const result = await firstValueFrom(service.handleOidcAuthorizationCode('code-1', 'state-1'));
 
@@ -170,21 +192,20 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(localStorage.getItem('cp_token')).toBe('app-jwt');
     expect(localStorage.getItem('cp_oidc_access_token')).toBe('oidc-access');
     expect(localStorage.getItem('cp_oidc_id_token')).toBe('oidc-id');
+    expect(localStorage.getItem('cp_oidc_refresh_token')).toBe('oidc-refresh');
     expect(localStorage.getItem('cp_auth_type')).toBe('oidc');
     expect(sessionStorage.getItem('oidc_state')).toBeNull();
     expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
-    expect(loadProfileSpy).toHaveBeenCalled();
+    expect(service.currentUser).toEqual(profile);
   });
 
   it('supports direct oidc callback and id-token fallback persistence', async () => {
-    const loadProfileSpy = vi.spyOn(service, 'loadProfile').mockImplementation(() => undefined);
-
     const result = await firstValueFrom(service.handleOidcCallback('id-token-only'));
 
     expect(result).toEqual({ accessToken: 'app-jwt', user: profile });
     expect(localStorage.getItem('cp_oidc_id_token')).toBe('id-token-only');
     expect(localStorage.getItem('cp_auth_type')).toBe('oidc');
-    expect(loadProfileSpy).toHaveBeenCalled();
+    expect(service.currentUser).toEqual(profile);
   });
 
   it('does not trigger password flow for non-oidc users', () => {
@@ -252,6 +273,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
     localStorage.setItem('cp_auth_type', 'oidc');
     localStorage.setItem('cp_oidc_id_token', 'id-token');
     localStorage.setItem('cp_oidc_access_token', 'access-token');
+    localStorage.setItem('cp_oidc_refresh_token', 'refresh-token');
     sessionStorage.setItem('oidc_redirect_url', '/admin');
     sessionStorage.setItem('oidc_state', 'state-x');
     sessionStorage.setItem('oidc_code_verifier', 'verifier-x');
@@ -266,10 +288,85 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(localStorage.getItem('cp_token')).toBeNull();
     expect(localStorage.getItem('cp_oidc_id_token')).toBeNull();
     expect(localStorage.getItem('cp_oidc_access_token')).toBeNull();
+    expect(localStorage.getItem('cp_oidc_refresh_token')).toBeNull();
     expect(localStorage.getItem('cp_auth_type')).toBeNull();
     expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
     expect(sessionStorage.getItem('oidc_state')).toBeNull();
     expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
+  });
+
+  it('restores an OIDC session by refreshing tokens when the app token is missing', async () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_access_token', createJwt(600));
+    localStorage.setItem('cp_oidc_id_token', createJwt(600));
+    localStorage.setItem('cp_oidc_refresh_token', 'refresh-1');
+
+    httpClientMock.post.mockImplementation((url: string) => {
+      if (url.includes('/protocol/openid-connect/token')) {
+        return of({
+          access_token: 'new-oidc-access',
+          id_token: 'new-oidc-id',
+          refresh_token: 'refresh-2',
+        });
+      }
+      if (url === '/api/auth/oidc-callback') {
+        return of({
+          accessToken: 'app-jwt',
+          user: profile,
+        } as LoginResponse);
+      }
+      return of({});
+    });
+
+    service.initFromStorage();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(localStorage.getItem('cp_token')).toBe('app-jwt');
+    expect(localStorage.getItem('cp_oidc_access_token')).toBe('new-oidc-access');
+    expect(localStorage.getItem('cp_oidc_id_token')).toBe('new-oidc-id');
+    expect(localStorage.getItem('cp_oidc_refresh_token')).toBe('refresh-2');
+    expect(service.currentUser).toEqual(profile);
+  });
+
+  it('refreshes OIDC tokens automatically before expiry', async () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_access_token', createJwt(30));
+    localStorage.setItem('cp_oidc_id_token', createJwt(30));
+    localStorage.setItem('cp_oidc_refresh_token', 'refresh-1');
+
+    httpClientMock.post.mockImplementation((url: string) => {
+      if (url.includes('/protocol/openid-connect/token')) {
+        return of({
+          access_token: 'rotated-access',
+          id_token: 'rotated-id',
+          refresh_token: 'refresh-2',
+        });
+      }
+      if (url === '/api/auth/oidc-callback') {
+        return of({
+          accessToken: 'rotated-app-jwt',
+          user: profile,
+        } as LoginResponse);
+      }
+      return of({});
+    });
+
+    await firstValueFrom(
+      service.handleOidcCallback(
+        createJwt(30),
+        createJwt(30),
+        createJwt(30),
+        'refresh-1',
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(localStorage.getItem('cp_token')).toBe('rotated-app-jwt');
+    expect(localStorage.getItem('cp_oidc_access_token')).toBe('rotated-access');
+    expect(localStorage.getItem('cp_oidc_id_token')).toBe('rotated-id');
+    expect(localStorage.getItem('cp_oidc_refresh_token')).toBe('refresh-2');
   });
 
   it('exercises base64url, sha256 and challenge generation (subtle + fallback)', async () => {

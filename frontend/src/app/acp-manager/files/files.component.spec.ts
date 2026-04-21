@@ -54,6 +54,9 @@ describe('FilesComponent filtering', () => {
     getFiles: ReturnType<typeof vi.fn>;
     getFilePreview: ReturnType<typeof vi.fn>;
     getFileContentUrl: ReturnType<typeof vi.fn>;
+    deleteFile: ReturnType<typeof vi.fn>;
+    deleteAllFiles: ReturnType<typeof vi.fn>;
+    bulkDeleteFiles: ReturnType<typeof vi.fn>;
   };
 
   let route: {
@@ -83,6 +86,9 @@ describe('FilesComponent filtering', () => {
         } satisfies FilePreviewResponse),
       ),
       getFileContentUrl: vi.fn().mockReturnValue('/api/acp/acp-1/files/f-json-error/download'),
+      deleteFile: vi.fn().mockReturnValue(of({ message: 'File deleted successfully' })),
+      deleteAllFiles: vi.fn().mockReturnValue(of({ message: 'All files deleted successfully' })),
+      bulkDeleteFiles: vi.fn().mockReturnValue(of({ message: 'Files deleted successfully' })),
     };
 
     route = {
@@ -198,6 +204,50 @@ describe('FilesComponent filtering', () => {
     expect(component.deleteDialogDetails[0]).toContain('3 Datei(en)');
   });
 
+  it('selects visible filtered files without dropping existing hidden selection', () => {
+    component.toggleFileSelection('f-xml-ok', true);
+    component.searchQuery = 'meta';
+    component.applyFilters();
+
+    component.selectVisibleFiles();
+
+    expect(Array.from(component.selectedFileIds)).toEqual(['f-xml-ok', 'f-json-error']);
+    expect(component.selectedFilesCount).toBe(2);
+    expect(component.allVisibleFilesSelected).toBe(true);
+  });
+
+  it('opens a dedicated delete dialog for the current selection', () => {
+    component.toggleFileSelection('f-json-error', true);
+    component.toggleFileSelection('f-no-type-unchecked', true);
+
+    component.openDeleteSelectedFilesDialog();
+
+    expect(component.deleteDialogMode).toBe('selected');
+    expect(component.deleteDialogMessage).toContain('2 ausgewählte Datei(en)');
+    expect(component.deleteDialogDetails[0]).toContain('2 Datei(en)');
+    expect(component.deleteDialogDetails).toContain('metadata.json');
+  });
+
+  it('bulk deletes the current selection and clears preview + selection state', () => {
+    component.acpId = 'acp-1';
+    component.toggleFileSelection('f-json-error', true);
+    component.toggleFileSelection('f-no-type-unchecked', true);
+    component.openPreview(seedFiles[1]);
+    expect(component.selectedPreviewFile?.id).toBe('f-json-error');
+
+    api.getFiles.mockReturnValue(of([seedFiles[0]]));
+    component.openDeleteSelectedFilesDialog();
+    component.confirmDeleteDialog();
+
+    expect(api.bulkDeleteFiles).toHaveBeenCalledWith('acp-1', [
+      'f-json-error',
+      'f-no-type-unchecked',
+    ]);
+    expect(component.selectedPreviewFile).toBeNull();
+    expect(component.selectedFilesCount).toBe(0);
+    expect(component.files).toEqual([seedFiles[0]]);
+  });
+
   it('loads a preview for the selected file', () => {
     component.acpId = 'acp-1';
     component.openPreview(seedFiles[1]);
@@ -230,6 +280,16 @@ describe('FilesComponent filtering', () => {
 
     expect(component.selectedPreviewFile).toBeNull();
     expect(component.selectedPreview).toBeNull();
+  });
+
+  it('drops stale file selections when the list is reloaded', () => {
+    component.toggleFileSelection('f-json-error', true);
+    expect(component.selectedFilesCount).toBe(1);
+
+    api.getFiles.mockReturnValue(of([seedFiles[0]]));
+    component.load();
+
+    expect(component.selectedFilesCount).toBe(0);
   });
 
   it('maps payload-too-large upload errors to a helpful message', () => {

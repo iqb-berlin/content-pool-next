@@ -27,6 +27,7 @@ interface UploadConflictEntry {
 
 type FileValidationState = 'ok' | 'error' | 'unchecked';
 type FileValidationFilter = 'all' | FileValidationState;
+type DeleteDialogMode = 'single' | 'selected' | 'all';
 
 @Component({
   selector: 'app-files',
@@ -232,6 +233,34 @@ type FileValidationFilter = 'all' | FileValidationState;
           Filter zurücksetzen
         </button>
       </div>
+      @if (files.length) {
+        <div class="selection-toolbar">
+          <span class="selection-summary">
+            {{ selectedFilesCount ? selectedFilesCount + ' Datei(en) ausgewählt' : 'Keine Auswahl' }}
+          </span>
+          <button
+            class="btn btn-outline btn-sm"
+            (click)="selectVisibleFiles()"
+            [disabled]="!filteredFiles.length || allVisibleFilesSelected"
+          >
+            Sichtbare Treffer auswählen
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            (click)="clearSelection()"
+            [disabled]="selectedFilesCount === 0"
+          >
+            Auswahl leeren
+          </button>
+          <button
+            class="btn btn-danger btn-sm"
+            (click)="openDeleteSelectedFilesDialog()"
+            [disabled]="selectedFilesCount === 0 || isBusy"
+          >
+            Auswahl löschen
+          </button>
+        </div>
+      }
       <div class="filter-summary">{{ filteredFiles.length }} von {{ files.length }} Dateien</div>
     </div>
 
@@ -240,6 +269,15 @@ type FileValidationFilter = 'all' | FileValidationState;
         <table class="table">
           <thead>
             <tr>
+              <th class="selection-col">
+                <input
+                  type="checkbox"
+                  aria-label="Alle sichtbaren Dateien auswählen"
+                  [checked]="allVisibleFilesSelected"
+                  [indeterminate]="someVisibleFilesSelected"
+                  (change)="toggleVisibleFileSelection($any($event.target).checked)"
+                />
+              </th>
               <th>Dateiname</th>
               <th>Typ</th>
               <th>Größe</th>
@@ -249,7 +287,18 @@ type FileValidationFilter = 'all' | FileValidationState;
           </thead>
           <tbody>
             @for (file of filteredFiles; track file.id) {
-              <tr [class.is-selected]="selectedPreviewFile?.id === file.id">
+              <tr
+                [class.is-selected]="selectedPreviewFile?.id === file.id"
+                [class.is-marked]="isFileSelected(file.id)"
+              >
+                <td class="selection-col">
+                  <input
+                    type="checkbox"
+                    [checked]="isFileSelected(file.id)"
+                    [attr.aria-label]="'Datei auswählen: ' + file.originalName"
+                    (change)="toggleFileSelection(file.id, $any($event.target).checked)"
+                  />
+                </td>
                 <td>{{ file.originalName }}</td>
                 <td>{{ file.fileType || '–' }}</td>
                 <td>{{ formatSize(file.fileSize) }}</td>
@@ -500,11 +549,27 @@ type FileValidationFilter = 'all' | FileValidationState;
         font-size: 0.85rem;
         color: var(--color-text-secondary);
       }
+      .selection-toolbar {
+        margin-top: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .selection-summary {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+        margin-right: auto;
+      }
       .files-layout {
         display: grid;
         grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.9fr);
         gap: 16px;
         align-items: start;
+      }
+      .selection-col {
+        width: 44px;
+        text-align: center;
       }
       .table-card {
         overflow: hidden;
@@ -516,6 +581,9 @@ type FileValidationFilter = 'all' | FileValidationState;
       }
       .table tbody tr.is-selected {
         background: rgba(41, 128, 185, 0.08);
+      }
+      .table tbody tr.is-marked:not(.is-selected) {
+        background: rgba(39, 174, 96, 0.08);
       }
 
       .overlay-backdrop {
@@ -608,13 +676,15 @@ export class FilesComponent implements OnInit {
   selectedPreview: FilePreviewResponse | null = null;
   previewLoading = false;
   previewError = '';
+  selectedFileIds = new Set<string>();
 
   conflictDialogOpen = false;
   conflictEntries: UploadConflictEntry[] = [];
   private conflictDialogResolver: ((value: UploadConflictEntry[] | null) => void) | null = null;
   deleteDialogOpen = false;
-  deleteDialogMode: 'single' | 'all' = 'single';
+  deleteDialogMode: DeleteDialogMode = 'single';
   deleteDialogTarget: AcpFile | null = null;
+  deleteDialogSelectedFileIds: string[] = [];
   deleteDialogBusy = false;
   deleteDialogError = '';
 
@@ -661,6 +731,7 @@ export class FilesComponent implements OnInit {
   load() {
     this.api.getFiles(this.acpId).subscribe((f) => {
       this.files = f;
+      this.syncSelectionWithFiles(f);
       this.applyFilters();
       if (!this.selectedPreviewFile) {
         return;
@@ -711,6 +782,26 @@ export class FilesComponent implements OnInit {
 
   get hasFilesWithoutType(): boolean {
     return this.files.some((file) => !String(file.fileType || '').trim());
+  }
+
+  get selectedFilesCount(): number {
+    return this.selectedFileIds.size;
+  }
+
+  get selectedFiles(): AcpFile[] {
+    return this.files.filter((file) => this.selectedFileIds.has(file.id));
+  }
+
+  get visibleSelectedFilesCount(): number {
+    return this.filteredFiles.filter((file) => this.selectedFileIds.has(file.id)).length;
+  }
+
+  get allVisibleFilesSelected(): boolean {
+    return this.filteredFiles.length > 0 && this.visibleSelectedFilesCount === this.filteredFiles.length;
+  }
+
+  get someVisibleFilesSelected(): boolean {
+    return this.visibleSelectedFilesCount > 0 && !this.allVisibleFilesSelected;
   }
 
   hasActiveFilters(): boolean {
@@ -923,20 +1014,42 @@ export class FilesComponent implements OnInit {
   }
 
   get deleteDialogTitle(): string {
-    return this.deleteDialogMode === 'single' ? 'Datei löschen' : 'Alle Dateien löschen';
+    switch (this.deleteDialogMode) {
+      case 'single':
+        return 'Datei löschen';
+      case 'selected':
+        return 'Ausgewählte Dateien löschen';
+      default:
+        return 'Alle Dateien löschen';
+    }
   }
 
   get deleteDialogMessage(): string {
-    if (this.deleteDialogMode === 'single') {
-      const name = this.deleteDialogTarget?.originalName || 'diese Datei';
-      return `Soll "${name}" wirklich gelöscht werden?`;
+    switch (this.deleteDialogMode) {
+      case 'single': {
+        const name = this.deleteDialogTarget?.originalName || 'diese Datei';
+        return `Soll "${name}" wirklich gelöscht werden?`;
+      }
+      case 'selected':
+        return `Sollen wirklich ${this.deleteDialogSelectedFiles.length} ausgewählte Datei(en) gelöscht werden?`;
+      default:
+        return 'Sollen wirklich alle Dateien dieses ACP gelöscht werden?';
     }
-    return 'Sollen wirklich alle Dateien dieses ACP gelöscht werden?';
   }
 
   get deleteDialogDetails(): string[] {
     if (this.deleteDialogMode === 'single') {
       return ['Die Datei wird dauerhaft entfernt.'];
+    }
+    if (this.deleteDialogMode === 'selected') {
+      const files = this.deleteDialogSelectedFiles;
+      const details = [`${files.length} Datei(en) werden dauerhaft entfernt.`];
+      details.push(...files.slice(0, 5).map((file) => file.originalName));
+      if (files.length > 5) {
+        details.push(`... und ${files.length - 5} weitere Datei(en).`);
+      }
+      details.push('Validierungsergebnisse und abhängige Dateiverweise können dadurch ungültig werden.');
+      return details;
     }
     return [
       `${this.files.length} Datei(en) werden dauerhaft entfernt.`,
@@ -945,12 +1058,39 @@ export class FilesComponent implements OnInit {
   }
 
   get deleteDialogConfirmLabel(): string {
-    return this.deleteDialogMode === 'single' ? 'Datei löschen' : 'Alle löschen';
+    switch (this.deleteDialogMode) {
+      case 'single':
+        return 'Datei löschen';
+      case 'selected':
+        return 'Auswahl löschen';
+      default:
+        return 'Alle löschen';
+    }
+  }
+
+  get deleteDialogSelectedFiles(): AcpFile[] {
+    const filesById = new Map(this.files.map((file) => [file.id, file]));
+    return this.deleteDialogSelectedFileIds
+      .map((id) => filesById.get(id))
+      .filter((file): file is AcpFile => !!file);
   }
 
   openDeleteFileDialog(file: AcpFile) {
     this.deleteDialogMode = 'single';
     this.deleteDialogTarget = file;
+    this.deleteDialogSelectedFileIds = [];
+    this.deleteDialogError = '';
+    this.deleteDialogBusy = false;
+    this.deleteDialogOpen = true;
+  }
+
+  openDeleteSelectedFilesDialog() {
+    if (this.selectedFilesCount === 0) {
+      return;
+    }
+    this.deleteDialogMode = 'selected';
+    this.deleteDialogTarget = null;
+    this.deleteDialogSelectedFileIds = Array.from(this.selectedFileIds);
     this.deleteDialogError = '';
     this.deleteDialogBusy = false;
     this.deleteDialogOpen = true;
@@ -959,6 +1099,7 @@ export class FilesComponent implements OnInit {
   openDeleteAllFilesDialog() {
     this.deleteDialogMode = 'all';
     this.deleteDialogTarget = null;
+    this.deleteDialogSelectedFileIds = [];
     this.deleteDialogError = '';
     this.deleteDialogBusy = false;
     this.deleteDialogOpen = true;
@@ -968,6 +1109,7 @@ export class FilesComponent implements OnInit {
     if (this.deleteDialogBusy) return;
     this.deleteDialogOpen = false;
     this.deleteDialogTarget = null;
+    this.deleteDialogSelectedFileIds = [];
     this.deleteDialogError = '';
   }
 
@@ -984,13 +1126,7 @@ export class FilesComponent implements OnInit {
       }
       this.api.deleteFile(this.acpId, this.deleteDialogTarget.id).subscribe({
         next: () => {
-          this.deleteDialogBusy = false;
-          this.deleteDialogOpen = false;
-          if (this.selectedPreviewFile?.id === this.deleteDialogTarget?.id) {
-            this.clearPreview();
-          }
-          this.deleteDialogTarget = null;
-          this.load();
+          this.finishDelete([this.deleteDialogTarget!.id]);
         },
         error: (err) => {
           this.deleteDialogBusy = false;
@@ -1000,13 +1136,29 @@ export class FilesComponent implements OnInit {
       return;
     }
 
+    if (this.deleteDialogMode === 'selected') {
+      if (this.deleteDialogSelectedFileIds.length === 0) {
+        this.deleteDialogBusy = false;
+        this.deleteDialogError = 'Keine Dateien ausgewählt.';
+        return;
+      }
+      this.api.bulkDeleteFiles(this.acpId, this.deleteDialogSelectedFileIds).subscribe({
+        next: () => {
+          this.finishDelete(this.deleteDialogSelectedFileIds);
+        },
+        error: (err) => {
+          this.deleteDialogBusy = false;
+          this.deleteDialogError = err?.error?.message || 'Fehler beim Löschen der Dateien.';
+        },
+      });
+      return;
+    }
+
     this.api.deleteAllFiles(this.acpId).subscribe({
       next: () => {
-        this.deleteDialogBusy = false;
-        this.deleteDialogOpen = false;
         this.validationResults = [];
-        this.clearPreview();
-        this.load();
+        this.clearSelection();
+        this.finishDelete(this.files.map((file) => file.id));
       },
       error: (err) => {
         this.deleteDialogBusy = false;
@@ -1055,6 +1207,40 @@ export class FilesComponent implements OnInit {
     this.selectedPreview = null;
     this.previewLoading = false;
     this.previewError = '';
+  }
+
+  isFileSelected(fileId: string): boolean {
+    return this.selectedFileIds.has(fileId);
+  }
+
+  toggleFileSelection(fileId: string, selected: boolean) {
+    const nextSelection = new Set(this.selectedFileIds);
+    if (selected) {
+      nextSelection.add(fileId);
+    } else {
+      nextSelection.delete(fileId);
+    }
+    this.selectedFileIds = nextSelection;
+  }
+
+  toggleVisibleFileSelection(selected: boolean) {
+    if (selected) {
+      this.selectVisibleFiles();
+      return;
+    }
+    const nextSelection = new Set(this.selectedFileIds);
+    this.filteredFiles.forEach((file) => nextSelection.delete(file.id));
+    this.selectedFileIds = nextSelection;
+  }
+
+  selectVisibleFiles() {
+    const nextSelection = new Set(this.selectedFileIds);
+    this.filteredFiles.forEach((file) => nextSelection.add(file.id));
+    this.selectedFileIds = nextSelection;
+  }
+
+  clearSelection() {
+    this.selectedFileIds = new Set<string>();
   }
 
   formatSize(bytes: number): string {
@@ -1248,6 +1434,38 @@ export class FilesComponent implements OnInit {
     return new Promise((resolve) => {
       window.setTimeout(resolve, ms);
     });
+  }
+
+  private finishDelete(deletedFileIds: string[]) {
+    const deletedIds = new Set(deletedFileIds);
+    this.deleteDialogBusy = false;
+    this.deleteDialogOpen = false;
+    this.deleteDialogTarget = null;
+    this.deleteDialogSelectedFileIds = [];
+    this.deleteDialogError = '';
+
+    if (this.selectedPreviewFile && deletedIds.has(this.selectedPreviewFile.id)) {
+      this.clearPreview();
+    }
+
+    if (this.selectedFileIds.size) {
+      this.selectedFileIds = new Set(
+        Array.from(this.selectedFileIds).filter((id) => !deletedIds.has(id)),
+      );
+    }
+
+    this.load();
+  }
+
+  private syncSelectionWithFiles(files: AcpFile[]) {
+    if (this.selectedFileIds.size === 0) {
+      return;
+    }
+
+    const existingIds = new Set(files.map((file) => file.id));
+    this.selectedFileIds = new Set(
+      Array.from(this.selectedFileIds).filter((id) => existingIds.has(id)),
+    );
   }
 
   private normalizeFileName(fileName: string): string {

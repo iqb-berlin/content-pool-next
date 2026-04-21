@@ -426,6 +426,37 @@ describe("FilesService", () => {
         expect.objectContaining({ id: "file-2" }),
       ]);
     });
+
+    it("should bulk delete ACP files for the provided IDs", async () => {
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: "file-1", filePath: "/x/1" },
+        { ...mockFile, id: "file-2", filePath: "/x/2" },
+      ]);
+
+      const result = await service.deleteManyForAcp("acp-1", [
+        "file-1",
+        "file-2",
+        "file-1",
+      ]);
+
+      expect(result).toEqual(["file-1", "file-2"]);
+      expect(repo.remove).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "file-1" }),
+        expect.objectContaining({ id: "file-2" }),
+      ]);
+    });
+
+    it("should reject empty and unknown IDs during bulk delete", async () => {
+      await expect(service.deleteManyForAcp("acp-1", [])).rejects.toThrow(
+        BadRequestException,
+      );
+
+      repo.find.mockResolvedValue([{ ...mockFile, id: "file-1" }]);
+
+      await expect(
+        service.deleteManyForAcp("acp-1", ["missing-file"]),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe("cleanupOrphanedResponseStates", () => {

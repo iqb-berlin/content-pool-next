@@ -91,6 +91,15 @@ export interface FileProcessingResponseStateCleanup {
   keptStates: number;
 }
 
+export interface FileDeletionResponse {
+  message: string;
+  deletedCount?: number;
+  deletedFileIds?: string[];
+  cleanupReport?: FileProcessingCleanupReport | null;
+  responseStateCleanup?: FileProcessingResponseStateCleanup | null;
+  validationSummary?: UploadValidationSummary | null;
+}
+
 export interface FileProcessingJob {
   id: string;
   acpId: string;

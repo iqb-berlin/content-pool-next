@@ -264,6 +264,32 @@ export class FilesController {
     });
   }
 
+  @Post("bulk-delete")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Delete multiple files for an ACP" })
+  async bulkDelete(
+    @Param("acpId") acpId: string,
+    @Body() body: { fileIds?: string[] },
+  ) {
+    const deletedFileIds = await this.filesService.deleteManyForAcp(
+      acpId,
+      body.fileIds || [],
+    );
+    const cleanupResult =
+      await this.filesService.cleanupReferencesAfterFileMutation(acpId);
+
+    return {
+      message: "Files deleted successfully",
+      deletedCount: deletedFileIds.length,
+      deletedFileIds,
+      cleanupReport: cleanupResult.cleanupReport,
+      responseStateCleanup: cleanupResult.responseStateCleanup,
+      validationSummary: cleanupResult.validationSummary,
+    };
+  }
+
   @Post("sync-index")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")

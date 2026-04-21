@@ -38,6 +38,7 @@ describe("FilesController", () => {
       uploadMultiple: jest.fn().mockResolvedValue([baseFile]),
       deleteAll: jest.fn().mockResolvedValue(undefined),
       deleteForAcp: jest.fn().mockResolvedValue(undefined),
+      deleteManyForAcp: jest.fn().mockResolvedValue(["file-1", "file-2"]),
       cleanupReferencesAfterFileMutation: jest.fn().mockResolvedValue({
         cleanupReport: { removed: 1 },
         responseStateCleanup: {
@@ -247,6 +248,32 @@ describe("FilesController", () => {
     ).toHaveBeenCalledWith("acp-1");
     expect(result).toEqual({
       message: "All files deleted successfully",
+      cleanupReport: { removed: 1 },
+      responseStateCleanup: {
+        totalStates: 2,
+        deletedStates: 1,
+        keptStates: 1,
+      },
+      validationSummary: { totalFiles: 1 },
+    });
+  });
+
+  it("bulk deletes selected files and returns cleanup + validation summary", async () => {
+    const result = await controller.bulkDelete("acp-1", {
+      fileIds: ["file-1", "file-2"],
+    });
+
+    expect(filesService.deleteManyForAcp).toHaveBeenCalledWith("acp-1", [
+      "file-1",
+      "file-2",
+    ]);
+    expect(
+      filesService.cleanupReferencesAfterFileMutation,
+    ).toHaveBeenCalledWith("acp-1");
+    expect(result).toEqual({
+      message: "Files deleted successfully",
+      deletedCount: 2,
+      deletedFileIds: ["file-1", "file-2"],
       cleanupReport: { removed: 1 },
       responseStateCleanup: {
         totalStates: 2,

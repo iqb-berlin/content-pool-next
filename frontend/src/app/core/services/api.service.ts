@@ -24,6 +24,7 @@ import {
   ItemExplorerSharedState,
   ValidateUnitsResponse,
   FilePreviewResponse,
+  FileDeletionResponse,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -189,11 +190,16 @@ export class ApiService {
   syncIndexFromFiles(acpId: string): Observable<IndexSyncReport> {
     return this.http.post<IndexSyncReport>(`${this.API}/acp/${acpId}/files/sync-index`, {});
   }
-  deleteFile(acpId: string, fileId: string): Observable<void> {
-    return this.http.delete<void>(`${this.API}/acp/${acpId}/files/${fileId}`);
+  deleteFile(acpId: string, fileId: string): Observable<FileDeletionResponse> {
+    return this.http.delete<FileDeletionResponse>(`${this.API}/acp/${acpId}/files/${fileId}`);
   }
-  deleteAllFiles(acpId: string): Observable<void> {
-    return this.http.delete<void>(`${this.API}/acp/${acpId}/files/all`);
+  deleteAllFiles(acpId: string): Observable<FileDeletionResponse> {
+    return this.http.delete<FileDeletionResponse>(`${this.API}/acp/${acpId}/files/all`);
+  }
+  bulkDeleteFiles(acpId: string, fileIds: string[]): Observable<FileDeletionResponse> {
+    return this.http.post<FileDeletionResponse>(`${this.API}/acp/${acpId}/files/bulk-delete`, {
+      fileIds,
+    });
   }
   getFileValidation(acpId: string, fileId: string): Observable<any> {
     return this.http.get(`${this.API}/acp/${acpId}/files/${fileId}/validation`);

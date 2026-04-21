@@ -293,6 +293,18 @@ describe('ApiService', () => {
       expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/files/file1');
     });
 
+    it('should bulk delete files', () => {
+      httpClientMock.post.mockReturnValue(of({ message: 'Files deleted successfully' }));
+
+      service.bulkDeleteFiles('acp1', ['file1', 'file2']).subscribe(() => {
+        expect(true).toBe(true);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/bulk-delete', {
+        fileIds: ['file1', 'file2'],
+      });
+    });
+
     it('should upload files without conflict strategy query', () => {
       const formData = new FormData();
       httpClientMock.post.mockReturnValue(

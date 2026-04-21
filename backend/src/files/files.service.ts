@@ -344,6 +344,40 @@ export class FilesService {
     await this.fileRepository.remove(file);
   }
 
+  async deleteManyForAcp(acpId: string, ids: string[]): Promise<string[]> {
+    const normalizedIds = Array.from(
+      new Set(
+        (ids || [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    if (!normalizedIds.length) {
+      throw new BadRequestException("At least one file ID is required");
+    }
+
+    const files = await this.findByAcp(acpId);
+    const filesById = new Map(files.map((file) => [file.id, file]));
+    const missingIds = normalizedIds.filter((id) => !filesById.has(id));
+    if (missingIds.length) {
+      throw new NotFoundException(
+        `Files not found for ACP ${acpId}: ${missingIds.join(", ")}`,
+      );
+    }
+
+    const filesToDelete = normalizedIds.map((id) => filesById.get(id)!);
+    for (const file of filesToDelete) {
+      try {
+        await fs.unlink(file.filePath);
+      } catch {
+        // File may already be deleted from disk
+      }
+    }
+    await this.fileRepository.remove(filesToDelete);
+    return normalizedIds;
+  }
+
   async deleteAll(acpId: string): Promise<void> {
     const files = await this.findByAcp(acpId);
     for (const file of files) {

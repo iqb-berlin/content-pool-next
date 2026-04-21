@@ -130,6 +130,9 @@ describe("AcpService", () => {
           acpId: "new-acp",
           accessModel: AccessModel.PRIVATE,
           allowRegistered: false,
+          featureConfig: expect.objectContaining({
+            enablePlayerFocusHighlight: false,
+          }),
         }),
       );
     });
@@ -280,7 +283,13 @@ describe("AcpService", () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValue(null);
       await service.updateAccessConfig("acp-1", { accessModel: "PUBLIC" });
-      expect(accessConfigRepo.create).toHaveBeenCalled();
+      expect(accessConfigRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          featureConfig: expect.objectContaining({
+            enablePlayerFocusHighlight: true,
+          }),
+        }),
+      );
       expect(accessConfigRepo.save).toHaveBeenCalled();
     });
 
@@ -484,6 +493,9 @@ describe("AcpService", () => {
           acpId: "acp-1",
           accessModel: AccessModel.PRIVATE,
           allowRegistered: false,
+          featureConfig: expect.objectContaining({
+            enablePlayerFocusHighlight: true,
+          }),
         }),
       );
 

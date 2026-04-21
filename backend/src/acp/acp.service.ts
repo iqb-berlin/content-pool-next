@@ -36,6 +36,8 @@ import {
 } from "./acp-index.utils";
 import { normalizeFeatureConfig } from "./feature-config.utils";
 
+const PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY = "enablePlayerFocusHighlight";
+
 @Injectable()
 export class AcpService {
   constructor(
@@ -111,7 +113,7 @@ export class AcpService {
     });
 
     const savedAcp = await this.acpRepository.save(acp);
-    await this.createDefaultAccessConfig(savedAcp.id);
+    await this.createDefaultAccessConfig(savedAcp.id, false);
     return savedAcp;
   }
 
@@ -323,7 +325,10 @@ export class AcpService {
         acpId,
         accessModel: dto.accessModel as AccessModel,
         allowRegistered: dto.allowRegistered || false,
-        featureConfig: normalizeFeatureConfig(dto.featureConfig || {}),
+        featureConfig: normalizeFeatureConfig({
+          [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: true,
+          ...(dto.featureConfig || {}),
+        }),
         validFrom:
           dto.accessModel === "CREDENTIALS_LIST" && dto.validFrom
             ? new Date(dto.validFrom)
@@ -598,17 +603,22 @@ export class AcpService {
       return existingConfig;
     }
 
-    return this.createDefaultAccessConfig(acpId);
+    // Older ACPs may legitimately miss an access-config row. Preserve their
+    // historic player-highlight behavior when we recreate the config lazily.
+    return this.createDefaultAccessConfig(acpId, true);
   }
 
   private async createDefaultAccessConfig(
     acpId: string,
+    enablePlayerFocusHighlight: boolean,
   ): Promise<AcpAccessConfig> {
     const config = this.accessConfigRepository.create({
       acpId,
       accessModel: AccessModel.PRIVATE,
       allowRegistered: false,
-      featureConfig: normalizeFeatureConfig({}),
+      featureConfig: normalizeFeatureConfig({
+        [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: enablePlayerFocusHighlight,
+      }),
     });
     return this.accessConfigRepository.save(config);
   }

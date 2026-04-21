@@ -79,6 +79,15 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
   });
 
+  it('defaults player focus highlight to true when the flag is missing', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.enablePlayerFocusHighlightKey]).toBe(true);
+  });
+
   it('keeps item explorer conditional visibility disabled when the flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
@@ -130,6 +139,25 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(false);
   });
 
+  it('keeps explicit false for player focus highlight', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: {
+          enablePlayerFocusHighlight: false,
+        },
+      }),
+    );
+
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.enablePlayerFocusHighlightKey]).toBe(false);
+  });
+
   it('persists showAudioVideoCodingVariables when saving features', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
@@ -165,6 +193,26 @@ describe('AccessConfigComponent', () => {
       expect.objectContaining({
         featureConfig: expect.objectContaining({
           showItemExplorerPlayerTargetInfo: false,
+        }),
+      }),
+    );
+  });
+
+  it('persists player focus highlight when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      enablePlayerFocusHighlight: false,
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enablePlayerFocusHighlight: false,
         }),
       }),
     );

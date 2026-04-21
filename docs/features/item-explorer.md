@@ -180,6 +180,10 @@ original conditional behavior through the ACP access-config feature flag
 The preview keeps the corresponding schema fields in place with neutral default values so the
 embedded Aspect player can still parse the generated unit definition reliably.
 
+Visual item highlighting inside the embedded player can be controlled per ACP through
+`enablePlayerFocusHighlight`. Newly created ACPs default this to off. Legacy ACPs keep the
+previous highlighted behavior until the setting is changed explicitly.
+
 The preview pipeline is intentionally defensive because ACPs can reference different
 generations of Aspect player builds:
 

@@ -71,7 +71,15 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               [class.badge-success]="highlightApplied"
               [class.badge-info]="!highlightApplied"
             >
-              {{ highlightApplied ? '✅ Fokus aktiv' : '🎯 Fokus wird gesetzt' }}
+              {{
+                highlightApplied
+                  ? playerFocusHighlightEnabled
+                    ? '✅ Fokus aktiv'
+                    : '✅ Fokus gesetzt'
+                  : playerFocusHighlightEnabled
+                    ? '🎯 Fokus wird gesetzt'
+                    : '🎯 Fokus wird gesucht'
+              }}
             </span>
             <p>
               Dieses Item befindet sich in der Aufgabe <strong>{{ unit.name }}</strong>
@@ -201,9 +209,11 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   commentOpen = false;
   highlightItemId = '';
   highlightApplied = false;
+  playerFocusHighlightEnabled = true;
   focusWarning = '';
   private responseStateReady = false;
   private responseStateData: Record<string, any> | null = null;
+  private featureConfigReady = false;
 
   private definitionContent: string | null = null;
   private playerFrameReady = false;
@@ -229,10 +239,19 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
     window.addEventListener('message', this.messageHandler);
 
-    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      const fc = data?.featureConfig || {};
-      const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
-      this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('ITEM'));
+    this.api.getAcpStartPage(this.acpId).subscribe({
+      next: (data) => {
+        const fc = data?.featureConfig || {};
+        const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
+        this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('ITEM'));
+        this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight !== false;
+        this.featureConfigReady = true;
+        this.startPlayerIfReady();
+      },
+      error: () => {
+        this.featureConfigReady = true;
+        this.startPlayerIfReady();
+      },
     });
 
     this.api.getViewItems(this.acpId).subscribe((items) => {
@@ -385,6 +404,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
   private startPlayerIfReady() {
     if (
+      !this.featureConfigReady ||
       !this.playerFrameReady ||
       !this.definitionContent ||
       !this.unit ||
@@ -482,8 +502,6 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     const doc = frame?.contentDocument || frame?.contentWindow?.document;
     if (!doc || !doc.body) return false;
 
-    this.ensureFocusStyle(doc);
-
     for (const selector of this.getFocusSelectors()) {
       const target = doc.querySelector(selector) as HTMLElement | null;
       if (target) {
@@ -576,7 +594,10 @@ export class ItemViewComponent implements OnInit, OnDestroy {
     doc
       .querySelectorAll('.cp-item-focus-highlight')
       .forEach((el) => el.classList.remove('cp-item-focus-highlight'));
-    target.classList.add('cp-item-focus-highlight');
+    if (this.playerFocusHighlightEnabled) {
+      this.ensureFocusStyle(doc);
+      target.classList.add('cp-item-focus-highlight');
+    }
     target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     try {
       target.focus({ preventScroll: true });

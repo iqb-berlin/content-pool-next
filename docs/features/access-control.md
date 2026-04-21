@@ -157,6 +157,7 @@ Important supported flags include:
 - `availableTags`
 - `persistUserPreferences`
 - `showAudioVideoCodingVariables`
+- `enablePlayerFocusHighlight`
 
 Managers and app admins generally bypass these restrictions so they can inspect and
 maintain ACP content even when public-facing features are disabled.

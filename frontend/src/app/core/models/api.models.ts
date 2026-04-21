@@ -324,6 +324,7 @@ export interface FeatureConfig {
   enableItemListTags?: boolean;
   showAudioVideoCodingVariables?: boolean;
   enableItemExplorerConditionalVisibility?: boolean;
+  enablePlayerFocusHighlight?: boolean;
   showItemExplorerPlayerTargetInfo?: boolean;
   availableTags?: string[];
   persistUserPreferences?: boolean;

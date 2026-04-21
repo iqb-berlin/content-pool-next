@@ -408,6 +408,10 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <span>Bedingte Sichtbarkeit im Item-Explorer-Player anwenden</span>
         </label>
         <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[enablePlayerFocusHighlightKey]" />
+          <span>Item im Player hervorheben (Explorer + Item-Ansicht)</span>
+        </label>
+        <label class="feature-toggle">
           <input
             type="checkbox"
             [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]"
@@ -690,6 +694,7 @@ export class AccessConfigComponent implements OnInit {
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
   readonly enableItemExplorerConditionalVisibilityKey =
     'enableItemExplorerConditionalVisibility';
+  readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
 
   acpId = '';
@@ -924,6 +929,9 @@ export class AccessConfigComponent implements OnInit {
   private applyFeatureConfigDefaults() {
     const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
     this.featureConfig[this.showAudioVideoCodingVariablesKey] = showAudioVideoCodingVariables !== false;
+
+    const enablePlayerFocusHighlight = this.featureConfig[this.enablePlayerFocusHighlightKey];
+    this.featureConfig[this.enablePlayerFocusHighlightKey] = enablePlayerFocusHighlight !== false;
 
     const showItemExplorerPlayerTargetInfo =
       this.featureConfig[this.showItemExplorerPlayerTargetInfoKey];

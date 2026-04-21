@@ -1,11 +1,11 @@
 import { Component, OnInit } from '@angular/core';
 import { RouterLink, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { forkJoin, map } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { PublicAcp, Acp } from '../../core/models/api.models';
+import { renderMarkdownContent } from '../../core/utils/markdown.util';
 
 @Component({
   selector: 'app-landing',
@@ -21,7 +21,7 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
 
       <!-- Custom landing page content from admin settings -->
       @if (landingHtml) {
-        <section class="custom-content card" [innerHTML]="landingHtml"></section>
+        <section class="custom-content card rich-text-content" [innerHTML]="landingHtml"></section>
       }
 
       <!-- ACP grid -->
@@ -170,7 +170,7 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
               <h2>{{ activeLegalTitle }}</h2>
               <button class="btn btn-outline btn-sm" (click)="closeLegalDialog()">✕</button>
             </div>
-            <div class="dialog-body" [innerHTML]="activeLegalContent"></div>
+            <div class="dialog-body rich-text-content" [innerHTML]="activeLegalContent"></div>
           </div>
         </div>
       }
@@ -410,14 +410,14 @@ import { PublicAcp, Acp } from '../../core/models/api.models';
 })
 export class LandingComponent implements OnInit {
   acps: PublicAcp[] = [];
-  landingHtml: SafeHtml | null = null;
-  imprintHtml: SafeHtml | null = null;
-  privacyHtml: SafeHtml | null = null;
-  accessibilityHtml: SafeHtml | null = null;
+  landingHtml: string | null = null;
+  imprintHtml: string | null = null;
+  privacyHtml: string | null = null;
+  accessibilityHtml: string | null = null;
 
   activeLegalDialog: boolean = false;
   activeLegalTitle: string = '';
-  activeLegalContent: SafeHtml | null = null;
+  activeLegalContent: string | null = null;
 
   // Inline login form state
   loginAcpId: string | null = null;
@@ -428,7 +428,6 @@ export class LandingComponent implements OnInit {
 
   constructor(
     private api: ApiService,
-    private sanitizer: DomSanitizer,
     private authService: AuthService,
     private router: Router,
   ) {}
@@ -457,18 +456,10 @@ export class LandingComponent implements OnInit {
       acps: acpsRequest,
     }).subscribe(({ settings, acps }) => {
       this.acps = acps as PublicAcp[];
-      if (settings.landingPageHtml) {
-        this.landingHtml = this.sanitizer.bypassSecurityTrustHtml(settings.landingPageHtml);
-      }
-      if (settings.imprintHtml) {
-        this.imprintHtml = this.sanitizer.bypassSecurityTrustHtml(settings.imprintHtml);
-      }
-      if (settings.privacyHtml) {
-        this.privacyHtml = this.sanitizer.bypassSecurityTrustHtml(settings.privacyHtml);
-      }
-      if (settings.accessibilityHtml) {
-        this.accessibilityHtml = this.sanitizer.bypassSecurityTrustHtml(settings.accessibilityHtml);
-      }
+      this.landingHtml = renderMarkdownContent(settings.landingPageHtml);
+      this.imprintHtml = renderMarkdownContent(settings.imprintHtml);
+      this.privacyHtml = renderMarkdownContent(settings.privacyHtml);
+      this.accessibilityHtml = renderMarkdownContent(settings.accessibilityHtml);
     });
   }
 

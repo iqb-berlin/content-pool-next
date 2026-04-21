@@ -57,6 +57,98 @@ a:hover {
   text-decoration: underline;
 }
 
+.rich-text-content {
+  color: var(--color-text);
+  line-height: 1.7;
+}
+
+.rich-text-content > :first-child {
+  margin-top: 0;
+}
+
+.rich-text-content > :last-child {
+  margin-bottom: 0;
+}
+
+.rich-text-content h1,
+.rich-text-content h2,
+.rich-text-content h3,
+.rich-text-content h4,
+.rich-text-content h5,
+.rich-text-content h6 {
+  margin: 1.5rem 0 0.75rem;
+  line-height: 1.25;
+}
+
+.rich-text-content p,
+.rich-text-content ul,
+.rich-text-content ol,
+.rich-text-content blockquote,
+.rich-text-content pre,
+.rich-text-content table,
+.rich-text-content hr {
+  margin: 0 0 1rem;
+}
+
+.rich-text-content ul,
+.rich-text-content ol {
+  padding-left: 1.5rem;
+}
+
+.rich-text-content li + li {
+  margin-top: 0.35rem;
+}
+
+.rich-text-content blockquote {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid var(--color-primary-light);
+  background: rgba(41, 128, 185, 0.08);
+  color: var(--color-text-secondary);
+}
+
+.rich-text-content code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(26, 82, 118, 0.08);
+}
+
+.rich-text-content pre {
+  overflow-x: auto;
+  padding: 1rem;
+  border-radius: var(--radius);
+  background: #f0f4f8;
+}
+
+.rich-text-content pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.rich-text-content table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.rich-text-content th,
+.rich-text-content td {
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.rich-text-content th {
+  background: rgba(26, 82, 118, 0.06);
+  font-weight: 600;
+}
+
+.rich-text-content hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
+
 .card {
   background: var(--color-surface);
   border-radius: var(--radius);

@@ -81,28 +81,29 @@ const THEME_FIELDS: ThemeField[] = [
 
       <div class="card">
         <h3>Texte</h3>
+        <p class="help-text">Markdown wird unterstützt. Bestehendes HTML bleibt kompatibel.</p>
         <div class="form-group">
-          <label>Startseite (HTML)</label>
+          <label>Startseite (Markdown / HTML)</label>
           <textarea
             [(ngModel)]="settings.landingPageHtml"
             name="landingPageHtml"
-            rows="4"
+            rows="8"
           ></textarea>
         </div>
         <div class="form-group">
-          <label>Impressum (HTML)</label>
-          <textarea [(ngModel)]="settings.imprintHtml" name="imprintHtml" rows="4"></textarea>
+          <label>Impressum (Markdown / HTML)</label>
+          <textarea [(ngModel)]="settings.imprintHtml" name="imprintHtml" rows="6"></textarea>
         </div>
         <div class="form-group">
-          <label>Datenschutz (HTML)</label>
-          <textarea [(ngModel)]="settings.privacyHtml" name="privacyHtml" rows="4"></textarea>
+          <label>Datenschutz (Markdown / HTML)</label>
+          <textarea [(ngModel)]="settings.privacyHtml" name="privacyHtml" rows="6"></textarea>
         </div>
         <div class="form-group">
-          <label>Barrierefreiheit (HTML)</label>
+          <label>Barrierefreiheit (Markdown / HTML)</label>
           <textarea
             [(ngModel)]="settings.accessibilityHtml"
             name="accessibilityHtml"
-            rows="4"
+            rows="6"
           ></textarea>
         </div>
       </div>

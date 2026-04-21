@@ -145,6 +145,55 @@ describe('ApiService', () => {
 
       expect(httpClientMock.put).toHaveBeenCalledWith('/api/admin/settings', updateData);
     });
+
+    it('should upload the GeoGebra bundle', () => {
+      const formData = new FormData();
+      const mockSettings: AppSettings = {
+        id: '1',
+        theme: {},
+        language: 'de',
+        logoUrl: 'logo.png',
+        defaultAcpIndex: {},
+        geoGebraBundle: {
+          sourceFileName: 'GeoGebra.itcr.zip',
+          deployScriptUrl: '/api/shared-assets/GeoGebra/GeoGebra/deployggb.js',
+          publicBasePath: '/api/shared-assets',
+          checksum: 'abc',
+          entryCount: 2,
+          uploadedAt: '2026-04-21T10:00:00.000Z',
+        },
+      };
+      httpClientMock.post.mockReturnValue(of(mockSettings));
+
+      service.uploadGeoGebraBundle(formData).subscribe((settings) => {
+        expect(settings.geoGebraBundle?.sourceFileName).toBe('GeoGebra.itcr.zip');
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/admin/settings/geogebra-bundle',
+        formData,
+      );
+    });
+
+    it('should delete the GeoGebra bundle', () => {
+      const mockSettings: AppSettings = {
+        id: '1',
+        theme: {},
+        language: 'de',
+        logoUrl: 'logo.png',
+        defaultAcpIndex: {},
+        geoGebraBundle: null,
+      };
+      httpClientMock.delete.mockReturnValue(of(mockSettings));
+
+      service.deleteGeoGebraBundle().subscribe((settings) => {
+        expect(settings.geoGebraBundle).toBeNull();
+      });
+
+      expect(httpClientMock.delete).toHaveBeenCalledWith(
+        '/api/admin/settings/geogebra-bundle',
+      );
+    });
   });
 
   describe('ACP', () => {

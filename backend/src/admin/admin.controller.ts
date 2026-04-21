@@ -1,5 +1,21 @@
-import { Controller, Get, Put, Body, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Post,
+  Put,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from "@nestjs/swagger";
 import { AdminService } from "./admin.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { OidcAuthGuard } from "../auth/guards/oidc-auth.guard";
@@ -24,5 +40,21 @@ export class AdminController {
   @ApiOperation({ summary: "Update application settings" })
   async updateSettings(@Body() data: Record<string, unknown>) {
     return this.adminService.updateSettings(data as any);
+  }
+
+  @Post("settings/geogebra-bundle")
+  @UseInterceptors(FileInterceptor("file"))
+  @ApiConsumes("multipart/form-data")
+  @ApiOperation({ summary: "Upload the shared GeoGebra asset bundle" })
+  async uploadGeoGebraBundle(
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ) {
+    return this.adminService.uploadGeoGebraBundle(file);
+  }
+
+  @Delete("settings/geogebra-bundle")
+  @ApiOperation({ summary: "Remove the shared GeoGebra asset bundle" })
+  async deleteGeoGebraBundle() {
+    return this.adminService.deleteGeoGebraBundle();
   }
 }

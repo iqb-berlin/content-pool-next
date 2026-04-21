@@ -5,6 +5,10 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { VoudService } from '../../core/services/voud.service';
 import { UnitViewData } from '../../core/models/api.models';
+import {
+  GEOGEBRA_PLAYER_RESOURCE_BASE,
+  rewriteGeoGebraAssetUrls,
+} from '../../core/utils/geogebra-player-html.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.component';
 import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
@@ -370,7 +374,9 @@ export class ItemViewComponent implements OnInit, OnDestroy {
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
-        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
+          rewriteGeoGebraAssetUrls(html),
+        );
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;
@@ -435,6 +441,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
         printMode: this.printMode,
         logPolicy: 'disabled',
+        directDownloadUrl: GEOGEBRA_PLAYER_RESOURCE_BASE,
         startPage: startPage !== undefined ? startPage.toString() : undefined,
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },

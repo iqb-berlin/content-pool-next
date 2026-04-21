@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { AppSettings } from '../../core/models/api.models';
@@ -123,6 +123,62 @@ const THEME_FIELDS: ThemeField[] = [
         </div>
       </div>
 
+      <div class="card">
+        <h3>GeoGebra</h3>
+        <p class="help-text">
+          Einmal hochgeladen steht das GeoGebra-Bundle global für alle ACP-Player bereit.
+        </p>
+
+        @if (settings.geoGebraBundle) {
+          <div class="bundle-status">
+            <div><strong>Datei:</strong> {{ settings.geoGebraBundle.sourceFileName }}</div>
+            <div><strong>Dateien:</strong> {{ settings.geoGebraBundle.entryCount }}</div>
+            <div><strong>Aktualisiert:</strong> {{ settings.geoGebraBundle.uploadedAt }}</div>
+            <div class="bundle-link-row">
+              <a [href]="settings.geoGebraBundle.deployScriptUrl" target="_blank"
+                >deployggb.js prüfen</a
+              >
+            </div>
+          </div>
+        } @else {
+          <div class="help-text">Aktuell ist kein GeoGebra-Bundle installiert.</div>
+        }
+
+        @if (geoGebraMessage) {
+          <div class="alert alert-success">{{ geoGebraMessage }}</div>
+        }
+
+        <div class="form-group">
+          <label>GeoGebra ZIP</label>
+          <input
+            #geoGebraFileInput
+            type="file"
+            accept=".zip,application/zip"
+            (change)="onGeoGebraFileSelected($event)"
+          />
+          @if (selectedGeoGebraFile) {
+            <small class="help-text">Ausgewählt: {{ selectedGeoGebraFile.name }}</small>
+          }
+        </div>
+
+        <div class="geo-actions">
+          <button
+            class="btn btn-outline"
+            [disabled]="!selectedGeoGebraFile || geoGebraBusy"
+            (click)="uploadGeoGebraBundle()"
+          >
+            {{ geoGebraBusy ? 'Upload läuft...' : 'GeoGebra hochladen' }}
+          </button>
+          <button
+            class="btn btn-outline"
+            [disabled]="!settings.geoGebraBundle || geoGebraBusy"
+            (click)="removeGeoGebraBundle()"
+          >
+            Bundle entfernen
+          </button>
+        </div>
+      </div>
+
       <button class="btn btn-primary" (click)="save()">Speichern</button>
     }
   `,
@@ -171,25 +227,46 @@ const THEME_FIELDS: ThemeField[] = [
         color: var(--color-text-secondary);
         font-size: 0.8rem;
       }
+
+      .bundle-status {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
+      }
+
+      .bundle-link-row {
+        margin-top: 4px;
+      }
+
+      .geo-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+      }
     `,
   ],
 })
 export class SettingsComponent implements OnInit {
+  @ViewChild('geoGebraFileInput')
+  geoGebraFileInput?: ElementRef<HTMLInputElement>;
+
   settings: AppSettings | null = null;
   saved = false;
   error = '';
   defaultAcpIndexJson = '{}';
   theme: Record<string, string> = { ...DEFAULT_THEME };
   readonly themeFields = THEME_FIELDS;
+  geoGebraBusy = false;
+  geoGebraMessage = '';
+  selectedGeoGebraFile: File | null = null;
 
   constructor(private api: ApiService) {}
 
   ngOnInit() {
     this.api.getSettings().subscribe({
       next: (settings) => {
-        this.settings = settings;
-        this.theme = normalizeTheme(settings.theme);
-        this.defaultAcpIndexJson = JSON.stringify(settings.defaultAcpIndex || {}, null, 2);
+        this.applySettings(settings);
       },
       error: (err) => {
         this.error = err.error?.message || 'Fehler beim Laden der Einstellungen';
@@ -233,9 +310,7 @@ export class SettingsComponent implements OnInit {
 
     this.api.updateSettings(payload).subscribe({
       next: (settings) => {
-        this.settings = settings;
-        this.theme = normalizeTheme(settings.theme);
-        this.defaultAcpIndexJson = JSON.stringify(settings.defaultAcpIndex || {}, null, 2);
+        this.applySettings(settings);
 
         applyTheme(this.theme);
         applyLanguage(settings.language);
@@ -256,5 +331,73 @@ export class SettingsComponent implements OnInit {
         this.error = err.error?.message || 'Fehler beim Speichern';
       },
     });
+  }
+
+  onGeoGebraFileSelected(event: Event) {
+    const input = event.target as HTMLInputElement | null;
+    this.selectedGeoGebraFile = input?.files?.[0] || null;
+    this.geoGebraMessage = '';
+  }
+
+  uploadGeoGebraBundle() {
+    if (!this.selectedGeoGebraFile) {
+      return;
+    }
+
+    this.error = '';
+    this.geoGebraMessage = '';
+    this.geoGebraBusy = true;
+
+    const formData = new FormData();
+    formData.append('file', this.selectedGeoGebraFile);
+
+    this.api.uploadGeoGebraBundle(formData).subscribe({
+      next: (settings) => {
+        this.applySettings(settings);
+        this.geoGebraMessage = 'GeoGebra-Bundle installiert.';
+        this.geoGebraBusy = false;
+        this.clearGeoGebraSelection();
+      },
+      error: (err) => {
+        this.error = err.error?.message || 'Fehler beim GeoGebra-Upload';
+        this.geoGebraBusy = false;
+      },
+    });
+  }
+
+  removeGeoGebraBundle() {
+    if (!this.settings?.geoGebraBundle || !window.confirm('GeoGebra-Bundle wirklich entfernen?')) {
+      return;
+    }
+
+    this.error = '';
+    this.geoGebraMessage = '';
+    this.geoGebraBusy = true;
+
+    this.api.deleteGeoGebraBundle().subscribe({
+      next: (settings) => {
+        this.applySettings(settings);
+        this.geoGebraMessage = 'GeoGebra-Bundle entfernt.';
+        this.geoGebraBusy = false;
+        this.clearGeoGebraSelection();
+      },
+      error: (err) => {
+        this.error = err.error?.message || 'Fehler beim Entfernen des GeoGebra-Bundles';
+        this.geoGebraBusy = false;
+      },
+    });
+  }
+
+  private applySettings(settings: AppSettings) {
+    this.settings = settings;
+    this.theme = normalizeTheme(settings.theme);
+    this.defaultAcpIndexJson = JSON.stringify(settings.defaultAcpIndex || {}, null, 2);
+  }
+
+  private clearGeoGebraSelection() {
+    this.selectedGeoGebraFile = null;
+    if (this.geoGebraFileInput?.nativeElement) {
+      this.geoGebraFileInput.nativeElement.value = '';
+    }
   }
 }

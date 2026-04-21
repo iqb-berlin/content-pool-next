@@ -12,6 +12,12 @@ describe("AdminController", () => {
       updateSettings: jest
         .fn()
         .mockResolvedValue({ language: "en", logoUrl: "/logo.svg" }),
+      uploadGeoGebraBundle: jest
+        .fn()
+        .mockResolvedValue({ geoGebraBundle: { sourceFileName: "bundle.zip" } }),
+      deleteGeoGebraBundle: jest
+        .fn()
+        .mockResolvedValue({ geoGebraBundle: null }),
     };
 
     controller = new AdminController(adminService);
@@ -33,5 +39,23 @@ describe("AdminController", () => {
       logoUrl: "/logo.svg",
     });
     expect(adminService.updateSettings).toHaveBeenCalledWith(payload);
+  });
+
+  it("uploads a GeoGebra bundle", async () => {
+    const file = {
+      originalname: "GeoGebra.itcr.zip",
+    } as Express.Multer.File;
+
+    await expect(controller.uploadGeoGebraBundle(file)).resolves.toEqual({
+      geoGebraBundle: { sourceFileName: "bundle.zip" },
+    });
+    expect(adminService.uploadGeoGebraBundle).toHaveBeenCalledWith(file);
+  });
+
+  it("deletes the GeoGebra bundle", async () => {
+    await expect(controller.deleteGeoGebraBundle()).resolves.toEqual({
+      geoGebraBundle: null,
+    });
+    expect(adminService.deleteGeoGebraBundle).toHaveBeenCalledTimes(1);
   });
 });

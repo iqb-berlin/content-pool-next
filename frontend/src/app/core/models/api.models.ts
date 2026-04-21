@@ -351,6 +351,16 @@ export interface AppSettings {
   privacyHtml?: string;
   accessibilityHtml?: string;
   defaultAcpIndex: Record<string, any>;
+  geoGebraBundle?: GeoGebraBundleSettings | null;
+}
+
+export interface GeoGebraBundleSettings {
+  sourceFileName: string;
+  deployScriptUrl: string;
+  publicBasePath: string;
+  checksum: string;
+  entryCount: number;
+  uploadedAt: string;
 }
 
 export interface PublicAcp {

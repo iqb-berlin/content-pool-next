@@ -5,6 +5,10 @@ import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/services/api.service';
 import { VoudService } from '../../core/services/voud.service';
+import {
+  GEOGEBRA_PLAYER_RESOURCE_BASE,
+  rewriteGeoGebraAssetUrls,
+} from '../../core/utils/geogebra-player-html.util';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
@@ -3376,7 +3380,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
-        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(html);
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
+          rewriteGeoGebraAssetUrls(html),
+        );
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;
@@ -3455,6 +3461,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
               ? 'on-with-ids'
               : 'off',
         logPolicy: 'disabled',
+        directDownloadUrl: GEOGEBRA_PLAYER_RESOURCE_BASE,
         startPage: startPage !== undefined ? startPage.toString() : undefined,
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },

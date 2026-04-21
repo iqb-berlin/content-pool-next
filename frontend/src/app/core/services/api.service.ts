@@ -59,6 +59,12 @@ export class ApiService {
   updateSettings(data: Partial<AppSettings>): Observable<AppSettings> {
     return this.http.put<AppSettings>(`${this.API}/admin/settings`, data);
   }
+  uploadGeoGebraBundle(formData: FormData): Observable<AppSettings> {
+    return this.http.post<AppSettings>(`${this.API}/admin/settings/geogebra-bundle`, formData);
+  }
+  deleteGeoGebraBundle(): Observable<AppSettings> {
+    return this.http.delete<AppSettings>(`${this.API}/admin/settings/geogebra-bundle`);
+  }
 
   // ACP
   getAcps(): Observable<Acp[]> {

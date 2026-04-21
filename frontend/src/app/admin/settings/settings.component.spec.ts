@@ -14,6 +14,7 @@ function createSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     privacyHtml: '<p>Datenschutz</p>',
     accessibilityHtml: '<p>Barrierefreiheit</p>',
     defaultAcpIndex: { quality: 'baseline' },
+    geoGebraBundle: null,
     ...overrides,
   };
 }
@@ -22,12 +23,16 @@ describe('SettingsComponent', () => {
   let api: {
     getSettings: ReturnType<typeof vi.fn>;
     updateSettings: ReturnType<typeof vi.fn>;
+    uploadGeoGebraBundle: ReturnType<typeof vi.fn>;
+    deleteGeoGebraBundle: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
     api = {
       getSettings: vi.fn(),
       updateSettings: vi.fn(),
+      uploadGeoGebraBundle: vi.fn(),
+      deleteGeoGebraBundle: vi.fn(),
     };
   });
 
@@ -83,6 +88,60 @@ describe('SettingsComponent', () => {
     );
     expect(dispatchSpy).toHaveBeenCalled();
     expect(component.saved).toBe(true);
+  });
+
+  it('uploads a GeoGebra bundle and refreshes settings', () => {
+    api.getSettings.mockReturnValue(of(createSettings()));
+    api.uploadGeoGebraBundle.mockReturnValue(
+      of(
+        createSettings({
+          geoGebraBundle: {
+            sourceFileName: 'GeoGebra.itcr.zip',
+            deployScriptUrl: '/api/shared-assets/GeoGebra/GeoGebra/deployggb.js',
+            publicBasePath: '/api/shared-assets',
+            checksum: 'abc',
+            entryCount: 2,
+            uploadedAt: '2026-04-21T10:00:00.000Z',
+          },
+        }),
+      ),
+    );
+
+    const component = new SettingsComponent(api as any);
+    component.ngOnInit();
+    component.selectedGeoGebraFile = new File(['zip'], 'GeoGebra.itcr.zip');
+    component.uploadGeoGebraBundle();
+
+    expect(api.uploadGeoGebraBundle).toHaveBeenCalled();
+    expect(component.settings?.geoGebraBundle?.sourceFileName).toBe('GeoGebra.itcr.zip');
+    expect(component.geoGebraMessage).toContain('installiert');
+  });
+
+  it('removes the GeoGebra bundle after confirmation', () => {
+    api.getSettings.mockReturnValue(
+      of(
+        createSettings({
+          geoGebraBundle: {
+            sourceFileName: 'GeoGebra.itcr.zip',
+            deployScriptUrl: '/api/shared-assets/GeoGebra/GeoGebra/deployggb.js',
+            publicBasePath: '/api/shared-assets',
+            checksum: 'abc',
+            entryCount: 2,
+            uploadedAt: '2026-04-21T10:00:00.000Z',
+          },
+        }),
+      ),
+    );
+    api.deleteGeoGebraBundle.mockReturnValue(of(createSettings({ geoGebraBundle: null })));
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const component = new SettingsComponent(api as any);
+    component.ngOnInit();
+    component.removeGeoGebraBundle();
+
+    expect(api.deleteGeoGebraBundle).toHaveBeenCalled();
+    expect(component.settings?.geoGebraBundle).toBeNull();
+    expect(component.geoGebraMessage).toContain('entfernt');
   });
 
   it('shows load error if API fails', () => {

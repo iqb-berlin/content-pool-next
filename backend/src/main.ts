@@ -1,11 +1,37 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import * as fs from "fs/promises";
 import { AppModule } from "./app.module";
+import {
+  GEOGEBRA_API_PREFIX,
+  GEOGEBRA_ASSET_PREFIX,
+  GEOGEBRA_PLAYER_API_PREFIX,
+  getGeoGebraBundleCurrentDir,
+} from "./admin/geogebra-bundle.util";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const isProduction = process.env.NODE_ENV === "production";
+
+  const geoGebraAssetsDir = getGeoGebraBundleCurrentDir();
+  await fs.mkdir(geoGebraAssetsDir, { recursive: true });
+  app.useStaticAssets(geoGebraAssetsDir, {
+    prefix: GEOGEBRA_ASSET_PREFIX,
+    index: false,
+    redirect: false,
+  });
+  app.useStaticAssets(geoGebraAssetsDir, {
+    prefix: GEOGEBRA_API_PREFIX,
+    index: false,
+    redirect: false,
+  });
+  app.useStaticAssets(geoGebraAssetsDir, {
+    prefix: GEOGEBRA_PLAYER_API_PREFIX,
+    index: false,
+    redirect: false,
+  });
 
   // Global validation pipe
   app.useGlobalPipes(

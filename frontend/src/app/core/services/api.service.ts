@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpEvent } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Acp,
@@ -16,6 +16,7 @@ import {
   Credential,
   FileUploadResponse,
   FileUploadConflictStrategy,
+  FileProcessingJob,
   IndexSyncReport,
   ItemViewPreferences,
   ItemExplorerStateEnvelope,
@@ -152,7 +153,7 @@ export class ApiService {
     acpId: string,
     formData: FormData,
     options?: { conflictStrategy?: FileUploadConflictStrategy },
-  ): Observable<FileUploadResponse> {
+  ): Observable<HttpEvent<FileUploadResponse>> {
     const query: string[] = [];
     if (options?.conflictStrategy) {
       query.push(`conflictStrategy=${encodeURIComponent(options.conflictStrategy)}`);
@@ -161,7 +162,23 @@ export class ApiService {
     return this.http.post<FileUploadResponse>(
       `${this.API}/acp/${acpId}/files/upload${suffix}`,
       formData,
+      {
+        observe: 'events',
+        reportProgress: true,
+      },
     );
+  }
+  startFileProcessing(
+    acpId: string,
+    data: { fileIds: string[]; runCleanup: boolean },
+  ): Observable<FileProcessingJob> {
+    return this.http.post<FileProcessingJob>(`${this.API}/acp/${acpId}/files/process-upload`, data);
+  }
+  getFileProcessingJob(acpId: string, jobId: string): Observable<FileProcessingJob> {
+    return this.http.get<FileProcessingJob>(`${this.API}/acp/${acpId}/files/jobs/${jobId}`);
+  }
+  getFileProcessingJobEventsUrl(acpId: string, jobId: string): string {
+    return this.appendAuthToken(`${this.API}/acp/${acpId}/files/jobs/${jobId}/events`);
   }
   syncIndexFromFiles(acpId: string): Observable<IndexSyncReport> {
     return this.http.post<IndexSyncReport>(`${this.API}/acp/${acpId}/files/sync-index`, {});

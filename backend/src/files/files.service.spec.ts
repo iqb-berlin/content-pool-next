@@ -214,6 +214,85 @@ describe("FilesService", () => {
       buffer: Buffer.from('{"fresh": true}'),
     } as Express.Multer.File;
 
+    it("should extract ZIP uploads before storing metadata", async () => {
+      repo.find.mockResolvedValue([]);
+
+      const JSZip = require("jszip");
+      const zip = new JSZip();
+      zip.file("nested/unit-1.xml", "<Unit />");
+      zip.file("unit-1.vomd", '{"items":[]}');
+      zip.file("__MACOSX/ignored.txt", "ignore");
+      zip.file(".DS_Store", "ignore");
+      const buffer = await zip.generateAsync({ type: "nodebuffer" });
+
+      const uploadSpy = jest
+        .spyOn(service, "upload")
+        .mockResolvedValueOnce({
+          ...mockFile,
+          id: "file-xml",
+          originalName: "unit-1.xml",
+          fileType: "application/xml",
+          fileSize: 8,
+        } as unknown as AcpFile)
+        .mockResolvedValueOnce({
+          ...mockFile,
+          id: "file-vomd",
+          originalName: "unit-1.vomd",
+          fileType: "application/json",
+          fileSize: 12,
+        } as unknown as AcpFile);
+
+      const result = await service.uploadMultiple("acp-1", [
+        {
+          originalname: "bundle.zip",
+          mimetype: "application/zip",
+          size: buffer.length,
+          buffer,
+        } as Express.Multer.File,
+      ]);
+
+      expect(uploadSpy).toHaveBeenCalledTimes(2);
+      expect(uploadSpy).toHaveBeenNthCalledWith(
+        1,
+        "acp-1",
+        expect.objectContaining({
+          originalname: "unit-1.xml",
+          mimetype: "application/xml",
+          size: 8,
+          buffer: Buffer.from("<Unit />"),
+        }),
+      );
+      expect(uploadSpy).toHaveBeenNthCalledWith(
+        2,
+        "acp-1",
+        expect.objectContaining({
+          originalname: "unit-1.vomd",
+          mimetype: "application/json",
+          size: 12,
+          buffer: Buffer.from('{"items":[]}'),
+        }),
+      );
+      expect(result.map((file) => file.originalName)).toEqual([
+        "unit-1.xml",
+        "unit-1.vomd",
+      ]);
+    });
+
+    it("should reject invalid ZIP uploads", async () => {
+      repo.find.mockResolvedValue([]);
+
+      await expect(
+        service.uploadMultiple("acp-1", [
+          {
+            originalname: "broken.zip",
+            mimetype: "application/zip",
+            size: 9,
+            buffer: Buffer.from("not-a-zip"),
+          } as Express.Multer.File,
+        ]),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it("should reject conflicts by default", async () => {
       await expect(service.uploadMultiple("acp-1", [incoming])).rejects.toThrow(
         ConflictException,

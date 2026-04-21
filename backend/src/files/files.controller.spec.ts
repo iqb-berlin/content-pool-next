@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { lastValueFrom, of, take } from "rxjs";
 import { FilesController } from "./files.controller";
 
 describe("FilesController", () => {
@@ -6,6 +7,7 @@ describe("FilesController", () => {
   let filesService: any;
   let unitParserService: any;
   let validationService: any;
+  let fileProcessingJobsService: any;
 
   const baseFile = {
     id: "file-1",
@@ -86,10 +88,31 @@ describe("FilesController", () => {
       }),
     };
 
+    fileProcessingJobsService = {
+      createAndStartJob: jest.fn().mockResolvedValue({
+        id: "job-1",
+        status: "pending",
+      }),
+      getJobSnapshot: jest.fn().mockResolvedValue({
+        id: "job-1",
+        status: "running",
+      }),
+      ensureJobExists: jest.fn().mockResolvedValue(undefined),
+      streamJob: jest.fn().mockReturnValue(
+        of({
+          data: {
+            id: "job-1",
+            status: "completed",
+          },
+        }),
+      ),
+    };
+
     controller = new FilesController(
       filesService,
       unitParserService,
       validationService,
+      fileProcessingJobsService,
     );
   });
 
@@ -303,7 +326,7 @@ describe("FilesController", () => {
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it("uploads files with conflict strategy and returns aggregated payload", async () => {
+  it("uploads files with conflict strategy and returns stored file metadata", async () => {
     const payload = await controller.upload(
       "acp-1",
       [{ originalname: "unit-1.xml" } as any],
@@ -315,19 +338,57 @@ describe("FilesController", () => {
       [{ originalname: "unit-1.xml" }],
       "overwrite",
     );
-    expect(
-      filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("acp-1", { skipValidation: true });
     expect(payload).toEqual({
       files: [baseFile],
-      syncReport: {
-        unitsAdded: 1,
-        unitsUpdated: 0,
-        dependenciesLinked: 0,
-        warnings: [],
-      },
-      validationSummary: { totalFiles: 1 },
     });
+  });
+
+  it("starts upload processing as background job", async () => {
+    const result = await controller.processUpload(
+      "acp-1",
+      { fileIds: ["file-1"], runCleanup: true },
+      { user: { sub: "user-1" } },
+    );
+
+    expect(fileProcessingJobsService.createAndStartJob).toHaveBeenCalledWith(
+      "acp-1",
+      ["file-1"],
+      {
+        createdByUserId: "user-1",
+        runCleanup: true,
+      },
+    );
+    expect(result).toEqual({
+      id: "job-1",
+      status: "pending",
+    });
+  });
+
+  it("returns processing job snapshot", async () => {
+    await expect(controller.getProcessingJob("acp-1", "job-1")).resolves.toEqual({
+      id: "job-1",
+      status: "running",
+    });
+    expect(fileProcessingJobsService.getJobSnapshot).toHaveBeenCalledWith(
+      "acp-1",
+      "job-1",
+    );
+  });
+
+  it("streams processing job events", async () => {
+    const stream = await controller.streamProcessingJob("acp-1", "job-1");
+
+    await expect(lastValueFrom(stream.pipe(take(1)))).resolves.toEqual({
+      data: {
+        id: "job-1",
+        status: "completed",
+      },
+    });
+    expect(fileProcessingJobsService.ensureJobExists).toHaveBeenCalledWith(
+      "acp-1",
+      "job-1",
+    );
+    expect(fileProcessingJobsService.streamJob).toHaveBeenCalledWith("job-1");
   });
 
   it("syncs index from files", async () => {

@@ -249,7 +249,6 @@ describe('ApiService', () => {
       httpClientMock.post.mockReturnValue(
         of({
           files: [],
-          syncReport: { unitsAdded: 0, unitsUpdated: 0, dependenciesLinked: 0, warnings: [] },
         }),
       );
 
@@ -257,7 +256,10 @@ describe('ApiService', () => {
         expect(true).toBe(true);
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/upload', formData);
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/upload', formData, {
+        observe: 'events',
+        reportProgress: true,
+      });
     });
 
     it('should upload files with conflict strategy query', () => {
@@ -265,7 +267,6 @@ describe('ApiService', () => {
       httpClientMock.post.mockReturnValue(
         of({
           files: [],
-          syncReport: { unitsAdded: 0, unitsUpdated: 0, dependenciesLinked: 0, warnings: [] },
         }),
       );
 
@@ -276,7 +277,44 @@ describe('ApiService', () => {
       expect(httpClientMock.post).toHaveBeenCalledWith(
         '/api/acp/acp1/files/upload?conflictStrategy=overwrite',
         formData,
+        {
+          observe: 'events',
+          reportProgress: true,
+        },
       );
+    });
+
+    it('should start file processing', () => {
+      httpClientMock.post.mockReturnValue(of({ id: 'job-1' }));
+
+      service
+        .startFileProcessing('acp1', { fileIds: ['file-1'], runCleanup: true })
+        .subscribe((result) => {
+          expect(result).toEqual({ id: 'job-1' });
+        });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/process-upload', {
+        fileIds: ['file-1'],
+        runCleanup: true,
+      });
+    });
+
+    it('should get file processing job', () => {
+      httpClientMock.get.mockReturnValue(of({ id: 'job-1', status: 'running' }));
+
+      service.getFileProcessingJob('acp1', 'job-1').subscribe((result) => {
+        expect(result).toEqual({ id: 'job-1', status: 'running' });
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/files/jobs/job-1');
+    });
+
+    it('should build file processing events URL with auth token', () => {
+      localStorage.setItem('cp_token', 'job-token');
+
+      const url = service.getFileProcessingJobEventsUrl('acp1', 'job-1');
+
+      expect(url).toBe('/api/acp/acp1/files/jobs/job-1/events?auth_token=job-token');
     });
 
     it('should validate unit files', () => {

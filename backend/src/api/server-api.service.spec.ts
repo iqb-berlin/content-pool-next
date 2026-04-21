@@ -22,6 +22,7 @@ describe("ServerApiService", () => {
   let filesService: {
     deleteForAcp: jest.Mock;
     upload: jest.Mock;
+    uploadMultiple: jest.Mock;
     downloadForAcp: jest.Mock;
     cleanupReferencesAfterFileMutation: jest.Mock;
   };
@@ -43,6 +44,7 @@ describe("ServerApiService", () => {
     filesService = {
       deleteForAcp: jest.fn(),
       upload: jest.fn(),
+      uploadMultiple: jest.fn(),
       downloadForAcp: jest.fn(),
       cleanupReferencesAfterFileMutation: jest.fn().mockResolvedValue({
         cleanupReport: {
@@ -178,6 +180,9 @@ describe("ServerApiService", () => {
         originalName: "unit.xml",
       },
     ]);
+    filesService.uploadMultiple.mockRejectedValueOnce(
+      new ConflictException("conflict"),
+    );
 
     await expect(
       service.uploadFiles(
@@ -537,29 +542,33 @@ describe("ServerApiService", () => {
         originalName: "unit.xml",
       },
     ]);
-    filesService.upload
-      .mockResolvedValueOnce({
-        id: "file-new-1",
-        acpId: "acp-1",
-        originalName: "unit.xml",
-        fileType: "text/xml",
-        fileSize: 10,
-        checksum: "a",
-        uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
-      })
-      .mockResolvedValueOnce({
-        id: "file-new-2",
-        acpId: "acp-1",
-        originalName: "unit.xml",
-        fileType: "text/xml",
-        fileSize: 11,
-        checksum: "b",
-        uploadedAt: new Date("2026-01-03T00:00:00.000Z"),
-      });
+    filesService.uploadMultiple
+      .mockResolvedValueOnce([
+        {
+          id: "file-new-1",
+          acpId: "acp-1",
+          originalName: "unit.xml",
+          fileType: "text/xml",
+          fileSize: 10,
+          checksum: "a",
+          uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
+        },
+      ] as AcpFile[])
+      .mockResolvedValueOnce([
+        {
+          id: "file-new-2",
+          acpId: "acp-1",
+          originalName: "unit.xml",
+          fileType: "text/xml",
+          fileSize: 11,
+          checksum: "b",
+          uploadedAt: new Date("2026-01-03T00:00:00.000Z"),
+        },
+      ] as AcpFile[]);
 
     const keepBoth = await service.uploadFiles(
       "acp-1",
-      [{ originalname: "unit.xml" } as any],
+      [{ originalname: "bundle.zip" } as any],
       "keep-both",
     );
     expect(keepBoth[0]).toEqual(
@@ -568,18 +577,28 @@ describe("ServerApiService", () => {
         fileSize: 10,
       }),
     );
-    expect(filesService.deleteForAcp).not.toHaveBeenCalled();
+    expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
+      1,
+      "acp-1",
+      [{ originalname: "bundle.zip" }],
+      "keep-both",
+    );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
     ).not.toHaveBeenCalled();
 
     const overwrite = await service.uploadFiles(
       "acp-1",
-      [{ originalname: "unit.xml" } as any],
+      [{ originalname: "bundle.zip" } as any],
       "overwrite",
     );
     expect(overwrite[0]).toEqual(expect.objectContaining({ id: "file-new-2" }));
-    expect(filesService.deleteForAcp).toHaveBeenCalledWith("acp-1", "file-old");
+    expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
+      2,
+      "acp-1",
+      [{ originalname: "bundle.zip" }],
+      "overwrite",
+    );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
     ).toHaveBeenCalledWith("acp-1", { skipValidation: true });

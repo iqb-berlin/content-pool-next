@@ -64,8 +64,52 @@ export type FileUploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
 
 export interface FileUploadResponse {
   files: AcpFile[];
-  syncReport: IndexSyncReport;
-  validationSummary?: UploadValidationSummary;
+}
+
+export type FileProcessingJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+
+export type FileProcessingJobPhase =
+  | 'queued'
+  | 'sync-index'
+  | 'validate-files'
+  | 'validate-semantic'
+  | 'cleanup-overwrite'
+  | 'completed'
+  | 'failed';
+
+export interface FileProcessingCleanupReport {
+  unitsUpdated: number;
+  dependenciesRemoved: number;
+  bookletsUpdated: number;
+  bookletDefinitionsRemoved: number;
+  indexUpdated: boolean;
+}
+
+export interface FileProcessingResponseStateCleanup {
+  totalStates: number;
+  deletedStates: number;
+  keptStates: number;
+}
+
+export interface FileProcessingJob {
+  id: string;
+  acpId: string;
+  status: FileProcessingJobStatus;
+  phase: FileProcessingJobPhase;
+  phaseLabel: string;
+  message: string | null;
+  phaseCurrent: number;
+  phaseTotal: number;
+  uploadedFileCount: number;
+  syncReport?: IndexSyncReport | null;
+  validationSummary?: UploadValidationSummary | null;
+  cleanupReport?: FileProcessingCleanupReport | null;
+  responseStateCleanup?: FileProcessingResponseStateCleanup | null;
+  error?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
 }
 
 export interface UploadValidationSummary {

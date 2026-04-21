@@ -1,11 +1,13 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { filter, firstValueFrom, map, tap } from 'rxjs';
 import {
   AcpFile,
+  FileProcessingJob,
   FilePreviewResponse,
+  FileUploadResponse,
   UploadValidationSummary,
   UnitFileValidationResult,
 } from '../../core/models/api.models';
@@ -41,15 +43,15 @@ type FileValidationFilter = 'all' | FileValidationState;
     <div class="page-header">
       <h1>Dateien</h1>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-outline" (click)="validateFiles()" [disabled]="validating">
+        <button class="btn btn-outline" (click)="validateFiles()" [disabled]="validating || isBusy">
           {{ validating ? '⏳ Wird geprüft...' : '🔍 Dateien prüfen' }}
         </button>
-        <label class="btn btn-primary">
-          📤 Dateien hochladen
-          <input type="file" multiple (change)="upload($event)" hidden />
-        </label>
+        <input #uploadInput type="file" multiple (change)="upload($event)" hidden />
+        <button class="btn btn-primary" type="button" (click)="uploadInput.click()" [disabled]="isBusy">
+          📤 Dateien oder ZIP hochladen
+        </button>
         @if (files.length) {
-          <button class="btn btn-danger" (click)="openDeleteAllFilesDialog()">
+          <button class="btn btn-danger" (click)="openDeleteAllFilesDialog()" [disabled]="isBusy">
             🗑 Alle löschen
           </button>
         }
@@ -57,7 +59,46 @@ type FileValidationFilter = 'all' | FileValidationState;
     </div>
 
     @if (uploading) {
-      <div class="alert alert-success">Dateien werden hochgeladen ({{ uploadProgress }})...</div>
+      <div class="alert alert-success">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+          <strong>Dateien werden hochgeladen</strong>
+          <span>{{ uploadPercent }}%</span>
+        </div>
+        <div
+          style="margin-top:10px;height:10px;background:#d9efe2;border-radius:999px;overflow:hidden"
+        >
+          <div
+            style="height:100%;background:#2e8b57;transition:width 180ms ease"
+            [style.width.%]="uploadPercent"
+          ></div>
+        </div>
+        <div style="margin-top:8px">{{ uploadProgress }}</div>
+      </div>
+    }
+
+    @if (processing && processingJob) {
+      <div class="alert alert-info">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+          <strong>{{ processingJob.phaseLabel }}</strong>
+          @if (processingPercent !== null) {
+            <span>{{ processingPercent }}%</span>
+          }
+        </div>
+        @if (processingPercent !== null) {
+          <div
+            style="margin-top:10px;height:10px;background:#d7e7f7;border-radius:999px;overflow:hidden"
+          >
+            <div
+              style="height:100%;background:#2563eb;transition:width 180ms ease"
+              [style.width.%]="processingPercent"
+            ></div>
+          </div>
+        }
+        <div style="margin-top:8px">{{ processingProgress }}</div>
+        @if (processingJob.message) {
+          <div style="margin-top:4px;color:var(--color-text-secondary)">{{ processingJob.message }}</div>
+        }
+      </div>
     }
 
     @if (uploadError) {
@@ -553,6 +594,9 @@ export class FilesComponent implements OnInit {
   selectedFileType = this.FILE_TYPE_FILTER_ALL;
   selectedValidationFilter: FileValidationFilter = 'all';
   uploading = false;
+  processing = false;
+  processingJob: FileProcessingJob | null = null;
+  uploadPercent = 0;
   uploadProgress = '';
   uploadError: string | null = null;
   validating = false;
@@ -578,6 +622,36 @@ export class FilesComponent implements OnInit {
     private route: ActivatedRoute,
     private api: ApiService,
   ) {}
+
+  get isBusy(): boolean {
+    return this.uploading || this.processing;
+  }
+
+  get processingPercent(): number | null {
+    if (!this.processingJob) {
+      return null;
+    }
+    if (this.processingJob.status === 'completed') {
+      return 100;
+    }
+    if (this.processingJob.phaseTotal <= 0) {
+      return null;
+    }
+    return Math.max(
+      0,
+      Math.min(100, Math.round((this.processingJob.phaseCurrent / this.processingJob.phaseTotal) * 100)),
+    );
+  }
+
+  get processingProgress(): string {
+    if (!this.processingJob) {
+      return '';
+    }
+    if (this.processingJob.phaseTotal > 0) {
+      return `${this.processingJob.phaseCurrent} von ${this.processingJob.phaseTotal}`;
+    }
+    return 'Verarbeitung wird vorbereitet...';
+  }
 
   ngOnInit() {
     this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
@@ -693,6 +767,10 @@ export class FilesComponent implements OnInit {
     this.lastSyncReport = null;
     this.lastValidationSummary = null;
     this.lastConflictSummary = null;
+    this.processingJob = null;
+    this.processing = false;
+    this.uploadPercent = 0;
+    this.uploadProgress = '';
 
     const conflicts = this.findUploadConflicts(selectedFiles);
     const decisions = new Map<number, UploadConflictDecision>();
@@ -747,21 +825,17 @@ export class FilesComponent implements OnInit {
 
     this.uploading = true;
     const chunkSize = 50;
-    const mergedWarnings = new Set<string>();
-    const aggregateReport = {
-      unitsAdded: 0,
-      unitsUpdated: 0,
-      itemsAdded: 0,
-      itemsUpdated: 0,
-      warnings: [] as string[],
-    };
-    let latestValidationSummary: UploadValidationSummary | null = null;
-    let processed = 0;
+    const totalBytes = nonConflictingFiles
+      .concat(replacementFiles)
+      .reduce((sum, file) => sum + file.size, 0);
+    const uploadedFileIds: string[] = [];
+    let uploadedBytes = 0;
+    let uploadedFilesCount = 0;
 
     const uploadInChunks = async (batchFiles: File[], strategy?: 'overwrite'): Promise<void> => {
       for (let i = 0; i < batchFiles.length; i += chunkSize) {
         const chunk = batchFiles.slice(i, i + chunkSize);
-        this.uploadProgress = `${processed + chunk.length} von ${totalToUpload}`;
+        const chunkBytes = chunk.reduce((sum, file) => sum + file.size, 0);
 
         const fd = new FormData();
         for (const file of chunk) {
@@ -773,23 +847,28 @@ export class FilesComponent implements OnInit {
             this.acpId,
             fd,
             strategy ? { conflictStrategy: strategy } : undefined,
+          ).pipe(
+            tap((httpEvent) => {
+              if (httpEvent.type !== HttpEventType.UploadProgress) {
+                return;
+              }
+              const loaded = typeof httpEvent.loaded === 'number' ? httpEvent.loaded : 0;
+              this.updateUploadProgress(
+                uploadedBytes + loaded,
+                totalBytes,
+                uploadedFilesCount,
+                totalToUpload,
+              );
+            }),
+            filter((httpEvent) => httpEvent.type === HttpEventType.Response),
+            map((httpEvent) => httpEvent.body as FileUploadResponse),
           ),
         );
 
-        processed += chunk.length;
-
-        if (uploadResult?.syncReport) {
-          aggregateReport.unitsAdded += uploadResult.syncReport.unitsAdded || 0;
-          aggregateReport.unitsUpdated += uploadResult.syncReport.unitsUpdated || 0;
-          aggregateReport.itemsAdded += uploadResult.syncReport.itemsAdded || 0;
-          aggregateReport.itemsUpdated += uploadResult.syncReport.itemsUpdated || 0;
-          for (const warning of uploadResult.syncReport.warnings || []) {
-            mergedWarnings.add(warning);
-          }
-        }
-        if (uploadResult?.validationSummary) {
-          latestValidationSummary = uploadResult.validationSummary;
-        }
+        uploadedBytes += chunkBytes;
+        uploadedFilesCount += chunk.length;
+        this.updateUploadProgress(uploadedBytes, totalBytes, uploadedFilesCount, totalToUpload);
+        uploadedFileIds.push(...uploadResult.files.map((file) => file.id));
       }
     };
 
@@ -797,16 +876,32 @@ export class FilesComponent implements OnInit {
       await uploadInChunks(nonConflictingFiles);
       await uploadInChunks(replacementFiles, 'overwrite');
 
-      aggregateReport.warnings = Array.from(mergedWarnings);
-      this.lastSyncReport = aggregateReport;
-      this.lastValidationSummary = latestValidationSummary;
+      this.uploading = false;
+      this.processing = true;
+      this.uploadProgress = '';
+      this.uploadPercent = 100;
+
+      const job = await firstValueFrom(
+        this.api.startFileProcessing(this.acpId, {
+          fileIds: uploadedFileIds,
+          runCleanup: replacementFiles.length > 0,
+        }),
+      );
+      this.processingJob = job;
+
+      const completedJob = await this.waitForProcessingJob(job.id);
+      this.processingJob = completedJob;
+      this.lastSyncReport = completedJob.syncReport || null;
+      this.lastValidationSummary = completedJob.validationSummary || null;
       this.load();
       this.validateFiles();
     } catch (err) {
       this.uploadError = this.getUploadErrorMessage(err);
       console.error('Upload Error:', err);
+      this.load();
     } finally {
       this.uploading = false;
+      this.processing = false;
       this.uploadProgress = '';
       input.value = '';
     }
@@ -1059,6 +1154,102 @@ export class FilesComponent implements OnInit {
     return conflicts;
   }
 
+  private updateUploadProgress(
+    uploadedBytes: number,
+    totalBytes: number,
+    uploadedFilesCount: number,
+    totalFiles: number,
+  ) {
+    const normalizedTotal = Math.max(totalBytes, 1);
+    this.uploadPercent = Math.max(
+      0,
+      Math.min(100, Math.round((Math.min(uploadedBytes, normalizedTotal) / normalizedTotal) * 100)),
+    );
+    this.uploadProgress =
+      `${uploadedFilesCount} von ${totalFiles} Datei(en), ` +
+      `${this.formatSize(Math.min(uploadedBytes, totalBytes))} von ${this.formatSize(totalBytes)}`;
+  }
+
+  private async waitForProcessingJob(jobId: string): Promise<FileProcessingJob> {
+    if (typeof EventSource === 'undefined') {
+      return this.pollProcessingJob(jobId);
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const eventSource = new EventSource(this.api.getFileProcessingJobEventsUrl(this.acpId, jobId));
+
+      const finish = (job: FileProcessingJob, error?: string) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        eventSource.close();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve(job);
+      };
+
+      eventSource.onmessage = (event) => {
+        let job: FileProcessingJob;
+        try {
+          job = JSON.parse(event.data) as FileProcessingJob;
+        } catch {
+          eventSource.close();
+          void this.pollProcessingJob(jobId)
+            .then((fallbackJob) => finish(fallbackJob, fallbackJob.status === 'failed' ? fallbackJob.error || undefined : undefined))
+            .catch(reject);
+          return;
+        }
+
+        this.processingJob = job;
+        if (job.status === 'completed') {
+          finish(job);
+          return;
+        }
+        if (job.status === 'failed') {
+          finish(job, job.error || 'Verarbeitung fehlgeschlagen.');
+        }
+      };
+
+      eventSource.onerror = () => {
+        if (settled) {
+          return;
+        }
+        eventSource.close();
+        void this.pollProcessingJob(jobId)
+          .then((job) => {
+            this.processingJob = job;
+            if (job.status === 'failed') {
+              finish(job, job.error || 'Verarbeitung fehlgeschlagen.');
+              return;
+            }
+            finish(job);
+          })
+          .catch(reject);
+      };
+    });
+  }
+
+  private async pollProcessingJob(jobId: string): Promise<FileProcessingJob> {
+    for (;;) {
+      const job = await firstValueFrom(this.api.getFileProcessingJob(this.acpId, jobId));
+      this.processingJob = job;
+      if (job.status === 'completed' || job.status === 'failed') {
+        return job;
+      }
+      await this.sleep(1000);
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, ms);
+    });
+  }
+
   private normalizeFileName(fileName: string): string {
     return String(fileName || '')
       .trim()
@@ -1091,9 +1282,27 @@ export class FilesComponent implements OnInit {
         return 'Konflikt erkannt. Bitte prüfen, ob bestehende Dateien ersetzt oder übersprungen werden sollen.';
       }
 
+      if (error.status === 413) {
+        return 'Die ausgewählte Datei ist größer als das aktuell erlaubte Upload-Limit des Servers.';
+      }
+
+      if (typeof error.error === 'string') {
+        const message = error.error.trim();
+        if (message.toLowerCase() === 'file too large') {
+          return 'Die ausgewählte Datei ist größer als das aktuell erlaubte Upload-Limit des Servers.';
+        }
+        if (message) {
+          return message;
+        }
+      }
+
       if (typeof error.error?.message === 'string') {
         return error.error.message;
       }
+    }
+
+    if (error instanceof Error && error.message) {
+      return error.message;
     }
 
     return 'Upload fehlgeschlagen. Bitte erneut versuchen.';

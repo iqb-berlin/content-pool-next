@@ -202,35 +202,19 @@ export class ServerApiService {
     }
 
     const existingFiles = await this.fileRepository.find({ where: { acpId } });
-    const byName = new Map<string, AcpFile>();
-    for (const existing of existingFiles) {
-      byName.set(existing.originalName, existing);
-    }
-
-    const uploaded: AcpFile[] = [];
-    let deletedAny = false;
-
-    for (const incoming of files) {
-      const existing = byName.get(incoming.originalname);
-
-      if (existing) {
-        if (conflictStrategy === "reject") {
-          throw new ConflictException(
-            `File conflict: ${incoming.originalname} already exists (use conflictStrategy=overwrite or keep-both)`,
-          );
-        }
-
-        if (conflictStrategy === "overwrite") {
-          await this.filesService.deleteForAcp(acpId, existing.id);
-          byName.delete(incoming.originalname);
-          deletedAny = true;
-        }
-      }
-
-      const saved = await this.filesService.upload(acpId, incoming);
-      uploaded.push(saved);
-      byName.set(saved.originalName, saved);
-    }
+    const existingNames = new Set(
+      existingFiles.map((file) => this.normalizeFileName(file.originalName)),
+    );
+    const uploaded = await this.filesService.uploadMultiple(
+      acpId,
+      files,
+      conflictStrategy,
+    );
+    const deletedAny =
+      conflictStrategy === "overwrite" &&
+      uploaded.some((file) =>
+        existingNames.has(this.normalizeFileName(file.originalName)),
+      );
 
     if (deletedAny) {
       await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
@@ -527,6 +511,12 @@ export class ServerApiService {
           "conflictStrategy must be one of: reject, overwrite, keep-both",
         );
     }
+  }
+
+  private normalizeFileName(fileName: string): string {
+    return String(fileName || "")
+      .trim()
+      .toLowerCase();
   }
 
   private deepMergeObjects(

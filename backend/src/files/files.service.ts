@@ -28,6 +28,7 @@ import {
   ValidationService,
   AutoValidationSummary,
 } from "../validation/validation.service";
+import { FileProcessingProgressReporter } from "./file-processing-progress";
 
 type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
 export type FilePreviewMode =
@@ -235,6 +236,7 @@ export class FilesService {
       throw new BadRequestException("At least one file is required");
     }
 
+    const normalizedFiles = await this.expandUploadedFiles(files);
     const existingFiles = await this.findByAcp(acpId);
     const existingByName = new Map<string, AcpFile[]>();
     for (const existing of existingFiles) {
@@ -249,7 +251,7 @@ export class FilesService {
 
     const seenIncomingNames = new Set<string>();
     const conflicts = new Set<string>();
-    for (const incoming of files) {
+    for (const incoming of normalizedFiles) {
       const incomingName = String(incoming?.originalname || "").trim();
       const key = this.normalizeFileName(incomingName);
       if (!key) {
@@ -272,7 +274,7 @@ export class FilesService {
 
     const results: AcpFile[] = [];
 
-    for (const file of files) {
+    for (const file of normalizedFiles) {
       const key = this.normalizeFileName(file.originalname);
       if (!key) {
         throw new BadRequestException("All files must include a filename");
@@ -402,6 +404,7 @@ export class FilesService {
   async cleanupReferencesAfterFileMutation(
     acpId: string,
     options: { skipValidation?: boolean } = {},
+    progress?: FileProcessingProgressReporter,
   ): Promise<{
     cleanupReport: {
       unitsUpdated: number;
@@ -417,12 +420,18 @@ export class FilesService {
     };
     validationSummary?: AutoValidationSummary;
   }> {
+    await progress?.startPhase("cleanup-overwrite", 2, {
+      message: "Verweise und Antwortdaten werden nach dem Ersetzen bereinigt.",
+    });
     const cleanupReport =
       await this.unitParserService.pruneMissingDependencies(acpId);
+    await progress?.advance({ message: "Index-Verweise bereinigt" });
     const responseStateCleanup =
       await this.cleanupOrphanedResponseStates(acpId);
+    await progress?.advance({ message: "Antwortdaten bereinigt" });
 
     if (options.skipValidation) {
+      await progress?.completePhase("Bereinigung nach Ersetzen abgeschlossen.");
       return {
         cleanupReport,
         responseStateCleanup,
@@ -435,6 +444,7 @@ export class FilesService {
         await this.findByAcp(acpId),
       );
 
+    await progress?.completePhase("Bereinigung nach Ersetzen abgeschlossen.");
     return {
       cleanupReport,
       responseStateCleanup,
@@ -1257,6 +1267,183 @@ export class FilesService {
     throw new BadRequestException(
       "Invalid conflictStrategy. Expected one of: reject, overwrite, keep-both",
     );
+  }
+
+  private async expandUploadedFiles(
+    files: Express.Multer.File[],
+  ): Promise<Express.Multer.File[]> {
+    const expandedFiles: Express.Multer.File[] = [];
+
+    for (const file of files) {
+      const incomingName = String(file?.originalname || "").trim();
+      if (!incomingName) {
+        throw new BadRequestException("All files must include a filename");
+      }
+
+      if (!this.isZipUpload(file)) {
+        expandedFiles.push(file);
+        continue;
+      }
+
+      const extractedFiles = await this.extractZipEntries(file);
+      if (!extractedFiles.length) {
+        throw new BadRequestException(
+          `ZIP archive "${incomingName}" does not contain any uploadable files`,
+        );
+      }
+
+      expandedFiles.push(...extractedFiles);
+    }
+
+    return expandedFiles;
+  }
+
+  private isZipUpload(file: Express.Multer.File): boolean {
+    const fileName = String(file?.originalname || "").trim().toLowerCase();
+    const mimeType = this.normalizeMimeType(file?.mimetype);
+    return (
+      fileName.endsWith(".zip") ||
+      mimeType === "application/zip" ||
+      mimeType === "application/x-zip-compressed"
+    );
+  }
+
+  private async extractZipEntries(
+    uploadedZip: Express.Multer.File,
+  ): Promise<Express.Multer.File[]> {
+    const JSZip = require("jszip");
+
+    let archive: any;
+    try {
+      archive = await JSZip.loadAsync(uploadedZip.buffer);
+    } catch {
+      throw new BadRequestException(
+        `ZIP archive "${uploadedZip.originalname}" could not be extracted`,
+      );
+    }
+
+    const extractedFiles: Express.Multer.File[] = [];
+    const archiveEntries = Object.values(archive.files || {});
+
+    for (const entry of archiveEntries as Array<{ dir?: boolean; name?: string }>) {
+      if (entry?.dir) {
+        continue;
+      }
+
+      const originalEntryName = String(entry?.name || "");
+      const extractedName = this.getArchiveEntryFileName(originalEntryName);
+      if (!extractedName || this.shouldSkipArchiveEntry(originalEntryName, extractedName)) {
+        continue;
+      }
+
+      const zipEntry = archive.file(originalEntryName);
+      if (!zipEntry) {
+        continue;
+      }
+
+      const buffer = Buffer.from(await zipEntry.async("nodebuffer"));
+      extractedFiles.push({
+        ...uploadedZip,
+        originalname: extractedName,
+        mimetype: this.inferMimeTypeFromFileName(extractedName),
+        size: buffer.length,
+        buffer,
+      });
+    }
+
+    return extractedFiles;
+  }
+
+  private getArchiveEntryFileName(entryName: string): string {
+    const normalizedPath = String(entryName || "")
+      .replace(/\\/g, "/")
+      .trim();
+    return path.posix.basename(normalizedPath).trim();
+  }
+
+  private shouldSkipArchiveEntry(
+    entryName: string,
+    extractedName: string,
+  ): boolean {
+    const normalizedPath = String(entryName || "")
+      .replace(/\\/g, "/")
+      .trim();
+    if (!normalizedPath) {
+      return true;
+    }
+
+    if (normalizedPath.startsWith("__MACOSX/")) {
+      return true;
+    }
+
+    return extractedName === ".DS_Store";
+  }
+
+  private inferMimeTypeFromFileName(fileName: string): string {
+    const extension = this.getFileExtension(fileName);
+
+    switch (extension) {
+      case "xml":
+        return "application/xml";
+      case "json":
+      case "voud":
+      case "vomd":
+      case "vocs":
+        return "application/json";
+      case "html":
+      case "htm":
+        return "text/html";
+      case "csv":
+        return "text/csv";
+      case "tsv":
+        return "text/tab-separated-values";
+      case "txt":
+      case "md":
+      case "log":
+      case "yml":
+      case "yaml":
+      case "ini":
+      case "properties":
+        return "text/plain";
+      case "pdf":
+        return "application/pdf";
+      case "png":
+        return "image/png";
+      case "jpg":
+      case "jpeg":
+        return "image/jpeg";
+      case "gif":
+        return "image/gif";
+      case "webp":
+        return "image/webp";
+      case "svg":
+      case "svgz":
+        return "image/svg+xml";
+      case "bmp":
+        return "image/bmp";
+      case "mp3":
+        return "audio/mpeg";
+      case "wav":
+        return "audio/wav";
+      case "ogg":
+        return "audio/ogg";
+      case "m4a":
+        return "audio/mp4";
+      case "aac":
+        return "audio/aac";
+      case "mp4":
+        return "video/mp4";
+      case "webm":
+        return "video/webm";
+      case "mov":
+        return "video/quicktime";
+      case "m4v":
+        return "video/x-m4v";
+      case "ogv":
+        return "video/ogg";
+      default:
+        return "application/octet-stream";
+    }
   }
 
   private normalizeFileName(fileName: string): string {

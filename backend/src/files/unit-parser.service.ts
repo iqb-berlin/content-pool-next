@@ -7,6 +7,7 @@ import {
   getAssessmentParts,
   normalizeIndexForStorage,
 } from "../acp/acp-index.utils";
+import { FileProcessingProgressReporter } from "./file-processing-progress";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -276,7 +277,10 @@ export class UnitParserService {
    * - Never removes existing units/items automatically
    * - Prunes dependency entries that reference files no longer present
    */
-  async syncIndexFromFiles(acpId: string): Promise<IndexSyncReport> {
+  async syncIndexFromFiles(
+    acpId: string,
+    progress?: FileProcessingProgressReporter,
+  ): Promise<IndexSyncReport> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
       throw new NotFoundException(`ACP with ID ${acpId} not found`);
@@ -334,6 +338,13 @@ export class UnitParserService {
         !f.originalName.toLowerCase().startsWith("testtaker"),
     );
 
+    await progress?.startPhase("sync-index", xmlFiles.length, {
+      message:
+        xmlFiles.length > 0
+          ? "Unit-XML-Dateien werden in den ACP-Index eingelesen."
+          : "Keine Unit-XML-Dateien fuer die Synchronisierung gefunden.",
+    });
+
     for (const xmlFile of xmlFiles) {
       let xmlContent = "";
       try {
@@ -343,10 +354,12 @@ export class UnitParserService {
         this.logger.warn(
           `Could not read XML file ${xmlFile.originalName}: ${e}`,
         );
+        await progress?.advance({ message: xmlFile.originalName });
         continue;
       }
 
       if (!xmlContent.includes("<Unit")) {
+        await progress?.advance({ message: xmlFile.originalName });
         continue;
       }
 
@@ -355,6 +368,7 @@ export class UnitParserService {
         warningSet.add(
           `Unit-XML konnte nicht geparst werden: ${xmlFile.originalName}`,
         );
+        await progress?.advance({ message: xmlFile.originalName });
         continue;
       }
 
@@ -466,6 +480,8 @@ export class UnitParserService {
         parts[location.partIndex].units[location.unitIndex] = mergedUnit;
         report.unitsUpdated++;
       }
+
+      await progress?.advance({ message: xmlFile.originalName });
     }
 
     this.pruneMissingReferencesFromParts(parts, fileNameSet);
@@ -481,6 +497,11 @@ export class UnitParserService {
     }
 
     report.warnings = Array.from(warningSet);
+    await progress?.completePhase(
+      xmlFiles.length > 0
+        ? "ACP-Index-Synchronisierung abgeschlossen."
+        : "ACP-Index-Synchronisierung ohne verarbeitbare Unit-Dateien abgeschlossen.",
+    );
     return report;
   }
 

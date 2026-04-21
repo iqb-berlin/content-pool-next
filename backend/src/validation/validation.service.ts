@@ -10,6 +10,7 @@ import {
   getIndexUnits,
   toRuntimeAcpIndex,
 } from "../acp/acp-index.utils";
+import { FileProcessingProgressReporter } from "../files/file-processing-progress";
 
 export interface ValidationIssue {
   severity: "error" | "warning" | "info";
@@ -114,6 +115,7 @@ export class ValidationService {
   async autoValidateUploadedFiles(
     acpId: string,
     files: AcpFile[],
+    progress?: FileProcessingProgressReporter,
   ): Promise<{ files: AcpFile[]; summary: AutoValidationSummary }> {
     if (!files.length) {
       return {
@@ -130,6 +132,13 @@ export class ValidationService {
     }
 
     const syntacticAndSchemaResults = new Map<string, ValidationResult>();
+
+    await progress?.startPhase("validate-files", files.length, {
+      message:
+        files.length > 0
+          ? "Dateien werden syntaktisch und gegen das Schema geprueft."
+          : "Keine Dateien zur Validierung vorhanden.",
+    });
 
     for (const file of files) {
       try {
@@ -149,9 +158,12 @@ export class ValidationService {
           timestamp: new Date().toISOString(),
         });
       }
+      await progress?.advance({ message: file.originalName });
     }
 
-    const semanticResult = await this.validateAcpConsistency(acpId);
+    await progress?.completePhase("Dateivaliderung abgeschlossen.");
+
+    const semanticResult = await this.validateAcpConsistency(acpId, progress);
     const semanticIssues = semanticResult.issues.map((issue) => ({
       ...issue,
       scope: "semantic" as const,
@@ -206,7 +218,10 @@ export class ValidationService {
   /**
    * Semantic validation: check cross-references within an ACP.
    */
-  async validateAcpConsistency(acpId: string): Promise<ValidationResult> {
+  async validateAcpConsistency(
+    acpId: string,
+    progress?: FileProcessingProgressReporter,
+  ): Promise<ValidationResult> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
       return {
@@ -226,6 +241,76 @@ export class ValidationService {
     );
     const files = await this.fileRepository.find({ where: { acpId } });
     const fileNames = new Set(files.map((f) => f.originalName));
+    const assessmentParts = getAssessmentParts(index);
+    const scalesInParts =
+      this.collectScaleEntriesFromAssessmentParts(assessmentParts);
+    const scaleEntries = scalesInParts.length
+      ? scalesInParts
+      : this.collectScaleEntriesFromLegacyTopLevel(index);
+    const semanticTotal =
+      units.reduce(
+        (count, unit: any) =>
+          count +
+          (Array.isArray(unit?.dependencies) ? unit.dependencies.length : 0),
+        0,
+      ) +
+      assessmentParts.reduce((count, part: any) => {
+        const modules = Array.isArray(part?.bookletModules)
+          ? part.bookletModules
+          : [];
+        const moduleUnitRefs = modules.reduce(
+          (sum: number, module: any) =>
+            sum + (Array.isArray(module?.units) ? module.units.length : 0),
+          0,
+        );
+        const instruments = Array.isArray(part?.instruments)
+          ? part.instruments
+          : [];
+        const bookletDefinitionChecks = instruments.reduce(
+          (sum: number, instrument: any) =>
+            sum +
+            (Array.isArray(instrument?.testcenterBooklet)
+              ? instrument.testcenterBooklet.length
+              : 0),
+          0,
+        );
+        const moduleRefChecks = instruments.reduce(
+          (sum: number, instrument: any) => {
+            const booklets = Array.isArray(instrument?.testcenterBooklet)
+              ? instrument.testcenterBooklet
+              : [];
+            return (
+              sum +
+              booklets.reduce(
+                (bookletSum: number, booklet: any) =>
+                  bookletSum +
+                  (Array.isArray(booklet?.modules)
+                    ? booklet.modules.length
+                    : 0),
+                0,
+              )
+            );
+          },
+          0,
+        );
+
+        return (
+          count + moduleUnitRefs + bookletDefinitionChecks + moduleRefChecks
+        );
+      }, 0) +
+      scaleEntries.reduce((count, scaleEntry: any) => {
+        const items = Array.isArray(scaleEntry.scale?.typeParameters?.items)
+          ? scaleEntry.scale.typeParameters.items
+          : [];
+        return count + items.length;
+      }, 0);
+
+    await progress?.startPhase("validate-semantic", semanticTotal, {
+      message:
+        semanticTotal > 0
+          ? "ACP-weite Referenzen und Skalen werden geprueft."
+          : "Keine semantischen Referenzen zur Pruefung vorhanden.",
+    });
 
     // Check that all unit dependencies reference existing files
     for (const [unitIndex, unit] of units.entries()) {
@@ -241,11 +326,13 @@ export class ValidationService {
             path: `units[${unitIndex}].dependencies[${depIndex}].id`,
           });
         }
+        await progress?.advance({
+          message: `Unit ${unit?.id || "(unbekannt)"}`,
+        });
       }
     }
 
     // Check that booklet modules reference existing units
-    const assessmentParts = getAssessmentParts(index);
     for (const [partIndex, part] of assessmentParts.entries()) {
       const modules = Array.isArray(part?.bookletModules)
         ? part.bookletModules
@@ -269,6 +356,9 @@ export class ValidationService {
               path: `assessmentParts[${partIndex}].bookletModules[${moduleIndex}].units[${moduleUnitIndex}]${pathSuffix}`,
             });
           }
+          await progress?.advance({
+            message: `Modul ${module?.id || "(unbekannt)"}`,
+          });
         }
       }
 
@@ -292,6 +382,9 @@ export class ValidationService {
               path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].definitionId`,
             });
           }
+          await progress?.advance({
+            message: `Instrument ${instrument?.id || "(unbekannt)"}`,
+          });
 
           const moduleRefs = Array.isArray(booklet?.modules)
             ? booklet.modules
@@ -307,17 +400,15 @@ export class ValidationService {
                 path: `assessmentParts[${partIndex}].instruments[${instrumentIndex}].testcenterBooklet[${bookletIndex}].modules[${moduleRefIndex}]${pathSuffix}`,
               });
             }
+            await progress?.advance({
+              message: `Instrument ${instrument?.id || "(unbekannt)"}`,
+            });
           }
         }
       }
     }
 
     const knownItemIds = this.collectKnownItemIds(units);
-    const scalesInParts =
-      this.collectScaleEntriesFromAssessmentParts(assessmentParts);
-    const scaleEntries = scalesInParts.length
-      ? scalesInParts
-      : this.collectScaleEntriesFromLegacyTopLevel(index);
 
     for (const scaleEntry of scaleEntries) {
       const scaleItems = Array.isArray(scaleEntry.scale?.typeParameters?.items)
@@ -332,8 +423,13 @@ export class ValidationService {
             path: `${scaleEntry.pathBase}.typeParameters.items[${scaleItemIndex}].id`,
           });
         }
+        await progress?.advance({
+          message: `Scale ${scaleEntry.scale?.id || "(unbekannt)"}`,
+        });
       }
     }
+
+    await progress?.completePhase("Semantische Validierung abgeschlossen.");
 
     return {
       valid: !issues.some((i) => i.severity === "error"),

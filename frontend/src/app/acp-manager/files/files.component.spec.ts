@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { of } from 'rxjs';
 import { FilesComponent } from './files.component';
@@ -229,5 +230,18 @@ describe('FilesComponent filtering', () => {
 
     expect(component.selectedPreviewFile).toBeNull();
     expect(component.selectedPreview).toBeNull();
+  });
+
+  it('maps payload-too-large upload errors to a helpful message', () => {
+    const message = (component as any).getUploadErrorMessage(
+      new HttpErrorResponse({
+        status: 413,
+        error: 'File too large',
+      }),
+    );
+
+    expect(message).toBe(
+      'Die ausgewählte Datei ist größer als das aktuell erlaubte Upload-Limit des Servers.',
+    );
   });
 });

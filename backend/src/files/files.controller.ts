@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   ForbiddenException,
   Controller,
   Get,
@@ -12,6 +13,7 @@ import {
   UploadedFiles,
   Request,
   Res,
+  Sse,
 } from "@nestjs/common";
 import { Response } from "express";
 import { FilesInterceptor } from "@nestjs/platform-express";
@@ -29,6 +31,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
+import { FileProcessingJobsService } from "./file-processing-jobs.service";
 
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
@@ -37,6 +40,7 @@ export class FilesController {
     private readonly filesService: FilesService,
     private readonly unitParserService: UnitParserService,
     private readonly validationService: ValidationService,
+    private readonly fileProcessingJobsService: FileProcessingJobsService,
   ) {}
 
   @Get()
@@ -163,6 +167,31 @@ export class FilesController {
     return this.unitParserService.getUnitViewFromFiles(acpId, unitId);
   }
 
+  @Get("jobs/:jobId")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Get file processing job status" })
+  async getProcessingJob(
+    @Param("acpId") acpId: string,
+    @Param("jobId") jobId: string,
+  ) {
+    return this.fileProcessingJobsService.getJobSnapshot(acpId, jobId);
+  }
+
+  @Sse("jobs/:jobId/events")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Stream file processing job progress" })
+  async streamProcessingJob(
+    @Param("acpId") acpId: string,
+    @Param("jobId") jobId: string,
+  ) {
+    await this.fileProcessingJobsService.ensureJobExists(acpId, jobId);
+    return this.fileProcessingJobsService.streamJob(jobId);
+  }
+
   @Get(":fileId")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get file metadata" })
@@ -214,30 +243,25 @@ export class FilesController {
     @UploadedFiles() files: Express.Multer.File[],
     @Query("conflictStrategy") conflictStrategy?: string,
   ) {
-    const uploadedFiles = await this.filesService.uploadMultiple(
-      acpId,
-      files,
-      conflictStrategy,
-    );
-    const syncReport = await this.unitParserService.syncIndexFromFiles(acpId);
-    const validationRun =
-      await this.validationService.autoValidateUploadedFiles(
-        acpId,
-        uploadedFiles,
-      );
-
-    const strategy = (conflictStrategy || "").trim().toLowerCase();
-    if (strategy === "overwrite") {
-      await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
-        skipValidation: true,
-      });
-    }
-
     return {
-      files: validationRun.files,
-      syncReport,
-      validationSummary: validationRun.summary,
+      files: await this.filesService.uploadMultiple(acpId, files, conflictStrategy),
     };
+  }
+
+  @Post("process-upload")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Start processing for freshly uploaded ACP files" })
+  async processUpload(
+    @Param("acpId") acpId: string,
+    @Body() body: { fileIds?: string[]; runCleanup?: boolean },
+    @Request() req: any,
+  ) {
+    return this.fileProcessingJobsService.createAndStartJob(acpId, body.fileIds || [], {
+      createdByUserId: req?.user?.sub || null,
+      runCleanup: !!body.runCleanup,
+    });
   }
 
   @Post("sync-index")

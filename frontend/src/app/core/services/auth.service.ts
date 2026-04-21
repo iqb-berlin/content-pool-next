@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import {
   BehaviorSubject,
   Observable,
@@ -16,12 +16,17 @@ import {
   OidcConfig,
   AuthContext,
 } from '../models/api.models';
+import { BYPASS_APP_AUTH } from '../interceptors/auth-context.tokens';
 
 interface OidcTokenResponse {
   access_token: string;
   id_token?: string;
   refresh_token?: string;
 }
+
+type AuthChannelMessage =
+  | { type: 'logout' }
+  | { type: 'oidc_session_updated' };
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -36,7 +41,7 @@ export class AuthService {
   private readonly AUTH_TYPE_KEY = 'cp_auth_type';
   private readonly OIDC_REFRESH_LEEWAY_MS = 60_000;
   private readonly OIDC_REFRESH_FALLBACK_MS = 5 * 60 * 1000;
-  private logoutChannel: BroadcastChannel | null = null;
+  private authChannel: BroadcastChannel | null = null;
   private oidcRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private oidcRefreshPromise: Promise<void> | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
@@ -60,8 +65,17 @@ export class AuthService {
 
   private initBroadcastChannel(): void {
     if (typeof BroadcastChannel !== 'undefined') {
-      this.logoutChannel = new BroadcastChannel('cp_logout');
-      this.logoutChannel.onmessage = () => this.performLogout(false);
+      this.authChannel = new BroadcastChannel('cp_auth');
+      this.authChannel.onmessage = (event: MessageEvent<AuthChannelMessage | 'logout'>) => {
+        if (event.data === 'logout' || event.data?.type === 'logout') {
+          this.performLogout(false);
+          return;
+        }
+
+        if (event.data?.type === 'oidc_session_updated') {
+          this.scheduleOidcTokenRefresh();
+        }
+      };
     }
   }
 
@@ -90,6 +104,26 @@ export class AuthService {
 
   getToken(): string | null {
     return localStorage.getItem(this.tokenKey);
+  }
+
+  async refreshOidcSession(): Promise<boolean> {
+    try {
+      return await this.refreshOidcTokensIfNeeded(true);
+    } catch {
+      return false;
+    }
+  }
+
+  async restoreOidcSessionOnResume(): Promise<boolean> {
+    if (!this.isOidcUser || !this.hasStoredOidcSession()) {
+      return false;
+    }
+
+    try {
+      return await this.refreshOidcTokensIfNeeded(!this.getToken());
+    } catch {
+      return false;
+    }
   }
 
   getOidcConfig(): Observable<OidcConfig> {
@@ -154,8 +188,9 @@ export class AuthService {
         const headers = new HttpHeaders({
           'Content-Type': 'application/x-www-form-urlencoded',
         });
+        const context = new HttpContext().set(BYPASS_APP_AUTH, true);
 
-        return this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers });
+        return this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers, context });
       }),
       switchMap((tokenResponse) => {
         const idToken = tokenResponse.id_token;
@@ -202,6 +237,7 @@ export class AuthService {
         localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
         this.currentUserSubject.next(this.normalizeUserProfile(res.user));
         this.scheduleOidcTokenRefresh();
+        this.broadcastAuthEvent({ type: 'oidc_session_updated' });
       }),
     );
   }
@@ -305,8 +341,8 @@ export class AuthService {
     sessionStorage.removeItem(this.OIDC_CODE_VERIFIER_KEY);
     this.currentUserSubject.next(null);
 
-    if (broadcast && this.logoutChannel) {
-      this.logoutChannel.postMessage('logout');
+    if (broadcast) {
+      this.broadcastAuthEvent({ type: 'logout' });
     }
   }
 
@@ -434,30 +470,25 @@ export class AuthService {
   }
 
   private async performOidcRefresh(): Promise<void> {
-    const refreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY);
-    if (!refreshToken) {
+    const initialRefreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+    if (!initialRefreshToken) {
       throw new Error('OIDC-Refresh-Token fehlt');
     }
 
-    const config = await firstValueFrom(this.getOidcConfig());
-    if (!config.enabled || !config.issuerUrl || !config.clientId) {
-      throw new Error('OIDC ist nicht konfiguriert');
+    let tokenResponse: OidcTokenResponse;
+
+    try {
+      tokenResponse = await this.requestOidcTokenRefresh(initialRefreshToken);
+    } catch (error) {
+      const latestRefreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY);
+      if (!latestRefreshToken || latestRefreshToken === initialRefreshToken) {
+        throw error;
+      }
+
+      tokenResponse = await this.requestOidcTokenRefresh(latestRefreshToken);
     }
 
-    const tokenUrl = `${config.issuerUrl}/protocol/openid-connect/token`;
-    const body = new URLSearchParams();
-    body.set('grant_type', 'refresh_token');
-    body.set('refresh_token', refreshToken);
-    body.set('client_id', config.clientId);
-
-    const headers = new HttpHeaders({
-      'Content-Type': 'application/x-www-form-urlencoded',
-    });
-
-    const tokenResponse = await firstValueFrom(
-      this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers }),
-    );
-
+    const refreshToken = localStorage.getItem(this.REFRESH_TOKEN_KEY) || initialRefreshToken;
     const accessToken = tokenResponse.access_token;
     const idToken = tokenResponse.id_token;
     const tokenForBackend = idToken || accessToken;
@@ -474,6 +505,26 @@ export class AuthService {
         tokenResponse.refresh_token || refreshToken,
       ),
     );
+  }
+
+  private async requestOidcTokenRefresh(refreshToken: string): Promise<OidcTokenResponse> {
+    const config = await firstValueFrom(this.getOidcConfig());
+    if (!config.enabled || !config.issuerUrl || !config.clientId) {
+      throw new Error('OIDC ist nicht konfiguriert');
+    }
+
+    const tokenUrl = `${config.issuerUrl}/protocol/openid-connect/token`;
+    const body = new URLSearchParams();
+    body.set('grant_type', 'refresh_token');
+    body.set('refresh_token', refreshToken);
+    body.set('client_id', config.clientId);
+
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/x-www-form-urlencoded',
+    });
+    const context = new HttpContext().set(BYPASS_APP_AUTH, true);
+
+    return firstValueFrom(this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers, context }));
   }
 
   private scheduleOidcTokenRefresh(): void {
@@ -503,6 +554,10 @@ export class AuthService {
 
   private getPrimaryOidcToken(): string | null {
     return localStorage.getItem(this.ACCESS_TOKEN_KEY) || localStorage.getItem(this.ID_TOKEN_KEY);
+  }
+
+  private broadcastAuthEvent(message: AuthChannelMessage): void {
+    this.authChannel?.postMessage(message);
   }
 
   private isTokenExpiringSoon(token: string | null): boolean {

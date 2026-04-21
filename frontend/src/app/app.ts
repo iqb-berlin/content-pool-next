@@ -145,6 +145,14 @@ export class AppComponent implements OnInit, OnDestroy {
     applyTheme(detail.theme);
     applyLanguage(detail.language);
   };
+  private readonly appResumeListener = () => {
+    void this.auth.restoreOidcSessionOnResume();
+  };
+  private readonly visibilityChangeListener = () => {
+    if (document.visibilityState === 'visible') {
+      void this.auth.restoreOidcSessionOnResume();
+    }
+  };
 
   constructor(
     public auth: AuthService,
@@ -154,6 +162,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     window.addEventListener('cp-settings-updated', this.settingsUpdatedListener as EventListener);
+    window.addEventListener('focus', this.appResumeListener);
+    document.addEventListener('visibilitychange', this.visibilityChangeListener);
     this.auth.initFromStorage();
 
     this.api.getPublicSettings().subscribe((settings) => {
@@ -167,6 +177,8 @@ export class AppComponent implements OnInit, OnDestroy {
       'cp-settings-updated',
       this.settingsUpdatedListener as EventListener,
     );
+    window.removeEventListener('focus', this.appResumeListener);
+    document.removeEventListener('visibilitychange', this.visibilityChangeListener);
   }
 
   logout() {

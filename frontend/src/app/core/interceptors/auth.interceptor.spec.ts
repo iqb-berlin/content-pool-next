@@ -1,16 +1,19 @@
 import { Injector, runInInjectionContext } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { HttpErrorResponse, HttpRequest, HttpResponse } from '@angular/common/http';
+import { HttpContext, HttpErrorResponse, HttpRequest, HttpResponse } from '@angular/common/http';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 import { AccessService } from '../services/access.service';
+import { BYPASS_APP_AUTH } from './auth-context.tokens';
 
 describe('authInterceptor', () => {
   let token: string | null;
   let authMock: {
     getToken: ReturnType<typeof vi.fn>;
     clearSession: ReturnType<typeof vi.fn>;
+    refreshOidcSession: ReturnType<typeof vi.fn>;
+    isOidcUser: boolean;
   };
   let accessMock: {
     redirectToAccess: ReturnType<typeof vi.fn>;
@@ -24,6 +27,8 @@ describe('authInterceptor', () => {
       clearSession: vi.fn(() => {
         token = null;
       }),
+      refreshOidcSession: vi.fn().mockResolvedValue(false),
+      isOidcUser: false,
     };
     accessMock = {
       redirectToAccess: vi.fn().mockResolvedValue(true),
@@ -66,6 +71,32 @@ describe('authInterceptor', () => {
     );
   });
 
+  it('refreshes OIDC sessions and retries a protected request once after 401', async () => {
+    authMock.isOidcUser = true;
+    authMock.refreshOidcSession.mockImplementation(async () => {
+      token = 'token-2';
+      return true;
+    });
+
+    const req = new HttpRequest('GET', '/api/view/acp/acp-1');
+    const next = vi
+      .fn()
+      .mockImplementationOnce(() => throwError(() => new HttpErrorResponse({ status: 401 })))
+      .mockImplementationOnce((forwardedReq: HttpRequest<unknown>) => {
+        expect(forwardedReq.headers.get('Authorization')).toBe('Bearer token-2');
+        return of(new HttpResponse({ status: 200, body: { ok: true } }));
+      });
+
+    const response = await firstValueFrom(
+      runInInjectionContext(injector, () => authInterceptor(req, next as any)),
+    );
+
+    expect(response).toBeInstanceOf(HttpResponse);
+    expect(authMock.refreshOidcSession).toHaveBeenCalledTimes(1);
+    expect(authMock.clearSession).not.toHaveBeenCalled();
+    expect(accessMock.redirectToAccess).not.toHaveBeenCalled();
+  });
+
   it('does not redirect for inline login errors', async () => {
     const req = new HttpRequest('POST', '/api/auth/login');
     const next = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 401 })));
@@ -76,6 +107,20 @@ describe('authInterceptor', () => {
 
     expect(authMock.clearSession).not.toHaveBeenCalled();
     expect(accessMock.redirectToAccess).not.toHaveBeenCalled();
+  });
+
+  it('does not attach the app bearer token to bypassed requests', async () => {
+    const req = new HttpRequest('POST', 'https://id.example.com/token', null, {
+      context: new HttpContext().set(BYPASS_APP_AUTH, true),
+    });
+    const next = vi.fn((forwardedReq: HttpRequest<unknown>) => {
+      expect(forwardedReq.headers.has('Authorization')).toBe(false);
+      return of(new HttpResponse({ status: 200, body: {} }));
+    });
+
+    await firstValueFrom(runInInjectionContext(injector, () => authInterceptor(req, next as any)));
+
+    expect(next).toHaveBeenCalledTimes(1);
   });
 
   it('maps feature-disabled 403 errors to feature_disabled access reason', async () => {

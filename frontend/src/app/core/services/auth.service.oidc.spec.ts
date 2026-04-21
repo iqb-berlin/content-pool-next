@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import type { LoginResponse, OidcConfig, UserProfile } from '../models/api.models';
 import { AuthService } from './auth.service';
+import { BYPASS_APP_AUTH } from '../interceptors/auth-context.tokens';
 
 describe('AuthService OIDC and Crypto Paths', () => {
   let service: AuthService;
@@ -197,6 +198,10 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(sessionStorage.getItem('oidc_state')).toBeNull();
     expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
     expect(service.currentUser).toEqual(profile);
+    const tokenRequest = httpClientMock.post.mock.calls.find(([url]) =>
+      String(url).includes('/protocol/openid-connect/token'),
+    );
+    expect(tokenRequest?.[2]?.context.get(BYPASS_APP_AUTH)).toBe(true);
   });
 
   it('supports direct oidc callback and id-token fallback persistence', async () => {
@@ -321,6 +326,8 @@ describe('AuthService OIDC and Crypto Paths', () => {
     service.initFromStorage();
     await Promise.resolve();
     await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
     expect(localStorage.getItem('cp_token')).toBe('app-jwt');
     expect(localStorage.getItem('cp_oidc_access_token')).toBe('new-oidc-access');
@@ -367,6 +374,50 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(localStorage.getItem('cp_oidc_access_token')).toBe('rotated-access');
     expect(localStorage.getItem('cp_oidc_id_token')).toBe('rotated-id');
     expect(localStorage.getItem('cp_oidc_refresh_token')).toBe('refresh-2');
+  });
+
+  it('retries token refresh with the latest refresh token after a parallel rotation', async () => {
+    localStorage.setItem('cp_auth_type', 'oidc');
+    localStorage.setItem('cp_oidc_access_token', createJwt(30));
+    localStorage.setItem('cp_oidc_id_token', createJwt(30));
+    localStorage.setItem('cp_oidc_refresh_token', 'refresh-1');
+
+    let refreshAttempts = 0;
+    httpClientMock.post.mockImplementation((url: string, body?: string, options?: any) => {
+      if (url.includes('/protocol/openid-connect/token')) {
+        refreshAttempts += 1;
+        expect(options?.context.get(BYPASS_APP_AUTH)).toBe(true);
+
+        if (refreshAttempts === 1) {
+          expect(body).toContain('refresh_token=refresh-1');
+          localStorage.setItem('cp_oidc_refresh_token', 'refresh-2');
+          return throwError(() => new Error('stale refresh token'));
+        }
+
+        expect(body).toContain('refresh_token=refresh-2');
+        return of({
+          access_token: 'rotated-access-2',
+          id_token: 'rotated-id-2',
+          refresh_token: 'refresh-3',
+        });
+      }
+      if (url === '/api/auth/oidc-callback') {
+        return of({
+          accessToken: 'rotated-app-jwt-2',
+          user: profile,
+        } as LoginResponse);
+      }
+      return of({});
+    });
+
+    const refreshed = await service.refreshOidcSession();
+
+    expect(refreshed).toBe(true);
+    expect(refreshAttempts).toBe(2);
+    expect(localStorage.getItem('cp_token')).toBe('rotated-app-jwt-2');
+    expect(localStorage.getItem('cp_oidc_access_token')).toBe('rotated-access-2');
+    expect(localStorage.getItem('cp_oidc_id_token')).toBe('rotated-id-2');
+    expect(localStorage.getItem('cp_oidc_refresh_token')).toBe('refresh-3');
   });
 
   it('exercises base64url, sha256 and challenge generation (subtle + fallback)', async () => {

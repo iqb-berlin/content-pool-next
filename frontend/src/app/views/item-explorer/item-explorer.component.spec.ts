@@ -106,6 +106,94 @@ describe('ItemExplorerComponent', () => {
     ]);
   });
 
+  it('hides excluded items by default and can reveal them temporarily', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Visible item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Excluded item',
+        variableId: '',
+        metadata: {},
+        excluded: true,
+      },
+    ] as any;
+
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
+
+    component.toggleShowExcludedItems();
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1', 'uuid-2']);
+  });
+
+  it('excludes the selected item and moves selection to the next visible entry', () => {
+    const component = createComponent();
+    component.canEditExplorer = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'First item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Second item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_3',
+        uuid: 'uuid-3',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Third item',
+        variableId: '',
+        metadata: {},
+      },
+    ] as any;
+    component.filteredItems = [...component.items];
+    component.selectedItem = component.items[0];
+    component.selectedIndex = 0;
+    const queueDraftPatch = vi
+      .spyOn(component as any, 'queueDraftPatch')
+      .mockImplementation(() => undefined);
+
+    component.toggleSelectedItemExclusion();
+
+    expect(component.items[0].excluded).toBe(true);
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-2', 'uuid-3']);
+    expect(component.selectedItem?.uuid).toBe('uuid-2');
+    expect(queueDraftPatch).toHaveBeenCalledWith(
+      'ITEM_EXCLUSION_CHANGED',
+      {
+        itemPropertiesPatch: {
+          'uuid-1': {
+            excluded: true,
+          },
+        },
+      },
+      true,
+    );
+  });
+
   it('shows audio/video coding variables by default', () => {
     const component = createComponent();
     component.currentCodingSchemeAsText = [

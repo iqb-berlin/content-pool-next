@@ -610,6 +610,18 @@ export class ItemExplorerStateService {
         } else {
           delete nextItemValue.previewTargetId;
         }
+      } else {
+        delete nextItemValue.previewTargetId;
+      }
+
+      if (typeof itemValue.excluded === "boolean") {
+        if (itemValue.excluded) {
+          nextItemValue.excluded = true;
+        } else {
+          delete nextItemValue.excluded;
+        }
+      } else {
+        delete nextItemValue.excluded;
       }
 
       if (Object.keys(nextItemValue).length > 0) {

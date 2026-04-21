@@ -39,6 +39,7 @@ interface ExplorerItem {
   empiricalDifficulty?: number;
   tags?: string[];
   previewTargetId?: string;
+  excluded?: boolean;
 }
 
 interface MetadataSettings {
@@ -274,6 +275,22 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             placeholder="🔍 Items filtern..."
             (input)="applyFilter()"
           />
+          @if (excludedItemsCount > 0 || showExcludedItems) {
+            <div class="table-toolbar-actions">
+              <button
+                class="btn btn-outline btn-sm"
+                type="button"
+                (click)="toggleShowExcludedItems()"
+                [class.btn-primary]="showExcludedItems"
+              >
+                {{
+                  showExcludedItems
+                    ? 'Ausgeschlossene ausblenden'
+                    : 'Ausgeschlossene anzeigen (' + excludedItemsCount + ')'
+                }}
+              </button>
+            </div>
+          }
           <div class="help-text">
             Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
             <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
@@ -366,6 +383,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                 <tr
                   [id]="getItemRowId(item)"
                   [class.active]="selectedItem?.uuid === item.uuid"
+                  [class.excluded]="isItemExcluded(item)"
                   [class.no-preview]="!canPreviewItem(item)"
                   [attr.aria-selected]="selectedItem?.uuid === item.uuid"
                   (click)="selectItem(item, i)"
@@ -376,6 +394,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                         ><span class="unit-id">{{ item.unitId }}</span
                         ><span class="item-id">{{ item.itemId }}</span></code
                       >
+                      @if (isItemExcluded(item)) {
+                        <span class="excluded-item-badge">Ausgeschlossen</span>
+                      }
                       @if (showPlayerTargetInfo) {
                         @if (getPlayerTarget(item)) {
                           <span class="player-target-badge">Player {{ getPlayerTarget(item) }}</span>
@@ -452,6 +473,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               <div class="preview-target-header">
                 <strong>Explorer-Item</strong>
                 <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
+                @if (isItemExcluded(selectedItem)) {
+                  <span class="excluded-item-badge">Ausgeschlossen</span>
+                }
                 @if (
                   selectedItemUsesDerivedTarget &&
                   selectedItemTarget &&
@@ -599,6 +623,18 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               📄 Metadaten
             </button>
             @if (canEditExplorer) {
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="toggleSelectedItemExclusion()"
+                [class.btn-primary]="isItemExcluded(selectedItem)"
+                [title]="
+                  isItemExcluded(selectedItem)
+                    ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
+                    : 'Schließt das Item aus und blendet es standardmäßig aus.'
+                "
+              >
+                {{ isItemExcluded(selectedItem) ? '↩️ Ausschluss aufheben' : '🚫 Item ausschließen' }}
+              </button>
               <button
                 class="btn btn-outline btn-sm"
                 (click)="saveCurrentResponseState()"
@@ -1426,6 +1462,11 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         background: var(--color-surface);
         flex-shrink: 0;
       }
+      .table-toolbar-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
       .filter-input {
         width: 100%;
         padding: 8px 12px;
@@ -1641,8 +1682,23 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         background: rgba(127, 140, 141, 0.16);
         color: #566573;
       }
+      .excluded-item-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(231, 76, 60, 0.12);
+        color: #a93226;
+        font-size: 0.72rem;
+        font-weight: 600;
+        line-height: 1.2;
+      }
       .explorer-table tbody tr.no-preview td {
         background: rgba(243, 156, 18, 0.05);
+      }
+      .explorer-table tbody tr.excluded:not(.active) td {
+        background: rgba(231, 76, 60, 0.04);
       }
 
       /* Preview panel */
@@ -2302,6 +2358,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
   private readonly previewTargetItemPropertyKey = 'previewTargetId';
+  private readonly excludedItemPropertyKey = 'excluded';
   @ViewChild('globalFilterInput') globalFilterInput?: ElementRef<HTMLInputElement>;
   @ViewChild('tableScroll') tableScroll?: ElementRef<HTMLDivElement>;
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -2317,6 +2374,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
+  showExcludedItems = false;
 
   // Selection
   selectedItem: ExplorerItem | null = null;
@@ -2478,6 +2536,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
     });
+  }
+
+  get excludedItemsCount(): number {
+    return this.items.filter((item) => this.isItemExcluded(item)).length;
   }
 
   get selectedPreviewTarget(): string {
@@ -2737,6 +2799,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const term = this.filterText.toLowerCase();
 
     this.filteredItems = this.items.filter((item) => {
+      if (!this.showExcludedItems && this.isItemExcluded(item)) {
+        return false;
+      }
+
       // 1. Global Filter
       if (term) {
         const matchesGlobal =
@@ -2778,6 +2844,26 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (shouldPersist) {
       this.saveUiPreferences();
     }
+  }
+
+  isItemExcluded(item?: ExplorerItem | null): boolean {
+    return item?.excluded === true;
+  }
+
+  toggleShowExcludedItems() {
+    this.showExcludedItems = !this.showExcludedItems;
+    this.applyFilter(false);
+  }
+
+  toggleSelectedItemExclusion() {
+    if (!this.canEditExplorer || !this.selectedItem) {
+      return;
+    }
+
+    const item = this.selectedItem;
+    const nextExcluded = !this.isItemExcluded(item);
+    this.updateItemExclusion(item, nextExcluded);
+    this.applyFilter(false);
   }
 
   // --- Sorting ---
@@ -3800,21 +3886,52 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return;
     }
 
+    this.queueItemPropertyPatch(
+      item,
+      'PREVIEW_TARGET_CHANGED',
+      {
+        [this.previewTargetItemPropertyKey]: normalizedTargetId,
+      },
+      true,
+    );
+  }
+
+  private updateItemExclusion(item: ExplorerItem, excluded: boolean) {
+    item.excluded = excluded ? true : undefined;
+
+    if (!this.canEditExplorer || this.suppressDraftPatch) {
+      return;
+    }
+
+    this.queueItemPropertyPatch(
+      item,
+      'ITEM_EXCLUSION_CHANGED',
+      {
+        [this.excludedItemPropertyKey]: excluded,
+      },
+      true,
+    );
+  }
+
+  private queueItemPropertyPatch(
+    item: ExplorerItem,
+    changeType: string,
+    propertyPatch: Record<string, unknown>,
+    flushImmediately = false,
+  ) {
     const itemKey = this.getExistingItemStateKey(item) || this.getPrimaryItemStateKey(item);
     if (!itemKey) {
       return;
     }
 
     this.queueDraftPatch(
-      'PREVIEW_TARGET_CHANGED',
+      changeType,
       {
         itemPropertiesPatch: {
-          [itemKey]: {
-            [this.previewTargetItemPropertyKey]: normalizedTargetId,
-          },
+          [itemKey]: propertyPatch,
         },
       },
-      true,
+      flushImmediately,
     );
   }
 
@@ -4508,6 +4625,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         delete item.previewTargetId;
       }
 
+      if (itemProps?.[this.excludedItemPropertyKey] === true) {
+        item.excluded = true;
+      } else {
+        delete item.excluded;
+      }
+
       const tagsFromState = this.getTagsForKeys(stateTags, keys);
       if (tagsFromState.length) {
         item.tags = tagsFromState;
@@ -4897,7 +5020,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         : 0;
       summary.push({
         label: 'Item-Werte',
-        detail: `Item-Eigenschaften (z.B. empirische Schwierigkeit) geändert: ${publishedCount} → ${draftCount} Einträge.`,
+        detail: `Item-Eigenschaften (z.B. empirische Schwierigkeit, Vorschauziele oder Ausschlüsse) geändert: ${publishedCount} → ${draftCount} Einträge.`,
       });
     }
 

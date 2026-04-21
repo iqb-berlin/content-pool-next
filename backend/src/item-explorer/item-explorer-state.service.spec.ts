@@ -92,7 +92,7 @@ describe("ItemExplorerStateService", () => {
     acpRepo.findOne.mockResolvedValue({
       id: "acp-1",
       itemProperties: {
-        unit1_item1: { tags: ["A"], empiricalDifficulty: 1.2 },
+        unit1_item1: { tags: ["A"], empiricalDifficulty: 1.2, excluded: true },
       },
     });
     accessConfigRepo.findOne.mockResolvedValue({
@@ -122,6 +122,9 @@ describe("ItemExplorerStateService", () => {
     expect(
       envelope.publishedState.itemProperties["unit1_item1"].empiricalDifficulty,
     ).toBe(1.2);
+    expect(envelope.publishedState.itemProperties["unit1_item1"].excluded).toBe(
+      true,
+    );
     expect(stateRepo.save).toHaveBeenCalledTimes(1);
   });
 
@@ -216,6 +219,49 @@ describe("ItemExplorerStateService", () => {
     );
   });
 
+  it("drops false exclusion flags while keeping other item properties intact", async () => {
+    const record = buildStateRecord({
+      draftState: {
+        ...baseSharedState,
+        itemProperties: {
+          item1: {
+            excluded: true,
+            previewTargetId: "BASE_A",
+          },
+        },
+      } as any,
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:10:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        itemPropertiesPatch: {
+          item1: { excluded: false },
+        },
+      },
+      {
+        baseVersion: 1,
+        changeType: "ITEM_EXCLUSION_CHANGED",
+      },
+    );
+
+    expect(envelope.draftState.itemProperties.item1.excluded).toBeUndefined();
+    expect(envelope.draftState.itemProperties.item1.previewTargetId).toBe(
+      "BASE_A",
+    );
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: "ITEM_EXCLUSION_CHANGED",
+      }),
+    );
+  });
+
   it("publishes draft atomically into ACP domain data and feature config", async () => {
     const draftState = {
       ...baseSharedState,
@@ -223,6 +269,7 @@ describe("ItemExplorerStateService", () => {
       itemProperties: {
         item1: {
           empiricalDifficulty: 2.5,
+          excluded: true,
           tags: ["x"],
           previewTargetId: "BASE_A",
         },

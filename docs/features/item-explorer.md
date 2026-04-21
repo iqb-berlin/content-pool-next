@@ -22,7 +22,7 @@ The explorer state payload can include:
 - item tags,
 - metadata column visibility and order,
 - manual item ordering,
-- per-item properties such as empirical difficulty.
+- per-item properties such as empirical difficulty or exclusion flags.
 
 The backend stores both:
 
@@ -119,6 +119,7 @@ Examples in the current code include:
 - tag changes,
 - CSV upload of empirical difficulty,
 - clearing empirical difficulty,
+- explicit item exclusions,
 - general UI/filter/sort changes.
 
 ## Shared Metadata Column Management

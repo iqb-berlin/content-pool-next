@@ -20,29 +20,55 @@ describe('VoudService.getStartPage', () => {
     expect(service.getStartPage(definition, 'dhb00103')).toBe(1);
   });
 
-  it('uses the absolute page index and supports alias-based mappings', () => {
+  it('keeps the absolute page index when the first page already contains item aliases', () => {
     const definition = JSON.stringify({
       pages: [
         {
-          alwaysVisible: ['A'],
-          sections: [{ elements: [{ alias: 'INTRO', id: 'page-a-0' }] }],
+          sections: [{ elements: [{ alias: 'A1', id: 'page-a-0' }] }],
         },
         {
-          alwaysVisible: ['A'],
-          sections: [{ elements: [{ alias: 'A1', id: 'page-a-1' }] }],
-        },
-        {
-          alwaysVisible: ['B'],
           sections: [{ elements: [{ alias: 'B1', id: 'page-b-0' }] }],
-        },
-        {
-          alwaysVisible: ['B'],
-          sections: [{ elements: [{ alias: 'B2', id: 'page-b-1' }] }],
         },
       ],
     });
 
-    expect(service.getStartPage(definition, 'b2')).toBe(3);
+    expect(service.getStartPage(definition, 'b1')).toBe(1);
+  });
+
+  it('subtracts the fixed intro page offset for alias-based mappings', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
+        },
+        {
+          sections: [{ elements: [{ alias: 'A1', id: 'page-a-1' }] }],
+        },
+        {
+          sections: [{ elements: [{ alias: 'B2', id: 'page-b-2' }] }],
+        },
+      ],
+    });
+
+    expect(service.getStartPage(definition, 'b2')).toBe(1);
+  });
+
+  it('subtracts the fixed intro page offset for id-based mappings too', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
+        },
+        {
+          sections: [{ elements: [{ alias: 'A1', id: 'field-a-1' }] }],
+        },
+        {
+          sections: [{ elements: [{ alias: 'B2', id: 'field-b-2' }] }],
+        },
+      ],
+    });
+
+    expect(service.getStartPage(definition, 'field-b-2')).toBe(1);
   });
 });
 

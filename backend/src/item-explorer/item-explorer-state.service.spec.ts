@@ -183,12 +183,49 @@ describe("ItemExplorerStateService", () => {
     expect(changeLogRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("normalizes persisted preview targets in item property patches", async () => {
+    const record = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:05:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        itemPropertiesPatch: {
+          item1: { previewTargetId: "  BASE_B  " },
+        },
+      },
+      {
+        baseVersion: 1,
+        changeType: "PREVIEW_TARGET_CHANGED",
+      },
+    );
+
+    expect(envelope.status).toBe("DIRTY");
+    expect(envelope.draftState.itemProperties.item1.previewTargetId).toBe(
+      "BASE_B",
+    );
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: "PREVIEW_TARGET_CHANGED",
+      }),
+    );
+  });
+
   it("publishes draft atomically into ACP domain data and feature config", async () => {
     const draftState = {
       ...baseSharedState,
       metadataColumns: { visible: ["subject"], order: ["subject"] },
       itemProperties: {
-        item1: { empiricalDifficulty: 2.5, tags: ["x"] },
+        item1: {
+          empiricalDifficulty: 2.5,
+          tags: ["x"],
+          previewTargetId: "BASE_A",
+        },
       },
     };
     const record = buildStateRecord({

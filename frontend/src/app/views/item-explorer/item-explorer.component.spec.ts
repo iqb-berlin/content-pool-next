@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ItemExplorerComponent } from './item-explorer.component';
+import { VoudService } from '../../core/services/voud.service';
 
 function createComponent(options?: {
   getStartPage?: (definition: string, variableId: string) => number | undefined;
@@ -133,6 +134,35 @@ describe('ItemExplorerComponent', () => {
     expect(ids).toEqual(['TEXT_VAR', 'VAR_02']);
   });
 
+  it('adds the player highlight class when player focus highlighting is enabled', () => {
+    const component = createComponent();
+    const doc = document.implementation.createHTMLDocument('Explorer');
+    const target = doc.createElement('button');
+    Object.defineProperty(target, 'scrollIntoView', { value: vi.fn(), writable: true });
+    Object.defineProperty(target, 'focus', { value: vi.fn(), writable: true });
+    doc.body.appendChild(target);
+
+    (component as any).applyFocus(doc, target);
+
+    expect(target.classList.contains('cp-item-focus-highlight')).toBe(true);
+  });
+
+  it('keeps player focus without the highlight class when the ACP flag disables it', () => {
+    const component = createComponent();
+    component.playerFocusHighlightEnabled = false;
+    const doc = document.implementation.createHTMLDocument('Explorer');
+    const target = doc.createElement('button');
+    Object.defineProperty(target, 'scrollIntoView', { value: vi.fn(), writable: true });
+    Object.defineProperty(target, 'focus', { value: vi.fn(), writable: true });
+    doc.body.appendChild(target);
+
+    (component as any).applyFocus(doc, target);
+
+    expect(target.classList.contains('cp-item-focus-highlight')).toBe(false);
+    expect(target.scrollIntoView).toHaveBeenCalled();
+    expect(target.focus).toHaveBeenCalled();
+  });
+
   it('waits for response state before starting the player preview', () => {
     vi.useFakeTimers();
     const component = createComponent({ getStartPage: () => 2 });
@@ -190,6 +220,80 @@ describe('ItemExplorerComponent', () => {
           type: 'vopPageNavigationCommand',
           sessionId: 'explorer-uuid-1-1',
           target: '2',
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the fixed intro-page offset from the VOUD service in the player preview', () => {
+    vi.useFakeTimers();
+    const realVoudService = new VoudService();
+    const component = createComponent({
+      getStartPage: realVoudService.getStartPage.bind(realVoudService),
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_2',
+        unitLabel: 'Unit 2',
+        description: 'Item on second logical page',
+        variableId: 'B2',
+        metadata: {},
+      };
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_2', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({
+        pages: [
+          {
+            sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
+          },
+          {
+            sections: [{ elements: [{ alias: 'A1', id: 'page-a-1' }] }],
+          },
+          {
+            sections: [{ elements: [{ alias: 'B2', id: 'page-b-2' }] }],
+          },
+        ],
+      });
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = true;
+
+      (component as any).startPlayerIfReady();
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        playerConfig: expect.objectContaining({
+          startPage: '1',
+        }),
+      });
+
+      vi.runAllTimers();
+
+      expect(postMessage.mock.calls.slice(1).map((call) => call[0])).toEqual([
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-2-1',
+          target: '1',
+        },
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-2-1',
+          target: '1',
+        },
+        {
+          type: 'vopPageNavigationCommand',
+          sessionId: 'explorer-uuid-2-1',
+          target: '1',
         },
       ]);
     } finally {
@@ -370,6 +474,234 @@ describe('ItemExplorerComponent', () => {
     expect(postMessage).not.toHaveBeenCalled();
     expect(component.previewUnavailableReason).toContain('VAR_404');
     expect(component.previewUnavailableMessage).toContain('VAR_404');
+  });
+
+  it('resolves dependent coding variables to selectable base variables', () => {
+    const component = createComponent();
+
+    component.selectedItem = {
+      itemId: 'ITEM_5',
+      uuid: 'uuid-5',
+      unitId: 'UNIT_5',
+      unitLabel: 'Unit 5',
+      description: 'Dependent coding variable',
+      variableId: 'TOTAL',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', label: 'Teil A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'BASE_B', label: 'Teil B', sourceType: 'BASE', deriveSources: [] },
+        { id: 'GROUP', sourceType: 'SUM_SCORE', deriveSources: ['BASE_A', 'BASE_B'] },
+        { id: 'TOTAL', sourceType: 'SUM_SCORE', deriveSources: ['GROUP'] },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Teil A', codes: [] },
+      { id: 'BASE_B', label: 'Teil B', codes: [] },
+      { id: 'GROUP', label: 'Zwischensumme', codes: [] },
+      { id: 'TOTAL', label: 'Gesamtsumme', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemUsesDerivedTarget).toBe(true);
+    expect(component.showPreviewTargetSelector).toBe(true);
+    expect(component.selectedItemTarget).toBe('TOTAL');
+    expect(component.previewTargetOptions.map((option) => option.id)).toEqual(['BASE_A', 'BASE_B']);
+    expect(component.previewTargetOptions.map((option) => option.label)).toEqual([
+      'Teil A (BASE_A)',
+      'Teil B (BASE_B)',
+    ]);
+    expect(component.selectedPreviewTarget).toBe('BASE_A');
+  });
+
+  it('stores the selected base variable as shared item state', () => {
+    const component = createComponent();
+    const queueDraftPatch = vi.fn();
+    const startPlayerIfReady = vi.fn();
+
+    component.canEditExplorer = true;
+    component.selectedItem = {
+      itemId: 'ITEM_6',
+      uuid: 'uuid-6',
+      unitId: 'UNIT_6',
+      unitLabel: 'Unit 6',
+      description: 'Dependent preview',
+      variableId: 'TOTAL',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'BASE_B', sourceType: 'BASE', deriveSources: [] },
+        { id: 'TOTAL', sourceType: 'SUM_SCORE', deriveSources: ['BASE_A', 'BASE_B'] },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Teil A', codes: [] },
+      { id: 'BASE_B', label: 'Teil B', codes: [] },
+      { id: 'TOTAL', label: 'Gesamtsumme', codes: [] },
+    ] as any;
+    (component as any).latestExplorerState = {
+      activeState: {
+        itemProperties: {
+          UNIT_6_ITEM_6: {
+            empiricalDifficulty: 1.5,
+          },
+        },
+      },
+    };
+    (component as any).queueDraftPatch = queueDraftPatch;
+    (component as any).startPlayerIfReady = startPlayerIfReady;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+    component.selectedPreviewTargetId = 'BASE_B';
+    component.onPreviewTargetSelectionChange();
+
+    expect(component.selectedItem?.previewTargetId).toBe('BASE_B');
+    expect(queueDraftPatch).toHaveBeenCalledWith(
+      'PREVIEW_TARGET_CHANGED',
+      {
+        itemPropertiesPatch: {
+          UNIT_6_ITEM_6: {
+            previewTargetId: 'BASE_B',
+          },
+        },
+      },
+      true,
+    );
+    expect(startPlayerIfReady).not.toHaveBeenCalled();
+  });
+
+  it('restores the persisted base variable selection from shared explorer state', () => {
+    const component = createComponent();
+    const item = {
+      itemId: 'ITEM_7',
+      uuid: 'uuid-7',
+      unitId: 'UNIT_7',
+      unitLabel: 'Unit 7',
+      description: 'Persisted dependent preview',
+      variableId: 'TOTAL',
+      metadata: {},
+    } as any;
+    const state = {
+      ui: {},
+      tags: {},
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: {
+        'uuid-7': {
+          previewTargetId: 'BASE_B',
+        },
+      },
+    };
+
+    component.items = [item];
+    component.filteredItems = [item];
+    component.selectedItem = item;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'BASE_B', sourceType: 'BASE', deriveSources: [] },
+        { id: 'TOTAL', sourceType: 'SUM_SCORE', deriveSources: ['BASE_A', 'BASE_B'] },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Teil A', codes: [] },
+      { id: 'BASE_B', label: 'Teil B', codes: [] },
+      { id: 'TOTAL', label: 'Gesamtsumme', codes: [] },
+    ] as any;
+    (component as any).applyFilter = vi.fn();
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedPreviewTarget).toBe('BASE_A');
+
+    (component as any).applySharedExplorerEnvelope({
+      status: 'CLEAN',
+      version: 2,
+      publishedVersion: 1,
+      canEdit: true,
+      canPublish: true,
+      updatedAt: '2026-04-21T15:00:00.000Z',
+      updatedByUsername: 'alice',
+      updatedByRole: 'ACP_MANAGER',
+      activeState: state,
+      publishedState: state,
+      draftState: state,
+    });
+
+    expect(component.items[0].previewTargetId).toBe('BASE_B');
+    expect(component.selectedPreviewTarget).toBe('BASE_B');
+  });
+
+  it('restarts the preview when a different base variable is chosen', () => {
+    vi.useFakeTimers();
+    const component = createComponent({
+      getStartPage: (_definition, variableId) => {
+        if (variableId === 'BASE_A') return 1;
+        if (variableId === 'BASE_B') return 4;
+        return undefined;
+      },
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_6',
+        uuid: 'uuid-6',
+        unitId: 'UNIT_6',
+        unitLabel: 'Unit 6',
+        description: 'Dependent preview',
+        variableId: 'TOTAL',
+        metadata: {},
+      } as any;
+      component.currentCodingScheme = {
+        variableCodings: [
+          { id: 'BASE_A', sourceType: 'BASE', deriveSources: [] },
+          { id: 'BASE_B', sourceType: 'BASE', deriveSources: [] },
+          { id: 'TOTAL', sourceType: 'SUM_SCORE', deriveSources: ['BASE_A', 'BASE_B'] },
+        ],
+      };
+      component.currentCodingSchemeAsText = [
+        { id: 'BASE_A', label: 'Teil A', codes: [] },
+        { id: 'BASE_B', label: 'Teil B', codes: [] },
+        { id: 'TOTAL', label: 'Gesamtsumme', codes: [] },
+      ] as any;
+      (component as any).syncPreviewTargetResolution(component.selectedItem);
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_6', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = true;
+
+      (component as any).startPlayerIfReady();
+
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        playerConfig: expect.objectContaining({
+          startPage: '1',
+        }),
+      });
+
+      postMessage.mockClear();
+      component.selectedPreviewTargetId = 'BASE_B';
+      component.onPreviewTargetSelectionChange();
+
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        playerConfig: expect.objectContaining({
+          startPage: '4',
+        }),
+      });
+    } finally {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    }
   });
 
   it('uses a generic preview warning when diagnostics are hidden', () => {

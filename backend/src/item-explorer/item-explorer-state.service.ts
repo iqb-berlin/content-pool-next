@@ -602,6 +602,16 @@ export class ItemExplorerStateService {
         }
       }
 
+      const previewTargetIdRaw = itemValue.previewTargetId;
+      if (typeof previewTargetIdRaw === "string") {
+        const normalizedPreviewTargetId = previewTargetIdRaw.trim();
+        if (normalizedPreviewTargetId.length > 0) {
+          nextItemValue.previewTargetId = normalizedPreviewTargetId;
+        } else {
+          delete nextItemValue.previewTargetId;
+        }
+      }
+
       if (Object.keys(nextItemValue).length > 0) {
         normalized[normalizedKey] = nextItemValue;
       }

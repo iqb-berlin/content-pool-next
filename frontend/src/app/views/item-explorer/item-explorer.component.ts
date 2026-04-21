@@ -34,11 +34,24 @@ interface ExplorerItem {
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   tags?: string[];
+  previewTargetId?: string;
 }
 
 interface MetadataSettings {
   visible: string[];
   order: string[];
+}
+
+interface PreviewTargetOption {
+  id: string;
+  label: string;
+  sourceType: string;
+}
+
+interface PreviewTargetResolution {
+  itemTarget: string;
+  isDerived: boolean;
+  options: PreviewTargetOption[];
 }
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
@@ -435,13 +448,48 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               <div class="preview-target-header">
                 <strong>Explorer-Item</strong>
                 <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
+                @if (
+                  selectedItemUsesDerivedTarget &&
+                  selectedItemTarget &&
+                  selectedItemTarget !== selectedPreviewTarget
+                ) {
+                  <span class="player-target-badge secondary">
+                    Kodierschema {{ selectedItemTarget }}
+                  </span>
+                }
                 @if (selectedPreviewTarget) {
                   <span class="player-target-badge">Player {{ selectedPreviewTarget }}</span>
                 } @else {
                   <span class="player-target-badge unmapped">Kein Player-Ziel</span>
                 }
               </div>
-              @if (selectedPreviewTarget && !previewUnavailableReason) {
+              @if (selectedItemUsesDerivedTarget && selectedItemTarget && selectedPreviewTarget) {
+                <p>
+                  Das Item referenziert im Kodierschema die abhängige Variable
+                  <code>{{ selectedItemTarget }}</code
+                  >. Für die Vorschau wird aktuell zur Basisvariable
+                  <code>{{ selectedPreviewTarget }}</code> gesprungen.
+                </p>
+                @if (showPreviewTargetSelector) {
+                  <div class="preview-target-selector">
+                    <label for="item-explorer-preview-target-select">Sprungziel im Player</label>
+                    <select
+                      id="item-explorer-preview-target-select"
+                      class="preview-target-select"
+                      [(ngModel)]="selectedPreviewTargetId"
+                      (ngModelChange)="onPreviewTargetSelectionChange()"
+                    >
+                      @for (option of previewTargetOptions; track option.id) {
+                        <option [value]="option.id">{{ option.label }}</option>
+                      }
+                    </select>
+                    <small>
+                      {{ previewTargetOptions.length }} Basisvariablen aus dem Kodierschema
+                      verfügbar.
+                    </small>
+                  </div>
+                }
+              } @else if (selectedPreviewTarget && !previewUnavailableReason) {
                 <p>
                   Der Listeneintrag springt im Player zur Variable
                   <code>{{ selectedPreviewTarget }}</code
@@ -1585,6 +1633,10 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         background: rgba(243, 156, 18, 0.14);
         color: #9c640c;
       }
+      .player-target-badge.secondary {
+        background: rgba(127, 140, 141, 0.16);
+        color: #566573;
+      }
       .explorer-table tbody tr.no-preview td {
         background: rgba(243, 156, 18, 0.05);
       }
@@ -1622,6 +1674,35 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       .preview-warning {
         color: #9c640c;
         font-weight: 500;
+      }
+      .preview-target-selector {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .preview-target-selector label {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+      .preview-target-selector small {
+        color: var(--color-text-secondary);
+        font-size: 0.78rem;
+      }
+      .preview-target-select {
+        width: 100%;
+        max-width: 360px;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: var(--color-surface);
+      }
+      .preview-target-select:focus {
+        outline: none;
+        border-color: var(--color-primary-light);
+        box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.12);
       }
       .player-container {
         padding: 0;
@@ -2216,6 +2297,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
   ],
 })
 export class ItemExplorerComponent implements OnInit, OnDestroy {
+  private readonly previewTargetItemPropertyKey = 'previewTargetId';
   @ViewChild('globalFilterInput') globalFilterInput?: ElementRef<HTMLInputElement>;
   @ViewChild('tableScroll') tableScroll?: ElementRef<HTMLDivElement>;
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -2265,6 +2347,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   availableTags: string[] = [];
   showAudioVideoCodingVariables = true;
   itemExplorerConditionalVisibilityEnabled = false;
+  playerFocusHighlightEnabled = true;
   itemExplorerPlayerTargetInfoEnabled = true;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -2352,6 +2435,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
   previewUnavailableReason = '';
+  selectedPreviewTargetId = '';
+  private previewTargetResolution: PreviewTargetResolution = {
+    itemTarget: '',
+    isDerived: false,
+    options: [],
+  };
 
   // Response State Confirmation Dialogs
   showSaveConfirmDialog = false;
@@ -2388,7 +2477,27 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   get selectedPreviewTarget(): string {
-    return this.getPlayerTarget(this.selectedItem);
+    const selectedId = String(this.selectedPreviewTargetId || '').trim();
+    if (selectedId && this.previewTargetOptions.some((option) => option.id === selectedId)) {
+      return selectedId;
+    }
+    return this.previewTargetOptions[0]?.id || this.getPlayerTarget(this.selectedItem);
+  }
+
+  get selectedItemTarget(): string {
+    return this.previewTargetResolution.itemTarget || this.getPlayerTarget(this.selectedItem);
+  }
+
+  get previewTargetOptions(): PreviewTargetOption[] {
+    return this.previewTargetResolution.options;
+  }
+
+  get selectedItemUsesDerivedTarget(): boolean {
+    return this.previewTargetResolution.isDerived;
+  }
+
+  get showPreviewTargetSelector(): boolean {
+    return this.selectedItemUsesDerivedTarget && this.previewTargetOptions.length > 1;
   }
 
   get showPlayerTargetInfo(): boolean {
@@ -2520,6 +2629,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
       this.itemExplorerConditionalVisibilityEnabled =
         fc.enableItemExplorerConditionalVisibility === true;
+      this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight !== false;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
@@ -2970,6 +3080,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     } else {
       this.currentCodingSchemeAsText = null;
     }
+    this.syncPreviewTargetResolution(item);
 
     if (!this.canPreviewItem(item)) {
       this.loadingUnit = false;
@@ -3132,6 +3243,25 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.selectFilteredItemAt(this.selectedIndex + delta, true);
   }
 
+  onPreviewTargetSelectionChange() {
+    this.previewUnavailableReason = '';
+    if (!this.selectedItem) {
+      return;
+    }
+
+    this.persistPreviewTargetSelection(this.selectedItem, this.selectedPreviewTarget);
+
+    if (
+      !this.playerFrameReady ||
+      !this.definitionContent ||
+      !this.unit ||
+      !this.responseStateReady
+    ) {
+      return;
+    }
+    this.startPlayerIfReady();
+  }
+
   onPlayerLoaded() {
     if (!this.unit || !this.playerFrame?.nativeElement?.contentWindow) return;
     this.playerFrameReady = true;
@@ -3206,8 +3336,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const frame = this.playerFrame?.nativeElement;
     const doc = frame?.contentDocument || frame?.contentWindow?.document;
     if (!doc || !doc.body) return false;
-
-    this.ensureFocusStyle(doc);
 
     for (const selector of this.getFocusSelectors()) {
       const target = doc.querySelector(selector) as HTMLElement | null;
@@ -3293,7 +3421,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     const selectedItem = this.selectedItem;
-    const previewTarget = this.getPlayerTarget(selectedItem);
+    const previewTarget = this.getEffectivePlayerTarget(selectedItem);
     const startPage = this.voudService.getStartPage(this.definitionContent, previewTarget);
     if (startPage === undefined) {
       this.previewUnavailableReason =
@@ -3418,7 +3546,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private resolveVariableRef(item?: ExplorerItem | null): string {
-    return this.getPlayerTarget(item);
+    return this.getEffectivePlayerTarget(item);
   }
 
   getPlayerTarget(item?: ExplorerItem | null): string {
@@ -3426,8 +3554,295 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return String(item.sourceVariable || item.variableId || '').trim();
   }
 
+  private getEffectivePlayerTarget(item?: ExplorerItem | null): string {
+    if (!item) return '';
+    if (this.selectedItem?.uuid === item.uuid) {
+      return this.selectedPreviewTarget || this.getPlayerTarget(item);
+    }
+    return this.getPlayerTarget(item);
+  }
+
   canPreviewItem(item?: ExplorerItem | null): boolean {
     return this.getPlayerTarget(item).length > 0;
+  }
+
+  private syncPreviewTargetResolution(item?: ExplorerItem | null) {
+    const resolution = this.buildPreviewTargetResolution(item);
+    const selectedId = this.getStoredPreviewTargetId(item);
+    this.previewTargetResolution = resolution;
+    this.selectedPreviewTargetId = resolution.options.some((option) => option.id === selectedId)
+      ? selectedId
+      : resolution.options[0]?.id || '';
+  }
+
+  private buildPreviewTargetResolution(item?: ExplorerItem | null): PreviewTargetResolution {
+    const itemTarget = this.getPlayerTarget(item);
+    if (!itemTarget) {
+      return {
+        itemTarget: '',
+        isDerived: false,
+        options: [],
+      };
+    }
+
+    const codingVariables = this.getCurrentCodingVariables();
+    if (!codingVariables.length) {
+      return {
+        itemTarget,
+        isDerived: false,
+        options: [this.createFallbackPreviewTargetOption(itemTarget)],
+      };
+    }
+
+    const variableLookup = this.buildCodingVariableLookup(codingVariables);
+    const selectedCodingVariable = variableLookup.get(itemTarget.toLowerCase());
+    if (!selectedCodingVariable) {
+      return {
+        itemTarget,
+        isDerived: false,
+        options: [this.createFallbackPreviewTargetOption(itemTarget)],
+      };
+    }
+
+    const resolvedItemTarget = this.getCodingVariableId(selectedCodingVariable, itemTarget);
+    const derivedOptions = this.collectBasePreviewTargetOptions(selectedCodingVariable, variableLookup);
+
+    return {
+      itemTarget: resolvedItemTarget,
+      isDerived: this.isDerivedCodingVariable(selectedCodingVariable),
+      options: this.dedupePreviewTargetOptions(
+        derivedOptions.length
+          ? derivedOptions
+          : [this.createPreviewTargetOption(selectedCodingVariable, resolvedItemTarget)],
+      ),
+    };
+  }
+
+  private getCurrentCodingVariables(): any[] {
+    if (Array.isArray(this.currentCodingScheme)) {
+      return this.currentCodingScheme;
+    }
+    return Array.isArray(this.currentCodingScheme?.variableCodings)
+      ? this.currentCodingScheme.variableCodings
+      : [];
+  }
+
+  private buildCodingVariableLookup(variables: any[]): Map<string, any> {
+    const lookup = new Map<string, any>();
+    variables.forEach((variable) => {
+      this.getCodingVariableIdentifiers(variable).forEach((identifier) => {
+        const key = identifier.toLowerCase();
+        if (!lookup.has(key)) {
+          lookup.set(key, variable);
+        }
+      });
+    });
+    return lookup;
+  }
+
+  private collectBasePreviewTargetOptions(
+    variable: any,
+    variableLookup: Map<string, any>,
+    visited = new Set<string>(),
+  ): PreviewTargetOption[] {
+    const variableId = this.getCodingVariableId(variable);
+    const visitKey = variableId.toLowerCase();
+    if (visitKey) {
+      if (visited.has(visitKey)) {
+        return [];
+      }
+      visited.add(visitKey);
+    }
+
+    const deriveSources = this.getCodingVariableSources(variable);
+    if (!deriveSources.length) {
+      return [this.createPreviewTargetOption(variable, variableId)];
+    }
+
+    const options = deriveSources.flatMap((sourceId) => {
+      const sourceVariable = variableLookup.get(sourceId.toLowerCase());
+      if (!sourceVariable) {
+        return [this.createFallbackPreviewTargetOption(sourceId)];
+      }
+      if (!this.isDerivedCodingVariable(sourceVariable)) {
+        return [this.createPreviewTargetOption(sourceVariable, sourceId)];
+      }
+      return this.collectBasePreviewTargetOptions(sourceVariable, variableLookup, new Set(visited));
+    });
+
+    return this.dedupePreviewTargetOptions(options);
+  }
+
+  private createPreviewTargetOption(variable: any, fallbackId = ''): PreviewTargetOption {
+    const id = this.getCodingVariableId(variable, fallbackId);
+    const label = this.getCodingVariableLabel(variable, id);
+    return {
+      id,
+      label: this.formatPreviewTargetLabel(id, label),
+      sourceType: this.getCodingVariableSourceType(variable),
+    };
+  }
+
+  private createFallbackPreviewTargetOption(id: string): PreviewTargetOption {
+    return {
+      id,
+      label: this.formatPreviewTargetLabel(id, id),
+      sourceType: 'BASE',
+    };
+  }
+
+  private dedupePreviewTargetOptions(options: PreviewTargetOption[]): PreviewTargetOption[] {
+    const seen = new Set<string>();
+    const deduped: PreviewTargetOption[] = [];
+
+    options.forEach((option) => {
+      const id = String(option.id || '').trim();
+      if (!id) {
+        return;
+      }
+      const key = id.toLowerCase();
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      deduped.push({
+        ...option,
+        id,
+      });
+    });
+
+    return deduped;
+  }
+
+  private getCodingVariableIdentifiers(variable: any): string[] {
+    return Array.from(
+      new Set(
+        [variable?.id, variable?.alias]
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+  }
+
+  private getCodingVariableId(variable: any, fallbackId = ''): string {
+    const directId = String(variable?.id || '').trim();
+    if (directId) {
+      return directId;
+    }
+    const alias = String(variable?.alias || '').trim();
+    return alias || fallbackId;
+  }
+
+  private getCodingVariableLabel(variable: any, fallbackId: string): string {
+    const variableId = this.getCodingVariableId(variable, fallbackId);
+    const textLabel = String(
+      this.currentCodingSchemeAsText?.find((coding) => coding.id === variableId)?.label || '',
+    ).trim();
+    if (textLabel) {
+      return textLabel;
+    }
+
+    const rawLabel = variable?.label;
+    if (typeof rawLabel === 'string' && rawLabel.trim()) {
+      return rawLabel.trim();
+    }
+
+    if (Array.isArray(rawLabel)) {
+      const localizedLabel = rawLabel
+        .map((entry: any) => String(entry?.value || '').trim())
+        .find((value: string) => value.length > 0);
+      if (localizedLabel) {
+        return localizedLabel;
+      }
+    }
+
+    return fallbackId;
+  }
+
+  private getCodingVariableSourceType(variable: any): string {
+    const sourceType = String(variable?.sourceType || '').trim().toUpperCase();
+    return sourceType || 'BASE';
+  }
+
+  private getCodingVariableSources(variable: any): string[] {
+    if (!Array.isArray(variable?.deriveSources)) {
+      return [];
+    }
+    return variable.deriveSources
+      .map((value: unknown) => String(value || '').trim())
+      .filter((value: string) => value.length > 0);
+  }
+
+  private isDerivedCodingVariable(variable: any): boolean {
+    return this.getCodingVariableSources(variable).length > 0;
+  }
+
+  private formatPreviewTargetLabel(id: string, label: string): string {
+    return label && label !== id ? `${label} (${id})` : id;
+  }
+
+  private getStoredPreviewTargetId(item?: ExplorerItem | null): string {
+    return String(item?.previewTargetId || '').trim();
+  }
+
+  private persistPreviewTargetSelection(item: ExplorerItem, targetId: string) {
+    const normalizedTargetId = String(targetId || '').trim();
+    item.previewTargetId = normalizedTargetId || undefined;
+
+    if (!this.canEditExplorer || this.suppressDraftPatch || !normalizedTargetId) {
+      return;
+    }
+
+    const itemKey = this.getExistingItemStateKey(item) || this.getPrimaryItemStateKey(item);
+    if (!itemKey) {
+      return;
+    }
+
+    this.queueDraftPatch(
+      'PREVIEW_TARGET_CHANGED',
+      {
+        itemPropertiesPatch: {
+          [itemKey]: {
+            [this.previewTargetItemPropertyKey]: normalizedTargetId,
+          },
+        },
+      },
+      true,
+    );
+  }
+
+  private getPrimaryItemStateKey(item?: ExplorerItem | null): string {
+    if (!item) return '';
+
+    const resolvedItemId = item.itemId?.startsWith(`${item.unitId}_`)
+      ? item.itemId
+      : `${item.unitId}_${item.itemId}`;
+
+    for (const candidate of [item.uuid, resolvedItemId, item.itemId]) {
+      const key = String(candidate || '').trim();
+      if (key) {
+        return key;
+      }
+    }
+
+    return '';
+  }
+
+  private getExistingItemStateKey(item?: ExplorerItem | null): string {
+    if (!item) return '';
+
+    const activeState = this.latestExplorerState?.activeState;
+    const itemProperties = this.isRecord(activeState?.itemProperties)
+      ? (activeState.itemProperties as Record<string, Record<string, unknown>>)
+      : {};
+
+    for (const key of this.getItemStateKeys(item)) {
+      if (this.isRecord(itemProperties[key])) {
+        return key;
+      }
+    }
+
+    return '';
   }
 
   private getCandidateItemIds(): string[] {
@@ -3514,7 +3929,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     doc
       .querySelectorAll('.cp-item-focus-highlight')
       .forEach((el) => el.classList.remove('cp-item-focus-highlight'));
-    target.classList.add('cp-item-focus-highlight');
+    if (this.playerFocusHighlightEnabled) {
+      this.ensureFocusStyle(doc);
+      target.classList.add('cp-item-focus-highlight');
+    }
     target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     try {
       target.focus({ preventScroll: true });
@@ -4013,7 +4431,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.suppressDraftPatch = false;
     }
 
+    const previousPreviewTarget = this.selectedItem ? this.getEffectivePlayerTarget(this.selectedItem) : '';
     this.applyExplorerStateToItems();
+    if (this.selectedItem) {
+      this.syncPreviewTargetResolution(this.selectedItem);
+      const nextPreviewTarget = this.getEffectivePlayerTarget(this.selectedItem);
+      if (
+        previousPreviewTarget !== nextPreviewTarget &&
+        this.playerFrameReady &&
+        this.definitionContent &&
+        this.unit &&
+        this.responseStateReady
+      ) {
+        this.startPlayerIfReady();
+      }
+    }
 
     if (envelope.status === 'DIRTY') {
       this.explorerUiStatus = 'DIRTY';
@@ -4060,6 +4492,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         } else {
           delete item.empiricalDifficulty;
         }
+      }
+
+      const previewTargetId = String(itemProps?.[this.previewTargetItemPropertyKey] || '').trim();
+      if (previewTargetId) {
+        item.previewTargetId = previewTargetId;
+      } else {
+        delete item.previewTargetId;
       }
 
       const tagsFromState = this.getTagsForKeys(stateTags, keys);
@@ -4537,6 +4976,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.previewUnavailableReason = '';
+    this.syncPreviewTargetResolution(null);
     this.resetPlayer();
   }
 

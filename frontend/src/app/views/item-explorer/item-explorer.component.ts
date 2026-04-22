@@ -2492,7 +2492,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   availableTags: string[] = [];
   showAudioVideoCodingVariables = true;
   itemExplorerConditionalVisibilityEnabled = false;
-  playerFocusHighlightEnabled = true;
+  playerFocusHighlightEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = true;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
@@ -2792,7 +2792,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
       this.itemExplorerConditionalVisibilityEnabled =
         fc.enableItemExplorerConditionalVisibility === true;
-      this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight !== false;
+      this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       this.showOnlyItemsWithEmpiricalDifficulty =
         fc.showOnlyItemsWithEmpiricalDifficulty === true;

@@ -939,7 +939,7 @@ export class AccessConfigComponent implements OnInit {
     this.featureConfig[this.showAudioVideoCodingVariablesKey] = showAudioVideoCodingVariables !== false;
 
     const enablePlayerFocusHighlight = this.featureConfig[this.enablePlayerFocusHighlightKey];
-    this.featureConfig[this.enablePlayerFocusHighlightKey] = enablePlayerFocusHighlight !== false;
+    this.featureConfig[this.enablePlayerFocusHighlightKey] = enablePlayerFocusHighlight === true;
 
     const showItemExplorerPlayerTargetInfo =
       this.featureConfig[this.showItemExplorerPlayerTargetInfoKey];

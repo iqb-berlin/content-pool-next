@@ -33,12 +33,12 @@ function createComponent(options?: { startPageData?: Record<string, unknown> }) 
 }
 
 describe('ItemViewComponent', () => {
-  it('keeps legacy player highlighting enabled when the ACP flag is missing', () => {
+  it('keeps player highlighting disabled when the ACP flag is missing', () => {
     const component = createComponent();
 
     component.ngOnInit();
 
-    expect(component.playerFocusHighlightEnabled).toBe(true);
+    expect(component.playerFocusHighlightEnabled).toBe(false);
   });
 
   it('disables player highlighting when the ACP flag is set to false', () => {
@@ -57,6 +57,7 @@ describe('ItemViewComponent', () => {
 
   it('adds the player highlight class when highlighting is enabled', () => {
     const component = createComponent();
+    component.playerFocusHighlightEnabled = true;
     const doc = document.implementation.createHTMLDocument('Item View');
     const target = doc.createElement('button');
     Object.defineProperty(target, 'scrollIntoView', { value: vi.fn(), writable: true });

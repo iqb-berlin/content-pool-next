@@ -1,6 +1,17 @@
 import { normalizeFeatureConfig } from "./feature-config.utils";
 
 describe("normalizeFeatureConfig", () => {
+  it("defaults player focus highlight to disabled when the flag is missing", () => {
+    const normalized = normalizeFeatureConfig({
+      enableItemList: true,
+    });
+
+    expect(normalized).toMatchObject({
+      enableItemList: true,
+      enablePlayerFocusHighlight: false,
+    });
+  });
+
   it("migrates legacy itemListMetadataColumns to metadataColumns", () => {
     const normalized = normalizeFeatureConfig({
       enableItemList: true,

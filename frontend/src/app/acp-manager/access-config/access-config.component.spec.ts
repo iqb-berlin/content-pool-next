@@ -79,13 +79,13 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
   });
 
-  it('defaults player focus highlight to true when the flag is missing', () => {
+  it('defaults player focus highlight to false when the flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
 
     component.loadConfig();
 
-    expect(component.featureConfig[component.enablePlayerFocusHighlightKey]).toBe(true);
+    expect(component.featureConfig[component.enablePlayerFocusHighlightKey]).toBe(false);
   });
 
   it('keeps item explorer conditional visibility disabled when the flag is missing', () => {

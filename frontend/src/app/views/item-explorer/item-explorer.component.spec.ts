@@ -286,6 +286,7 @@ describe('ItemExplorerComponent', () => {
 
   it('adds the player highlight class when player focus highlighting is enabled', () => {
     const component = createComponent();
+    component.playerFocusHighlightEnabled = true;
     const doc = document.implementation.createHTMLDocument('Explorer');
     const target = doc.createElement('button');
     Object.defineProperty(target, 'scrollIntoView', { value: vi.fn(), writable: true });

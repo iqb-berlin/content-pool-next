@@ -326,7 +326,14 @@ describe("ItemsService", () => {
       service.ensureShowOnlyItemsWithEmpiricalDifficulty("acp-1"),
     ).resolves.toBe(false);
 
-    expect(accessConfigRepository.save).not.toHaveBeenCalled();
+    expect(accessConfigRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          showOnlyItemsWithEmpiricalDifficulty: false,
+          enablePlayerFocusHighlight: false,
+        }),
+      }),
+    );
   });
 
   it("creates a default private access config when enabling the empirical difficulty filter", async () => {

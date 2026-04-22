@@ -286,7 +286,7 @@ describe("AcpService", () => {
       expect(accessConfigRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
-            enablePlayerFocusHighlight: true,
+            enablePlayerFocusHighlight: false,
           }),
         }),
       );
@@ -494,7 +494,7 @@ describe("AcpService", () => {
           accessModel: AccessModel.PRIVATE,
           allowRegistered: false,
           featureConfig: expect.objectContaining({
-            enablePlayerFocusHighlight: true,
+            enablePlayerFocusHighlight: false,
           }),
         }),
       );

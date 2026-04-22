@@ -326,7 +326,7 @@ export class AcpService {
         accessModel: dto.accessModel as AccessModel,
         allowRegistered: dto.allowRegistered || false,
         featureConfig: normalizeFeatureConfig({
-          [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: true,
+          [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: false,
           ...(dto.featureConfig || {}),
         }),
         validFrom:
@@ -603,9 +603,7 @@ export class AcpService {
       return existingConfig;
     }
 
-    // Older ACPs may legitimately miss an access-config row. Preserve their
-    // historic player-highlight behavior when we recreate the config lazily.
-    return this.createDefaultAccessConfig(acpId, true);
+    return this.createDefaultAccessConfig(acpId, false);
   }
 
   private async createDefaultAccessConfig(

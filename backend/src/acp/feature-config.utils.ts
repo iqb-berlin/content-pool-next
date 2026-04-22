@@ -58,6 +58,9 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
   const source = asRecord(featureConfig);
   const normalized: UnknownRecord = { ...source };
 
+  normalized.enablePlayerFocusHighlight =
+    source.enablePlayerFocusHighlight === true;
+
   const metadataColumns = normalizeMetadataColumns(
     source.metadataColumns,
     source.itemListMetadataColumns,

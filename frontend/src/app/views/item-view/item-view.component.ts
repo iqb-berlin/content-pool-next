@@ -213,7 +213,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   commentOpen = false;
   highlightItemId = '';
   highlightApplied = false;
-  playerFocusHighlightEnabled = true;
+  playerFocusHighlightEnabled = false;
   focusWarning = '';
   private responseStateReady = false;
   private responseStateData: Record<string, any> | null = null;
@@ -248,7 +248,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         const fc = data?.featureConfig || {};
         const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
         this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('ITEM'));
-        this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight !== false;
+        this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
         this.featureConfigReady = true;
         this.startPlayerIfReady();
       },

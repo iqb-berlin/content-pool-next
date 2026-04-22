@@ -17,6 +17,8 @@ import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 import { firstValueFrom } from 'rxjs';
 import {
   ItemExplorerChangeLogEntry,
+  ItemIdFormat,
+  ItemIdStructure,
   ItemExplorerSharedState,
   ItemExplorerStateEnvelope,
 } from '../../core/models/api.models';
@@ -40,6 +42,7 @@ interface ExplorerItem {
   tags?: string[];
   previewTargetId?: string;
   excluded?: boolean;
+  idStructure?: ItemIdStructure;
 }
 
 interface MetadataSettings {
@@ -63,9 +66,50 @@ interface PreviewTargetResolution {
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 type PreviewAssetLoadState = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 type ItemExplorerPerspective = 'editor' | 'read-only';
+type StructureFilterKey =
+  | 'subjectCode'
+  | 'competenceAreaCode'
+  | 'projectPoolCode'
+  | 'taskNumber'
+  | 'itemNumber'
+  | 'variableIndicator'
+  | 'authorInitials';
+
+interface StructureFilterSection {
+  key: StructureFilterKey;
+  label: string;
+}
+
+interface StructureFilterOption {
+  value: string;
+  label: string;
+}
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+const CURRENT_STRUCTURE_FILTER_SECTIONS: StructureFilterSection[] = [
+  { key: 'subjectCode', label: 'Fach/Schulstufe' },
+  { key: 'competenceAreaCode', label: 'Kompetenzbereich' },
+  { key: 'projectPoolCode', label: 'Projekt/Pool' },
+  { key: 'taskNumber', label: 'Aufgabennummer' },
+  { key: 'itemNumber', label: 'Itemnummer' },
+  { key: 'variableIndicator', label: 'Variablenindikator' },
+];
+const LEGACY_STRUCTURE_FILTER_SECTIONS: StructureFilterSection[] = [
+  { key: 'subjectCode', label: 'Fach' },
+  { key: 'competenceAreaCode', label: 'Kompetenzbereich' },
+  { key: 'authorInitials', label: 'Aufgabenentwickler*in' },
+  { key: 'itemNumber', label: 'Item' },
+];
+const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
+  'subjectCode',
+  'competenceAreaCode',
+  'projectPoolCode',
+  'taskNumber',
+  'itemNumber',
+  'variableIndicator',
+  'authorInitials',
+];
 
 @Component({
   selector: 'app-item-explorer',
@@ -364,6 +408,43 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               </div>
             }
           </div>
+
+          @if (showStructureFilters) {
+            <div class="structure-filter-panel">
+              <div class="structure-filter-actions">
+                @if (hasActiveStructureFilters) {
+                  <button
+                    class="btn btn-outline btn-sm"
+                    type="button"
+                    (click)="clearStructureFilters()"
+                  >
+                    Filter zurücksetzen
+                  </button>
+                }
+              </div>
+              <div class="structure-filter-grid">
+                @for (section of activeStructureFilterSections; track section.key) {
+                  <label class="structure-filter-field">
+                    <span>{{ section.label }}</span>
+                    <select
+                      class="structure-filter-select"
+                      [ngModel]="structureFilters[section.key] || ''"
+                      (ngModelChange)="updateStructureFilter(section.key, $event)"
+                      [disabled]="(structureFilterOptions[section.key] || []).length === 0"
+                    >
+                      <option value="">Alle</option>
+                      @for (
+                        option of structureFilterOptions[section.key] || [];
+                        track option.value
+                      ) {
+                        <option [value]="option.value">{{ option.label }}</option>
+                      }
+                    </select>
+                  </label>
+                }
+              </div>
+            </div>
+          }
 
           <div
             #tableScroll
@@ -1622,6 +1703,42 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         gap: 8px;
         flex-wrap: wrap;
       }
+      .structure-filter-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        background: rgba(26, 82, 118, 0.03);
+        flex-shrink: 0;
+      }
+      .structure-filter-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        min-height: 0;
+      }
+      .structure-filter-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+      }
+      .structure-filter-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+      .structure-filter-select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        background: var(--color-surface);
+        color: var(--color-text);
+      }
       .filter-input {
         width: 100%;
         padding: 8px 12px;
@@ -2565,8 +2682,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
+  itemIdFormat: ItemIdFormat = 'current';
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
+  structureFilters: Partial<Record<StructureFilterKey, string>> = {};
+  structureFilterOptions: Partial<Record<StructureFilterKey, StructureFilterOption[]>> = {};
   showExcludedItems = false;
 
   // Selection
@@ -2896,6 +3016,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
+  get activeStructureFilterSections(): StructureFilterSection[] {
+    return this.itemIdFormat === 'legacy'
+      ? LEGACY_STRUCTURE_FILTER_SECTIONS
+      : CURRENT_STRUCTURE_FILTER_SECTIONS;
+  }
+
+  get showStructureFilters(): boolean {
+    return this.activeStructureFilterSections.length > 0;
+  }
+
+  get hasActiveStructureFilters(): boolean {
+    return this.activeStructureFilterSections.some(
+      (section) => (this.structureFilters[section.key] || '').trim().length > 0,
+    );
+  }
+
   get explorerStatusLabel(): string {
     switch (this.explorerUiStatus) {
       case 'DIRTY':
@@ -2928,6 +3064,75 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     });
   }
 
+  private buildStructureFilterOptions(
+    items: ExplorerItem[],
+  ): Partial<Record<StructureFilterKey, StructureFilterOption[]>> {
+    const optionsByKey: Partial<Record<StructureFilterKey, StructureFilterOption[]>> = {};
+
+    for (const key of ALL_STRUCTURE_FILTER_KEYS) {
+      const optionMap = new Map<string, string>();
+
+      for (const item of items) {
+        const value = this.getStructureValue(item, key);
+        if (!value || optionMap.has(value)) {
+          continue;
+        }
+
+        optionMap.set(value, this.getStructureOptionLabel(item, key, value));
+      }
+
+      optionsByKey[key] = Array.from(optionMap.entries())
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.value.localeCompare(b.value, undefined, { numeric: true }));
+    }
+
+    return optionsByKey;
+  }
+
+  private getStructureValue(item: ExplorerItem, key: StructureFilterKey): string {
+    const rawValue = item.idStructure?.[key];
+    return typeof rawValue === 'string' ? rawValue.trim() : '';
+  }
+
+  private getStructureOptionLabel(
+    item: ExplorerItem,
+    key: StructureFilterKey,
+    value: string,
+  ): string {
+    const labelKey =
+      key === 'subjectCode'
+        ? 'subjectLabel'
+        : key === 'competenceAreaCode'
+          ? 'competenceAreaLabel'
+          : key === 'projectPoolCode'
+            ? 'projectPoolLabel'
+            : null;
+
+    if (!labelKey) {
+      return value;
+    }
+
+    const rawLabel = item.idStructure?.[labelKey];
+    const label = typeof rawLabel === 'string' ? rawLabel.trim() : '';
+    if (!label || label === value) {
+      return value;
+    }
+
+    return `${value} - ${label}`;
+  }
+
+  private normalizeStructureFilters() {
+    const allowedKeys = new Set(this.activeStructureFilterSections.map((section) => section.key));
+    this.structureFilters = Object.fromEntries(
+      Object.entries(this.structureFilters).filter(
+        ([key, value]) =>
+          allowedKeys.has(key as StructureFilterKey) &&
+          typeof value === 'string' &&
+          value.trim().length > 0,
+      ),
+    ) as Partial<Record<StructureFilterKey, string>>;
+  }
+
   private messageHandler = this.onPlayerMessage.bind(this);
   private autoResizeInterval: any;
 
@@ -2956,6 +3161,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     // Load feature config and metadata settings
     this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
+      this.itemIdFormat = fc.itemIdFormat === 'legacy' ? 'legacy' : 'current';
       this.enableTags = !!fc.enableItemListTags;
       this.availableTags = fc.availableTags || [];
       this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
@@ -2967,6 +3173,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
+      this.normalizeStructureFilters();
 
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
@@ -2993,6 +3200,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.items = result.items || [];
           this.hydrateItemTagsFromItems();
           this.applyExplorerStateToItems();
+          this.structureFilterOptions = this.buildStructureFilterOptions(this.items);
           this.hasEmpiricalDifficulty = this.items.some(
             (item: any) =>
               item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
@@ -3013,6 +3221,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.items = [];
           this.filteredItems = [];
           this.itemTags = {};
+          this.structureFilterOptions = {};
           this.hasEmpiricalDifficulty = false;
           this.unitMetadataCache = {};
           this.codingSchemeCache = {};
@@ -3109,6 +3318,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
   }
 
+  updateStructureFilter(key: StructureFilterKey, value: string) {
+    this.structureFilters[key] = typeof value === 'string' ? value : '';
+    this.applyFilter();
+  }
+
+  clearStructureFilters() {
+    this.structureFilters = {};
+    this.applyFilter();
+  }
+
   isItemExcluded(item?: ExplorerItem | null): boolean {
     return item?.excluded === true;
   }
@@ -3130,6 +3349,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private matchesActiveItemFilters(item: ExplorerItem, term: string): boolean {
+    if (!this.matchesActiveStructureFilters(item)) {
+      return false;
+    }
+
     // 1. Global Filter
     if (term) {
       const matchesGlobal =
@@ -3161,6 +3384,21 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         // Metadata column
         const val = item.metadata[colId] || '';
         if (!val.toLowerCase().includes(subTerm)) return false;
+      }
+    }
+
+    return true;
+  }
+
+  private matchesActiveStructureFilters(item: ExplorerItem): boolean {
+    for (const section of this.activeStructureFilterSections) {
+      const selectedValue = (this.structureFilters[section.key] || '').trim();
+      if (!selectedValue) {
+        continue;
+      }
+
+      if (this.getStructureValue(item, section.key) !== selectedValue) {
+        return false;
       }
     }
 
@@ -4935,6 +5173,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       sortIsMeta: this.sortIsMeta,
       sortDir: this.sortDir,
       columnFilters: this.columnFilters,
+      structureFilters: this.structureFilters,
     };
   }
 
@@ -4946,6 +5185,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const sortIsMeta = rawUi['sortIsMeta'];
     const sortDir = rawUi['sortDir'];
     const columnFilters = rawUi['columnFilters'];
+    const structureFilters = rawUi['structureFilters'];
 
     if (typeof filterText === 'string') {
       this.filterText = filterText;
@@ -4968,6 +5208,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           ]),
         )
       : {};
+    this.structureFilters = this.isRecord(structureFilters)
+      ? (Object.fromEntries(
+          Object.entries(structureFilters).map(([key, value]) => [
+            key,
+            typeof value === 'string' ? value : '',
+          ]),
+        ) as Partial<Record<StructureFilterKey, string>>)
+      : {};
+    this.normalizeStructureFilters();
   }
 
   private saveUiPreferences() {

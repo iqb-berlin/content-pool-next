@@ -46,6 +46,15 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(true);
   });
 
+  it('defaults itemIdFormat to current when the flag is missing', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig[component.itemIdFormatKey]).toBe('current');
+  });
+
   it('starts with PRIVATE as the default base access model', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     expect(component.accessModel).toBe('PRIVATE');
@@ -253,6 +262,26 @@ describe('AccessConfigComponent', () => {
       expect.objectContaining({
         featureConfig: expect.objectContaining({
           showOnlyItemsWithEmpiricalDifficulty: true,
+        }),
+      }),
+    );
+  });
+
+  it('persists the legacy item id format when saving features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableItemList: true,
+      itemIdFormat: 'legacy',
+    };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          itemIdFormat: 'legacy',
         }),
       }),
     );

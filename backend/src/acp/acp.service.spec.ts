@@ -131,6 +131,7 @@ describe("AcpService", () => {
           accessModel: AccessModel.PRIVATE,
           allowRegistered: false,
           featureConfig: expect.objectContaining({
+            itemIdFormat: "current",
             enablePlayerFocusHighlight: false,
           }),
         }),
@@ -286,6 +287,7 @@ describe("AcpService", () => {
       expect(accessConfigRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
+            itemIdFormat: "current",
             enablePlayerFocusHighlight: false,
           }),
         }),
@@ -494,6 +496,7 @@ describe("AcpService", () => {
           accessModel: AccessModel.PRIVATE,
           allowRegistered: false,
           featureConfig: expect.objectContaining({
+            itemIdFormat: "current",
             enablePlayerFocusHighlight: false,
           }),
         }),

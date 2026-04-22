@@ -150,6 +150,31 @@ describe('ItemExplorerComponent', () => {
     expect(ui).not.toHaveProperty('isFullscreen');
   });
 
+  it('offers current-format structure filter sections by default', () => {
+    const component = createComponent();
+
+    expect(component.activeStructureFilterSections.map((section) => section.key)).toEqual([
+      'subjectCode',
+      'competenceAreaCode',
+      'projectPoolCode',
+      'taskNumber',
+      'itemNumber',
+      'variableIndicator',
+    ]);
+  });
+
+  it('switches the available structure filter sections for legacy item ids', () => {
+    const component = createComponent();
+    component.itemIdFormat = 'legacy';
+
+    expect(component.activeStructureFilterSections.map((section) => section.key)).toEqual([
+      'subjectCode',
+      'competenceAreaCode',
+      'authorInitials',
+      'itemNumber',
+    ]);
+  });
+
   it('hides items without empirical difficulty when the ACP filter is enabled', () => {
     const component = createComponent();
     component.showOnlyItemsWithEmpiricalDifficulty = true;
@@ -179,6 +204,164 @@ describe('ItemExplorerComponent', () => {
     component.applyFilter(false);
 
     expect(component.filteredItems.map((item) => item.itemId)).toEqual(['ITEM_1']);
+  });
+
+  it('filters items by structured item id sections', () => {
+    const component = createComponent();
+    component.itemIdFormat = 'current';
+    component.structureFilters = {
+      competenceAreaCode: 'H',
+      projectPoolCode: 'B',
+    };
+    component.items = [
+      {
+        itemId: 'GHB00101a',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Listening item',
+        variableId: 'VAR_1',
+        metadata: {},
+        idStructure: {
+          format: 'current',
+          subjectCode: 'G',
+          competenceAreaCode: 'H',
+          projectPoolCode: 'B',
+          taskNumber: '001',
+          itemNumber: '01',
+          variableIndicator: 'a',
+        },
+      },
+      {
+        itemId: 'GOB00101a',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Orthography item',
+        variableId: 'VAR_2',
+        metadata: {},
+        idStructure: {
+          format: 'current',
+          subjectCode: 'G',
+          competenceAreaCode: 'O',
+          projectPoolCode: 'B',
+          taskNumber: '001',
+          itemNumber: '01',
+          variableIndicator: 'a',
+        },
+      },
+    ] as any;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
+  });
+
+  it('filters all German pilot competence areas, combines filters, and resets them', () => {
+    const component = createComponent();
+    component.itemIdFormat = 'legacy';
+    component.items = [
+      ['D1AB05', '1'],
+      ['D2AB05', '2'],
+      ['D3AB05', '3'],
+      ['D5AB05', '5'],
+      ['M1AB05', '1'],
+      ['UNKNOWN', undefined],
+    ].map(([itemId, competenceAreaCode], index) => ({
+      itemId,
+      uuid: `uuid-${index}`,
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: itemId,
+      variableId: `VAR_${index}`,
+      metadata: {},
+      idStructure:
+        competenceAreaCode === undefined
+          ? { format: 'legacy' as const }
+          : {
+              format: 'legacy' as const,
+              subjectCode: itemId.startsWith('D') ? 'D' : 'M',
+              competenceAreaCode,
+            },
+    })) as any;
+
+    for (const competenceAreaCode of ['1', '2', '3', '5']) {
+      component.structureFilters = { subjectCode: 'D', competenceAreaCode };
+      component.applyFilter(false);
+
+      expect(component.filteredItems.map((item) => item.itemId)).toEqual([
+        `D${competenceAreaCode}AB05`,
+      ]);
+    }
+
+    component.clearStructureFilters();
+
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual([
+      'D1AB05',
+      'D2AB05',
+      'D3AB05',
+      'D5AB05',
+      'M1AB05',
+      'UNKNOWN',
+    ]);
+  });
+
+  it('keeps item selection and navigation consistent when a structure filter changes', () => {
+    const component = createComponent();
+    component.itemIdFormat = 'legacy';
+    component.items = [
+      {
+        itemId: 'D1AB05',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Listening item',
+        variableId: 'VAR_1',
+        metadata: {},
+        idStructure: { format: 'legacy', subjectCode: 'D', competenceAreaCode: '1' },
+      },
+      {
+        itemId: 'D2AB05',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Orthography item',
+        variableId: 'VAR_2',
+        metadata: {},
+        idStructure: { format: 'legacy', subjectCode: 'D', competenceAreaCode: '2' },
+      },
+    ] as any;
+    component.filteredItems = [...component.items];
+    component.selectedItem = component.filteredItems[0];
+    component.selectedIndex = 0;
+    vi.spyOn(component, 'selectItem').mockImplementation((item, index) => {
+      component.selectedItem = item;
+      component.selectedIndex = index;
+    });
+
+    component.structureFilters = { competenceAreaCode: '2' };
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['D2AB05']);
+    expect(component.selectedItem?.itemId).toBe('D2AB05');
+    expect(component.selectedIndex).toBe(0);
+  });
+
+  it('stores structure filters in the shared ui preferences', () => {
+    const component = createComponent();
+    component.structureFilters = {
+      competenceAreaCode: 'H',
+      taskNumber: '001',
+    };
+
+    const ui = (component as any).buildUiPreferences();
+
+    expect(ui).toMatchObject({
+      structureFilters: {
+        competenceAreaCode: 'H',
+        taskNumber: '001',
+      },
+    });
   });
 
   it('keeps all items visible when no empirical difficulties were imported yet', () => {

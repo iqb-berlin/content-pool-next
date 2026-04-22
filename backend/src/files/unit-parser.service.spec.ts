@@ -2,7 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import * as fs from "fs/promises";
 import { UnitParserService } from "./unit-parser.service";
-import { Acp, AcpFile } from "../database/entities";
+import { Acp, AcpAccessConfig, AcpFile } from "../database/entities";
 
 jest.mock("fs/promises", () => ({
   readFile: jest.fn(),
@@ -12,6 +12,7 @@ describe("UnitParserService", () => {
   let service: UnitParserService;
   let fileRepo: any;
   let acpRepo: any;
+  let accessConfigRepo: any;
 
   const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Unit>
@@ -96,6 +97,15 @@ describe("UnitParserService", () => {
       save: jest.fn().mockImplementation(async (entity) => entity),
     };
 
+    accessConfigRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        acpId: "acp-1",
+        featureConfig: {
+          itemIdFormat: "current",
+        },
+      }),
+    };
+
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
       if (path === "/tmp/u1.xml") return xmlContent;
       if (path === "/tmp/u1.vomd") return vomdContent;
@@ -107,6 +117,10 @@ describe("UnitParserService", () => {
         UnitParserService,
         { provide: getRepositoryToken(AcpFile), useValue: fileRepo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
+        {
+          provide: getRepositoryToken(AcpAccessConfig),
+          useValue: accessConfigRepo,
+        },
       ],
     }).compile();
 
@@ -351,6 +365,53 @@ describe("UnitParserService", () => {
         itemId: "i2",
         variableId: "SRC_VAR_2",
         sourceVariable: "SRC_VAR_2",
+        idStructure: expect.objectContaining({
+          format: "current",
+        }),
+      }),
+    );
+  });
+
+  it("parses legacy item ids when the ACP uses the legacy format", async () => {
+    const legacyVomdContent = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: "D1AB05",
+          description: "Legacy item",
+          profiles: [],
+        },
+      ],
+    });
+
+    accessConfigRepo.findOne.mockResolvedValueOnce({
+      acpId: "acp-1",
+      featureConfig: {
+        itemIdFormat: "legacy",
+      },
+    });
+
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return legacyVomdContent;
+      if (path === "/tmp/u1.vocs") return "{}";
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1");
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        itemId: "D1AB05",
+        idStructure: expect.objectContaining({
+          format: "legacy",
+          subjectCode: "D",
+          subjectLabel: "Deutsch",
+          competenceAreaCode: "1",
+          competenceAreaLabel: "Zuhören",
+          authorInitials: "AB",
+          itemNumber: "05",
+        }),
       }),
     );
   });

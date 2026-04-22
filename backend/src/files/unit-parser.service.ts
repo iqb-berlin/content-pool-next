@@ -2,12 +2,18 @@ import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as fs from "fs/promises";
-import { AcpFile, Acp } from "../database/entities";
+import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
 import {
   getAssessmentParts,
   normalizeIndexForStorage,
 } from "../acp/acp-index.utils";
 import { FileProcessingProgressReporter } from "./file-processing-progress";
+import {
+  ItemIdFormat,
+  ParsedItemIdStructure,
+  parseItemIdStructureFromCandidates,
+} from "../acp/item-id-format.util";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -52,6 +58,7 @@ export interface VomdItemData {
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   tags?: string[];
+  idStructure: ParsedItemIdStructure;
 }
 
 /** Full item list response */
@@ -87,6 +94,8 @@ export class UnitParserService {
     private readonly fileRepository: Repository<AcpFile>,
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
+    @InjectRepository(AcpAccessConfig)
+    private readonly accessConfigRepository: Repository<AcpAccessConfig>,
   ) {}
 
   /**
@@ -555,7 +564,16 @@ export class UnitParserService {
   async getItemListFromFiles(acpId: string): Promise<ItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    const accessConfig = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
     const itemProps = acp?.itemProperties || {};
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      accessConfig?.featureConfig || {},
+    ) as Record<string, unknown>;
+    const itemIdFormat = String(
+      normalizedFeatureConfig.itemIdFormat || "current",
+    ) as ItemIdFormat;
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label
@@ -672,6 +690,10 @@ export class UnitParserService {
                 ? itemProps[item.id].tags
                 : undefined) ||
               [],
+            idStructure: parseItemIdStructureFromCandidates(
+              [item.id, resolvedItemId, parsed.unitId, item.uuid],
+              itemIdFormat,
+            ),
           });
         }
       } catch (e) {

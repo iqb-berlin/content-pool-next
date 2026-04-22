@@ -1,3 +1,8 @@
+import {
+  DEFAULT_ITEM_ID_FORMAT,
+  normalizeItemIdFormat,
+} from "./item-id-format.util";
+
 type UnknownRecord = Record<string, unknown>;
 
 interface MetadataColumnsConfig {
@@ -57,6 +62,10 @@ function normalizeMetadataColumns(
 export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
   const source = asRecord(featureConfig);
   const normalized: UnknownRecord = { ...source };
+
+  normalized.itemIdFormat = normalizeItemIdFormat(
+    source.itemIdFormat || DEFAULT_ITEM_ID_FORMAT,
+  );
 
   normalized.enablePlayerFocusHighlight =
     source.enablePlayerFocusHighlight === true;

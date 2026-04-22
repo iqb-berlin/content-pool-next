@@ -350,6 +350,22 @@ export interface MetadataColumnsConfig {
   order?: string[];
 }
 
+export type ItemIdFormat = 'current' | 'legacy';
+
+export interface ItemIdStructure {
+  format: ItemIdFormat;
+  subjectCode?: string;
+  subjectLabel?: string;
+  competenceAreaCode?: string;
+  competenceAreaLabel?: string;
+  projectPoolCode?: string;
+  projectPoolLabel?: string;
+  taskNumber?: string;
+  itemNumber?: string;
+  variableIndicator?: string;
+  authorInitials?: string;
+}
+
 export interface FeatureConfig {
   allowIndexDownload?: boolean;
   allowUnitDownload?: boolean;
@@ -375,6 +391,7 @@ export interface FeatureConfig {
   enableItemExplorerConditionalVisibility?: boolean;
   enablePlayerFocusHighlight?: boolean;
   showItemExplorerPlayerTargetInfo?: boolean;
+  itemIdFormat?: ItemIdFormat;
   availableTags?: string[];
   persistUserPreferences?: boolean;
 }

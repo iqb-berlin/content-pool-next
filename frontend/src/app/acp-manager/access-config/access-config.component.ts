@@ -2,7 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { AccessModel, Credential } from '../../core/models/api.models';
+import { AccessModel, Credential, ItemIdFormat } from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 
 @Component({
@@ -396,6 +396,22 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <span>{{ feat.label }}</span>
           </label>
         }
+        <div class="indent-section">
+          <label class="help-text" for="item-id-format-select">
+            Item-ID-Format für strukturierte Filter im Item-Explorer
+          </label>
+          <select
+            id="item-id-format-select"
+            class="feature-select"
+            [(ngModel)]="featureConfig[itemIdFormatKey]"
+          >
+            <option [ngValue]="'current'">Aktuell (Fach/Kompetenzbereich/Pool/...)</option>
+            <option [ngValue]="'legacy'">Legacy (Fach/Kompetenzbereich/Initialen/Item)</option>
+          </select>
+          <span class="help-text">
+            Steuert, welche abschnittsbasierten Filter im Item-Explorer angeboten werden.
+          </span>
+        </div>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]" />
           <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
@@ -639,6 +655,16 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         border-radius: var(--radius);
         font-size: 0.85rem;
       }
+      .feature-select {
+        min-width: 320px;
+        max-width: 100%;
+        padding: 6px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        font-size: 0.9rem;
+        background: var(--color-surface, #fff);
+        margin-bottom: 8px;
+      }
 
       .save-indicator {
         margin-left: 12px;
@@ -700,6 +726,7 @@ export class AccessConfigComponent implements OnInit {
   readonly showOnlyItemsWithEmpiricalDifficultyKey = 'showOnlyItemsWithEmpiricalDifficulty';
   readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
+  readonly itemIdFormatKey = 'itemIdFormat';
 
   acpId = '';
   accessModel: AccessModel = 'PRIVATE';
@@ -931,6 +958,10 @@ export class AccessConfigComponent implements OnInit {
   }
 
   private applyFeatureConfigDefaults() {
+    const itemIdFormat = this.featureConfig[this.itemIdFormatKey];
+    this.featureConfig[this.itemIdFormatKey] =
+      itemIdFormat === 'legacy' ? ('legacy' as ItemIdFormat) : ('current' as ItemIdFormat);
+
     const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
     this.featureConfig[this.showAudioVideoCodingVariablesKey] =
       showAudioVideoCodingVariables !== false;

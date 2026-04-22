@@ -134,9 +134,12 @@ export class FilesController {
   @Get("item-list")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Extract item list with metadata from .vomd files" })
-  async getItemList(@Param("acpId") acpId: string, @Request() req: any) {
-    const isManager =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+  async getItemList(
+    @Param("acpId") acpId: string,
+    @Request() req: any,
+    @Query("perspective") perspective?: string,
+  ) {
+    const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
       if (featureConfig.enableItemList === false) {
@@ -155,9 +158,9 @@ export class FilesController {
     @Param("acpId") acpId: string,
     @Param("unitId") unitId: string,
     @Request() req: any,
+    @Query("perspective") perspective?: string,
   ) {
-    const isManager =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
       if (featureConfig.enableUnitView === false) {
@@ -196,13 +199,18 @@ export class FilesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Download generated ZIP archive for a completed file job" })
+  @ApiOperation({
+    summary: "Download generated ZIP archive for a completed file job",
+  })
   async downloadJobArchive(
     @Param("acpId") acpId: string,
     @Param("jobId") jobId: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const archive = await this.fileProcessingJobsService.downloadArchive(acpId, jobId);
+    const archive = await this.fileProcessingJobsService.downloadArchive(
+      acpId,
+      jobId,
+    );
     res?.setHeader("Content-Type", "application/zip");
     res?.setHeader("Content-Length", String(archive.buffer.length));
     res?.setHeader(
@@ -264,7 +272,11 @@ export class FilesController {
     @Query("conflictStrategy") conflictStrategy?: string,
   ) {
     return {
-      files: await this.filesService.uploadMultiple(acpId, files, conflictStrategy),
+      files: await this.filesService.uploadMultiple(
+        acpId,
+        files,
+        conflictStrategy,
+      ),
     };
   }
 
@@ -272,7 +284,9 @@ export class FilesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Download all or selected ACP files as ZIP archive" })
+  @ApiOperation({
+    summary: "Download all or selected ACP files as ZIP archive",
+  })
   async bulkDownload(
     @Param("acpId") acpId: string,
     @Body() body: { fileIds?: string[] } = {},
@@ -292,7 +306,9 @@ export class FilesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Start ZIP creation job for all or selected ACP files" })
+  @ApiOperation({
+    summary: "Start ZIP creation job for all or selected ACP files",
+  })
   async startBulkDownloadJob(
     @Param("acpId") acpId: string,
     @Body() body: { fileIds?: string[] } = {},
@@ -315,10 +331,14 @@ export class FilesController {
     @Body() body: { fileIds?: string[]; runCleanup?: boolean },
     @Request() req: any,
   ) {
-    return this.fileProcessingJobsService.createAndStartJob(acpId, body.fileIds || [], {
-      createdByUserId: req?.user?.sub || null,
-      runCleanup: !!body.runCleanup,
-    });
+    return this.fileProcessingJobsService.createAndStartJob(
+      acpId,
+      body.fileIds || [],
+      {
+        createdByUserId: req?.user?.sub || null,
+        runCleanup: !!body.runCleanup,
+      },
+    );
   }
 
   @Post("bulk-delete")
@@ -440,7 +460,23 @@ export class FilesController {
     }
   }
 
-  private resolveDisposition(disposition: string | undefined): "attachment" | "inline" {
+  private isManagerViewContext(req: any, perspective?: string): boolean {
+    const isManager =
+      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    if (!isManager) {
+      return false;
+    }
+
+    const normalizedPerspective = String(perspective || "editor")
+      .trim()
+      .toLowerCase();
+
+    return normalizedPerspective !== "read-only";
+  }
+
+  private resolveDisposition(
+    disposition: string | undefined,
+  ): "attachment" | "inline" {
     const normalized = String(disposition || "attachment")
       .trim()
       .toLowerCase();

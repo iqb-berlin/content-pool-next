@@ -329,7 +329,10 @@ describe("FilesController", () => {
 
     await controller.bulkDownload("acp-1", {}, res);
 
-    expect(filesService.createFilesZip).toHaveBeenCalledWith("acp-1", undefined);
+    expect(filesService.createFilesZip).toHaveBeenCalledWith(
+      "acp-1",
+      undefined,
+    );
     expect(res.send).toHaveBeenCalledWith(Buffer.from("files-zip"));
   });
 
@@ -340,11 +343,11 @@ describe("FilesController", () => {
       { user: { sub: "user-1" } },
     );
 
-    expect(fileProcessingJobsService.createAndStartDownloadJob).toHaveBeenCalledWith(
-      "acp-1",
-      ["file-1", "file-2"],
-      { createdByUserId: "user-1" },
-    );
+    expect(
+      fileProcessingJobsService.createAndStartDownloadJob,
+    ).toHaveBeenCalledWith("acp-1", ["file-1", "file-2"], {
+      createdByUserId: "user-1",
+    });
     expect(result).toEqual({
       id: "job-download-1",
       jobType: "archive-download",
@@ -361,7 +364,10 @@ describe("FilesController", () => {
       "acp-1",
       "job-download-1",
     );
-    expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "application/zip");
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Type",
+      "application/zip",
+    );
     expect(res.setHeader).toHaveBeenCalledWith(
       "Content-Disposition",
       'attachment; filename="acp-acp-1-selected-files.zip"',
@@ -387,17 +393,38 @@ describe("FilesController", () => {
     });
 
     await expect(
-      controller.getItemList("acp-1", { acpAccessLevel: "PUBLIC" }),
+      controller.getItemList("acp-1", { acpAccessLevel: "PUBLIC" }, undefined),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it("returns item list for managers", async () => {
-    const result = await controller.getItemList("acp-1", {
-      acpAccessLevel: "MANAGER",
-    });
+    const result = await controller.getItemList(
+      "acp-1",
+      {
+        acpAccessLevel: "MANAGER",
+      },
+      undefined,
+    );
 
     expect(result).toEqual([{ itemId: "item-1" }]);
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
+  });
+
+  it("applies read-only perspective checks for managers in item list", async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      allowUnitDownload: true,
+      allowFileDownload: true,
+      enableItemList: false,
+      enableUnitView: true,
+    });
+
+    await expect(
+      controller.getItemList(
+        "acp-1",
+        { acpAccessLevel: "MANAGER" },
+        "read-only",
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it("blocks unit view when feature is disabled for non-managers", async () => {
@@ -409,7 +436,12 @@ describe("FilesController", () => {
     });
 
     await expect(
-      controller.getUnitView("acp-1", "unit-1", { acpAccessLevel: "PUBLIC" }),
+      controller.getUnitView(
+        "acp-1",
+        "unit-1",
+        { acpAccessLevel: "PUBLIC" },
+        undefined,
+      ),
     ).rejects.toThrow(ForbiddenException);
   });
 
@@ -421,8 +453,31 @@ describe("FilesController", () => {
     });
 
     await expect(
-      controller.getUnitView("acp-1", "unit-1", { acpAccessLevel: "PUBLIC" }),
+      controller.getUnitView(
+        "acp-1",
+        "unit-1",
+        { acpAccessLevel: "PUBLIC" },
+        undefined,
+      ),
     ).resolves.toEqual({ unitId: "u-1" });
+  });
+
+  it("applies read-only perspective checks for managers in unit view", async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      allowUnitDownload: true,
+      allowFileDownload: true,
+      enableItemList: true,
+      enableUnitView: false,
+    });
+
+    await expect(
+      controller.getUnitView(
+        "acp-1",
+        "unit-1",
+        { acpAccessLevel: "MANAGER" },
+        "read-only",
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it("blocks file metadata for non-managers when file download is disabled", async () => {
@@ -478,7 +533,9 @@ describe("FilesController", () => {
   });
 
   it("returns processing job snapshot", async () => {
-    await expect(controller.getProcessingJob("acp-1", "job-1")).resolves.toEqual({
+    await expect(
+      controller.getProcessingJob("acp-1", "job-1"),
+    ).resolves.toEqual({
       id: "job-1",
       jobType: "upload-process",
       status: "running",
@@ -525,7 +582,10 @@ describe("FilesController", () => {
       }),
     );
 
-    expect(filesService.getPreviewForAcp).toHaveBeenCalledWith("acp-1", "file-1");
+    expect(filesService.getPreviewForAcp).toHaveBeenCalledWith(
+      "acp-1",
+      "file-1",
+    );
   });
 
   it("blocks preview access when file download and unit view access are disabled", async () => {
@@ -552,10 +612,16 @@ describe("FilesController", () => {
     filesService.isUnitDependencyFile.mockResolvedValueOnce(false);
 
     await expect(
-      controller.download("acp-1", "file-1", undefined, { acpAccessLevel: "PUBLIC" }, {
-        setHeader: jest.fn(),
-        send: jest.fn(),
-      } as any),
+      controller.download(
+        "acp-1",
+        "file-1",
+        undefined,
+        { acpAccessLevel: "PUBLIC" },
+        {
+          setHeader: jest.fn(),
+          send: jest.fn(),
+        } as any,
+      ),
     ).rejects.toThrow(ForbiddenException);
   });
 

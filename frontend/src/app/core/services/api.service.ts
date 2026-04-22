@@ -27,6 +27,8 @@ import {
   FileDeletionResponse,
 } from '../models/api.models';
 
+type ItemExplorerPerspective = 'editor' | 'read-only';
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly API = '/api';
@@ -208,10 +210,14 @@ export class ApiService {
     );
   }
   downloadFilesArchive(acpId: string, fileIds: string[] = []): Observable<HttpResponse<Blob>> {
-    return this.http.post(`${this.API}/acp/${acpId}/files/bulk-download`, { fileIds }, {
-      observe: 'response',
-      responseType: 'blob',
-    });
+    return this.http.post(
+      `${this.API}/acp/${acpId}/files/bulk-download`,
+      { fileIds },
+      {
+        observe: 'response',
+        responseType: 'blob',
+      },
+    );
   }
   downloadFileJobArchive(acpId: string, jobId: string): Observable<HttpEvent<Blob>> {
     return this.http.get(`${this.API}/acp/${acpId}/files/jobs/${jobId}/archive`, {
@@ -251,11 +257,20 @@ export class ApiService {
   validateUnitFiles(acpId: string): Observable<ValidateUnitsResponse> {
     return this.http.get<ValidateUnitsResponse>(`${this.API}/acp/${acpId}/files/validate-units`);
   }
-  getFileItemList(acpId: string): Observable<any> {
-    return this.http.get(`${this.API}/acp/${acpId}/files/item-list`);
+  getFileItemList(
+    acpId: string,
+    options?: { perspective?: ItemExplorerPerspective },
+  ): Observable<any> {
+    const query = this.buildPerspectiveQuery(options?.perspective);
+    return this.http.get(`${this.API}/acp/${acpId}/files/item-list${query}`);
   }
-  getFileUnitView(acpId: string, unitId: string): Observable<any> {
-    return this.http.get(`${this.API}/acp/${acpId}/files/unit-view/${unitId}`);
+  getFileUnitView(
+    acpId: string,
+    unitId: string,
+    options?: { perspective?: ItemExplorerPerspective },
+  ): Observable<any> {
+    const query = this.buildPerspectiveQuery(options?.perspective);
+    return this.http.get(`${this.API}/acp/${acpId}/files/unit-view/${unitId}${query}`);
   }
 
   getIndexExportUrl(id: string): string {
@@ -268,6 +283,14 @@ export class ApiService {
     if (!token) return url;
     const separator = url.includes('?') ? '&' : '?';
     return `${url}${separator}auth_token=${encodeURIComponent(token)}`;
+  }
+
+  private buildPerspectiveQuery(perspective?: ItemExplorerPerspective): string {
+    if (!perspective || perspective === 'editor') {
+      return '';
+    }
+
+    return `?perspective=${encodeURIComponent(perspective)}`;
   }
 
   // Snapshots

@@ -62,6 +62,7 @@ interface PreviewTargetResolution {
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 type PreviewAssetLoadState = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
+type ItemExplorerPerspective = 'editor' | 'read-only';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -104,6 +105,23 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
           >
             {{ isFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
           </button>
+          @if (canToggleReadOnlyPreview) {
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              (click)="toggleReadOnlyPreview()"
+              [class.btn-primary]="isReadOnlyPreview"
+              [attr.aria-pressed]="isReadOnlyPreview"
+              [disabled]="perspectiveSwitchBusy || !latestExplorerState"
+              [title]="
+                isReadOnlyPreview
+                  ? 'Zurück zur Bearbeitungsansicht wechseln'
+                  : 'Explorer aus READ ONLY-Perspektive anzeigen'
+              "
+            >
+              {{ isReadOnlyPreview ? 'Bearbeitungsansicht' : 'READ ONLY-Vorschau' }}
+            </button>
+          }
           @if (canEditExplorer) {
             <input
               type="file"
@@ -154,6 +172,22 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         </div>
       </div>
 
+      @if (showReadOnlyPreviewBanner) {
+        <div class="card" style="margin-bottom: 12px;">
+          <strong>READ ONLY-Vorschau aktiv.</strong>
+          <p class="help-text" style="margin: 8px 0 0;">
+            Sie sehen den veröffentlichten Stand inklusive derselben Feature-Beschränkungen wie
+            nicht editierende Nutzerinnen und Nutzer.
+          </p>
+          @if (latestExplorerState?.status === 'DIRTY') {
+            <p class="help-text" style="margin: 6px 0 0;">
+              Ein unveröffentlichter Explorer-Entwurf existiert, ist in dieser Vorschau aber bewusst
+              ausgeblendet.
+            </p>
+          }
+        </div>
+      }
+
       @if (showExplorerDraftStatus) {
         <div class="card explorer-status-bar">
           <div class="status-main">
@@ -195,6 +229,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         </div>
       }
 
+      @if (itemListError) {
+        <div class="alert alert-info" style="margin-bottom: 12px;">
+          {{ itemListError }}
+        </div>
+      }
+
       <app-confirm-dialog
         [open]="showClearEmpiricalDifficultiesDialog"
         title="Werte bereinigen"
@@ -229,1159 +269,1173 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         (cancelled)="closeDiscardDraftDialog()"
       />
 
-    @if (showLeaveWithChangesDialog) {
-      <div
-        class="overlay-backdrop"
-        (click)="leaveWithChangesDialogState === 'idle' && stayOnPage()"
-      >
-        <div class="overlay-dialog" style="max-width: 560px;" (click)="$event.stopPropagation()">
-          <div
-            class="overlay-header"
-            [style.border-top]="
-              leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'
-            "
-          >
-            <h2 style="display: flex; align-items: center; gap: 8px;">
-              <span>⚠️</span> Ungespeicherte Änderungen
-            </h2>
-          </div>
-          <div class="overlay-content" style="padding: 24px;">
-            <p>Es gibt ungespeicherte Explorer-Änderungen. Wie möchten Sie fortfahren?</p>
-            <ul style="margin: 10px 0 14px 18px; color: var(--color-text-secondary);">
-              <li>
-                <strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite verlassen
-              </li>
-              <li><strong>Nicht speichern:</strong> Änderungen verwerfen und Seite verlassen</li>
-              <li><strong>Bleiben:</strong> Auf der aktuellen Seite bleiben</li>
-            </ul>
+      @if (showLeaveWithChangesDialog) {
+        <div
+          class="overlay-backdrop"
+          (click)="leaveWithChangesDialogState === 'idle' && stayOnPage()"
+        >
+          <div class="overlay-dialog" style="max-width: 560px;" (click)="$event.stopPropagation()">
+            <div
+              class="overlay-header"
+              [style.border-top]="
+                leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'
+              "
+            >
+              <h2 style="display: flex; align-items: center; gap: 8px;">
+                <span>⚠️</span> Ungespeicherte Änderungen
+              </h2>
+            </div>
+            <div class="overlay-content" style="padding: 24px;">
+              <p>Es gibt ungespeicherte Explorer-Änderungen. Wie möchten Sie fortfahren?</p>
+              <ul style="margin: 10px 0 14px 18px; color: var(--color-text-secondary);">
+                <li>
+                  <strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite
+                  verlassen
+                </li>
+                <li><strong>Nicht speichern:</strong> Änderungen verwerfen und Seite verlassen</li>
+                <li><strong>Bleiben:</strong> Auf der aktuellen Seite bleiben</li>
+              </ul>
 
-            @if (leaveWithChangesDialogError) {
-              <div class="alert alert-error" style="margin-bottom: 14px;">
-                {{ leaveWithChangesDialogError }}
+              @if (leaveWithChangesDialogError) {
+                <div class="alert alert-error" style="margin-bottom: 14px;">
+                  {{ leaveWithChangesDialogError }}
+                </div>
+              }
+
+              <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
+                <button
+                  class="btn btn-outline"
+                  [disabled]="leaveWithChangesDialogState !== 'idle'"
+                  (click)="stayOnPage()"
+                >
+                  Bleiben
+                </button>
+                <button
+                  class="btn btn-danger"
+                  [disabled]="leaveWithChangesDialogState !== 'idle'"
+                  (click)="discardAndLeave()"
+                >
+                  Nicht speichern
+                </button>
+                <button
+                  class="btn btn-primary"
+                  [disabled]="leaveWithChangesDialogState !== 'idle'"
+                  (click)="saveAndLeave()"
+                >
+                  Speichern & Weiter
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <app-split-pane [initialLeftPercent]="45" [minLeftPx]="350" [minRightPx]="400">
+        <!-- LEFT: Table -->
+        <div left class="table-panel">
+          <div class="table-toolbar">
+            <input
+              #globalFilterInput
+              class="filter-input"
+              [(ngModel)]="filterText"
+              placeholder="🔍 Items filtern..."
+              (input)="applyFilter()"
+            />
+            @if (excludedItemsCount > 0 || showExcludedItems) {
+              <div class="table-toolbar-actions">
+                <button
+                  class="btn btn-outline btn-sm"
+                  type="button"
+                  (click)="toggleShowExcludedItems()"
+                  [class.btn-primary]="showExcludedItems"
+                >
+                  {{
+                    showExcludedItems
+                      ? 'Ausgeschlossene ausblenden'
+                      : 'Ausgeschlossene anzeigen (' + excludedItemsCount + ')'
+                  }}
+                </button>
               </div>
             }
-
-            <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap;">
-              <button
-                class="btn btn-outline"
-                [disabled]="leaveWithChangesDialogState !== 'idle'"
-                (click)="stayOnPage()"
-              >
-                Bleiben
-              </button>
-              <button
-                class="btn btn-danger"
-                [disabled]="leaveWithChangesDialogState !== 'idle'"
-                (click)="discardAndLeave()"
-              >
-                Nicht speichern
-              </button>
-              <button
-                class="btn btn-primary"
-                [disabled]="leaveWithChangesDialogState !== 'idle'"
-                (click)="saveAndLeave()"
-              >
-                Speichern & Weiter
-              </button>
-            </div>
+            @if (showExplorerKeyboardHints) {
+              <div class="help-text">
+                Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
+                <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
+              </div>
+            }
           </div>
-        </div>
-      </div>
-    }
 
-    <app-split-pane [initialLeftPercent]="45" [minLeftPx]="350" [minRightPx]="400">
-      <!-- LEFT: Table -->
-      <div left class="table-panel">
-        <div class="table-toolbar">
-          <input
-            #globalFilterInput
-            class="filter-input"
-            [(ngModel)]="filterText"
-            placeholder="🔍 Items filtern..."
-            (input)="applyFilter()"
-          />
-          @if (excludedItemsCount > 0 || showExcludedItems) {
-            <div class="table-toolbar-actions">
-              <button
-                class="btn btn-outline btn-sm"
-                type="button"
-                (click)="toggleShowExcludedItems()"
-                [class.btn-primary]="showExcludedItems"
-              >
-                {{
-                  showExcludedItems
-                    ? 'Ausgeschlossene ausblenden'
-                    : 'Ausgeschlossene anzeigen (' + excludedItemsCount + ')'
-                }}
-              </button>
-            </div>
-          }
-          @if (showExplorerKeyboardHints) {
-            <div class="help-text">
-              Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
-              <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
-            </div>
-          }
-        </div>
-
-        <div
-          #tableScroll
-          class="table-scroll"
-          tabindex="0"
-          role="region"
-          aria-label="Item-Liste"
-          (keydown)="onTableKeydown($event)"
-        >
-          <table class="table explorer-table">
-            <thead>
-              <tr>
-                <th (click)="sortBy('itemId')" class="sortable sticky-col">
-                  Item-ID {{ getSortIndicator('itemId') }}
-                </th>
-                <th (click)="sortBy('unitLabel')" class="sortable">
-                  Aufgabe {{ getSortIndicator('unitLabel') }}
-                </th>
-                @if (hasEmpiricalDifficulty) {
-                  <th (click)="sortBy('empiricalDifficulty')" class="sortable">
-                    Empirische Itemschwierigkeit {{ getSortIndicator('empiricalDifficulty') }}
+          <div
+            #tableScroll
+            class="table-scroll"
+            tabindex="0"
+            role="region"
+            aria-label="Item-Liste"
+            (keydown)="onTableKeydown($event)"
+          >
+            <table class="table explorer-table">
+              <thead>
+                <tr>
+                  <th (click)="sortBy('itemId')" class="sortable sticky-col">
+                    Item-ID {{ getSortIndicator('itemId') }}
                   </th>
-                }
-                @for (col of columns; track col.id) {
-                  <th (click)="sortByMeta(col.id)" class="sortable">
-                    {{ col.label }} {{ getMetaSortIndicator(col.id) }}
+                  <th (click)="sortBy('unitLabel')" class="sortable">
+                    Aufgabe {{ getSortIndicator('unitLabel') }}
                   </th>
-                }
-                @if (enableTags) {
-                  <th>Tags</th>
-                }
-              </tr>
-              <tr class="filter-row">
-                <th class="sticky-col">
-                  <input
-                    class="col-filter-input"
-                    [(ngModel)]="columnFilters['itemId']"
-                    placeholder="🔍 ID..."
-                    (input)="applyFilter()"
-                  />
-                </th>
-                <th>
-                  <input
-                    class="col-filter-input"
-                    [(ngModel)]="columnFilters['unitLabel']"
-                    placeholder="🔍 Aufgabe..."
-                    (input)="applyFilter()"
-                  />
-                </th>
-                @if (hasEmpiricalDifficulty) {
-                  <th>
-                    <input
-                      type="number"
-                      class="col-filter-input"
-                      [(ngModel)]="columnFilters['empiricalDifficulty']"
-                      placeholder="🔍 Wert..."
-                      (input)="applyFilter()"
-                    />
-                  </th>
-                }
-                @for (col of columns; track col.id) {
-                  <th>
-                    <input
-                      class="col-filter-input"
-                      [(ngModel)]="columnFilters[col.id]"
-                      [placeholder]="'🔍 ' + col.label + '...'"
-                      (input)="applyFilter()"
-                    />
-                  </th>
-                }
-                @if (enableTags) {
-                  <th>
-                    <input
-                      class="col-filter-input"
-                      [(ngModel)]="columnFilters['tags']"
-                      placeholder="🔍 Tags..."
-                      (input)="applyFilter()"
-                    />
-                  </th>
-                }
-              </tr>
-            </thead>
-            <tbody>
-              @for (item of filteredItems; track item.unitId + '_' + item.itemId; let i = $index) {
-                <tr
-                  [id]="getItemRowId(item)"
-                  [class.active]="selectedItem?.uuid === item.uuid"
-                  [class.excluded]="isItemExcluded(item)"
-                  [class.no-preview]="!canPreviewItem(item)"
-                  [attr.aria-selected]="selectedItem?.uuid === item.uuid"
-                  (click)="selectItem(item, i)"
-                >
-                  <td class="sticky-col">
-                    <div class="item-id-cell">
-                      <code
-                        ><span class="unit-id">{{ item.unitId }}</span
-                        ><span class="item-id">{{ item.itemId }}</span></code
-                      >
-                      @if (isItemExcluded(item)) {
-                        <span class="excluded-item-badge">Ausgeschlossen</span>
-                      }
-                      @if (showPlayerTargetInfo) {
-                        @if (getPlayerTarget(item)) {
-                          <span class="player-target-badge">Player {{ getPlayerTarget(item) }}</span>
-                        } @else {
-                          <span class="player-target-badge unmapped">Kein Player-Ziel</span>
-                        }
-                      }
-                    </div>
-                  </td>
-                  <td>{{ item.unitLabel }}</td>
                   @if (hasEmpiricalDifficulty) {
-                    <td>
-                      {{
-                        item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null
-                          ? item.empiricalDifficulty
-                          : '–'
-                      }}
-                    </td>
+                    <th (click)="sortBy('empiricalDifficulty')" class="sortable">
+                      Empirische Itemschwierigkeit {{ getSortIndicator('empiricalDifficulty') }}
+                    </th>
                   }
                   @for (col of columns; track col.id) {
-                    <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
+                    <th (click)="sortByMeta(col.id)" class="sortable">
+                      {{ col.label }} {{ getMetaSortIndicator(col.id) }}
+                    </th>
                   }
                   @if (enableTags) {
-                    <td class="tags-cell" (click)="$event.stopPropagation()">
-                      @for (
-                        tag of itemTags[item.uuid || item.unitId + '_' + item.itemId] || [];
-                        track tag
-                      ) {
-                        <span
-                          class="badge badge-info tag-badge"
-                          (click)="removeItemTag(item.uuid, tag)"
-                          >{{ tag }}
-                          @if (canEditExplorer) {
-                            ✕
-                          }
-                        </span>
-                      }
-                      @if (canEditExplorer) {
-                        <div class="tag-add-container">
-                          @if (availableTags.length > 0) {
-                            <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
-                              <option value="">+Tag</option>
-                              @for (tag of availableTags; track tag) {
-                                <option [value]="tag">{{ tag }}</option>
-                              }
-                            </select>
-                          }
-                          <input
-                            type="text"
-                            class="tag-input-inline"
-                            placeholder="Neu..."
-                            (keydown.enter)="addCustomTag(item.uuid, $event)"
-                            (blur)="addCustomTag(item.uuid, $event)"
-                          />
-                        </div>
-                      }
-                    </td>
+                    <th>Tags</th>
                   }
                 </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- RIGHT: Preview -->
-      <div right class="preview-panel">
-        @if (selectedItem) {
-          @if (canEditExplorer) {
-            <div
-              class="preview-target-info card"
-              [class.unavailable]="!canPreviewSelectedItem || !!previewUnavailableReason"
-            >
-              <div class="preview-target-header">
-                <strong>Explorer-Item</strong>
-                <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
-                @if (isItemExcluded(selectedItem)) {
-                  <span class="excluded-item-badge">Ausgeschlossen</span>
-                }
-                @if (selectedItemTarget && selectedItemTarget !== selectedPreviewTarget) {
-                  <span class="player-target-badge secondary">
-                    Kodierschema {{ selectedItemTarget }}
-                  </span>
-                }
-                @if (selectedPreviewTarget) {
-                  <span class="player-target-badge">Player {{ selectedPreviewTarget }}</span>
-                } @else {
-                  <span class="player-target-badge unmapped">Kein Player-Ziel</span>
-                }
-              </div>
-              @if (showPlayerTargetInfo) {
-                @if (hasStoredPreviewTargetOverride && selectedItemTarget && selectedPreviewTarget) {
-                  <p>
-                    Das Item referenziert standardmäßig
-                    <code>{{ selectedItemTarget }}</code
-                    >. Für die Vorschau wird aktuell manuell
-                    <code>{{ selectedPreviewTarget }}</code> verwendet.
-                  </p>
-                } @else if (selectedItemUsesDerivedTarget && selectedItemTarget && selectedPreviewTarget) {
-                  <p>
-                    Das Item referenziert im Kodierschema die abhängige Variable
-                    <code>{{ selectedItemTarget }}</code
-                    >. Für die Vorschau wird standardmäßig zur Basisvariable
-                    <code>{{ selectedPreviewTarget }}</code> gesprungen.
-                  </p>
-                } @else if (selectedPreviewTarget && !previewUnavailableReason) {
-                  <p>
-                    Der Listeneintrag springt im Player zur Variable
-                    <code>{{ selectedPreviewTarget }}</code
-                    >.
-                  </p>
-                } @else if (selectedPreviewTarget) {
-                  <p>
-                    Für diesen Listeneintrag ist die Player-Variable
-                    <code>{{ selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht
-                    zuverlässig in der Unit-Definition aufgelöst werden.
-                  </p>
-                } @else {
-                  <p>
-                    Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können unten
-                    ein alternatives Sprungziel auswählen oder manuell eintragen.
-                  </p>
-                }
-              }
-
-              <div class="preview-target-controls">
-                @if (showPreviewTargetSelector) {
-                  <div class="preview-target-selector">
-                    <label for="item-explorer-preview-target-select">Sprungziel aus Kodierschema</label>
-                    <select
-                      id="item-explorer-preview-target-select"
-                      class="preview-target-select"
-                      [(ngModel)]="selectedPreviewTargetId"
-                      (ngModelChange)="onPreviewTargetSelectionChange()"
-                    >
-                      <option value="">{{ previewTargetDefaultOptionLabel }}</option>
-                      @for (option of previewTargetOptions; track option.id) {
-                        <option [value]="option.id">{{ option.label }}</option>
-                      }
-                    </select>
-                    <small>
-                      {{ previewTargetOptions.length }} bekannte Variablen aus dem Kodierschema
-                      verfügbar.
-                    </small>
-                  </div>
-                }
-
-                <div class="preview-target-selector">
-                  <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
-                  <div class="preview-target-custom-row">
+                <tr class="filter-row">
+                  <th class="sticky-col">
                     <input
-                      id="item-explorer-custom-preview-target"
-                      type="text"
-                      class="preview-target-input"
-                      placeholder="z.B. VAR_12 oder alias_12"
-                      [(ngModel)]="customPreviewTargetDraft"
-                      (keydown.enter)="applyCustomPreviewTarget()"
+                      class="col-filter-input"
+                      [(ngModel)]="columnFilters['itemId']"
+                      placeholder="🔍 ID..."
+                      (input)="applyFilter()"
                     />
-                    <button class="btn btn-outline btn-sm" (click)="applyCustomPreviewTarget()">
-                      Übernehmen
-                    </button>
-                  </div>
-                  <small>
-                    Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden.
-                  </small>
-                </div>
-
-                <div class="preview-target-actions">
-                  <button
-                    class="btn btn-outline btn-sm"
-                    [disabled]="!hasStoredPreviewTargetOverride"
-                    (click)="resetPreviewTargetSelection()"
+                  </th>
+                  <th>
+                    <input
+                      class="col-filter-input"
+                      [(ngModel)]="columnFilters['unitLabel']"
+                      placeholder="🔍 Aufgabe..."
+                      (input)="applyFilter()"
+                    />
+                  </th>
+                  @if (hasEmpiricalDifficulty) {
+                    <th>
+                      <input
+                        type="number"
+                        class="col-filter-input"
+                        [(ngModel)]="columnFilters['empiricalDifficulty']"
+                        placeholder="🔍 Wert..."
+                        (input)="applyFilter()"
+                      />
+                    </th>
+                  }
+                  @for (col of columns; track col.id) {
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="columnFilters[col.id]"
+                        [placeholder]="'🔍 ' + col.label + '...'"
+                        (input)="applyFilter()"
+                      />
+                    </th>
+                  }
+                  @if (enableTags) {
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="columnFilters['tags']"
+                        placeholder="🔍 Tags..."
+                        (input)="applyFilter()"
+                      />
+                    </th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (
+                  item of filteredItems;
+                  track item.unitId + '_' + item.itemId;
+                  let i = $index
+                ) {
+                  <tr
+                    [id]="getItemRowId(item)"
+                    [class.active]="selectedItem?.uuid === item.uuid"
+                    [class.excluded]="isItemExcluded(item)"
+                    [class.no-preview]="!canPreviewItem(item)"
+                    [attr.aria-selected]="selectedItem?.uuid === item.uuid"
+                    (click)="selectItem(item, i)"
                   >
-                    Standardziel verwenden
-                  </button>
-                  @if (hasStoredPreviewTargetOverride && selectedPreviewTarget) {
-                    <small>
-                      Manueller Override aktiv:
-                      <code>{{ selectedPreviewTarget }}</code>
-                    </small>
+                    <td class="sticky-col">
+                      <div class="item-id-cell">
+                        <code
+                          ><span class="unit-id">{{ item.unitId }}</span
+                          ><span class="item-id">{{ item.itemId }}</span></code
+                        >
+                        @if (isItemExcluded(item)) {
+                          <span class="excluded-item-badge">Ausgeschlossen</span>
+                        }
+                        @if (showPlayerTargetInfo) {
+                          @if (getPlayerTarget(item)) {
+                            <span class="player-target-badge"
+                              >Player {{ getPlayerTarget(item) }}</span
+                            >
+                          } @else {
+                            <span class="player-target-badge unmapped">Kein Player-Ziel</span>
+                          }
+                        }
+                      </div>
+                    </td>
+                    <td>{{ item.unitLabel }}</td>
+                    @if (hasEmpiricalDifficulty) {
+                      <td>
+                        {{
+                          item.empiricalDifficulty !== undefined &&
+                          item.empiricalDifficulty !== null
+                            ? item.empiricalDifficulty
+                            : '–'
+                        }}
+                      </td>
+                    }
+                    @for (col of columns; track col.id) {
+                      <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
+                    }
+                    @if (enableTags) {
+                      <td class="tags-cell" (click)="$event.stopPropagation()">
+                        @for (
+                          tag of itemTags[item.uuid || item.unitId + '_' + item.itemId] || [];
+                          track tag
+                        ) {
+                          <span
+                            class="badge badge-info tag-badge"
+                            (click)="removeItemTag(item.uuid, tag)"
+                            >{{ tag }}
+                            @if (canEditExplorer) {
+                              ✕
+                            }
+                          </span>
+                        }
+                        @if (canEditExplorer) {
+                          <div class="tag-add-container">
+                            @if (availableTags.length > 0) {
+                              <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
+                                <option value="">+Tag</option>
+                                @for (tag of availableTags; track tag) {
+                                  <option [value]="tag">{{ tag }}</option>
+                                }
+                              </select>
+                            }
+                            <input
+                              type="text"
+                              class="tag-input-inline"
+                              placeholder="Neu..."
+                              (keydown.enter)="addCustomTag(item.uuid, $event)"
+                              (blur)="addCustomTag(item.uuid, $event)"
+                            />
+                          </div>
+                        }
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- RIGHT: Preview -->
+        <div right class="preview-panel">
+          @if (selectedItem) {
+            @if (canEditExplorer) {
+              <div
+                class="preview-target-info card"
+                [class.unavailable]="!canPreviewSelectedItem || !!previewUnavailableReason"
+              >
+                <div class="preview-target-header">
+                  <strong>Explorer-Item</strong>
+                  <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
+                  @if (isItemExcluded(selectedItem)) {
+                    <span class="excluded-item-badge">Ausgeschlossen</span>
+                  }
+                  @if (selectedItemTarget && selectedItemTarget !== selectedPreviewTarget) {
+                    <span class="player-target-badge secondary">
+                      Kodierschema {{ selectedItemTarget }}
+                    </span>
+                  }
+                  @if (selectedPreviewTarget) {
+                    <span class="player-target-badge">Player {{ selectedPreviewTarget }}</span>
+                  } @else {
+                    <span class="player-target-badge unmapped">Kein Player-Ziel</span>
                   }
                 </div>
-              </div>
+                @if (showPlayerTargetInfo) {
+                  @if (
+                    hasStoredPreviewTargetOverride && selectedItemTarget && selectedPreviewTarget
+                  ) {
+                    <p>
+                      Das Item referenziert standardmäßig
+                      <code>{{ selectedItemTarget }}</code
+                      >. Für die Vorschau wird aktuell manuell
+                      <code>{{ selectedPreviewTarget }}</code> verwendet.
+                    </p>
+                  } @else if (
+                    selectedItemUsesDerivedTarget && selectedItemTarget && selectedPreviewTarget
+                  ) {
+                    <p>
+                      Das Item referenziert im Kodierschema die abhängige Variable
+                      <code>{{ selectedItemTarget }}</code
+                      >. Für die Vorschau wird standardmäßig zur Basisvariable
+                      <code>{{ selectedPreviewTarget }}</code> gesprungen.
+                    </p>
+                  } @else if (selectedPreviewTarget && !previewUnavailableReason) {
+                    <p>
+                      Der Listeneintrag springt im Player zur Variable
+                      <code>{{ selectedPreviewTarget }}</code
+                      >.
+                    </p>
+                  } @else if (selectedPreviewTarget) {
+                    <p>
+                      Für diesen Listeneintrag ist die Player-Variable
+                      <code>{{ selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht
+                      zuverlässig in der Unit-Definition aufgelöst werden.
+                    </p>
+                  } @else {
+                    <p>
+                      Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können
+                      unten ein alternatives Sprungziel auswählen oder manuell eintragen.
+                    </p>
+                  }
+                }
 
-              @if (previewUnavailableReason && showPlayerTargetInfo) {
-                <p class="preview-warning">{{ previewUnavailableMessage }}</p>
-              }
-            </div>
-          }
-
-          <!-- Player -->
-          <div
-            class="player-container card"
-            [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
-          >
-            @if (previewUnavailableReason) {
-              <div class="empty-state">
-                <div style="font-size:2.5rem;margin-bottom:12px">🧭</div>
-                <h3>Keine zielgenaue Player-Vorschau</h3>
-                <p>{{ previewUnavailableMessage }}</p>
-              </div>
-            } @else if (isPreviewLoading) {
-              <div class="empty-state">
-                <div class="spinner"></div>
-                <p>Aufgabe wird geladen...</p>
-              </div>
-            } @else if (shouldRenderPlayerFrame) {
-              <iframe
-                #playerFrame
-                [srcdoc]="playerSrcDoc"
-                class="player-iframe"
-                [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
-                [style.height]="playerHeight"
-                sandbox="allow-scripts allow-same-origin allow-downloads"
-                (load)="onPlayerLoaded()"
-              >
-              </iframe>
-            } @else {
-              <div class="empty-state">
-                <div style="font-size:2.5rem;margin-bottom:12px">🎮</div>
-                <h3>Kein Player verfügbar</h3>
-              </div>
-            }
-          </div>
-
-          <!-- Item Navigation -->
-          <div class="item-nav">
-            <button
-              class="btn btn-outline"
-              [disabled]="selectedIndex <= 0"
-              (click)="navigateItem(-1)"
-            >
-              ← Vorheriges Item
-            </button>
-            <span class="item-nav-info"
-              >Item {{ selectedIndex + 1 }} von {{ filteredItems.length }}</span
-            >
-            <button
-              class="btn btn-outline"
-              [disabled]="selectedIndex >= filteredItems.length - 1"
-              (click)="navigateItem(1)"
-            >
-              Nächstes Item →
-            </button>
-          </div>
-
-          <!-- Action Buttons -->
-          <div class="action-buttons">
-            <select
-              class="btn btn-outline btn-sm"
-              [(ngModel)]="pagingMode"
-              (change)="onPagingModeChange()"
-              [disabled]="!canPreviewSelectedItem"
-            >
-              <option value="buttons">Paging: Buttons</option>
-              <option value="separate">Paging: Separate</option>
-              <option value="concat-scroll">Paging: Scroll</option>
-              <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
-              <option value="view-all">Paging: Alles (Print)</option>
-              <option value="print-ids">Paging: Alles + IDs (Print)</option>
-            </select>
-            <button class="btn btn-outline btn-sm" (click)="openCodingOverlay()">
-              📋 Kodierung
-            </button>
-            <button
-              class="btn btn-outline btn-sm"
-              (click)="showMetadataDrawer = !showMetadataDrawer"
-              [class.btn-primary]="showMetadataDrawer"
-            >
-              📄 Metadaten
-            </button>
-            @if (canEditExplorer) {
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="toggleSelectedItemExclusion()"
-                [class.btn-primary]="isItemExcluded(selectedItem)"
-                [title]="
-                  isItemExcluded(selectedItem)
-                    ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
-                    : 'Schließt das Item aus und blendet es standardmäßig aus.'
-                "
-              >
-                {{ isItemExcluded(selectedItem) ? '↩️ Ausschluss aufheben' : '🚫 Item ausschließen' }}
-              </button>
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="saveCurrentResponseState()"
-                title="Aktuellen Zustand speichern"
-              >
-                💾 Zustand speichern
-              </button>
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="resetResponseState()"
-                title="Zustand zurücksetzen"
-                style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
-              >
-                🗑️ Zustand löschen
-              </button>
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="loadAllResponseStates()"
-                title="Alle gespeicherten Daten anzeigen"
-              >
-                👁️ Rohdaten
-              </button>
-            }
-          </div>
-        } @else {
-          <div class="empty-state preview-empty">
-            <div style="font-size:3rem;margin-bottom:16px">👈</div>
-            <h3>Item auswählen</h3>
-            <p>Klicken Sie auf ein Item in der Tabelle, um es hier anzuzeigen.</p>
-          </div>
-        }
-      </div>
-    </app-split-pane>
-
-    <!-- OVERLAY: Coding Scheme -->
-    @if (showOverlay === 'coding') {
-      <div class="overlay-backdrop" (click)="closeCodingOverlay()">
-        <div class="overlay-dialog" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <h2>Kodierung – {{ selectedItem?.unitLabel }}</h2>
-            <button class="btn btn-sm btn-outline" (click)="closeCodingOverlay()">
-              ✕ Schließen
-            </button>
-          </div>
-          <div class="overlay-content">
-            @if (currentCodingSchemeAsText) {
-              <div class="coding-toolbar">
-                <div class="search-container">
-                  <input
-                    class="filter-input"
-                    [(ngModel)]="codingSearchText"
-                    placeholder="🔍 Variablen suchen (ID oder Label)..."
-                  />
-                </div>
-                <div class="sort-actions">
-                  <button
-                    class="btn btn-outline btn-sm"
-                    (click)="toggleCodingSort('id')"
-                    title="Nach ID sortieren"
-                  >
-                    ID {{ getCodingSortIndicator('id') }}
-                  </button>
-                  <button
-                    class="btn btn-outline btn-sm"
-                    (click)="toggleCodingSort('label')"
-                    title="Nach Label sortieren"
-                  >
-                    Label {{ getCodingSortIndicator('label') }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="coding-scheme-view">
-                @for (coding of filteredCodingSchemeAsText; track coding.id) {
-                  <div class="coding-item">
-                    <div class="coding-item-header">
-                      <h4>{{ coding.label || coding.id }}</h4>
-                      <div class="header-tags">
-                        <code class="variable-id">{{ coding.id }}</code>
-                      </div>
+                <div class="preview-target-controls">
+                  @if (showPreviewTargetSelector) {
+                    <div class="preview-target-selector">
+                      <label for="item-explorer-preview-target-select"
+                        >Sprungziel aus Kodierschema</label
+                      >
+                      <select
+                        id="item-explorer-preview-target-select"
+                        class="preview-target-select"
+                        [(ngModel)]="selectedPreviewTargetId"
+                        (ngModelChange)="onPreviewTargetSelectionChange()"
+                      >
+                        <option value="">{{ previewTargetDefaultOptionLabel }}</option>
+                        @for (option of previewTargetOptions; track option.id) {
+                          <option [value]="option.id">{{ option.label }}</option>
+                        }
+                      </select>
+                      <small>
+                        {{ previewTargetOptions.length }} bekannte Variablen aus dem Kodierschema
+                        verfügbar.
+                      </small>
                     </div>
-                    @if ($any(coding).manualInstructionText) {
-                      <div class="global-manual-instruction">
-                        <strong>📖 Variable-Instruktion:</strong>
-                        <div
-                          class="html-content"
-                          [innerHTML]="
-                            sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)
-                          "
-                        ></div>
-                      </div>
-                    }
-                    <div class="codes-list">
-                      @for (code of coding.codes; track code.id) {
-                        <div class="code-row">
-                          <div class="code-main">
-                            <span class="code-id">{{ code.id }}</span>
-                            <span class="code-score">({{ code.score }})</span>
-                            <span class="code-label">{{ code.label }}</span>
-                            @if (code.hasManualInstruction) {
-                              <span class="manual-icon" title="Manuelle Prüfung erforderlich"
-                                >📝</span
-                              >
-                            }
-                          </div>
-                          @if ($any(code).manualInstructionText) {
-                            <div class="code-manual-instruction">
-                              <strong>Instruktion:</strong>
-                              <div
-                                class="html-content"
-                                [innerHTML]="
-                                  sanitizer.bypassSecurityTrustHtml(
-                                    $any(code).manualInstructionText
-                                  )
-                                "
-                              ></div>
-                            </div>
-                          }
-                          @if (code.ruleSetDescriptions.length) {
-                            <ul class="rule-list">
-                              @for (rule of code.ruleSetDescriptions; track rule) {
-                                <li>{{ rule }}</li>
-                              }
-                            </ul>
-                          }
-                        </div>
-                      }
+                  }
+
+                  <div class="preview-target-selector">
+                    <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
+                    <div class="preview-target-custom-row">
+                      <input
+                        id="item-explorer-custom-preview-target"
+                        type="text"
+                        class="preview-target-input"
+                        placeholder="z.B. VAR_12 oder alias_12"
+                        [(ngModel)]="customPreviewTargetDraft"
+                        (keydown.enter)="applyCustomPreviewTarget()"
+                      />
+                      <button class="btn btn-outline btn-sm" (click)="applyCustomPreviewTarget()">
+                        Übernehmen
+                      </button>
                     </div>
+                    <small>
+                      Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden.
+                    </small>
                   </div>
+
+                  <div class="preview-target-actions">
+                    <button
+                      class="btn btn-outline btn-sm"
+                      [disabled]="!hasStoredPreviewTargetOverride"
+                      (click)="resetPreviewTargetSelection()"
+                    >
+                      Standardziel verwenden
+                    </button>
+                    @if (hasStoredPreviewTargetOverride && selectedPreviewTarget) {
+                      <small>
+                        Manueller Override aktiv:
+                        <code>{{ selectedPreviewTarget }}</code>
+                      </small>
+                    }
+                  </div>
+                </div>
+
+                @if (previewUnavailableReason && showPlayerTargetInfo) {
+                  <p class="preview-warning">{{ previewUnavailableMessage }}</p>
                 }
               </div>
-            } @else {
-              <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
             }
-          </div>
-        </div>
-      </div>
-    }
 
-    <!-- DRAWER: Metadata -->
-    <div
-      class="drawer-backdrop"
-      [class.open]="showMetadataDrawer"
-      (click)="showMetadataDrawer = false"
-    >
-      <div
-        class="drawer-container"
-        [class.open]="showMetadataDrawer"
-        (click)="$event.stopPropagation()"
-      >
-        <div class="drawer-header">
-          <div class="drawer-title">
-            <span class="drawer-icon">📄</span>
-            <div>
-              <h3>Metadaten</h3>
-              <small>{{ selectedItem?.unitLabel }}</small>
-            </div>
-          </div>
-          <button class="btn-close" (click)="showMetadataDrawer = false">✕</button>
-        </div>
-        <div class="drawer-content">
-          @if (currentUnitMetadata && currentUnitMetadata.length) {
-            <div class="meta-grid">
-              @for (entry of currentUnitMetadata; track entry.id) {
-                <div class="meta-item">
-                  <div class="meta-label">{{ extractLabel(entry.label) }}</div>
-                  <div class="meta-value">
-                    {{
-                      extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–'
-                    }}
-                  </div>
+            <!-- Player -->
+            <div
+              class="player-container card"
+              [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
+            >
+              @if (previewUnavailableReason) {
+                <div class="empty-state">
+                  <div style="font-size:2.5rem;margin-bottom:12px">🧭</div>
+                  <h3>Keine zielgenaue Player-Vorschau</h3>
+                  <p>{{ previewUnavailableMessage }}</p>
                 </div>
+              } @else if (isPreviewLoading) {
+                <div class="empty-state">
+                  <div class="spinner"></div>
+                  <p>Aufgabe wird geladen...</p>
+                </div>
+              } @else if (shouldRenderPlayerFrame) {
+                <iframe
+                  #playerFrame
+                  [srcdoc]="playerSrcDoc"
+                  class="player-iframe"
+                  [class.view-all-mode]="pagingMode === 'view-all' || pagingMode === 'print-ids'"
+                  [style.height]="playerHeight"
+                  sandbox="allow-scripts allow-same-origin allow-downloads"
+                  (load)="onPlayerLoaded()"
+                >
+                </iframe>
+              } @else {
+                <div class="empty-state">
+                  <div style="font-size:2.5rem;margin-bottom:12px">🎮</div>
+                  <h3>Kein Player verfügbar</h3>
+                </div>
+              }
+            </div>
+
+            <!-- Item Navigation -->
+            <div class="item-nav">
+              <button
+                class="btn btn-outline"
+                [disabled]="selectedIndex <= 0"
+                (click)="navigateItem(-1)"
+              >
+                ← Vorheriges Item
+              </button>
+              <span class="item-nav-info"
+                >Item {{ selectedIndex + 1 }} von {{ filteredItems.length }}</span
+              >
+              <button
+                class="btn btn-outline"
+                [disabled]="selectedIndex >= filteredItems.length - 1"
+                (click)="navigateItem(1)"
+              >
+                Nächstes Item →
+              </button>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+              <select
+                class="btn btn-outline btn-sm"
+                [(ngModel)]="pagingMode"
+                (change)="onPagingModeChange()"
+                [disabled]="!canPreviewSelectedItem"
+              >
+                <option value="buttons">Paging: Buttons</option>
+                <option value="separate">Paging: Separate</option>
+                <option value="concat-scroll">Paging: Scroll</option>
+                <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
+                <option value="view-all">Paging: Alles (Print)</option>
+                <option value="print-ids">Paging: Alles + IDs (Print)</option>
+              </select>
+              <button class="btn btn-outline btn-sm" (click)="openCodingOverlay()">
+                📋 Kodierung
+              </button>
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="showMetadataDrawer = !showMetadataDrawer"
+                [class.btn-primary]="showMetadataDrawer"
+              >
+                📄 Metadaten
+              </button>
+              @if (canEditExplorer) {
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="toggleSelectedItemExclusion()"
+                  [class.btn-primary]="isItemExcluded(selectedItem)"
+                  [title]="
+                    isItemExcluded(selectedItem)
+                      ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
+                      : 'Schließt das Item aus und blendet es standardmäßig aus.'
+                  "
+                >
+                  {{
+                    isItemExcluded(selectedItem) ? '↩️ Ausschluss aufheben' : '🚫 Item ausschließen'
+                  }}
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="saveCurrentResponseState()"
+                  title="Aktuellen Zustand speichern"
+                >
+                  💾 Zustand speichern
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="resetResponseState()"
+                  title="Zustand zurücksetzen"
+                  style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
+                >
+                  🗑️ Zustand löschen
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="loadAllResponseStates()"
+                  title="Alle gespeicherten Daten anzeigen"
+                >
+                  👁️ Rohdaten
+                </button>
               }
             </div>
           } @else {
-            <div class="empty-state">
-              <p>Keine Metadaten für diese Aufgabe verfügbar.</p>
+            <div class="empty-state preview-empty">
+              <div style="font-size:3rem;margin-bottom:16px">👈</div>
+              <h3>Item auswählen</h3>
+              <p>Klicken Sie auf ein Item in der Tabelle, um es hier anzuzeigen.</p>
             </div>
           }
         </div>
-      </div>
-    </div>
+      </app-split-pane>
 
-    <!-- OVERLAY: Upload Report -->
-    @if (showUploadReport) {
-      <div class="overlay-backdrop" (click)="showUploadReport = false">
-        <div class="overlay-dialog" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <h2>Upload Bericht</h2>
-            <button
-              class="btn btn-sm btn-outline"
-              (click)="showUploadReport = false; reloadItems()"
-            >
-              ✕ Schließen
-            </button>
-          </div>
-          <div class="overlay-content">
-            <p>
-              <strong>Zusammenfassung:</strong> {{ uploadResult?.updated }} erfolgreich
-              aktualisiert, {{ uploadResult?.failed?.length || 0 }} fehlgeschlagen.
-            </p>
-
-            @if (uploadResult?.successes?.length) {
-              <div style="margin-top: 16px;">
-                <h3 style="color: #27ae60;">
-                  Erfolgreich aktualisiert ({{ uploadResult!.successes.length }})
-                </h3>
-                <div
-                  style="margin: 8px 0; max-height: 350px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 4px;"
-                >
-                  <table class="table" style="width: 100%; border-collapse: collapse;">
-                    <thead
-                      style="position: sticky; top: 0; background: var(--color-surface); z-index: 1;"
-                    >
-                      <tr>
-                        <th
-                          style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
-                        >
-                          Aufgabe
-                        </th>
-                        <th
-                          style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
-                        >
-                          Item-ID
-                        </th>
-                        <th
-                          style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
-                        >
-                          Wert (est)
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      @for (success of uploadResult!.successes; track $index) {
-                        <tr>
-                          <td
-                            style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
-                          >
-                            <code>{{ success.unitId }}</code>
-                          </td>
-                          <td
-                            style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
-                          >
-                            <code>{{ success.itemId }}</code>
-                          </td>
-                          <td
-                            style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
-                          >
-                            {{ success.value }}
-                          </td>
-                        </tr>
-                      }
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            }
-
-            @if (uploadResult?.failed?.length) {
-              <div style="margin-top: 16px;">
-                <h3 style="color: #e74c3c;">Fehlgeschlagen ({{ uploadResult!.failed.length }})</h3>
-                <div
-                  style="margin: 8px 0; max-height: 250px; overflow-y: auto; background: rgba(231, 76, 60, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.2);"
-                >
-                  <ul
-                    style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem;"
-                  >
-                    @for (fail of uploadResult!.failed; track $index) {
-                      <li>
-                        <code>{{ fail.csvRow }}</code
-                        >: {{ fail.reason }}
-                      </li>
-                    }
-                  </ul>
-                </div>
-                <p class="help-text" style="font-size: 0.8rem; margin-top: 8px;">
-                  Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder
-                  Unit-Item Kombi übereinstimmen).
-                </p>
-              </div>
-            } @else if (uploadResult?.successes?.length) {
-              <p style="color: #27ae60; margin-top: 16px; font-weight: bold;">
-                🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!
-              </p>
-            }
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- OVERLAY: Error Dialog -->
-    @if (showErrorDialog) {
-      <div class="overlay-backdrop" (click)="showErrorDialog = false">
-        <div
-          class="overlay-dialog"
-          style="max-width: 500px; border-top: 4px solid #e74c3c;"
-          (click)="$event.stopPropagation()"
-        >
-          <div class="overlay-header">
-            <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
-              <span>⚠️</span> Upload-Fehler
-            </h2>
-            <button class="btn btn-sm btn-outline" (click)="showErrorDialog = false">✕</button>
-          </div>
-          <div class="overlay-content" style="text-align: center; padding: 24px 16px;">
-            <div style="font-size: 3rem; margin-bottom: 16px;">🚫</div>
-            <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text);">
-              {{ errorMessage }}
-            </p>
-            <div style="margin-top: 24px;">
-              <button class="btn btn-primary" (click)="showErrorDialog = false">Verstanden</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- OVERLAY: Column Manager -->
-    @if (showColumnManager) {
-      <div class="overlay-backdrop" (click)="closeColumnManager()">
-        <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <div class="drawer-title">
-              <span class="drawer-icon" style="background:var(--color-primary)">👁️</span>
-              <div>
-                <h2>Spalten verwalten</h2>
-                <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
-              </div>
-            </div>
-            <button class="btn btn-sm btn-outline" (click)="closeColumnManager()">✕</button>
-          </div>
-          <div class="overlay-content">
-            <div class="column-manager-toolbar">
-              <div class="search-container">
-                <input
-                  class="filter-input"
-                  [(ngModel)]="columnFilterText"
-                  placeholder="🔍 Spalten suchen (Label oder ID)..."
-                />
-              </div>
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="resetToDefault()"
-                [disabled]="!metadataSettings.visible.length"
-              >
-                🔄 Standard
+      <!-- OVERLAY: Coding Scheme -->
+      @if (showOverlay === 'coding') {
+        <div class="overlay-backdrop" (click)="closeCodingOverlay()">
+          <div class="overlay-dialog" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <h2>Kodierung – {{ selectedItem?.unitLabel }}</h2>
+              <button class="btn btn-sm btn-outline" (click)="closeCodingOverlay()">
+                ✕ Schließen
               </button>
             </div>
-
-            <div class="column-grid">
-              @for (col of filteredAllColumns; track col.id) {
-                <div
-                  class="column-tile"
-                  [class.active]="metadataSettings.visible.includes(col.id)"
-                  (click)="toggleColumnVisibility(col)"
-                >
-                  <div class="tile-check">
+            <div class="overlay-content">
+              @if (currentCodingSchemeAsText) {
+                <div class="coding-toolbar">
+                  <div class="search-container">
                     <input
-                      type="checkbox"
-                      [checked]="metadataSettings.visible.includes(col.id)"
-                      (click)="$event.stopPropagation()"
-                      (change)="toggleColumnVisibility(col)"
+                      class="filter-input"
+                      [(ngModel)]="codingSearchText"
+                      placeholder="🔍 Variablen suchen (ID oder Label)..."
                     />
                   </div>
-                  <div class="tile-body">
-                    <span class="tile-label">{{ col.label }}</span>
-                    <span class="tile-id">ID: {{ col.id }}</span>
+                  <div class="sort-actions">
+                    <button
+                      class="btn btn-outline btn-sm"
+                      (click)="toggleCodingSort('id')"
+                      title="Nach ID sortieren"
+                    >
+                      ID {{ getCodingSortIndicator('id') }}
+                    </button>
+                    <button
+                      class="btn btn-outline btn-sm"
+                      (click)="toggleCodingSort('label')"
+                      title="Nach Label sortieren"
+                    >
+                      Label {{ getCodingSortIndicator('label') }}
+                    </button>
                   </div>
-                  @if (metadataSettings.visible.includes(col.id)) {
-                    <div class="tile-actions" (click)="$event.stopPropagation()">
-                      <button
-                        class="btn btn-xs btn-outline"
-                        (click)="moveColumnUp(col)"
-                        [disabled]="metadataSettings.order[0] === col.id"
-                        title="Nach oben"
-                      >
-                        ↑
-                      </button>
-                      <button
-                        class="btn btn-xs btn-outline"
-                        (click)="moveColumnDown(col)"
-                        [disabled]="
-                          metadataSettings.order[metadataSettings.order.length - 1] === col.id
-                        "
-                        title="Nach unten"
-                      >
-                        ↓
-                      </button>
+                </div>
+
+                <div class="coding-scheme-view">
+                  @for (coding of filteredCodingSchemeAsText; track coding.id) {
+                    <div class="coding-item">
+                      <div class="coding-item-header">
+                        <h4>{{ coding.label || coding.id }}</h4>
+                        <div class="header-tags">
+                          <code class="variable-id">{{ coding.id }}</code>
+                        </div>
+                      </div>
+                      @if ($any(coding).manualInstructionText) {
+                        <div class="global-manual-instruction">
+                          <strong>📖 Variable-Instruktion:</strong>
+                          <div
+                            class="html-content"
+                            [innerHTML]="
+                              sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)
+                            "
+                          ></div>
+                        </div>
+                      }
+                      <div class="codes-list">
+                        @for (code of coding.codes; track code.id) {
+                          <div class="code-row">
+                            <div class="code-main">
+                              <span class="code-id">{{ code.id }}</span>
+                              <span class="code-score">({{ code.score }})</span>
+                              <span class="code-label">{{ code.label }}</span>
+                              @if (code.hasManualInstruction) {
+                                <span class="manual-icon" title="Manuelle Prüfung erforderlich"
+                                  >📝</span
+                                >
+                              }
+                            </div>
+                            @if ($any(code).manualInstructionText) {
+                              <div class="code-manual-instruction">
+                                <strong>Instruktion:</strong>
+                                <div
+                                  class="html-content"
+                                  [innerHTML]="
+                                    sanitizer.bypassSecurityTrustHtml(
+                                      $any(code).manualInstructionText
+                                    )
+                                  "
+                                ></div>
+                              </div>
+                            }
+                            @if (code.ruleSetDescriptions.length) {
+                              <ul class="rule-list">
+                                @for (rule of code.ruleSetDescriptions; track rule) {
+                                  <li>{{ rule }}</li>
+                                }
+                              </ul>
+                            }
+                          </div>
+                        }
+                      </div>
                     </div>
                   }
                 </div>
-              }
-              @if (filteredAllColumns.length === 0) {
-                <div class="empty-state">
-                  <p>Keine Spalten gefunden für "{{ columnFilterText }}"</p>
-                </div>
+              } @else {
+                <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
               }
             </div>
+          </div>
+        </div>
+      }
 
-            <div class="column-manager-footer">
-              <div class="selection-info">
-                {{ metadataSettings.visible.length }} von {{ allColumns.length }} Spalten gewählt
+      <!-- DRAWER: Metadata -->
+      <div
+        class="drawer-backdrop"
+        [class.open]="showMetadataDrawer"
+        (click)="showMetadataDrawer = false"
+      >
+        <div
+          class="drawer-container"
+          [class.open]="showMetadataDrawer"
+          (click)="$event.stopPropagation()"
+        >
+          <div class="drawer-header">
+            <div class="drawer-title">
+              <span class="drawer-icon">📄</span>
+              <div>
+                <h3>Metadaten</h3>
+                <small>{{ selectedItem?.unitLabel }}</small>
               </div>
-              <div class="footer-actions">
-                <button class="btn btn-outline" (click)="closeColumnManager()">
+            </div>
+            <button class="btn-close" (click)="showMetadataDrawer = false">✕</button>
+          </div>
+          <div class="drawer-content">
+            @if (currentUnitMetadata && currentUnitMetadata.length) {
+              <div class="meta-grid">
+                @for (entry of currentUnitMetadata; track entry.id) {
+                  <div class="meta-item">
+                    <div class="meta-label">{{ extractLabel(entry.label) }}</div>
+                    <div class="meta-value">
+                      {{
+                        extractValueText(entry.valueAsText) || extractValueText(entry.value) || '–'
+                      }}
+                    </div>
+                  </div>
+                }
+              </div>
+            } @else {
+              <div class="empty-state">
+                <p>Keine Metadaten für diese Aufgabe verfügbar.</p>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- OVERLAY: Upload Report -->
+      @if (showUploadReport) {
+        <div class="overlay-backdrop" (click)="showUploadReport = false">
+          <div class="overlay-dialog" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <h2>Upload Bericht</h2>
+              <button
+                class="btn btn-sm btn-outline"
+                (click)="showUploadReport = false; reloadItems()"
+              >
+                ✕ Schließen
+              </button>
+            </div>
+            <div class="overlay-content">
+              <p>
+                <strong>Zusammenfassung:</strong> {{ uploadResult?.updated }} erfolgreich
+                aktualisiert, {{ uploadResult?.failed?.length || 0 }} fehlgeschlagen.
+              </p>
+
+              @if (uploadResult?.successes?.length) {
+                <div style="margin-top: 16px;">
+                  <h3 style="color: #27ae60;">
+                    Erfolgreich aktualisiert ({{ uploadResult!.successes.length }})
+                  </h3>
+                  <div
+                    style="margin: 8px 0; max-height: 350px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 4px;"
+                  >
+                    <table class="table" style="width: 100%; border-collapse: collapse;">
+                      <thead
+                        style="position: sticky; top: 0; background: var(--color-surface); z-index: 1;"
+                      >
+                        <tr>
+                          <th
+                            style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                          >
+                            Aufgabe
+                          </th>
+                          <th
+                            style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                          >
+                            Item-ID
+                          </th>
+                          <th
+                            style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                          >
+                            Wert (est)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (success of uploadResult!.successes; track $index) {
+                          <tr>
+                            <td
+                              style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                            >
+                              <code>{{ success.unitId }}</code>
+                            </td>
+                            <td
+                              style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                            >
+                              <code>{{ success.itemId }}</code>
+                            </td>
+                            <td
+                              style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                            >
+                              {{ success.value }}
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              }
+
+              @if (uploadResult?.failed?.length) {
+                <div style="margin-top: 16px;">
+                  <h3 style="color: #e74c3c;">
+                    Fehlgeschlagen ({{ uploadResult!.failed.length }})
+                  </h3>
+                  <div
+                    style="margin: 8px 0; max-height: 250px; overflow-y: auto; background: rgba(231, 76, 60, 0.05); padding: 8px; border-radius: 4px; border: 1px solid rgba(231, 76, 60, 0.2);"
+                  >
+                    <ul
+                      style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem;"
+                    >
+                      @for (fail of uploadResult!.failed; track $index) {
+                        <li>
+                          <code>{{ fail.csvRow }}</code
+                          >: {{ fail.reason }}
+                        </li>
+                      }
+                    </ul>
+                  </div>
+                  <p class="help-text" style="font-size: 0.8rem; margin-top: 8px;">
+                    Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder
+                    Unit-Item Kombi übereinstimmen).
+                  </p>
+                </div>
+              } @else if (uploadResult?.successes?.length) {
+                <p style="color: #27ae60; margin-top: 16px; font-weight: bold;">
+                  🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!
+                </p>
+              }
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- OVERLAY: Error Dialog -->
+      @if (showErrorDialog) {
+        <div class="overlay-backdrop" (click)="showErrorDialog = false">
+          <div
+            class="overlay-dialog"
+            style="max-width: 500px; border-top: 4px solid #e74c3c;"
+            (click)="$event.stopPropagation()"
+          >
+            <div class="overlay-header">
+              <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
+                <span>⚠️</span> Upload-Fehler
+              </h2>
+              <button class="btn btn-sm btn-outline" (click)="showErrorDialog = false">✕</button>
+            </div>
+            <div class="overlay-content" style="text-align: center; padding: 24px 16px;">
+              <div style="font-size: 3rem; margin-bottom: 16px;">🚫</div>
+              <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text);">
+                {{ errorMessage }}
+              </p>
+              <div style="margin-top: 24px;">
+                <button class="btn btn-primary" (click)="showErrorDialog = false">
+                  Verstanden
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- OVERLAY: Column Manager -->
+      @if (showColumnManager) {
+        <div class="overlay-backdrop" (click)="closeColumnManager()">
+          <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div class="drawer-title">
+                <span class="drawer-icon" style="background:var(--color-primary)">👁️</span>
+                <div>
+                  <h2>Spalten verwalten</h2>
+                  <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
+                </div>
+              </div>
+              <button class="btn btn-sm btn-outline" (click)="closeColumnManager()">✕</button>
+            </div>
+            <div class="overlay-content">
+              <div class="column-manager-toolbar">
+                <div class="search-container">
+                  <input
+                    class="filter-input"
+                    [(ngModel)]="columnFilterText"
+                    placeholder="🔍 Spalten suchen (Label oder ID)..."
+                  />
+                </div>
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="resetToDefault()"
+                  [disabled]="!metadataSettings.visible.length"
+                >
+                  🔄 Standard
+                </button>
+              </div>
+
+              <div class="column-grid">
+                @for (col of filteredAllColumns; track col.id) {
+                  <div
+                    class="column-tile"
+                    [class.active]="metadataSettings.visible.includes(col.id)"
+                    (click)="toggleColumnVisibility(col)"
+                  >
+                    <div class="tile-check">
+                      <input
+                        type="checkbox"
+                        [checked]="metadataSettings.visible.includes(col.id)"
+                        (click)="$event.stopPropagation()"
+                        (change)="toggleColumnVisibility(col)"
+                      />
+                    </div>
+                    <div class="tile-body">
+                      <span class="tile-label">{{ col.label }}</span>
+                      <span class="tile-id">ID: {{ col.id }}</span>
+                    </div>
+                    @if (metadataSettings.visible.includes(col.id)) {
+                      <div class="tile-actions" (click)="$event.stopPropagation()">
+                        <button
+                          class="btn btn-xs btn-outline"
+                          (click)="moveColumnUp(col)"
+                          [disabled]="metadataSettings.order[0] === col.id"
+                          title="Nach oben"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          class="btn btn-xs btn-outline"
+                          (click)="moveColumnDown(col)"
+                          [disabled]="
+                            metadataSettings.order[metadataSettings.order.length - 1] === col.id
+                          "
+                          title="Nach unten"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                    }
+                  </div>
+                }
+                @if (filteredAllColumns.length === 0) {
+                  <div class="empty-state">
+                    <p>Keine Spalten gefunden für "{{ columnFilterText }}"</p>
+                  </div>
+                }
+              </div>
+
+              <div class="column-manager-footer">
+                <div class="selection-info">
+                  {{ metadataSettings.visible.length }} von {{ allColumns.length }} Spalten gewählt
+                </div>
+                <div class="footer-actions">
+                  <button class="btn btn-outline" (click)="closeColumnManager()">Abbrechen</button>
+                  <button class="btn btn-primary" (click)="saveMetadataSettings()">
+                    💾 Speichern
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+
+      <!-- OVERLAY: Save Response State Confirmation -->
+      @if (showSaveConfirmDialog) {
+        <div class="overlay-backdrop" (click)="!confirmDialogState && closeSaveConfirmDialog()">
+          <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+            <div
+              class="overlay-header"
+              [style.border-top]="
+                confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'
+              "
+            >
+              @if (confirmDialogState === 'saving') {
+                <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                  <span class="spinner-inline"></span> Speichern...
+                </h2>
+              } @else {
+                <h2 style="color: #27ae60; display: flex; align-items: center; gap: 8px;">
+                  <span>💾</span> Zustand speichern
+                </h2>
+              }
+              <button
+                class="btn btn-sm btn-outline"
+                [disabled]="confirmDialogState === 'saving'"
+                (click)="closeSaveConfirmDialog()"
+              >
+                ✕
+              </button>
+            </div>
+            <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+              @if (confirmDialogError) {
+                <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+                <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+              } @else {
+                <div style="font-size: 3rem; margin-bottom: 16px;">💾</div>
+                <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                  Möchten Sie den aktuellen Zustand speichern?
+                </p>
+                <p
+                  style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
+                >
+                  Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+                </p>
+              }
+              <div style="display: flex; gap: 12px; justify-content: center;">
+                <button
+                  class="btn btn-outline"
+                  [disabled]="confirmDialogState === 'saving'"
+                  (click)="closeSaveConfirmDialog()"
+                >
                   Abbrechen
                 </button>
-                <button class="btn btn-primary" (click)="saveMetadataSettings()">
+                <button
+                  class="btn btn-primary"
+                  [disabled]="confirmDialogState === 'saving'"
+                  (click)="confirmSaveResponseState()"
+                >
                   💾 Speichern
                 </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    }
+      }
 
-    <!-- OVERLAY: Save Response State Confirmation -->
-    @if (showSaveConfirmDialog) {
-      <div
-        class="overlay-backdrop"
-        (click)="!confirmDialogState && closeSaveConfirmDialog()"
-      >
-        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
-          <div
-            class="overlay-header"
-            [style.border-top]="
-              confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'
-            "
-          >
-            @if (confirmDialogState === 'saving') {
-              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
-                <span class="spinner-inline"></span> Speichern...
-              </h2>
-            } @else {
-              <h2 style="color: #27ae60; display: flex; align-items: center; gap: 8px;">
-                <span>💾</span> Zustand speichern
-              </h2>
-            }
-            <button
-              class="btn btn-sm btn-outline"
-              [disabled]="confirmDialogState === 'saving'"
-              (click)="closeSaveConfirmDialog()"
+      <!-- OVERLAY: Delete Response State Confirmation -->
+      @if (showDeleteConfirmDialog) {
+        <div class="overlay-backdrop" (click)="!confirmDialogState && closeDeleteConfirmDialog()">
+          <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
+            <div
+              class="overlay-header"
+              [style.border-top]="
+                confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'
+              "
             >
-              ✕
-            </button>
-          </div>
-          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
-            @if (confirmDialogError) {
-              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
-              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
-            } @else {
-              <div style="font-size: 3rem; margin-bottom: 16px;">💾</div>
-              <p style="font-size: 1.1rem; margin-bottom: 8px;">
-                Möchten Sie den aktuellen Zustand speichern?
-              </p>
-              <p
-                style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
-              >
-                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
-              </p>
-            }
-            <div style="display: flex; gap: 12px; justify-content: center;">
+              @if (confirmDialogState === 'deleting') {
+                <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
+                  <span class="spinner-inline"></span> Löschen...
+                </h2>
+              } @else {
+                <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
+                  <span>🗑️</span> Zustand löschen
+                </h2>
+              }
               <button
-                class="btn btn-outline"
-                [disabled]="confirmDialogState === 'saving'"
-                (click)="closeSaveConfirmDialog()"
-              >
-                Abbrechen
-              </button>
-              <button
-                class="btn btn-primary"
-                [disabled]="confirmDialogState === 'saving'"
-                (click)="confirmSaveResponseState()"
-              >
-                💾 Speichern
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    }
-
-    <!-- OVERLAY: Delete Response State Confirmation -->
-    @if (showDeleteConfirmDialog) {
-      <div
-        class="overlay-backdrop"
-        (click)="!confirmDialogState && closeDeleteConfirmDialog()"
-      >
-        <div class="overlay-dialog" style="max-width: 450px;" (click)="$event.stopPropagation()">
-          <div
-            class="overlay-header"
-            [style.border-top]="
-              confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'
-            "
-          >
-            @if (confirmDialogState === 'deleting') {
-              <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px;">
-                <span class="spinner-inline"></span> Löschen...
-              </h2>
-            } @else {
-              <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px;">
-                <span>🗑️</span> Zustand löschen
-              </h2>
-            }
-            <button
-              class="btn btn-sm btn-outline"
-              [disabled]="confirmDialogState === 'deleting'"
-              (click)="closeDeleteConfirmDialog()"
-            >
-              ✕
-            </button>
-          </div>
-          <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
-            @if (confirmDialogError) {
-              <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
-              <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
-            } @else {
-              <div style="font-size: 3rem; margin-bottom: 16px;">🗑️</div>
-              <p style="font-size: 1.1rem; margin-bottom: 8px;">
-                Möchten Sie den gespeicherten Zustand löschen?
-              </p>
-              <p
-                style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
-              >
-                Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
-              </p>
-              <p
-                style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;"
-              >
-                ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
-              </p>
-            }
-            <div style="display: flex; gap: 12px; justify-content: center;">
-              <button
-                class="btn btn-outline"
+                class="btn btn-sm btn-outline"
                 [disabled]="confirmDialogState === 'deleting'"
                 (click)="closeDeleteConfirmDialog()"
               >
-                Abbrechen
+                ✕
               </button>
-              <button
-                class="btn btn-danger"
-                [disabled]="confirmDialogState === 'deleting'"
-                (click)="confirmDeleteResponseState()"
-                style="background: #e74c3c; color: white; border-color: #e74c3c;"
-              >
-                🗑️ Löschen
-              </button>
+            </div>
+            <div class="overlay-content" style="text-align: center; padding: 32px 24px;">
+              @if (confirmDialogError) {
+                <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
+                <p style="color: #e74c3c; margin-bottom: 20px;">{{ confirmDialogError }}</p>
+              } @else {
+                <div style="font-size: 3rem; margin-bottom: 16px;">🗑️</div>
+                <p style="font-size: 1.1rem; margin-bottom: 8px;">
+                  Möchten Sie den gespeicherten Zustand löschen?
+                </p>
+                <p
+                  style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px;"
+                >
+                  Item: <code>{{ selectedItem?.unitId }}{{ selectedItem?.itemId }}</code>
+                </p>
+                <p
+                  style="color: #e74c3c; font-size: 0.85rem; margin-bottom: 24px; background: rgba(231, 76, 60, 0.05); padding: 8px 12px; border-radius: 4px;"
+                >
+                  ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
+                </p>
+              }
+              <div style="display: flex; gap: 12px; justify-content: center;">
+                <button
+                  class="btn btn-outline"
+                  [disabled]="confirmDialogState === 'deleting'"
+                  (click)="closeDeleteConfirmDialog()"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  class="btn btn-danger"
+                  [disabled]="confirmDialogState === 'deleting'"
+                  (click)="confirmDeleteResponseState()"
+                  style="background: #e74c3c; color: white; border-color: #e74c3c;"
+                >
+                  🗑️ Löschen
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    }
+      }
 
-    <!-- OVERLAY: Raw Response State Data -->
-    @if (showRawDataOverlay) {
-      <div class="overlay-backdrop" (click)="closeRawDataOverlay()">
-        <div class="overlay-dialog" style="max-width: 900px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <div class="drawer-title">
-              <span class="drawer-icon" style="background:var(--color-primary)">📊</span>
-              <div>
-                <h2>Gespeicherte Zustände</h2>
-                <small>Alle gespeicherten Response States</small>
+      <!-- OVERLAY: Raw Response State Data -->
+      @if (showRawDataOverlay) {
+        <div class="overlay-backdrop" (click)="closeRawDataOverlay()">
+          <div class="overlay-dialog" style="max-width: 900px;" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div class="drawer-title">
+                <span class="drawer-icon" style="background:var(--color-primary)">📊</span>
+                <div>
+                  <h2>Gespeicherte Zustände</h2>
+                  <small>Alle gespeicherten Response States</small>
+                </div>
               </div>
+              <button class="btn btn-sm btn-outline" (click)="closeRawDataOverlay()">✕</button>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="closeRawDataOverlay()">✕</button>
-          </div>
-          <div class="overlay-content">
-            @if (allResponseStates.length === 0) {
-              <div class="empty-state">
-                <p>Keine gespeicherten Zustände vorhanden.</p>
-              </div>
-            } @else {
-              <div class="state-list">
-                @for (state of allResponseStates; track state.id) {
-                  <div class="state-item">
-                    <div class="state-header">
-                      <code>{{ state.itemId }}</code>
-                      <span class="unit-badge">{{ state.unitId }}</span>
-                      <span class="date">{{ state.updatedAt | date: 'short' }}</span>
+            <div class="overlay-content">
+              @if (allResponseStates.length === 0) {
+                <div class="empty-state">
+                  <p>Keine gespeicherten Zustände vorhanden.</p>
+                </div>
+              } @else {
+                <div class="state-list">
+                  @for (state of allResponseStates; track state.id) {
+                    <div class="state-item">
+                      <div class="state-header">
+                        <code>{{ state.itemId }}</code>
+                        <span class="unit-badge">{{ state.unitId }}</span>
+                        <span class="date">{{ state.updatedAt | date: 'short' }}</span>
+                      </div>
+                      <pre class="json-view">{{ state.responseData | json }}</pre>
                     </div>
-                    <pre class="json-view">{{ state.responseData | json }}</pre>
-                  </div>
-                }
-              </div>
-            }
+                  }
+                </div>
+              }
+            </div>
           </div>
         </div>
-      </div>
-    }
+      }
 
-    <!-- OVERLAY: Explorer Change History -->
-    @if (showHistoryOverlay) {
-      <div class="overlay-backdrop" (click)="closeHistoryOverlay()">
-        <div class="overlay-dialog" style="max-width: 980px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <div class="drawer-title">
-              <span class="drawer-icon" style="background:var(--color-primary)">🕒</span>
-              <div>
-                <h2>Änderungsverlauf</h2>
-                <small>Wer hat wann was geändert</small>
+      <!-- OVERLAY: Explorer Change History -->
+      @if (showHistoryOverlay) {
+        <div class="overlay-backdrop" (click)="closeHistoryOverlay()">
+          <div class="overlay-dialog" style="max-width: 980px;" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div class="drawer-title">
+                <span class="drawer-icon" style="background:var(--color-primary)">🕒</span>
+                <div>
+                  <h2>Änderungsverlauf</h2>
+                  <small>Wer hat wann was geändert</small>
+                </div>
               </div>
+              <button class="btn btn-sm btn-outline" (click)="closeHistoryOverlay()">✕</button>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="closeHistoryOverlay()">✕</button>
-          </div>
-          <div class="overlay-content">
-            <div class="column-manager-toolbar">
-              <input
-                class="filter-input"
-                [(ngModel)]="historyFilterUser"
-                placeholder="Nach Nutzer filtern..."
-              />
-              <input
-                class="filter-input"
-                [(ngModel)]="historyFilterType"
-                placeholder="Nach Aktion filtern..."
-              />
-              <input
-                class="filter-input"
-                type="date"
-                [(ngModel)]="historyFilterFrom"
-                title="Von Datum"
-              />
-              <input
-                class="filter-input"
-                type="date"
-                [(ngModel)]="historyFilterTo"
-                title="Bis Datum"
-              />
-              <button class="btn btn-outline btn-sm" (click)="showHistory()">Aktualisieren</button>
-              <button
-                class="btn btn-outline btn-sm"
-                [disabled]="filteredHistoryEntries.length === 0"
-                (click)="exportHistoryCsv()"
-              >
-                Export CSV
-              </button>
-            </div>
-            @if (historyLoading) {
-              <div class="empty-state">
-                <div class="spinner"></div>
-                <p>Verlauf wird geladen...</p>
+            <div class="overlay-content">
+              <div class="column-manager-toolbar">
+                <input
+                  class="filter-input"
+                  [(ngModel)]="historyFilterUser"
+                  placeholder="Nach Nutzer filtern..."
+                />
+                <input
+                  class="filter-input"
+                  [(ngModel)]="historyFilterType"
+                  placeholder="Nach Aktion filtern..."
+                />
+                <input
+                  class="filter-input"
+                  type="date"
+                  [(ngModel)]="historyFilterFrom"
+                  title="Von Datum"
+                />
+                <input
+                  class="filter-input"
+                  type="date"
+                  [(ngModel)]="historyFilterTo"
+                  title="Bis Datum"
+                />
+                <button class="btn btn-outline btn-sm" (click)="showHistory()">
+                  Aktualisieren
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  [disabled]="filteredHistoryEntries.length === 0"
+                  (click)="exportHistoryCsv()"
+                >
+                  Export CSV
+                </button>
               </div>
-            } @else if (historyError) {
-              <div class="empty-state">
-                <p>{{ historyError }}</p>
-              </div>
-            } @else if (filteredHistoryEntries.length === 0) {
-              <div class="empty-state">
-                <p>Keine Änderungen gefunden.</p>
-              </div>
-            } @else {
-              <div class="state-list">
-                @for (entry of filteredHistoryEntries; track entry.id) {
-                  <div class="state-item">
-                    <div class="state-header">
-                      <strong>{{ entry.changeType }}</strong>
-                      <span class="unit-badge">{{ entry.actorRole || 'unbekannt' }}</span>
-                      <span>{{ entry.actorUsername || 'unbekannt' }}</span>
-                      <span class="date">{{ entry.createdAt | date: 'short' }}</span>
+              @if (historyLoading) {
+                <div class="empty-state">
+                  <div class="spinner"></div>
+                  <p>Verlauf wird geladen...</p>
+                </div>
+              } @else if (historyError) {
+                <div class="empty-state">
+                  <p>{{ historyError }}</p>
+                </div>
+              } @else if (filteredHistoryEntries.length === 0) {
+                <div class="empty-state">
+                  <p>Keine Änderungen gefunden.</p>
+                </div>
+              } @else {
+                <div class="state-list">
+                  @for (entry of filteredHistoryEntries; track entry.id) {
+                    <div class="state-item">
+                      <div class="state-header">
+                        <strong>{{ entry.changeType }}</strong>
+                        <span class="unit-badge">{{ entry.actorRole || 'unbekannt' }}</span>
+                        <span>{{ entry.actorUsername || 'unbekannt' }}</span>
+                        <span class="date">{{ entry.createdAt | date: 'short' }}</span>
+                      </div>
+                      <pre class="json-view">{{ entry.diff | json }}</pre>
                     </div>
-                    <pre class="json-view">{{ entry.diff | json }}</pre>
-                  </div>
-                }
-              </div>
-            }
+                  }
+                </div>
+              }
+            </div>
           </div>
         </div>
-      </div>
-    }
+      }
 
-    <!-- OVERLAY: Save Draft Preview -->
+      <!-- OVERLAY: Save Draft Preview -->
       @if (showSavePreviewDialog) {
         <div class="overlay-backdrop" (click)="cancelSavePreviewDialog()">
           <div class="overlay-dialog" style="max-width: 700px;" (click)="$event.stopPropagation()">
@@ -2586,6 +2640,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   isAcpManager = false;
   canEditExplorer = false;
   canPublishExplorer = false;
+  hasExplorerEditPermission = false;
+  hasExplorerPublishPermission = false;
+  viewPerspective: ItemExplorerPerspective = 'editor';
+  perspectiveSwitchBusy = false;
   showColumnManager = false;
   allColumns: MetadataColumn[] = [];
   metadataSettings: MetadataSettings = { visible: [], order: [] };
@@ -2598,6 +2656,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   explorerPublishedVersion = 1;
   lastExplorerChangeInfo = '';
   latestExplorerState: ItemExplorerStateEnvelope | null = null;
+  itemListError = '';
 
   // History
   showHistoryOverlay = false;
@@ -2640,6 +2699,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
   previewUnavailableReason = '';
+  previewUserFacingMessage = '';
   selectedPreviewTargetId = '';
   customPreviewTargetDraft = '';
   private previewTargetResolution: PreviewTargetResolution = {
@@ -2730,6 +2790,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.canEditExplorer && this.itemExplorerPlayerTargetInfoEnabled;
   }
 
+  get isReadOnlyPreview(): boolean {
+    return this.viewPerspective === 'read-only';
+  }
+
+  get canToggleReadOnlyPreview(): boolean {
+    return this.hasExplorerEditPermission;
+  }
+
+  get showReadOnlyPreviewBanner(): boolean {
+    return this.isReadOnlyPreview && this.hasExplorerEditPermission;
+  }
+
   get showExplorerDraftStatus(): boolean {
     return this.canEditExplorer;
   }
@@ -2744,6 +2816,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   get previewUnavailableMessage(): string {
     if (!this.previewUnavailableReason) return '';
+    if (this.previewUserFacingMessage) return this.previewUserFacingMessage;
     if (this.showPlayerTargetInfo) return this.previewUnavailableReason;
     return 'Für dieses Item ist keine zielgenaue Player-Vorschau verfügbar.';
   }
@@ -2890,8 +2963,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         fc.enableItemExplorerConditionalVisibility === true;
       this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
-      this.showOnlyItemsWithEmpiricalDifficulty =
-        fc.showOnlyItemsWithEmpiricalDifficulty === true;
+      this.showOnlyItemsWithEmpiricalDifficulty = fc.showOnlyItemsWithEmpiricalDifficulty === true;
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
@@ -2907,21 +2979,46 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Reload Items ---
   reloadItems() {
+    this.itemListError = '';
+
     // Load item list from .vomd files
-    this.api.getFileItemList(this.acpId).subscribe((result) => {
-      this.allColumns = result.columns || [];
-      this.columns = this.filterVisibleColumns(this.allColumns);
-      this.items = result.items || [];
-      this.hydrateItemTagsFromItems();
-      this.applyExplorerStateToItems();
-      this.hasEmpiricalDifficulty = this.items.some(
-        (item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
-      );
-      this.filteredItems = [...this.items];
-      this.unitMetadataCache = result.unitMetadata || {};
-      this.codingSchemeCache = result.codingSchemes || {};
-      this.applyFilter(false); // re-apply current filters and sort
-    });
+    this.api
+      .getFileItemList(this.acpId, {
+        perspective: this.getPerspectiveForViewerRequests(),
+      })
+      .subscribe({
+        next: (result) => {
+          this.allColumns = result.columns || [];
+          this.columns = this.filterVisibleColumns(this.allColumns);
+          this.items = result.items || [];
+          this.hydrateItemTagsFromItems();
+          this.applyExplorerStateToItems();
+          this.hasEmpiricalDifficulty = this.items.some(
+            (item: any) =>
+              item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
+          );
+          this.filteredItems = [...this.items];
+          this.unitMetadataCache = result.unitMetadata || {};
+          this.codingSchemeCache = result.codingSchemes || {};
+          this.applyFilter(false); // re-apply current filters and sort
+        },
+        error: (error) => {
+          console.error('Failed to load explorer item list', error);
+          this.itemListError =
+            error?.status === 403
+              ? this.getItemListAccessMessage()
+              : 'Die Item-Liste konnte nicht geladen werden.';
+          this.allColumns = [];
+          this.columns = [];
+          this.items = [];
+          this.filteredItems = [];
+          this.itemTags = {};
+          this.hasEmpiricalDifficulty = false;
+          this.unitMetadataCache = {};
+          this.codingSchemeCache = {};
+          this.clearSelectedItem();
+        },
+      });
   }
 
   ngOnDestroy() {
@@ -3355,6 +3452,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.playerHtmlLoadState = 'idle';
     this.definitionLoadState = 'idle';
     this.playerFrameRefreshPending = false;
+    this.previewUserFacingMessage = '';
   }
 
   // --- Item Selection ---
@@ -3422,35 +3520,44 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.definitionLoadState = 'idle';
     this.loadResponseStateForItem(item, token);
 
-    this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
-      next: (u: any) => {
-        if (token !== this.unitLoadToken) return;
-        this.unit = u;
-        this.loadingUnit = false;
+    this.api
+      .getFileUnitView(this.acpId, item.unitId, {
+        perspective: this.getPerspectiveForViewerRequests(),
+      })
+      .subscribe({
+        next: (u: any) => {
+          if (token !== this.unitLoadToken) return;
+          this.unit = u;
+          this.loadingUnit = false;
 
-        if (!u) {
-          this.playerHtmlLoadState = 'missing';
-          this.definitionLoadState = 'missing';
-          return;
-        }
+          if (!u) {
+            this.playerHtmlLoadState = 'missing';
+            this.definitionLoadState = 'missing';
+            return;
+          }
 
-        const deps = (u.dependencies || []).map((d: any) => ({
-          ...d,
-          downloadUrl: this.api.appendAuthToken(d.downloadUrl),
-        }));
-        u.dependencies = deps;
-        this.playerHtmlLoadState = 'loading';
-        this.definitionLoadState = 'loading';
-        this.loadPlayerHtml(deps, token);
-        this.loadDefinition(deps, token);
-      },
-      error: () => {
-        if (token !== this.unitLoadToken) return;
-        this.loadingUnit = false;
-        this.playerHtmlLoadState = 'error';
-        this.definitionLoadState = 'error';
-      },
-    });
+          const deps = (u.dependencies || []).map((d: any) => ({
+            ...d,
+            downloadUrl: this.api.appendAuthToken(d.downloadUrl),
+          }));
+          u.dependencies = deps;
+          this.playerHtmlLoadState = 'loading';
+          this.definitionLoadState = 'loading';
+          this.loadPlayerHtml(deps, token);
+          this.loadDefinition(deps, token);
+        },
+        error: (error) => {
+          if (token !== this.unitLoadToken) return;
+          this.loadingUnit = false;
+          this.playerHtmlLoadState = 'error';
+          this.definitionLoadState = 'error';
+          this.previewUserFacingMessage =
+            error?.status === 403
+              ? this.getUnitViewAccessMessage()
+              : 'Die Aufgaben-Vorschau konnte nicht geladen werden.';
+          this.previewUnavailableReason = this.previewUserFacingMessage;
+        },
+      });
   }
 
   private loadResponseStateForItem(item: ExplorerItem, token: number) {
@@ -3750,9 +3857,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       .then((html) => {
         if (token !== this.unitLoadToken) return;
         this.playerHtmlLoadState = 'ready';
-        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
-          rewriteGeoGebraAssetUrls(html),
-        );
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(rewriteGeoGebraAssetUrls(html));
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;
@@ -3820,8 +3925,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       previewTarget,
     );
     if (!targetLocation) {
-      this.previewUnavailableReason =
-        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
+      this.previewUnavailableReason = `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
       return;
     }
     const startPage = targetLocation.scrollPageIndex;
@@ -4018,7 +4122,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     const resolvedItemTarget = this.getCodingVariableId(selectedCodingVariable, itemTarget);
-    const derivedOptions = this.collectBasePreviewTargetOptions(selectedCodingVariable, variableLookup);
+    const derivedOptions = this.collectBasePreviewTargetOptions(
+      selectedCodingVariable,
+      variableLookup,
+    );
     const isDerived = this.isDerivedCodingVariable(selectedCodingVariable);
     const defaultTargetId =
       isDerived && derivedOptions.length ? derivedOptions[0].id : resolvedItemTarget;
@@ -4183,7 +4290,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private getCodingVariableSourceType(variable: any): string {
-    const sourceType = String(variable?.sourceType || '').trim().toUpperCase();
+    const sourceType = String(variable?.sourceType || '')
+      .trim()
+      .toUpperCase();
     return sourceType || 'BASE';
   }
 
@@ -4289,7 +4398,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private getExistingItemStateKey(item?: ExplorerItem | null): string {
     if (!item) return '';
 
-    const activeState = this.latestExplorerState?.activeState;
+    const activeState = this.getExplorerStateForCurrentPerspective();
     const itemProperties = this.isRecord(activeState?.itemProperties)
       ? (activeState.itemProperties as Record<string, Record<string, unknown>>)
       : {};
@@ -4592,8 +4701,83 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // --- Metadata Column Management ---
   checkUserRole() {
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
-    this.canEditExplorer = this.isAcpManager || this.authService.isAdmin;
-    this.canPublishExplorer = this.canEditExplorer;
+    this.hasExplorerEditPermission = this.isAcpManager || this.authService.isAdmin;
+    this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
+    if (!this.hasExplorerEditPermission) {
+      this.viewPerspective = 'read-only';
+    }
+    this.syncEffectiveExplorerPermissions();
+  }
+
+  async toggleReadOnlyPreview() {
+    if (!this.canToggleReadOnlyPreview || this.perspectiveSwitchBusy || !this.latestExplorerState) {
+      return;
+    }
+
+    const nextPerspective: ItemExplorerPerspective = this.isReadOnlyPreview
+      ? 'editor'
+      : 'read-only';
+
+    if (nextPerspective === 'read-only') {
+      const flushed = await this.flushDraftPatch();
+      if (!flushed) {
+        return;
+      }
+    }
+
+    this.perspectiveSwitchBusy = true;
+    this.viewPerspective = nextPerspective;
+    this.syncEffectiveExplorerPermissions();
+    this.itemListError = '';
+
+    if (this.latestExplorerState) {
+      this.applySharedExplorerEnvelope(this.latestExplorerState);
+    }
+
+    await this.loadSharedExplorerState();
+    this.reloadItems();
+    this.perspectiveSwitchBusy = false;
+  }
+
+  private syncEffectiveExplorerPermissions() {
+    const inEditorPerspective = this.viewPerspective === 'editor';
+    this.canEditExplorer = this.hasExplorerEditPermission && inEditorPerspective;
+    this.canPublishExplorer = this.hasExplorerPublishPermission && inEditorPerspective;
+  }
+
+  private getExplorerStateForCurrentPerspective(
+    envelope: ItemExplorerStateEnvelope | null = this.latestExplorerState,
+  ): ItemExplorerSharedState | Record<string, unknown> {
+    if (!envelope) {
+      return {};
+    }
+
+    const stateCandidate =
+      envelope.canEdit && this.viewPerspective === 'editor'
+        ? envelope.draftState
+        : envelope.publishedState;
+
+    if (this.isRecord(stateCandidate)) {
+      return stateCandidate;
+    }
+
+    if (this.isRecord(envelope.activeState)) {
+      return envelope.activeState;
+    }
+
+    return {};
+  }
+
+  private getPerspectiveForViewerRequests(): ItemExplorerPerspective {
+    return this.isReadOnlyPreview || !this.hasExplorerEditPermission ? 'read-only' : 'editor';
+  }
+
+  private getItemListAccessMessage(): string {
+    return 'Die Item-Liste ist für diese Ansicht nicht freigegeben.';
+  }
+
+  private getUnitViewAccessMessage(): string {
+    return 'Die Aufgaben-Vorschau ist für diese Ansicht nicht freigegeben.';
   }
 
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
@@ -4868,14 +5052,18 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.latestExplorerState = envelope;
     this.explorerVersion = envelope.version;
     this.explorerPublishedVersion = envelope.publishedVersion;
-    this.canEditExplorer = envelope.canEdit;
-    this.canPublishExplorer = envelope.canPublish;
+    this.hasExplorerEditPermission = envelope.canEdit;
+    this.hasExplorerPublishPermission = envelope.canPublish;
+    if (!this.hasExplorerEditPermission) {
+      this.viewPerspective = 'read-only';
+    }
+    this.syncEffectiveExplorerPermissions();
 
     const roleLabel = envelope.updatedByRole ? ` (${envelope.updatedByRole})` : '';
     const username = envelope.updatedByUsername || 'unbekannt';
     this.lastExplorerChangeInfo = `${username}${roleLabel} · ${new Date(envelope.updatedAt).toLocaleString()}`;
 
-    const activeState = this.isRecord(envelope.activeState) ? envelope.activeState : {};
+    const activeState = this.getExplorerStateForCurrentPerspective(envelope);
     this.suppressDraftPatch = true;
     try {
       this.applyUiPreferences((activeState as ItemExplorerSharedState).ui);
@@ -4893,7 +5081,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.suppressDraftPatch = false;
     }
 
-    const previousPreviewTarget = this.selectedItem ? this.getEffectivePlayerTarget(this.selectedItem) : '';
+    const previousPreviewTarget = this.selectedItem
+      ? this.getEffectivePlayerTarget(this.selectedItem)
+      : '';
     this.applyExplorerStateToItems();
     if (this.selectedItem) {
       this.syncPreviewTargetResolution(this.selectedItem);
@@ -4930,7 +5120,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private applyExplorerStateToItems() {
-    const activeState = this.latestExplorerState?.activeState;
+    const activeState = this.getExplorerStateForCurrentPerspective();
     if (!activeState || this.items.length === 0) {
       return;
     }

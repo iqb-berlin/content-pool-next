@@ -18,6 +18,7 @@ function createComponent(options?: {
   getFocusIdentifiers?: (definition: string, variableId: string) => string[];
   stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
+  authService?: Record<string, unknown>;
 }) {
   const route = { snapshot: { paramMap: { get: () => 'acp-1' } } };
   const router = { navigate: () => Promise.resolve(true) };
@@ -39,12 +40,15 @@ function createComponent(options?: {
             };
       }),
     getFocusIdentifiers:
-      options?.getFocusIdentifiers ||
-      ((_definition: string, variableId: string) => [variableId]),
+      options?.getFocusIdentifiers || ((_definition: string, variableId: string) => [variableId]),
     stripConditionalVisibility:
       options?.stripConditionalVisibility || ((definition: string) => definition),
   };
-  const authService = {};
+  const authService = {
+    hasAcpRole: () => false,
+    isAdmin: false,
+    ...(options?.authService || {}),
+  };
 
   return new ItemExplorerComponent(
     route as any,
@@ -54,6 +58,54 @@ function createComponent(options?: {
     voudService as any,
     authService as any,
   );
+}
+
+function createExplorerEnvelope(
+  overrides?: Partial<{
+    canEdit: boolean;
+    canPublish: boolean;
+    status: 'CLEAN' | 'DIRTY';
+    publishedFilterText: string;
+    draftFilterText: string;
+  }>,
+) {
+  const canEdit = overrides?.canEdit ?? true;
+  const canPublish = overrides?.canPublish ?? true;
+  const status = overrides?.status ?? 'DIRTY';
+  const publishedFilterText = overrides?.publishedFilterText ?? 'published';
+  const draftFilterText = overrides?.draftFilterText ?? 'draft';
+
+  return {
+    status,
+    version: 3,
+    publishedVersion: 2,
+    canEdit,
+    canPublish,
+    updatedAt: '2026-04-22T10:00:00.000Z',
+    updatedByUsername: 'alice',
+    updatedByRole: 'ACP_MANAGER',
+    activeState: {
+      ui: { filterText: draftFilterText },
+      tags: {},
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: {},
+    },
+    publishedState: {
+      ui: { filterText: publishedFilterText },
+      tags: {},
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: {},
+    },
+    draftState: {
+      ui: { filterText: draftFilterText },
+      tags: {},
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: {},
+    },
+  } as any;
 }
 
 describe('ItemExplorerComponent', () => {
@@ -576,7 +628,8 @@ describe('ItemExplorerComponent', () => {
     const realVoudService = new VoudService();
     const component = createComponent({
       getStartPage: realVoudService.getStartPage.bind(realVoudService),
-      resolvePlayerTargetLocation: realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
+      resolvePlayerTargetLocation:
+        realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
     });
     const postMessage = vi.fn();
 
@@ -652,7 +705,8 @@ describe('ItemExplorerComponent', () => {
     const realVoudService = new VoudService();
     const component = createComponent({
       getStartPage: realVoudService.getStartPage.bind(realVoudService),
-      resolvePlayerTargetLocation: realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
+      resolvePlayerTargetLocation:
+        realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
     });
     const postMessage = vi.fn();
 
@@ -838,6 +892,90 @@ describe('ItemExplorerComponent', () => {
     component.canEditExplorer = true;
 
     expect(component.showExplorerKeyboardHints).toBe(true);
+  });
+
+  it('switches to the published explorer state in read-only preview mode', async () => {
+    const envelope = createExplorerEnvelope();
+    const getItemExplorerState = vi.fn(() => of(envelope));
+    const getFileItemList = vi.fn(() =>
+      of({ columns: [], items: [], unitMetadata: {}, codingSchemes: {} }),
+    );
+    const component = createComponent({
+      api: {
+        getItemExplorerState,
+        getFileItemList,
+      },
+    });
+    component.acpId = 'acp-1';
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+    expect(component.filterText).toBe('draft');
+
+    const flushDraftPatch = vi.fn().mockResolvedValue(true);
+    (component as any).flushDraftPatch = flushDraftPatch;
+
+    await component.toggleReadOnlyPreview();
+
+    expect(flushDraftPatch).toHaveBeenCalledTimes(1);
+    expect(component.isReadOnlyPreview).toBe(true);
+    expect(component.canEditExplorer).toBe(false);
+    expect(component.filterText).toBe('published');
+    expect(getItemExplorerState).toHaveBeenCalledWith('acp-1');
+    expect(getFileItemList).toHaveBeenCalledWith('acp-1', {
+      perspective: 'read-only',
+    });
+  });
+
+  it('switches back to the draft explorer state when leaving read-only preview mode', async () => {
+    const envelope = createExplorerEnvelope();
+    const getItemExplorerState = vi.fn(() => of(envelope));
+    const getFileItemList = vi.fn(() =>
+      of({ columns: [], items: [], unitMetadata: {}, codingSchemes: {} }),
+    );
+    const component = createComponent({
+      api: {
+        getItemExplorerState,
+        getFileItemList,
+      },
+    });
+    component.acpId = 'acp-1';
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+    (component as any).flushDraftPatch = vi.fn().mockResolvedValue(true);
+
+    await component.toggleReadOnlyPreview();
+    await component.toggleReadOnlyPreview();
+
+    expect(component.isReadOnlyPreview).toBe(false);
+    expect(component.canEditExplorer).toBe(true);
+    expect(component.filterText).toBe('draft');
+    expect(getFileItemList).toHaveBeenLastCalledWith('acp-1', {
+      perspective: 'editor',
+    });
+  });
+
+  it('does not enter read-only preview when the pending draft patch cannot be flushed', async () => {
+    const envelope = createExplorerEnvelope();
+    const getItemExplorerState = vi.fn(() => of(envelope));
+    const getFileItemList = vi.fn(() =>
+      of({ columns: [], items: [], unitMetadata: {}, codingSchemes: {} }),
+    );
+    const component = createComponent({
+      api: {
+        getItemExplorerState,
+        getFileItemList,
+      },
+    });
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+    (component as any).flushDraftPatch = vi.fn().mockResolvedValue(false);
+
+    await component.toggleReadOnlyPreview();
+
+    expect(component.isReadOnlyPreview).toBe(false);
+    expect(component.canEditExplorer).toBe(true);
+    expect(getItemExplorerState).not.toHaveBeenCalled();
+    expect(getFileItemList).not.toHaveBeenCalled();
   });
 
   it('hides player target diagnostics when the ACP flag is disabled', () => {
@@ -1291,13 +1429,10 @@ describe('ItemExplorerComponent', () => {
     component.customPreviewTargetDraft = 'BASE_A';
     component.applyCustomPreviewTarget();
 
-    expect(getResponseStateWithFallback).toHaveBeenCalledWith(
-      'acp-1',
-      'ITEM_9',
-      'UNIT_9',
-      [],
-    );
-    expect(getFileUnitView).toHaveBeenCalledWith('acp-1', 'UNIT_9');
+    expect(getResponseStateWithFallback).toHaveBeenCalledWith('acp-1', 'ITEM_9', 'UNIT_9', []);
+    expect(getFileUnitView).toHaveBeenCalledWith('acp-1', 'UNIT_9', {
+      perspective: 'read-only',
+    });
   });
 
   it('uses a generic preview warning when diagnostics are hidden', () => {

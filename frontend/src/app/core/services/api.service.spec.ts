@@ -190,9 +190,7 @@ describe('ApiService', () => {
         expect(settings.geoGebraBundle).toBeNull();
       });
 
-      expect(httpClientMock.delete).toHaveBeenCalledWith(
-        '/api/admin/settings/geogebra-bundle',
-      );
+      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/admin/settings/geogebra-bundle');
     });
   });
 
@@ -312,10 +310,9 @@ describe('ApiService', () => {
         expect(job).toEqual({ id: 'job-1', status: 'pending' });
       });
 
-      expect(httpClientMock.post).toHaveBeenCalledWith(
-        '/api/acp/acp1/files/bulk-download/jobs',
-        { fileIds: ['file1', 'file2'] },
-      );
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/files/bulk-download/jobs', {
+        fileIds: ['file1', 'file2'],
+      });
     });
 
     it('should request a ZIP archive for all or selected files', () => {
@@ -359,14 +356,11 @@ describe('ApiService', () => {
         expect(result).toEqual(event);
       });
 
-      expect(httpClientMock.get).toHaveBeenCalledWith(
-        '/api/acp/acp1/files/jobs/job-1/archive',
-        {
-          observe: 'events',
-          reportProgress: true,
-          responseType: 'blob',
-        },
-      );
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/files/jobs/job-1/archive', {
+        observe: 'events',
+        reportProgress: true,
+        responseType: 'blob',
+      });
     });
 
     it('should upload files without conflict strategy query', () => {
@@ -507,6 +501,32 @@ describe('ApiService', () => {
       });
 
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/files/file1/preview');
+    });
+
+    it('should request explorer item list with read-only perspective when provided', () => {
+      httpClientMock.get.mockReturnValue(of({ items: [] }));
+
+      service.getFileItemList('acp1', { perspective: 'read-only' }).subscribe((result) => {
+        expect(result).toEqual({ items: [] });
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/item-list?perspective=read-only',
+      );
+    });
+
+    it('should request explorer unit view with read-only perspective when provided', () => {
+      httpClientMock.get.mockReturnValue(of({ unitId: 'unit-1' }));
+
+      service
+        .getFileUnitView('acp1', 'unit-1', { perspective: 'read-only' })
+        .subscribe((result) => {
+          expect(result).toEqual({ unitId: 'unit-1' });
+        });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/unit-view/unit-1?perspective=read-only',
+      );
     });
   });
 

@@ -77,138 +77,157 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
     ConfirmDialogComponent,
   ],
   template: `
-    <app-breadcrumb [items]="breadcrumbs" />
+    <div #explorerRoot class="explorer-shell">
+      @if (!isFullscreen) {
+        <app-breadcrumb [items]="breadcrumbs" />
+      }
 
-    <div class="explorer-header">
-      <h1>Item-Explorer</h1>
-      <div class="header-actions">
-        <span class="item-count"
-          >{{ filteredItems.length }} von {{ visibleItemsCount }} Items</span
-        >
-        @if (canEditExplorer) {
-          <input
-            type="file"
-            #csvUploadInput
-            style="display: none"
-            accept=".csv"
-            (change)="onCsvFileSelected($event)"
-          />
-          <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
-            📄 Item-Schwierigkeiten (CSV) hochladen
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
-            (click)="openClearEmpiricalDifficultiesDialog()"
-            title="Alle Itemschwierigkeiten löschen"
-          >
-            🗑️ Werte bereinigen
-          </button>
-          <button class="btn btn-outline btn-sm" (click)="openColumnManager()">
-            👁️ Spalten verwalten
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            (click)="enableManualOrderMode()"
-            [class.btn-primary]="sortField === '__manual__'"
-          >
-            ↕️ Reihenfolge
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            [disabled]="!selectedItem || sortField !== '__manual__'"
-            (click)="moveSelectedItem(-1)"
-          >
-            ↑
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            [disabled]="!selectedItem || sortField !== '__manual__'"
-            (click)="moveSelectedItem(1)"
-          >
-            ↓
-          </button>
-          <button class="btn btn-outline btn-sm" (click)="showHistory()">
-            🕒 Änderungsverlauf
-          </button>
-        }
-      </div>
-    </div>
-
-    @if (showExplorerDraftStatus) {
-      <div class="card explorer-status-bar">
-        <div class="status-main">
-          <strong>Status:</strong>
-          <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{
-            explorerStatusLabel
-          }}</span>
-          <span class="status-meta"
-            >v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span
-          >
-          @if (lastExplorerChangeInfo) {
-            <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
-          }
+      <div class="explorer-header">
+        <div class="header-title">
+          <h1>Item-Explorer</h1>
         </div>
-        <div class="status-actions">
-          @if (canPublishExplorer) {
-            <button
-              class="btn btn-primary btn-sm"
-              [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
-              (click)="openSavePreviewDialog()"
-            >
-              💾 Speichern
+        <div class="header-actions">
+          <span class="item-count"
+            >{{ filteredItems.length }} von {{ visibleItemsCount }} Items</span
+          >
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            (click)="toggleFullscreen()"
+            [class.btn-primary]="isFullscreen"
+            [attr.aria-pressed]="isFullscreen"
+            [title]="
+              isFullscreen
+                ? 'Vollbild verlassen (auch mit Esc)'
+                : 'Item-Explorer im Vollbild anzeigen'
+            "
+          >
+            {{ isFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
+          </button>
+          @if (canEditExplorer) {
+            <input
+              type="file"
+              #csvUploadInput
+              style="display: none"
+              accept=".csv"
+              (change)="onCsvFileSelected($event)"
+            />
+            <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
+              📄 Item-Schwierigkeiten (CSV) hochladen
             </button>
             <button
               class="btn btn-outline btn-sm"
-              [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
-              (click)="openDiscardExplorerDraftDialog()"
+              style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4);"
+              (click)="openClearEmpiricalDifficultiesDialog()"
+              title="Alle Itemschwierigkeiten löschen"
             >
-              ↩️ Verwerfen
+              🗑️ Werte bereinigen
+            </button>
+            <button class="btn btn-outline btn-sm" (click)="openColumnManager()">
+              👁️ Spalten verwalten
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="enableManualOrderMode()"
+              [class.btn-primary]="sortField === '__manual__'"
+            >
+              ↕️ Reihenfolge
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              [disabled]="!selectedItem || sortField !== '__manual__'"
+              (click)="moveSelectedItem(-1)"
+            >
+              ↑
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              [disabled]="!selectedItem || sortField !== '__manual__'"
+              (click)="moveSelectedItem(1)"
+            >
+              ↓
+            </button>
+            <button class="btn btn-outline btn-sm" (click)="showHistory()">
+              🕒 Änderungsverlauf
             </button>
           }
         </div>
       </div>
-    }
 
-    @if (lastDraftOperationError) {
-      <div class="alert alert-error" style="margin-bottom: 12px;">
-        {{ lastDraftOperationError }}
-      </div>
-    }
+      @if (showExplorerDraftStatus) {
+        <div class="card explorer-status-bar">
+          <div class="status-main">
+            <strong>Status:</strong>
+            <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{
+              explorerStatusLabel
+            }}</span>
+            <span class="status-meta"
+              >v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span
+            >
+            @if (lastExplorerChangeInfo) {
+              <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
+            }
+          </div>
+          <div class="status-actions">
+            @if (canPublishExplorer) {
+              <button
+                class="btn btn-primary btn-sm"
+                [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+                (click)="openSavePreviewDialog()"
+              >
+                💾 Speichern
+              </button>
+              <button
+                class="btn btn-outline btn-sm"
+                [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+                (click)="openDiscardExplorerDraftDialog()"
+              >
+                ↩️ Verwerfen
+              </button>
+            }
+          </div>
+        </div>
+      }
 
-    <app-confirm-dialog
-      [open]="showClearEmpiricalDifficultiesDialog"
-      title="Werte bereinigen"
-      message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
-      [details]="[
-        'Die Änderungen betreffen alle Items im aktuellen ACP.',
-        'Veröffentlicht wird erst nach anschließendem Speichern.',
-      ]"
-      [error]="clearEmpiricalDifficultiesError"
-      [busy]="clearEmpiricalDifficultiesBusy"
-      busyLabel="Bereinige Werte..."
-      confirmLabel="Alle Werte entfernen"
-      confirmVariant="danger"
-      (confirmed)="confirmClearEmpiricalDifficulties()"
-      (cancelled)="closeClearEmpiricalDifficultiesDialog()"
-    />
+      @if (lastDraftOperationError) {
+        <div class="alert alert-error" style="margin-bottom: 12px;">
+          {{ lastDraftOperationError }}
+        </div>
+      }
 
-    <app-confirm-dialog
-      [open]="showDiscardDraftDialog"
-      title="Änderungen verwerfen"
-      message="Die aktuellen Entwurfsänderungen im Item-Explorer werden verworfen."
-      [details]="[
-        'Nicht veröffentlichte Änderungen gehen verloren.',
-        'Der veröffentlichte Stand bleibt unverändert.',
-      ]"
-      [error]="discardDraftDialogError"
-      [busy]="discardDraftDialogBusy"
-      busyLabel="Verwerfe Änderungen..."
-      confirmLabel="Änderungen verwerfen"
-      confirmVariant="danger"
-      (confirmed)="confirmDiscardDraftDialog()"
-      (cancelled)="closeDiscardDraftDialog()"
-    />
+      <app-confirm-dialog
+        [open]="showClearEmpiricalDifficultiesDialog"
+        title="Werte bereinigen"
+        message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
+        [details]="[
+          'Die Änderungen betreffen alle Items im aktuellen ACP.',
+          'Veröffentlicht wird erst nach anschließendem Speichern.',
+        ]"
+        [error]="clearEmpiricalDifficultiesError"
+        [busy]="clearEmpiricalDifficultiesBusy"
+        busyLabel="Bereinige Werte..."
+        confirmLabel="Alle Werte entfernen"
+        confirmVariant="danger"
+        (confirmed)="confirmClearEmpiricalDifficulties()"
+        (cancelled)="closeClearEmpiricalDifficultiesDialog()"
+      />
+
+      <app-confirm-dialog
+        [open]="showDiscardDraftDialog"
+        title="Änderungen verwerfen"
+        message="Die aktuellen Entwurfsänderungen im Item-Explorer werden verworfen."
+        [details]="[
+          'Nicht veröffentlichte Änderungen gehen verloren.',
+          'Der veröffentlichte Stand bleibt unverändert.',
+        ]"
+        [error]="discardDraftDialogError"
+        [busy]="discardDraftDialogBusy"
+        busyLabel="Verwerfe Änderungen..."
+        confirmLabel="Änderungen verwerfen"
+        confirmVariant="danger"
+        (confirmed)="confirmDiscardDraftDialog()"
+        (cancelled)="closeDiscardDraftDialog()"
+      />
 
     @if (showLeaveWithChangesDialog) {
       <div
@@ -1363,53 +1382,54 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
     }
 
     <!-- OVERLAY: Save Draft Preview -->
-    @if (showSavePreviewDialog) {
-      <div class="overlay-backdrop" (click)="cancelSavePreviewDialog()">
-        <div class="overlay-dialog" style="max-width: 700px;" (click)="$event.stopPropagation()">
-          <div class="overlay-header">
-            <div class="drawer-title">
-              <span class="drawer-icon" style="background:var(--color-primary)">📝</span>
-              <div>
-                <h2>Änderungsübersicht vor Speichern</h2>
-                <small>Diese Änderungen werden veröffentlicht</small>
+      @if (showSavePreviewDialog) {
+        <div class="overlay-backdrop" (click)="cancelSavePreviewDialog()">
+          <div class="overlay-dialog" style="max-width: 700px;" (click)="$event.stopPropagation()">
+            <div class="overlay-header">
+              <div class="drawer-title">
+                <span class="drawer-icon" style="background:var(--color-primary)">📝</span>
+                <div>
+                  <h2>Änderungsübersicht vor Speichern</h2>
+                  <small>Diese Änderungen werden veröffentlicht</small>
+                </div>
               </div>
+              <button class="btn btn-sm btn-outline" (click)="cancelSavePreviewDialog()">✕</button>
             </div>
-            <button class="btn btn-sm btn-outline" (click)="cancelSavePreviewDialog()">✕</button>
-          </div>
-          <div class="overlay-content">
-            @if (draftPreviewSummary.length === 0) {
-              <div class="empty-state">
-                <p>Keine Unterschiede zum veröffentlichten Stand gefunden.</p>
-              </div>
-            } @else {
-              <div class="state-list">
-                @for (entry of draftPreviewSummary; track entry.label) {
-                  <div class="state-item">
-                    <div class="state-header">
-                      <strong>{{ entry.label }}</strong>
+            <div class="overlay-content">
+              @if (draftPreviewSummary.length === 0) {
+                <div class="empty-state">
+                  <p>Keine Unterschiede zum veröffentlichten Stand gefunden.</p>
+                </div>
+              } @else {
+                <div class="state-list">
+                  @for (entry of draftPreviewSummary; track entry.label) {
+                    <div class="state-item">
+                      <div class="state-header">
+                        <strong>{{ entry.label }}</strong>
+                      </div>
+                      <p>{{ entry.detail }}</p>
                     </div>
-                    <p>{{ entry.detail }}</p>
-                  </div>
-                }
-              </div>
-            }
-            <div class="column-manager-footer" style="margin-top: 20px;">
-              <span class="selection-info"
-                >Draft v{{ explorerVersion }} → Publish v{{ explorerPublishedVersion + 1 }}</span
-              >
-              <div class="footer-actions">
-                <button class="btn btn-outline" (click)="cancelSavePreviewDialog()">
-                  Abbrechen
-                </button>
-                <button class="btn btn-primary" (click)="confirmSaveExplorerDraft()">
-                  Veröffentlichen
-                </button>
+                  }
+                </div>
+              }
+              <div class="column-manager-footer" style="margin-top: 20px;">
+                <span class="selection-info"
+                  >Draft v{{ explorerVersion }} → Publish v{{ explorerPublishedVersion + 1 }}</span
+                >
+                <div class="footer-actions">
+                  <button class="btn btn-outline" (click)="cancelSavePreviewDialog()">
+                    Abbrechen
+                  </button>
+                  <button class="btn btn-primary" (click)="confirmSaveExplorerDraft()">
+                    Veröffentlichen
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    }
+      }
+    </div>
   `,
   styles: [
     `
@@ -1418,6 +1438,23 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         flex-direction: column;
         height: calc(100vh - 140px);
         overflow: hidden;
+      }
+      .explorer-shell {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .explorer-shell:fullscreen {
+        width: 100%;
+        height: 100%;
+        padding: 16px 20px 20px;
+        box-sizing: border-box;
+        background: var(--color-bg);
+      }
+      .explorer-shell:fullscreen::backdrop {
+        background: var(--color-bg);
       }
       app-split-pane {
         flex: 1;
@@ -1428,7 +1465,15 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
         margin-bottom: 16px;
+      }
+      .header-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
       }
       .explorer-header h1 {
         margin-bottom: 0;
@@ -1436,7 +1481,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       .header-actions {
         display: flex;
         align-items: center;
+        justify-content: flex-end;
         gap: 16px;
+        flex-wrap: wrap;
       }
       .item-count {
         font-size: 0.85rem;
@@ -2449,6 +2496,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 export class ItemExplorerComponent implements OnInit, OnDestroy {
   private readonly previewTargetItemPropertyKey = 'previewTargetId';
   private readonly excludedItemPropertyKey = 'excluded';
+  @ViewChild('explorerRoot') explorerRoot?: ElementRef<HTMLDivElement>;
   @ViewChild('globalFilterInput') globalFilterInput?: ElementRef<HTMLInputElement>;
   @ViewChild('tableScroll') tableScroll?: ElementRef<HTMLDivElement>;
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
@@ -2459,6 +2507,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   filteredItems: ExplorerItem[] = [];
   hasEmpiricalDifficulty = false;
   filterText = '';
+  isFullscreen = false;
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
@@ -2933,6 +2982,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
   }
 
+  @HostListener('document:fullscreenchange')
+  handleFullscreenChange() {
+    this.syncFullscreenState();
+  }
+
   canDeactivate(): boolean | Promise<boolean> {
     if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
       return true;
@@ -3019,6 +3073,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   toggleShowExcludedItems() {
     this.showExcludedItems = !this.showExcludedItems;
     this.applyFilter(false);
+  }
+
+  async toggleFullscreen(): Promise<void> {
+    if (this.isFullscreen) {
+      await this.exitFullscreen();
+      return;
+    }
+    await this.enterFullscreen();
   }
 
   toggleSelectedItemExclusion() {
@@ -5429,6 +5491,51 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     setTimeout(() => {
       target.focus({ preventScroll: true });
     }, 0);
+  }
+
+  private async enterFullscreen(): Promise<boolean> {
+    const root = this.explorerRoot?.nativeElement;
+    const requestFullscreen = root?.requestFullscreen?.bind(root);
+    if (!root || !requestFullscreen) {
+      this.syncFullscreenState();
+      return false;
+    }
+
+    try {
+      await requestFullscreen();
+      this.syncFullscreenState();
+      return true;
+    } catch (error) {
+      console.error('Failed to enter fullscreen mode', error);
+      this.syncFullscreenState();
+      return false;
+    }
+  }
+
+  private async exitFullscreen(): Promise<boolean> {
+    if (typeof document === 'undefined' || !document.exitFullscreen) {
+      this.syncFullscreenState();
+      return false;
+    }
+
+    try {
+      await document.exitFullscreen();
+      this.syncFullscreenState();
+      return true;
+    } catch (error) {
+      console.error('Failed to leave fullscreen mode', error);
+      this.syncFullscreenState();
+      return false;
+    }
+  }
+
+  private syncFullscreenState() {
+    if (typeof document === 'undefined') {
+      this.isFullscreen = false;
+      return;
+    }
+
+    this.isFullscreen = document.fullscreenElement === this.explorerRoot?.nativeElement;
   }
 
   private hasModalOverlay(): boolean {

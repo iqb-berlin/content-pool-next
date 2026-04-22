@@ -79,6 +79,16 @@ Typical manager loop:
 
 The Item Explorer supports keyboard-first work for the most common navigation tasks.
 
+## Fullscreen Mode
+
+The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
+
+- The fullscreen toggle is local to the current browser session and is not stored in the shared
+  explorer draft state.
+- In fullscreen mode the explorer keeps the same split view, dialogs, and overlays, but hides the
+  breadcrumb to maximize usable space.
+- `Escape` leaves fullscreen when no dialog or overlay is currently open.
+
 ### Focus model
 
 - `Tab` moves between toolbar, filter fields, item list, preview actions, and dialogs.

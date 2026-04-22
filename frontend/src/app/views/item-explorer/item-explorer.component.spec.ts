@@ -89,6 +89,15 @@ describe('ItemExplorerComponent', () => {
     expect(component.sortIsMeta).toBe(false);
   });
 
+  it('does not persist fullscreen mode in the shared ui preferences', () => {
+    const component = createComponent();
+    component.isFullscreen = true;
+
+    const ui = (component as any).buildUiPreferences();
+
+    expect(ui).not.toHaveProperty('isFullscreen');
+  });
+
   it('hides items without empirical difficulty when the ACP filter is enabled', () => {
     const component = createComponent();
     component.showOnlyItemsWithEmpiricalDifficulty = true;
@@ -1457,5 +1466,81 @@ describe('ItemExplorerComponent', () => {
     expect(component.showHistoryOverlay).toBe(false);
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it('enters fullscreen on the explorer root and keeps the fullscreen state local', async () => {
+    const component = createComponent();
+    const root = document.createElement('div');
+    let fullscreenElement: Element | null = null;
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+
+    const requestFullscreen = vi.fn().mockImplementation(async () => {
+      fullscreenElement = root;
+    });
+    (root as any).requestFullscreen = requestFullscreen;
+    component.explorerRoot = { nativeElement: root } as any;
+
+    try {
+      await component.toggleFullscreen();
+      component.handleFullscreenChange();
+
+      expect(requestFullscreen).toHaveBeenCalled();
+      expect(component.isFullscreen).toBe(true);
+    } finally {
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+    }
+  });
+
+  it('leaves fullscreen when the toggle is used again', async () => {
+    const component = createComponent();
+    const root = document.createElement('div');
+    let fullscreenElement: Element | null = root;
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+
+    const exitFullscreen = vi.fn().mockImplementation(async () => {
+      fullscreenElement = null;
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      writable: true,
+      value: exitFullscreen,
+    });
+
+    component.explorerRoot = { nativeElement: root } as any;
+    component.isFullscreen = true;
+
+    try {
+      await component.toggleFullscreen();
+      component.handleFullscreenChange();
+
+      expect(exitFullscreen).toHaveBeenCalled();
+      expect(component.isFullscreen).toBe(false);
+    } finally {
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+      if (exitDescriptor) {
+        Object.defineProperty(document, 'exitFullscreen', exitDescriptor);
+      } else {
+        delete (document as any).exitFullscreen;
+      }
+    }
   });
 });

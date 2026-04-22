@@ -10,10 +10,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { ReplaySubject, Observable, map } from "rxjs";
 import * as fs from "fs/promises";
-import {
-  AcpFile,
-  AcpFileProcessingJob,
-} from "../database/entities";
+import { AcpFile, AcpFileProcessingJob } from "../database/entities";
 import { FilesService } from "./files.service";
 import { UnitParserService } from "./unit-parser.service";
 import { ValidationService } from "../validation/validation.service";
@@ -181,9 +178,15 @@ export class FileProcessingJobsService {
   ): Promise<{ buffer: Buffer; fileName: string }> {
     const job = await this.getJobForAcp(acpId, jobId);
     if (job.jobType !== "archive-download") {
-      throw new BadRequestException("The requested job does not provide an archive");
+      throw new BadRequestException(
+        "The requested job does not provide an archive",
+      );
     }
-    if (job.status !== "completed" || !job.archiveFilePath || !job.archiveFileName) {
+    if (
+      job.status !== "completed" ||
+      !job.archiveFilePath ||
+      !job.archiveFileName
+    ) {
       throw new ConflictException("The ZIP archive is not ready yet");
     }
 
@@ -257,7 +260,9 @@ export class FileProcessingJobsService {
           );
 
         let cleanupResult:
-          | Awaited<ReturnType<FilesService["cleanupReferencesAfterFileMutation"]>>
+          | Awaited<
+              ReturnType<FilesService["cleanupReferencesAfterFileMutation"]>
+            >
           | undefined;
         if (job.runCleanup) {
           cleanupResult =
@@ -274,13 +279,21 @@ export class FileProcessingJobsService {
           phaseLabel: "Abgeschlossen",
           message: "Upload-Verarbeitung abgeschlossen.",
           syncReport: syncReport as unknown as Record<string, unknown>,
-          validationSummary:
-            validationRun.summary as unknown as Record<string, unknown>,
+          validationSummary: validationRun.summary as unknown as Record<
+            string,
+            unknown
+          >,
           cleanupReport: cleanupResult?.cleanupReport
-            ? (cleanupResult.cleanupReport as unknown as Record<string, unknown>)
+            ? (cleanupResult.cleanupReport as unknown as Record<
+                string,
+                unknown
+              >)
             : null,
           responseStateCleanup: cleanupResult?.responseStateCleanup
-            ? (cleanupResult.responseStateCleanup as unknown as Record<string, unknown>)
+            ? (cleanupResult.responseStateCleanup as unknown as Record<
+                string,
+                unknown
+              >)
             : null,
           error: null,
           finishedAt: new Date(),
@@ -374,13 +387,13 @@ export class FileProcessingJobsService {
       },
       advance: async (options) => {
         const delta = Math.max(options?.delta ?? 1, 0);
-        current = total > 0 ? Math.min(total, current + delta) : current + delta;
+        current =
+          total > 0 ? Math.min(total, current + delta) : current + delta;
         await persist({
           phase: currentPhase,
           phaseCurrent: current,
           phaseTotal: total,
-          message:
-            options?.message === undefined ? undefined : options.message,
+          message: options?.message === undefined ? undefined : options.message,
         });
       },
       setMessage: async (message) => {
@@ -446,7 +459,9 @@ export class FileProcessingJobsService {
     return job;
   }
 
-  private ensureStream(jobId: string): ReplaySubject<FileProcessingJobSnapshot> {
+  private ensureStream(
+    jobId: string,
+  ): ReplaySubject<FileProcessingJobSnapshot> {
     const existing = this.streams.get(jobId);
     if (existing) {
       return existing;

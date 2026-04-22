@@ -162,13 +162,7 @@ export type FilePreviewMode =
   | 'structured'
   | 'binary';
 
-export type FilePreviewTextFormat =
-  | 'text'
-  | 'json'
-  | 'xml'
-  | 'csv'
-  | 'html'
-  | 'markdown';
+export type FilePreviewTextFormat = 'text' | 'json' | 'xml' | 'csv' | 'html' | 'markdown';
 
 export interface FilePreviewUnitXmlData {
   type: 'unit-xml';
@@ -290,11 +284,7 @@ export interface SnapshotCurrentDiff {
   unchanged: number;
 }
 
-export type AccessModel =
-  | 'PRIVATE'
-  | 'PUBLIC'
-  | 'REGISTERED'
-  | 'CREDENTIALS_LIST';
+export type AccessModel = 'PRIVATE' | 'PUBLIC' | 'REGISTERED' | 'CREDENTIALS_LIST';
 
 export interface AccessConfig {
   id: string;

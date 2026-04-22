@@ -677,9 +677,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
-        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
-          rewriteGeoGebraAssetUrls(html),
-        );
+        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(rewriteGeoGebraAssetUrls(html));
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;

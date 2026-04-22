@@ -7,9 +7,7 @@ import {
 describe('rewriteGeoGebraAssetUrls', () => {
   it('rewrites legacy GeoGebra asset paths to the API-backed path', () => {
     expect(
-      rewriteGeoGebraAssetUrls(
-        '<script src="/assets/GeoGebra/GeoGebra/deployggb.js"></script>',
-      ),
+      rewriteGeoGebraAssetUrls('<script src="/assets/GeoGebra/GeoGebra/deployggb.js"></script>'),
     ).toContain('/api/shared-assets/GeoGebra/GeoGebra/deployggb.js');
   });
 

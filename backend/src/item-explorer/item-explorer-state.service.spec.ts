@@ -251,8 +251,12 @@ describe("ItemExplorerStateService", () => {
       },
     );
 
-    expect(envelope.draftState.itemProperties.item1.previewTargetId).toBeUndefined();
-    expect(envelope.draftState.itemProperties.item1.empiricalDifficulty).toBe(2.5);
+    expect(
+      envelope.draftState.itemProperties.item1.previewTargetId,
+    ).toBeUndefined();
+    expect(envelope.draftState.itemProperties.item1.empiricalDifficulty).toBe(
+      2.5,
+    );
   });
 
   it("drops false exclusion flags while keeping other item properties intact", async () => {

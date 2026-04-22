@@ -562,21 +562,33 @@ export class FilesService {
       if (structuredVomd) {
         structuredData = structuredVomd;
         mode = "structured";
-        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+        formattedContent = JSON.stringify(
+          this.tryParseJson(rawContent),
+          null,
+          2,
+        );
       }
     } else if (extension === "vocs") {
       const structuredVocs = this.buildVocsPreview(rawContent);
       if (structuredVocs) {
         structuredData = structuredVocs;
         mode = "structured";
-        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+        formattedContent = JSON.stringify(
+          this.tryParseJson(rawContent),
+          null,
+          2,
+        );
       }
     } else if (extension === "voud") {
       const structuredVoud = this.buildVoudPreview(rawContent);
       if (structuredVoud) {
         structuredData = structuredVoud;
         mode = "structured";
-        formattedContent = JSON.stringify(this.tryParseJson(rawContent), null, 2);
+        formattedContent = JSON.stringify(
+          this.tryParseJson(rawContent),
+          null,
+          2,
+        );
       }
     } else if (extension === "csv" || extension === "tsv") {
       const structuredCsv = this.buildCsvPreview(rawContent, extension);
@@ -811,15 +823,18 @@ export class FilesService {
           ),
         );
 
-        const metadata = entries.reduce<Record<string, string>>((acc, entry) => {
-          if (entry.id && !metadataColumns.has(entry.id)) {
-            metadataColumns.set(entry.id, entry.label || entry.id);
-          }
-          if (entry.id) {
-            acc[entry.id] = entry.value;
-          }
-          return acc;
-        }, {});
+        const metadata = entries.reduce<Record<string, string>>(
+          (acc, entry) => {
+            if (entry.id && !metadataColumns.has(entry.id)) {
+              metadataColumns.set(entry.id, entry.label || entry.id);
+            }
+            if (entry.id) {
+              acc[entry.id] = entry.value;
+            }
+            return acc;
+          },
+          {},
+        );
 
         return {
           id: String(item?.id || ""),
@@ -869,32 +884,32 @@ export class FilesService {
     }, 0);
 
     const variables = variablesRaw.map((variable: any) => {
-        const codesRaw = Array.isArray(variable?.codes) ? variable.codes : [];
+      const codesRaw = Array.isArray(variable?.codes) ? variable.codes : [];
 
-        return {
-          id: String(variable?.id || ""),
+      return {
+        id: String(variable?.id || ""),
+        label:
+          this.readLocalizedText(variable?.label) ||
+          String(variable?.id || "Variable"),
+        manualInstruction: this.readTextValue(variable?.manualInstruction),
+        codeCount: codesRaw.length,
+        codes: codesRaw.map((code: any) => ({
+          id:
+            code?.id === null || typeof code?.id === "undefined"
+              ? "null"
+              : String(code.id),
           label:
-            this.readLocalizedText(variable?.label) ||
-            String(variable?.id || "Variable"),
-          manualInstruction: this.readTextValue(variable?.manualInstruction),
-          codeCount: codesRaw.length,
-          codes: codesRaw.map((code: any) => ({
-            id:
-              code?.id === null || typeof code?.id === "undefined"
-                ? "null"
-                : String(code.id),
-            label:
-              this.readLocalizedText(code?.label) ||
-              this.readTextValue(code?.manualInstruction) ||
-              "",
-            score:
-              code?.score === null || typeof code?.score === "undefined"
-                ? ""
-                : String(code.score),
-            manualInstruction: this.readTextValue(code?.manualInstruction),
-          })),
-        };
-      });
+            this.readLocalizedText(code?.label) ||
+            this.readTextValue(code?.manualInstruction) ||
+            "",
+          score:
+            code?.score === null || typeof code?.score === "undefined"
+              ? ""
+              : String(code.score),
+          manualInstruction: this.readTextValue(code?.manualInstruction),
+        })),
+      };
+    });
 
     return {
       type: "vocs",
@@ -913,26 +928,34 @@ export class FilesService {
     const pages = Array.isArray((parsed as Record<string, unknown>).pages)
       ? ((parsed as Record<string, unknown>).pages as any[])
       : [];
-    const identifiers = this.collectNestedStringValues(parsed, ["id", "alias"], [
-      "visibilityRules",
-    ]);
+    const identifiers = this.collectNestedStringValues(
+      parsed,
+      ["id", "alias"],
+      ["visibilityRules"],
+    );
 
     return {
       type: "voud",
       pageCount: pages.length,
       variableRefCount: identifiers.length,
-      topLevelKeys: Object.keys(parsed).slice(0, STRUCTURED_PREVIEW_MAX_COLUMNS),
+      topLevelKeys: Object.keys(parsed).slice(
+        0,
+        STRUCTURED_PREVIEW_MAX_COLUMNS,
+      ),
       identifierPreview: identifiers.slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
-      pages: pages.slice(0, STRUCTURED_PREVIEW_MAX_PAGES).map((page, index) => ({
-        pageNumber: index + 1,
-        variableRefs: this.collectNestedStringValues(page, ["id", "alias"], [
-          "visibilityRules",
-        ]).slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
-        alwaysVisible: this.collectNestedStringValues(page, ["alwaysVisible"]).slice(
-          0,
-          STRUCTURED_PREVIEW_MAX_ITEMS,
-        ),
-      })),
+      pages: pages
+        .slice(0, STRUCTURED_PREVIEW_MAX_PAGES)
+        .map((page, index) => ({
+          pageNumber: index + 1,
+          variableRefs: this.collectNestedStringValues(
+            page,
+            ["id", "alias"],
+            ["visibilityRules"],
+          ).slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
+          alwaysVisible: this.collectNestedStringValues(page, [
+            "alwaysVisible",
+          ]).slice(0, STRUCTURED_PREVIEW_MAX_ITEMS),
+        })),
     };
   }
 
@@ -991,9 +1014,7 @@ export class FilesService {
         };
       })
       .filter(
-        (
-          entry,
-        ): entry is { id: string; label: string; value: string } =>
+        (entry): entry is { id: string; label: string; value: string } =>
           entry !== null,
       );
   }
@@ -1106,16 +1127,9 @@ export class FilesService {
   private isImagePreview(extension: string, mimeType: string): boolean {
     return (
       mimeType.startsWith("image/") ||
-      [
-        "png",
-        "jpg",
-        "jpeg",
-        "gif",
-        "webp",
-        "bmp",
-        "svg",
-        "svgz",
-      ].includes(extension)
+      ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "svgz"].includes(
+        extension,
+      )
     );
   }
 
@@ -1137,10 +1151,7 @@ export class FilesService {
     );
   }
 
-  private isTextPreviewCandidate(
-    extension: string,
-    mimeType: string,
-  ): boolean {
+  private isTextPreviewCandidate(extension: string, mimeType: string): boolean {
     if (mimeType.startsWith("text/")) {
       return true;
     }
@@ -1470,7 +1481,9 @@ export class FilesService {
   }
 
   private isZipUpload(file: Express.Multer.File): boolean {
-    const fileName = String(file?.originalname || "").trim().toLowerCase();
+    const fileName = String(file?.originalname || "")
+      .trim()
+      .toLowerCase();
     const mimeType = this.normalizeMimeType(file?.mimetype);
     return (
       fileName.endsWith(".zip") ||
@@ -1496,14 +1509,20 @@ export class FilesService {
     const extractedFiles: Express.Multer.File[] = [];
     const archiveEntries = Object.values(archive.files || {});
 
-    for (const entry of archiveEntries as Array<{ dir?: boolean; name?: string }>) {
+    for (const entry of archiveEntries as Array<{
+      dir?: boolean;
+      name?: string;
+    }>) {
       if (entry?.dir) {
         continue;
       }
 
       const originalEntryName = String(entry?.name || "");
       const extractedName = this.getArchiveEntryFileName(originalEntryName);
-      if (!extractedName || this.shouldSkipArchiveEntry(originalEntryName, extractedName)) {
+      if (
+        !extractedName ||
+        this.shouldSkipArchiveEntry(originalEntryName, extractedName)
+      ) {
         continue;
       }
 

@@ -1,14 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
-import {
-  BehaviorSubject,
-  Observable,
-  firstValueFrom,
-  map,
-  switchMap,
-  tap,
-  throwError,
-} from 'rxjs';
+import { BehaviorSubject, Observable, firstValueFrom, map, switchMap, tap, throwError } from 'rxjs';
 import {
   LoginResponse,
   CredentialLoginResponse,
@@ -24,9 +16,7 @@ interface OidcTokenResponse {
   refresh_token?: string;
 }
 
-type AuthChannelMessage =
-  | { type: 'logout' }
-  | { type: 'oidc_session_updated' };
+type AuthChannelMessage = { type: 'logout' } | { type: 'oidc_session_updated' };
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -217,29 +207,31 @@ export class AuthService {
     idToken?: string,
     refreshToken?: string,
   ): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.API}/oidc-callback`, { idToken: tokenForBackend }).pipe(
-      tap((res) => {
-        localStorage.setItem(this.tokenKey, res.accessToken);
-        if (accessToken) {
-          localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
-        } else {
-          localStorage.removeItem(this.ACCESS_TOKEN_KEY);
-        }
-        const resolvedIdToken = idToken || (!accessToken ? tokenForBackend : undefined);
-        if (resolvedIdToken) {
-          localStorage.setItem(this.ID_TOKEN_KEY, resolvedIdToken);
-        } else {
-          localStorage.removeItem(this.ID_TOKEN_KEY);
-        }
-        if (refreshToken) {
-          localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
-        }
-        localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
-        this.currentUserSubject.next(this.normalizeUserProfile(res.user));
-        this.scheduleOidcTokenRefresh();
-        this.broadcastAuthEvent({ type: 'oidc_session_updated' });
-      }),
-    );
+    return this.http
+      .post<LoginResponse>(`${this.API}/oidc-callback`, { idToken: tokenForBackend })
+      .pipe(
+        tap((res) => {
+          localStorage.setItem(this.tokenKey, res.accessToken);
+          if (accessToken) {
+            localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
+          } else {
+            localStorage.removeItem(this.ACCESS_TOKEN_KEY);
+          }
+          const resolvedIdToken = idToken || (!accessToken ? tokenForBackend : undefined);
+          if (resolvedIdToken) {
+            localStorage.setItem(this.ID_TOKEN_KEY, resolvedIdToken);
+          } else {
+            localStorage.removeItem(this.ID_TOKEN_KEY);
+          }
+          if (refreshToken) {
+            localStorage.setItem(this.REFRESH_TOKEN_KEY, refreshToken);
+          }
+          localStorage.setItem(this.AUTH_TYPE_KEY, 'oidc');
+          this.currentUserSubject.next(this.normalizeUserProfile(res.user));
+          this.scheduleOidcTokenRefresh();
+          this.broadcastAuthEvent({ type: 'oidc_session_updated' });
+        }),
+      );
   }
 
   changePassword(): void {
@@ -524,7 +516,9 @@ export class AuthService {
     });
     const context = new HttpContext().set(BYPASS_APP_AUTH, true);
 
-    return firstValueFrom(this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers, context }));
+    return firstValueFrom(
+      this.http.post<OidcTokenResponse>(tokenUrl, body.toString(), { headers, context }),
+    );
   }
 
   private scheduleOidcTokenRefresh(): void {

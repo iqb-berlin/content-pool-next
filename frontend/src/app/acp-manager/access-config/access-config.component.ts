@@ -18,8 +18,8 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
     <div class="card">
       <h3>Zugriffsmodell</h3>
       <p class="help-text">
-        Optionen 1 bis 3 schließen einander als Basismodell aus. Option 4 kann zusätzlich
-        gewählt werden.
+        Optionen 1 bis 3 schließen einander als Basismodell aus. Option 4 kann zusätzlich gewählt
+        werden.
       </p>
 
       <div class="radio-group">
@@ -419,10 +419,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <span>Item im Player hervorheben (Explorer + Item-Ansicht)</span>
         </label>
         <label class="feature-toggle">
-          <input
-            type="checkbox"
-            [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]"
-          />
+          <input type="checkbox" [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]" />
           <span>
             Zusätzliche Player-Zuordnungsinfos im Item-Explorer anzeigen (für Manager/Admins)
           </span>
@@ -699,8 +696,7 @@ export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
-  readonly enableItemExplorerConditionalVisibilityKey =
-    'enableItemExplorerConditionalVisibility';
+  readonly enableItemExplorerConditionalVisibilityKey = 'enableItemExplorerConditionalVisibility';
   readonly showOnlyItemsWithEmpiricalDifficultyKey = 'showOnlyItemsWithEmpiricalDifficulty';
   readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
@@ -936,7 +932,8 @@ export class AccessConfigComponent implements OnInit {
 
   private applyFeatureConfigDefaults() {
     const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
-    this.featureConfig[this.showAudioVideoCodingVariablesKey] = showAudioVideoCodingVariables !== false;
+    this.featureConfig[this.showAudioVideoCodingVariablesKey] =
+      showAudioVideoCodingVariables !== false;
 
     const enablePlayerFocusHighlight = this.featureConfig[this.enablePlayerFocusHighlightKey];
     this.featureConfig[this.enablePlayerFocusHighlightKey] = enablePlayerFocusHighlight === true;

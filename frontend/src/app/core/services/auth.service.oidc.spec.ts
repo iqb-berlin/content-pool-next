@@ -360,12 +360,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
     });
 
     await firstValueFrom(
-      service.handleOidcCallback(
-        createJwt(30),
-        createJwt(30),
-        createJwt(30),
-        'refresh-1',
-      ),
+      service.handleOidcCallback(createJwt(30), createJwt(30), createJwt(30), 'refresh-1'),
     );
 
     await vi.advanceTimersByTimeAsync(1);

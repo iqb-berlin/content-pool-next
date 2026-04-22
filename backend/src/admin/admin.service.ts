@@ -113,7 +113,10 @@ export class AdminService {
 
     try {
       for (const entry of bundleEntries) {
-        const targetPath = path.join(stagingDir, ...entry.relativePath.split("/"));
+        const targetPath = path.join(
+          stagingDir,
+          ...entry.relativePath.split("/"),
+        );
         await fs.mkdir(path.dirname(targetPath), { recursive: true });
         await fs.writeFile(targetPath, entry.buffer);
       }
@@ -158,12 +161,17 @@ export class AdminService {
     const seenRelativePaths = new Set<string>();
     const archiveEntries = Object.values(archive.files || {});
 
-    for (const entry of archiveEntries as Array<{ dir?: boolean; name?: string }>) {
+    for (const entry of archiveEntries as Array<{
+      dir?: boolean;
+      name?: string;
+    }>) {
       if (entry?.dir) {
         continue;
       }
 
-      const relativePath = this.getGeoGebraArchiveEntryPath(String(entry?.name || ""));
+      const relativePath = this.getGeoGebraArchiveEntryPath(
+        String(entry?.name || ""),
+      );
       if (!relativePath) {
         continue;
       }

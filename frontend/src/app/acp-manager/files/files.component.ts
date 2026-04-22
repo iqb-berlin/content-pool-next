@@ -53,7 +53,12 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
           </button>
         }
         <input #uploadInput type="file" multiple (change)="upload($event)" hidden />
-        <button class="btn btn-primary" type="button" (click)="uploadInput.click()" [disabled]="isBusy">
+        <button
+          class="btn btn-primary"
+          type="button"
+          (click)="uploadInput.click()"
+          [disabled]="isBusy"
+        >
           📤 Dateien oder ZIP hochladen
         </button>
         @if (files.length) {
@@ -102,7 +107,9 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
         }
         <div style="margin-top:8px">{{ processingProgress }}</div>
         @if (processingJob.message) {
-          <div style="margin-top:4px;color:var(--color-text-secondary)">{{ processingJob.message }}</div>
+          <div style="margin-top:4px;color:var(--color-text-secondary)">
+            {{ processingJob.message }}
+          </div>
         }
       </div>
     }
@@ -272,7 +279,9 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
       @if (files.length) {
         <div class="selection-toolbar">
           <span class="selection-summary">
-            {{ selectedFilesCount ? selectedFilesCount + ' Datei(en) ausgewählt' : 'Keine Auswahl' }}
+            {{
+              selectedFilesCount ? selectedFilesCount + ' Datei(en) ausgewählt' : 'Keine Auswahl'
+            }}
           </span>
           <button
             class="btn btn-outline btn-sm"
@@ -773,7 +782,10 @@ export class FilesComponent implements OnInit {
     }
     return Math.max(
       0,
-      Math.min(100, Math.round((this.processingJob.phaseCurrent / this.processingJob.phaseTotal) * 100)),
+      Math.min(
+        100,
+        Math.round((this.processingJob.phaseCurrent / this.processingJob.phaseTotal) * 100),
+      ),
     );
   }
 
@@ -941,7 +953,9 @@ export class FilesComponent implements OnInit {
   }
 
   get allVisibleFilesSelected(): boolean {
-    return this.filteredFiles.length > 0 && this.visibleSelectedFilesCount === this.filteredFiles.length;
+    return (
+      this.filteredFiles.length > 0 && this.visibleSelectedFilesCount === this.filteredFiles.length
+    );
   }
 
   get someVisibleFilesSelected(): boolean {
@@ -1078,26 +1092,24 @@ export class FilesComponent implements OnInit {
         }
 
         const uploadResult = await firstValueFrom(
-          this.api.uploadFiles(
-            this.acpId,
-            fd,
-            strategy ? { conflictStrategy: strategy } : undefined,
-          ).pipe(
-            tap((httpEvent) => {
-              if (httpEvent.type !== HttpEventType.UploadProgress) {
-                return;
-              }
-              const loaded = typeof httpEvent.loaded === 'number' ? httpEvent.loaded : 0;
-              this.updateUploadProgress(
-                uploadedBytes + loaded,
-                totalBytes,
-                uploadedFilesCount,
-                totalToUpload,
-              );
-            }),
-            filter((httpEvent) => httpEvent.type === HttpEventType.Response),
-            map((httpEvent) => httpEvent.body as FileUploadResponse),
-          ),
+          this.api
+            .uploadFiles(this.acpId, fd, strategy ? { conflictStrategy: strategy } : undefined)
+            .pipe(
+              tap((httpEvent) => {
+                if (httpEvent.type !== HttpEventType.UploadProgress) {
+                  return;
+                }
+                const loaded = typeof httpEvent.loaded === 'number' ? httpEvent.loaded : 0;
+                this.updateUploadProgress(
+                  uploadedBytes + loaded,
+                  totalBytes,
+                  uploadedFilesCount,
+                  totalToUpload,
+                );
+              }),
+              filter((httpEvent) => httpEvent.type === HttpEventType.Response),
+              map((httpEvent) => httpEvent.body as FileUploadResponse),
+            ),
         );
 
         uploadedBytes += chunkBytes;
@@ -1211,7 +1223,9 @@ export class FilesComponent implements OnInit {
       if (files.length > 5) {
         details.push(`... und ${files.length - 5} weitere Datei(en).`);
       }
-      details.push('Validierungsergebnisse und abhängige Dateiverweise können dadurch ungültig werden.');
+      details.push(
+        'Validierungsergebnisse und abhängige Dateiverweise können dadurch ungültig werden.',
+      );
       return details;
     }
     return [
@@ -1529,7 +1543,9 @@ export class FilesComponent implements OnInit {
 
     return new Promise((resolve, reject) => {
       let settled = false;
-      const eventSource = new EventSource(this.api.getFileProcessingJobEventsUrl(this.acpId, jobId));
+      const eventSource = new EventSource(
+        this.api.getFileProcessingJobEventsUrl(this.acpId, jobId),
+      );
 
       const finish = (job: FileProcessingJob, error?: string) => {
         if (settled) {
@@ -1551,7 +1567,12 @@ export class FilesComponent implements OnInit {
         } catch {
           eventSource.close();
           void this.pollJob(jobId, setJobState)
-            .then((fallbackJob) => finish(fallbackJob, fallbackJob.status === 'failed' ? fallbackJob.error || undefined : undefined))
+            .then((fallbackJob) =>
+              finish(
+                fallbackJob,
+                fallbackJob.status === 'failed' ? fallbackJob.error || undefined : undefined,
+              ),
+            )
             .catch(reject);
           return;
         }
@@ -1763,7 +1784,11 @@ export class FilesComponent implements OnInit {
   }
 
   private getDownloadTransferRateLabel(): string | null {
-    if (!this.downloadTransferActive || !this.downloadTransferStartedAt || this.downloadTransferredBytes <= 0) {
+    if (
+      !this.downloadTransferActive ||
+      !this.downloadTransferStartedAt ||
+      this.downloadTransferredBytes <= 0
+    ) {
       return null;
     }
 

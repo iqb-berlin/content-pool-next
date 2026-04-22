@@ -7,9 +7,7 @@ export type FileProcessingJobStatus =
   | "completed"
   | "failed";
 
-export type FileProcessingJobType =
-  | "upload-process"
-  | "archive-download";
+export type FileProcessingJobType = "upload-process" | "archive-download";
 
 export type FileProcessingJobPhase =
   | "queued"

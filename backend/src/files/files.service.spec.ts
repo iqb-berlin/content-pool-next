@@ -98,22 +98,22 @@ describe("FilesService", () => {
         unitLabel: content.match(/<Label>([^<]+)<\/Label>/)?.[1] || "",
         description: content.match(/<Description>([^<]+)<\/Description>/)?.[1],
         definitionRef:
-          content.match(/<DefinitionRef[^>]*>([^<]+)<\/DefinitionRef>/)?.[1] || "",
+          content.match(/<DefinitionRef[^>]*>([^<]+)<\/DefinitionRef>/)?.[1] ||
+          "",
         playerRef:
           content.match(/<DefinitionRef[^>]*player="([^"]+)"/)?.[1] || "",
-        codingSchemeRef:
-          content.match(/<CodingSchemeRef>([^<]+)<\/CodingSchemeRef>/)?.[1],
+        codingSchemeRef: content.match(
+          /<CodingSchemeRef>([^<]+)<\/CodingSchemeRef>/,
+        )?.[1],
         metadataRef: content.match(/<Reference>([^<]+)<\/Reference>/)?.[1],
       })),
-      parseVomd: jest
-        .fn()
-        .mockImplementation((content: string) => {
-          const data = JSON.parse(content);
-          return {
-            unitProfiles: data.profiles || [],
-            items: data.items || [],
-          };
-        }),
+      parseVomd: jest.fn().mockImplementation((content: string) => {
+        const data = JSON.parse(content);
+        return {
+          unitProfiles: data.profiles || [],
+          items: data.items || [],
+        };
+      }),
       pruneMissingDependencies: jest.fn().mockResolvedValue({
         unitsUpdated: 0,
         dependenciesRemoved: 0,
@@ -466,7 +466,9 @@ describe("FilesService", () => {
         delta: 800,
         message: "2 von 2 Datei(en), 2.0 KB von 2.0 KB verarbeitet",
       });
-      expect(progress.completePhase).toHaveBeenCalledWith("ZIP-Datei ist erstellt.");
+      expect(progress.completePhase).toHaveBeenCalledWith(
+        "ZIP-Datei ist erstellt.",
+      );
     });
   });
 

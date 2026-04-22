@@ -12,9 +12,9 @@ describe("AdminController", () => {
       updateSettings: jest
         .fn()
         .mockResolvedValue({ language: "en", logoUrl: "/logo.svg" }),
-      uploadGeoGebraBundle: jest
-        .fn()
-        .mockResolvedValue({ geoGebraBundle: { sourceFileName: "bundle.zip" } }),
+      uploadGeoGebraBundle: jest.fn().mockResolvedValue({
+        geoGebraBundle: { sourceFileName: "bundle.zip" },
+      }),
       deleteGeoGebraBundle: jest
         .fn()
         .mockResolvedValue({ geoGebraBundle: null }),

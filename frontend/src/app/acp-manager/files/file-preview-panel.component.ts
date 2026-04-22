@@ -120,13 +120,21 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                   <strong>Referenzen</strong>
                   <dl class="data-list">
                     <dt>Definition</dt>
-                    <dd><code>{{ structuredData.references.definition || '–' }}</code></dd>
+                    <dd>
+                      <code>{{ structuredData.references.definition || '–' }}</code>
+                    </dd>
                     <dt>Player</dt>
-                    <dd><code>{{ structuredData.references.player || '–' }}</code></dd>
+                    <dd>
+                      <code>{{ structuredData.references.player || '–' }}</code>
+                    </dd>
                     <dt>Kodierschema</dt>
-                    <dd><code>{{ structuredData.references.codingScheme || '–' }}</code></dd>
+                    <dd>
+                      <code>{{ structuredData.references.codingScheme || '–' }}</code>
+                    </dd>
                     <dt>Metadaten</dt>
-                    <dd><code>{{ structuredData.references.metadata || '–' }}</code></dd>
+                    <dd>
+                      <code>{{ structuredData.references.metadata || '–' }}</code>
+                    </dd>
                   </dl>
                 </div>
               }
@@ -179,7 +187,9 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                                 <div class="cell-subtitle">{{ item.description }}</div>
                               }
                             </td>
-                            <td><code>{{ item.variableId || '–' }}</code></td>
+                            <td>
+                              <code>{{ item.variableId || '–' }}</code>
+                            </td>
                             @for (column of structuredData.metadataColumns; track column.id) {
                               <td>{{ item.metadata[column.id] || '–' }}</td>
                             }
@@ -212,7 +222,9 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                       @if (variable.manualInstruction) {
                         <div
                           class="manual-note"
-                          [innerHTML]="sanitizer.bypassSecurityTrustHtml(variable.manualInstruction)"
+                          [innerHTML]="
+                            sanitizer.bypassSecurityTrustHtml(variable.manualInstruction)
+                          "
                         ></div>
                       }
                       <div class="codes-list">
@@ -225,7 +237,9 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                           @if (code.manualInstruction) {
                             <div
                               class="code-manual"
-                              [innerHTML]="sanitizer.bypassSecurityTrustHtml(code.manualInstruction)"
+                              [innerHTML]="
+                                sanitizer.bypassSecurityTrustHtml(code.manualInstruction)
+                              "
                             ></div>
                           }
                         }

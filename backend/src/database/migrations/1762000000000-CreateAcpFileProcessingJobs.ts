@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class CreateAcpFileProcessingJobs1762000000000
-  implements MigrationInterface
-{
+export class CreateAcpFileProcessingJobs1762000000000 implements MigrationInterface {
   name = "CreateAcpFileProcessingJobs1762000000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -5,11 +5,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import {
-  Acp,
-  AcpAccessConfig,
-  AccessModel,
-} from "../database/entities";
+import { Acp, AcpAccessConfig, AccessModel } from "../database/entities";
 import { UnitParserService } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";

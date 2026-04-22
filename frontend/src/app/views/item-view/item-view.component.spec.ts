@@ -35,12 +35,7 @@ function createComponent(options?: { startPageData?: Record<string, unknown> }) 
     getFocusIdentifiers: vi.fn((_definition: string, variableId: string) => [variableId]),
   };
 
-  return new ItemViewComponent(
-    route as any,
-    api as any,
-    sanitizer as any,
-    voudService as any,
-  );
+  return new ItemViewComponent(route as any, api as any, sanitizer as any, voudService as any);
 }
 
 describe('ItemViewComponent', () => {

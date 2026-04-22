@@ -245,7 +245,7 @@ describe('AuthService', () => {
 
       service.logout();
 
-      expect(broadcastChannelMock.postMessage).toHaveBeenCalledWith('logout');
+      expect(broadcastChannelMock.postMessage).toHaveBeenCalledWith({ type: 'logout' });
     });
   });
 

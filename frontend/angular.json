@@ -25,6 +25,7 @@
             "browser": "src/main.ts",
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
+            "allowedCommonJsDependencies": ["@iqb/responses"],
             "polyfills": ["zone.js"],
             "assets": [
               "src/favicon.ico",

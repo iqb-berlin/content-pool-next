@@ -81,7 +81,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
     <div class="explorer-header">
       <h1>Item-Explorer</h1>
       <div class="header-actions">
-        <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
+        <span class="item-count"
+          >{{ filteredItems.length }} von {{ visibleItemsCount }} Items</span
+        >
         @if (canEditExplorer) {
           <input
             type="file"
@@ -132,38 +134,40 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       </div>
     </div>
 
-    <div class="card explorer-status-bar">
-      <div class="status-main">
-        <strong>Status:</strong>
-        <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{
-          explorerStatusLabel
-        }}</span>
-        <span class="status-meta"
-          >v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span
-        >
-        @if (lastExplorerChangeInfo) {
-          <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
-        }
-      </div>
-      <div class="status-actions">
-        @if (canPublishExplorer) {
-          <button
-            class="btn btn-primary btn-sm"
-            [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
-            (click)="openSavePreviewDialog()"
+    @if (showExplorerDraftStatus) {
+      <div class="card explorer-status-bar">
+        <div class="status-main">
+          <strong>Status:</strong>
+          <span [class]="'status-pill status-' + explorerUiStatus.toLowerCase()">{{
+            explorerStatusLabel
+          }}</span>
+          <span class="status-meta"
+            >v{{ explorerVersion }} · veröffentlicht v{{ explorerPublishedVersion }}</span
           >
-            💾 Speichern
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
-            (click)="openDiscardExplorerDraftDialog()"
-          >
-            ↩️ Verwerfen
-          </button>
-        }
+          @if (lastExplorerChangeInfo) {
+            <span class="status-meta">· {{ lastExplorerChangeInfo }}</span>
+          }
+        </div>
+        <div class="status-actions">
+          @if (canPublishExplorer) {
+            <button
+              class="btn btn-primary btn-sm"
+              [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+              (click)="openSavePreviewDialog()"
+            >
+              💾 Speichern
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              [disabled]="!hasPendingDraftChanges() || explorerUiStatus === 'SAVING'"
+              (click)="openDiscardExplorerDraftDialog()"
+            >
+              ↩️ Verwerfen
+            </button>
+          }
+        </div>
       </div>
-    </div>
+    }
 
     @if (lastDraftOperationError) {
       <div class="alert alert-error" style="margin-bottom: 12px;">
@@ -292,10 +296,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               </button>
             </div>
           }
-          <div class="help-text">
-            Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
-            <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
-          </div>
+          @if (showExplorerKeyboardHints) {
+            <div class="help-text">
+              Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl,
+              <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
+            </div>
+          }
         </div>
 
         <div
@@ -2628,6 +2634,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.items.filter((item) => this.isItemExcluded(item)).length;
   }
 
+  get visibleItemsCount(): number {
+    return this.items.filter((item) => this.isItemVisibleByBaseRules(item)).length;
+  }
+
   get selectedPreviewTarget(): string {
     const storedId = this.getStoredPreviewTargetId(this.selectedItem);
     if (storedId) {
@@ -2665,6 +2675,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   get showPlayerTargetInfo(): boolean {
     return this.canEditExplorer && this.itemExplorerPlayerTargetInfoEnabled;
+  }
+
+  get showExplorerDraftStatus(): boolean {
+    return this.canEditExplorer;
+  }
+
+  get showExplorerKeyboardHints(): boolean {
+    return this.canEditExplorer;
   }
 
   get canPreviewSelectedItem(): boolean {
@@ -2898,53 +2916,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     const term = this.filterText.toLowerCase();
 
     this.filteredItems = this.items.filter((item) => {
-      if (!this.showExcludedItems && this.isItemExcluded(item)) {
+      if (!this.isItemVisibleByBaseRules(item)) {
         return false;
       }
 
-      if (
-        this.showOnlyItemsWithEmpiricalDifficulty &&
-        this.hasEmpiricalDifficulty &&
-        (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
-      ) {
-        return false;
-      }
-
-      // 1. Global Filter
-      if (term) {
-        const matchesGlobal =
-          (item.unitId + item.itemId).toLowerCase().includes(term) ||
-          item.unitLabel.toLowerCase().includes(term) ||
-          item.description.toLowerCase().includes(term) ||
-          Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term));
-        if (!matchesGlobal) return false;
-      }
-
-      // 2. Column Filters
-      for (const [colId, filterValue] of Object.entries(this.columnFilters)) {
-        if (!filterValue) continue;
-        const subTerm = filterValue.toLowerCase();
-
-        if (colId === 'itemId') {
-          const combined = (item.unitId + item.itemId).toLowerCase();
-          if (!combined.includes(subTerm)) return false;
-        } else if (colId === 'unitLabel') {
-          if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
-        } else if (colId === 'tags') {
-          const tags = this.itemTags[item.uuid] || [];
-          if (!tags.some((t) => t.toLowerCase().includes(subTerm))) return false;
-        } else if (colId === 'empiricalDifficulty') {
-          if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
-            return false;
-          if (item.empiricalDifficulty.toString() !== filterValue) return false;
-        } else {
-          // Metadata column
-          const val = item.metadata[colId] || '';
-          if (!val.toLowerCase().includes(subTerm)) return false;
-        }
-      }
-
-      return true;
+      return this.matchesActiveItemFilters(item, term);
     });
 
     this.applySort(false);
@@ -2955,6 +2931,60 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   isItemExcluded(item?: ExplorerItem | null): boolean {
     return item?.excluded === true;
+  }
+
+  private isItemVisibleByBaseRules(item: ExplorerItem): boolean {
+    if (!this.showExcludedItems && this.isItemExcluded(item)) {
+      return false;
+    }
+
+    if (
+      this.showOnlyItemsWithEmpiricalDifficulty &&
+      this.hasEmpiricalDifficulty &&
+      (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private matchesActiveItemFilters(item: ExplorerItem, term: string): boolean {
+    // 1. Global Filter
+    if (term) {
+      const matchesGlobal =
+        (item.unitId + item.itemId).toLowerCase().includes(term) ||
+        item.unitLabel.toLowerCase().includes(term) ||
+        item.description.toLowerCase().includes(term) ||
+        Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term));
+      if (!matchesGlobal) return false;
+    }
+
+    // 2. Column Filters
+    for (const [colId, filterValue] of Object.entries(this.columnFilters)) {
+      if (!filterValue) continue;
+      const subTerm = filterValue.toLowerCase();
+
+      if (colId === 'itemId') {
+        const combined = (item.unitId + item.itemId).toLowerCase();
+        if (!combined.includes(subTerm)) return false;
+      } else if (colId === 'unitLabel') {
+        if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
+      } else if (colId === 'tags') {
+        const tags = this.itemTags[item.uuid] || [];
+        if (!tags.some((t) => t.toLowerCase().includes(subTerm))) return false;
+      } else if (colId === 'empiricalDifficulty') {
+        if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
+          return false;
+        if (item.empiricalDifficulty.toString() !== filterValue) return false;
+      } else {
+        // Metadata column
+        const val = item.metadata[colId] || '';
+        if (!val.toLowerCase().includes(subTerm)) return false;
+      }
+    }
+
+    return true;
   }
 
   toggleShowExcludedItems() {

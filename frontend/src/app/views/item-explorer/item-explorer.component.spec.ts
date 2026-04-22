@@ -217,9 +217,83 @@ describe('ItemExplorerComponent', () => {
 
     component.applyFilter(false);
     expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
+    expect(component.visibleItemsCount).toBe(1);
 
     component.toggleShowExcludedItems();
     expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1', 'uuid-2']);
+    expect(component.visibleItemsCount).toBe(2);
+  });
+
+  it('keeps the header total on the visible item base when text filters narrow the list', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Visible alpha item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Visible beta item',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_3',
+        uuid: 'uuid-3',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Ignored gamma item',
+        variableId: '',
+        metadata: {},
+        excluded: true,
+      },
+    ] as any;
+    component.filterText = 'alpha';
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
+    expect(component.visibleItemsCount).toBe(2);
+  });
+
+  it('counts only items with empirical difficulty when that visibility rule is active', () => {
+    const component = createComponent();
+    component.showOnlyItemsWithEmpiricalDifficulty = true;
+    component.hasEmpiricalDifficulty = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'With difficulty',
+        variableId: '',
+        metadata: {},
+        empiricalDifficulty: 0.4,
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Without difficulty',
+        variableId: '',
+        metadata: {},
+      },
+    ] as any;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
+    expect(component.visibleItemsCount).toBe(1);
   });
 
   it('excludes the selected item and moves selection to the next visible entry', () => {
@@ -636,6 +710,38 @@ describe('ItemExplorerComponent', () => {
     component.itemExplorerPlayerTargetInfoEnabled = true;
 
     expect(component.showPlayerTargetInfo).toBe(false);
+  });
+
+  it('hides the draft status bar for read-only users', () => {
+    const component = createComponent();
+
+    component.canEditExplorer = false;
+
+    expect(component.showExplorerDraftStatus).toBe(false);
+  });
+
+  it('shows the draft status bar for editors', () => {
+    const component = createComponent();
+
+    component.canEditExplorer = true;
+
+    expect(component.showExplorerDraftStatus).toBe(true);
+  });
+
+  it('hides keyboard hints for read-only users', () => {
+    const component = createComponent();
+
+    component.canEditExplorer = false;
+
+    expect(component.showExplorerKeyboardHints).toBe(false);
+  });
+
+  it('shows keyboard hints for editors', () => {
+    const component = createComponent();
+
+    component.canEditExplorer = true;
+
+    expect(component.showExplorerKeyboardHints).toBe(true);
   });
 
   it('hides player target diagnostics when the ACP flag is disabled', () => {

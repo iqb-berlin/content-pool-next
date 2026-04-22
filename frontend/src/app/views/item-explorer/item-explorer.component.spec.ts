@@ -411,6 +411,93 @@ describe('ItemExplorerComponent', () => {
     expect(target.focus).toHaveBeenCalled();
   });
 
+  it('keeps the preview in loading state until both player assets are ready', () => {
+    const component = createComponent();
+
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 1',
+      variableId: 'VAR_1',
+      metadata: {},
+    } as any;
+    (component as any).loadingUnit = false;
+    (component as any).responseStateReady = true;
+    (component as any).playerHtmlLoadState = 'loading';
+    (component as any).definitionLoadState = 'loading';
+
+    expect(component.isPreviewLoading).toBe(true);
+    expect(component.shouldRenderPlayerFrame).toBe(false);
+
+    (component as any).playerHtmlLoadState = 'ready';
+    component.playerSrcDoc = '<html></html>';
+
+    expect(component.isPreviewLoading).toBe(true);
+    expect(component.shouldRenderPlayerFrame).toBe(false);
+
+    (component as any).definitionLoadState = 'ready';
+
+    expect(component.isPreviewLoading).toBe(false);
+    expect(component.shouldRenderPlayerFrame).toBe(true);
+  });
+
+  it('stops the loading state immediately when preview assets are missing', () => {
+    const component = createComponent();
+
+    component.selectedItem = {
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      unitId: 'UNIT_2',
+      unitLabel: 'Unit 2',
+      description: 'Item 2',
+      variableId: 'VAR_2',
+      metadata: {},
+    } as any;
+    (component as any).loadingUnit = false;
+    (component as any).responseStateReady = false;
+    (component as any).playerHtmlLoadState = 'missing';
+    (component as any).definitionLoadState = 'ready';
+
+    expect(component.isPreviewLoading).toBe(false);
+    expect(component.shouldRenderPlayerFrame).toBe(false);
+  });
+
+  it('treats iframe refreshes as loading during paging-mode changes', () => {
+    vi.useFakeTimers();
+    const component = createComponent();
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_3',
+        uuid: 'uuid-3',
+        unitId: 'UNIT_3',
+        unitLabel: 'Unit 3',
+        description: 'Item 3',
+        variableId: 'VAR_3',
+        metadata: {},
+      } as any;
+      (component as any).loadingUnit = false;
+      (component as any).responseStateReady = true;
+      (component as any).playerHtmlLoadState = 'ready';
+      (component as any).definitionLoadState = 'ready';
+      component.playerSrcDoc = '<html></html>';
+
+      component.onPagingModeChange();
+
+      expect(component.isPreviewLoading).toBe(true);
+      expect(component.shouldRenderPlayerFrame).toBe(false);
+
+      vi.advanceTimersByTime(50);
+
+      expect(component.isPreviewLoading).toBe(false);
+      expect(component.shouldRenderPlayerFrame).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for response state before starting the player preview', () => {
     vi.useFakeTimers();
     const component = createComponent({ getStartPage: () => 2 });

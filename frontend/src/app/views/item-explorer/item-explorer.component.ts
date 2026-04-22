@@ -61,6 +61,7 @@ interface PreviewTargetResolution {
 }
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
+type PreviewAssetLoadState = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -605,7 +606,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                 <h3>Keine zielgenaue Player-Vorschau</h3>
                 <p>{{ previewUnavailableMessage }}</p>
               </div>
-            } @else if (playerSrcDoc) {
+            } @else if (isPreviewLoading) {
+              <div class="empty-state">
+                <div class="spinner"></div>
+                <p>Aufgabe wird geladen...</p>
+              </div>
+            } @else if (shouldRenderPlayerFrame) {
               <iframe
                 #playerFrame
                 [srcdoc]="playerSrcDoc"
@@ -616,11 +622,6 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                 (load)="onPlayerLoaded()"
               >
               </iframe>
-            } @else if (loadingUnit) {
-              <div class="empty-state">
-                <div class="spinner"></div>
-                <p>Aufgabe wird geladen...</p>
-              </div>
             } @else {
               <div class="empty-state">
                 <div style="font-size:2.5rem;margin-bottom:12px">🎮</div>
@@ -2469,6 +2470,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   selectedItem: ExplorerItem | null = null;
   selectedIndex = -1;
   loadingUnit = false;
+  private playerHtmlLoadState: PreviewAssetLoadState = 'idle';
+  private definitionLoadState: PreviewAssetLoadState = 'idle';
+  private playerFrameRefreshPending = false;
 
   // Player
   unit: any = null;
@@ -2693,6 +2697,31 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (!this.previewUnavailableReason) return '';
     if (this.showPlayerTargetInfo) return this.previewUnavailableReason;
     return 'Für dieses Item ist keine zielgenaue Player-Vorschau verfügbar.';
+  }
+
+  get isPreviewLoading(): boolean {
+    if (!this.selectedItem || this.previewUnavailableReason || this.hasPreviewLoadFailure()) {
+      return false;
+    }
+
+    return (
+      this.loadingUnit ||
+      this.playerFrameRefreshPending ||
+      this.playerHtmlLoadState === 'loading' ||
+      this.definitionLoadState === 'loading' ||
+      !this.responseStateReady
+    );
+  }
+
+  get shouldRenderPlayerFrame(): boolean {
+    return (
+      !!this.selectedItem &&
+      !this.previewUnavailableReason &&
+      !this.isPreviewLoading &&
+      !!this.playerSrcDoc &&
+      this.playerHtmlLoadState === 'ready' &&
+      this.definitionLoadState === 'ready'
+    );
   }
 
   private isAudioVideoCodingVariable(coding: CodingAsText): boolean {
@@ -3261,6 +3290,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.playerFrameReady = false;
     this.responseStateReady = false;
     this.previewUnavailableReason = '';
+    this.playerHtmlLoadState = 'idle';
+    this.definitionLoadState = 'idle';
+    this.playerFrameRefreshPending = false;
   }
 
   // --- Item Selection ---
@@ -3324,6 +3356,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   // --- Response State ---
   private loadPreviewContext(item: ExplorerItem, token: number) {
     this.loadingUnit = true;
+    this.playerHtmlLoadState = 'idle';
+    this.definitionLoadState = 'idle';
     this.loadResponseStateForItem(item, token);
 
     this.api.getFileUnitView(this.acpId, item.unitId).subscribe({
@@ -3332,19 +3366,27 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         this.unit = u;
         this.loadingUnit = false;
 
-        if (!u) return;
+        if (!u) {
+          this.playerHtmlLoadState = 'missing';
+          this.definitionLoadState = 'missing';
+          return;
+        }
 
         const deps = (u.dependencies || []).map((d: any) => ({
           ...d,
           downloadUrl: this.api.appendAuthToken(d.downloadUrl),
         }));
         u.dependencies = deps;
+        this.playerHtmlLoadState = 'loading';
+        this.definitionLoadState = 'loading';
         this.loadPlayerHtml(deps, token);
         this.loadDefinition(deps, token);
       },
       error: () => {
         if (token !== this.unitLoadToken) return;
         this.loadingUnit = false;
+        this.playerHtmlLoadState = 'error';
+        this.definitionLoadState = 'error';
       },
     });
   }
@@ -3539,9 +3581,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.clearLegacyPageNavigationTimers();
     const src = this.playerSrcDoc;
     this.playerFrameReady = false;
+    this.playerFrameRefreshPending = true;
     this.playerSrcDoc = null;
     setTimeout(() => {
       this.playerSrcDoc = src;
+      this.playerFrameRefreshPending = false;
     }, 50);
   }
 
@@ -3634,6 +3678,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     );
     if (!playerDep?.downloadUrl) {
       if (token !== this.unitLoadToken) return;
+      this.playerHtmlLoadState = 'missing';
       this.playerSrcDoc = null;
       return;
     }
@@ -3642,12 +3687,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
+        this.playerHtmlLoadState = 'ready';
         this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
           rewriteGeoGebraAssetUrls(html),
         );
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;
+        this.playerHtmlLoadState = 'error';
         this.playerSrcDoc = null;
       });
   }
@@ -3660,6 +3707,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     if (!definitionDep?.downloadUrl) {
       if (token !== this.unitLoadToken) return;
+      this.definitionLoadState = 'missing';
       this.definitionContent = null;
       return;
     }
@@ -3668,13 +3716,24 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       .then((res) => res.text())
       .then((definition) => {
         if (token !== this.unitLoadToken) return;
+        this.definitionLoadState = 'ready';
         this.definitionContent = definition;
         this.startPlayerIfReady();
       })
       .catch(() => {
         if (token !== this.unitLoadToken) return;
+        this.definitionLoadState = 'error';
         this.definitionContent = null;
       });
+  }
+
+  private hasPreviewLoadFailure(): boolean {
+    return (
+      this.playerHtmlLoadState === 'missing' ||
+      this.playerHtmlLoadState === 'error' ||
+      this.definitionLoadState === 'missing' ||
+      this.definitionLoadState === 'error'
+    );
   }
 
   private startPlayerIfReady() {

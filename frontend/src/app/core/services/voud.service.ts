@@ -11,6 +11,12 @@ export interface PrepareDefinitionOutput {
   variablePages: TransformedVariablePage[];
 }
 
+export interface PlayerTargetLocation {
+  absolutePageIndex: number;
+  scrollPageIndex?: number;
+  isAlwaysVisiblePage: boolean;
+}
+
 interface IdentifierBearingNode {
   id?: unknown;
   alias?: unknown;
@@ -48,8 +54,7 @@ export class VoudService {
     const pages = unitDefinition.pages || [];
 
     const rawVariablePagesData = pages.map((page: any, i: number) => {
-      const rawAlwaysVisible = this.getDeepestElements(page, 'alwaysVisible');
-      const variable_page_always_visible = this.listSimplify(rawAlwaysVisible);
+      const variable_page_always_visible = this.isPageAlwaysVisible(page) ? ['true'] : [];
 
       const rawRef = this.getDeepestElements(page, 'id', ['visibilityRules']);
       const variable_ref = this.listSimplify(rawRef);
@@ -104,34 +109,52 @@ export class VoudService {
   }
 
   /**
-   * Finds the start page for a specific variable.
-   * Returns the 0-based player page index or undefined if not found.
-   *
-   * Some VOUDs prepend a static intro page before the first item page. Those
-   * files typically have no item aliases on the first page while later pages do.
-   * The embedded player expects item-relative paging in that case, so we
-   * normalize the matching page by subtracting that fixed intro-page offset.
+   * Resolves a variable target to the player's page model.
+   * `scrollPageIndex` uses the player's filtered `scrollPages` index space and
+   * stays undefined for targets on always-visible pages.
    */
-  getStartPage(definition: string, variableId: string): number | undefined {
+  resolvePlayerTargetLocation(
+    definition: string,
+    variableId: string,
+  ): PlayerTargetLocation | undefined {
     const target = String(variableId || '').trim();
     if (!target) return undefined;
+
     try {
       const unitDefinition = this.parseDefinition(definition);
       const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
       const targetLower = target.toLowerCase();
-      const fixedPageOffset = this.hasFixedIntroPage(pages) ? 1 : 0;
+      let scrollPageIndex = 0;
 
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-        const pageRefs = this.getPageVariableRefs(pages[pageIndex]);
+        const page = pages[pageIndex];
+        const pageRefs = this.getPageVariableRefs(page);
+        const isAlwaysVisiblePage = this.isPageAlwaysVisible(page);
         if (pageRefs.some((ref) => ref === target || ref.toLowerCase() === targetLower)) {
-          return Math.max(0, pageIndex - fixedPageOffset);
+          return {
+            absolutePageIndex: pageIndex,
+            scrollPageIndex: isAlwaysVisiblePage ? undefined : scrollPageIndex,
+            isAlwaysVisiblePage,
+          };
+        }
+
+        if (!isAlwaysVisiblePage) {
+          scrollPageIndex += 1;
         }
       }
       return undefined;
     } catch (e) {
-      console.error('Error calculating start page from VOUD:', e);
+      console.error('Error resolving player target location from VOUD:', e);
       return undefined;
     }
+  }
+
+  /**
+   * Returns the 0-based player page index within the player's `scrollPages` model.
+   * Targets on always-visible pages intentionally return `undefined`.
+   */
+  getStartPage(definition: string, variableId: string): number | undefined {
+    return this.resolvePlayerTargetLocation(definition, variableId)?.scrollPageIndex;
   }
 
   /**
@@ -190,27 +213,12 @@ export class VoudService {
     );
   }
 
-  private hasFixedIntroPage(pages: any[]): boolean {
-    if (pages.length < 2) {
-      return false;
-    }
-
-    const firstPageAliases = this.getPageAliases(pages[0]);
-    if (firstPageAliases.length > 0) {
-      return false;
-    }
-
-    return pages.slice(1).some((page) => this.getPageAliases(page).length > 0);
-  }
-
-  private getPageAliases(page: any): string[] {
-    return Array.from(
-      new Set(
-        this.listSimplify(this.getDeepestElements(page, 'alias', ['visibilityRules']))
-          .map((value) => String(value || '').trim())
-          .filter((value) => value.length > 0),
-      ),
-    );
+  private isPageAlwaysVisible(page: any): boolean {
+    const value = page?.alwaysVisible;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'number') return value === 1;
+    if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+    return false;
   }
 
   private getNodeIdentifiers(node: IdentifierBearingNode): string[] {

@@ -421,7 +421,8 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
     const variableRef = this.item.sourceVariable || this.item.variableId || '';
     const startPage = variableRef
-      ? this.voudService.getStartPage(this.definitionContent, variableRef)
+      ? this.voudService.resolvePlayerTargetLocation(this.definitionContent, variableRef)
+          ?.scrollPageIndex
       : undefined;
     const sessionId = `review-item-${this.itemId}-${this.startSessionCounter + 1}`;
 

@@ -19,8 +19,19 @@ function createComponent(options?: { startPageData?: Record<string, unknown> }) 
     appendAuthToken: vi.fn((value: string) => value),
   };
   const sanitizer = { bypassSecurityTrustHtml: (html: string) => html };
+  const getStartPage = vi.fn();
   const voudService = {
-    getStartPage: vi.fn(),
+    getStartPage,
+    resolvePlayerTargetLocation: vi.fn((definition: string, variableId: string) => {
+      const startPage = getStartPage(definition, variableId);
+      return startPage === undefined
+        ? undefined
+        : {
+            absolutePageIndex: startPage,
+            scrollPageIndex: startPage,
+            isAlwaysVisiblePage: false,
+          };
+    }),
     getFocusIdentifiers: vi.fn((_definition: string, variableId: string) => [variableId]),
   };
 

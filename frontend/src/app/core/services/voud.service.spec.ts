@@ -35,10 +35,11 @@ describe('VoudService.getStartPage', () => {
     expect(service.getStartPage(definition, 'b1')).toBe(1);
   });
 
-  it('subtracts the fixed intro page offset for alias-based mappings', () => {
+  it('maps alias-based targets into the scroll-page index space', () => {
     const definition = JSON.stringify({
       pages: [
         {
+          alwaysVisible: true,
           sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
         },
         {
@@ -53,10 +54,11 @@ describe('VoudService.getStartPage', () => {
     expect(service.getStartPage(definition, 'b2')).toBe(1);
   });
 
-  it('subtracts the fixed intro page offset for id-based mappings too', () => {
+  it('maps id-based targets into the scroll-page index space too', () => {
     const definition = JSON.stringify({
       pages: [
         {
+          alwaysVisible: true,
           sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
         },
         {
@@ -69,6 +71,27 @@ describe('VoudService.getStartPage', () => {
     });
 
     expect(service.getStartPage(definition, 'field-b-2')).toBe(1);
+  });
+
+  it('returns undefined for targets on always-visible pages', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          alwaysVisible: true,
+          sections: [{ elements: [{ alias: 'INTRO', id: 'cover-text' }] }],
+        },
+        {
+          sections: [{ elements: [{ alias: 'A1', id: 'page-a-1' }] }],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerTargetLocation(definition, 'INTRO')).toEqual({
+      absolutePageIndex: 0,
+      scrollPageIndex: undefined,
+      isAlwaysVisiblePage: true,
+    });
+    expect(service.getStartPage(definition, 'INTRO')).toBeUndefined();
   });
 });
 

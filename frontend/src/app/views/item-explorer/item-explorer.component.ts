@@ -3664,12 +3664,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
       return;
     }
-    const startPage = this.voudService.getStartPage(this.definitionContent, previewTarget);
-    if (startPage === undefined) {
+    const targetLocation = this.voudService.resolvePlayerTargetLocation(
+      this.definitionContent,
+      previewTarget,
+    );
+    if (!targetLocation) {
       this.previewUnavailableReason =
         `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
       return;
     }
+    const startPage = targetLocation.scrollPageIndex;
     this.previewUnavailableReason = '';
     const sessionId = `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';

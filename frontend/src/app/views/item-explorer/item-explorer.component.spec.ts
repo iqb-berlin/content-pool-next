@@ -5,6 +5,16 @@ import { VoudService } from '../../core/services/voud.service';
 
 function createComponent(options?: {
   getStartPage?: (definition: string, variableId: string) => number | undefined;
+  resolvePlayerTargetLocation?: (
+    definition: string,
+    variableId: string,
+  ) =>
+    | {
+        absolutePageIndex: number;
+        scrollPageIndex?: number;
+        isAlwaysVisiblePage: boolean;
+      }
+    | undefined;
   getFocusIdentifiers?: (definition: string, variableId: string) => string[];
   stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
@@ -13,8 +23,21 @@ function createComponent(options?: {
   const router = { navigate: () => Promise.resolve(true) };
   const api = options?.api || {};
   const sanitizer = { bypassSecurityTrustHtml: (html: string) => html };
+  const getStartPage = options?.getStartPage || (() => 0);
   const voudService = {
-    getStartPage: options?.getStartPage || (() => 0),
+    getStartPage,
+    resolvePlayerTargetLocation:
+      options?.resolvePlayerTargetLocation ||
+      ((definition: string, variableId: string) => {
+        const startPage = getStartPage(definition, variableId);
+        return startPage === undefined
+          ? undefined
+          : {
+              absolutePageIndex: startPage,
+              scrollPageIndex: startPage,
+              isAlwaysVisiblePage: false,
+            };
+      }),
     getFocusIdentifiers:
       options?.getFocusIdentifiers ||
       ((_definition: string, variableId: string) => [variableId]),
@@ -378,11 +401,12 @@ describe('ItemExplorerComponent', () => {
     }
   });
 
-  it('uses the fixed intro-page offset from the VOUD service in the player preview', () => {
+  it('uses the scroll-page index from the VOUD service in the player preview', () => {
     vi.useFakeTimers();
     const realVoudService = new VoudService();
     const component = createComponent({
       getStartPage: realVoudService.getStartPage.bind(realVoudService),
+      resolvePlayerTargetLocation: realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
     });
     const postMessage = vi.fn();
 
@@ -405,6 +429,7 @@ describe('ItemExplorerComponent', () => {
       (component as any).definitionContent = JSON.stringify({
         pages: [
           {
+            alwaysVisible: true,
             sections: [{ elements: [{ id: 'cover-text' }, { id: 'cover-image' }] }],
           },
           {
@@ -447,6 +472,62 @@ describe('ItemExplorerComponent', () => {
           target: '1',
         },
       ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('starts the preview without startPage when the target is on an always-visible page', () => {
+    vi.useFakeTimers();
+    const realVoudService = new VoudService();
+    const component = createComponent({
+      getStartPage: realVoudService.getStartPage.bind(realVoudService),
+      resolvePlayerTargetLocation: realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_2A',
+        uuid: 'uuid-2a',
+        unitId: 'UNIT_2',
+        unitLabel: 'Unit 2',
+        description: 'Item on always-visible page',
+        variableId: 'INTRO',
+        metadata: {},
+      };
+      component.playerFrame = {
+        nativeElement: {
+          contentWindow: { postMessage },
+        },
+      } as any;
+      (component as any).unit = { id: 'UNIT_2', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({
+        pages: [
+          {
+            alwaysVisible: true,
+            sections: [{ elements: [{ alias: 'INTRO', id: 'cover-text' }] }],
+          },
+          {
+            sections: [{ elements: [{ alias: 'A1', id: 'page-a-1' }] }],
+          },
+        ],
+      });
+      (component as any).playerFrameReady = true;
+      (component as any).responseStateReady = true;
+
+      (component as any).startPlayerIfReady();
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+      });
+      expect(postMessage.mock.calls[0][0].playerConfig.startPage).toBeUndefined();
+
+      vi.runAllTimers();
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(component.previewUnavailableReason).toBe('');
     } finally {
       vi.useRealTimers();
     }
@@ -596,7 +677,7 @@ describe('ItemExplorerComponent', () => {
   });
 
   it('shows an explanatory message when the player target is missing in the definition', () => {
-    const component = createComponent({ getStartPage: () => undefined });
+    const component = createComponent({ resolvePlayerTargetLocation: () => undefined });
     const postMessage = vi.fn();
     component.canEditExplorer = true;
     component.itemExplorerPlayerTargetInfoEnabled = true;

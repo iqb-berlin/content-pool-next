@@ -1,4 +1,4 @@
-import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -49,7 +49,7 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
         </button>
         @if (files.length) {
           <button class="btn btn-outline" (click)="downloadAllFiles()" [disabled]="isBusy">
-            {{ downloading ? '⏳ ZIP wird erstellt...' : '⬇ Alle herunterladen' }}
+            {{ downloadAllButtonLabel }}
           </button>
         }
         <input #uploadInput type="file" multiple (change)="upload($event)" hidden />
@@ -103,6 +103,31 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
         <div style="margin-top:8px">{{ processingProgress }}</div>
         @if (processingJob.message) {
           <div style="margin-top:4px;color:var(--color-text-secondary)">{{ processingJob.message }}</div>
+        }
+      </div>
+    }
+
+    @if (downloading && (downloadJob || downloadTransferActive)) {
+      <div class="alert alert-info">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+          <strong>{{ downloadStatusLabel }}</strong>
+          @if (downloadPercent !== null) {
+            <span>{{ downloadPercent }}%</span>
+          }
+        </div>
+        @if (downloadPercent !== null) {
+          <div
+            style="margin-top:10px;height:10px;background:#d7e7f7;border-radius:999px;overflow:hidden"
+          >
+            <div
+              style="height:100%;background:#2563eb;transition:width 180ms ease"
+              [style.width.%]="downloadPercent"
+            ></div>
+          </div>
+        }
+        <div style="margin-top:8px">{{ downloadProgress }}</div>
+        @if (downloadMessage) {
+          <div style="margin-top:4px;color:var(--color-text-secondary)">{{ downloadMessage }}</div>
         }
       </div>
     }
@@ -268,7 +293,7 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
             (click)="downloadSelectedFiles()"
             [disabled]="selectedFilesCount === 0 || isBusy"
           >
-            Auswahl herunterladen
+            {{ downloadSelectedButtonLabel }}
           </button>
           <button
             class="btn btn-danger btn-sm"
@@ -686,6 +711,11 @@ export class FilesComponent implements OnInit {
   uploadProgress = '';
   uploadError: string | null = null;
   downloading = false;
+  downloadJob: FileProcessingJob | null = null;
+  downloadTransferActive = false;
+  downloadTransferStartedAt: number | null = null;
+  downloadTransferredBytes = 0;
+  downloadTransferTotalBytes: number | null = null;
   downloadError: string | null = null;
   validating = false;
   validationResults: UnitFileValidationResult[] = [];
@@ -717,6 +747,20 @@ export class FilesComponent implements OnInit {
     return this.uploading || this.processing || this.downloading;
   }
 
+  get downloadAllButtonLabel(): string {
+    if (this.downloadTransferActive) {
+      return '⏳ ZIP wird geladen...';
+    }
+    if (this.downloading) {
+      return '⏳ ZIP wird erstellt...';
+    }
+    return '⬇ Alle herunterladen';
+  }
+
+  get downloadSelectedButtonLabel(): string {
+    return this.downloading ? '⏳ Download läuft...' : 'Auswahl herunterladen';
+  }
+
   get processingPercent(): number | null {
     if (!this.processingJob) {
       return null;
@@ -741,6 +785,86 @@ export class FilesComponent implements OnInit {
       return `${this.processingJob.phaseCurrent} von ${this.processingJob.phaseTotal}`;
     }
     return 'Verarbeitung wird vorbereitet...';
+  }
+
+  get downloadStatusLabel(): string {
+    if (this.downloadTransferActive) {
+      return 'ZIP wird heruntergeladen';
+    }
+    return this.downloadJob?.phaseLabel || 'ZIP wird erstellt';
+  }
+
+  get downloadPercent(): number | null {
+    if (this.downloadTransferActive) {
+      if (!this.downloadTransferTotalBytes || this.downloadTransferTotalBytes <= 0) {
+        return null;
+      }
+      return Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round((this.downloadTransferredBytes / this.downloadTransferTotalBytes) * 100),
+        ),
+      );
+    }
+    if (!this.downloadJob) {
+      return null;
+    }
+    if (this.downloadJob.status === 'completed') {
+      return 100;
+    }
+    if (this.downloadJob.phaseTotal <= 0) {
+      return null;
+    }
+    return Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round((this.downloadJob.phaseCurrent / this.downloadJob.phaseTotal) * 100),
+      ),
+    );
+  }
+
+  get downloadProgress(): string {
+    if (this.downloadTransferActive) {
+      if (this.downloadTransferTotalBytes && this.downloadTransferTotalBytes > 0) {
+        return `${this.formatSize(this.downloadTransferredBytes)} von ${this.formatSize(this.downloadTransferTotalBytes)}`;
+      }
+      if (this.downloadTransferredBytes > 0) {
+        return `${this.formatSize(this.downloadTransferredBytes)} heruntergeladen`;
+      }
+      return 'Download wird gestartet...';
+    }
+    if (!this.downloadJob) {
+      return '';
+    }
+    if (this.isByteBasedDownloadJob(this.downloadJob)) {
+      return (
+        `${this.formatSize(this.downloadJob.phaseCurrent)} von ` +
+        `${this.formatSize(this.downloadJob.phaseTotal)} verarbeitet`
+      );
+    }
+    if (this.downloadJob.phaseTotal > 0) {
+      return `${this.downloadJob.phaseCurrent} von ${this.downloadJob.phaseTotal}`;
+    }
+    if (this.downloadJob.status === 'completed') {
+      return 'Archiv ist bereit.';
+    }
+    return 'ZIP-Erstellung wird vorbereitet...';
+  }
+
+  get downloadMessage(): string | null {
+    if (this.downloadTransferActive) {
+      const transferDetails = [
+        this.getDownloadTransferRateLabel(),
+        this.getDownloadTransferEtaLabel(),
+      ].filter((entry): entry is string => !!entry);
+      if (!transferDetails.length) {
+        return 'Das ZIP-Archiv wird in den Browser übertragen.';
+      }
+      return `Das ZIP-Archiv wird in den Browser übertragen. ${transferDetails.join(' · ')}`;
+    }
+    return this.downloadJob?.message || null;
   }
 
   ngOnInit() {
@@ -1000,7 +1124,9 @@ export class FilesComponent implements OnInit {
       );
       this.processingJob = job;
 
-      const completedJob = await this.waitForProcessingJob(job.id);
+      const completedJob = await this.waitForJob(job.id, (nextJob) => {
+        this.processingJob = nextJob;
+      });
       this.processingJob = completedJob;
       this.lastSyncReport = completedJob.syncReport || null;
       this.lastValidationSummary = completedJob.validationSummary || null;
@@ -1393,9 +1519,12 @@ export class FilesComponent implements OnInit {
       `${this.formatSize(Math.min(uploadedBytes, totalBytes))} von ${this.formatSize(totalBytes)}`;
   }
 
-  private async waitForProcessingJob(jobId: string): Promise<FileProcessingJob> {
+  private async waitForJob(
+    jobId: string,
+    setJobState: (job: FileProcessingJob) => void,
+  ): Promise<FileProcessingJob> {
     if (typeof EventSource === 'undefined') {
-      return this.pollProcessingJob(jobId);
+      return this.pollJob(jobId, setJobState);
     }
 
     return new Promise((resolve, reject) => {
@@ -1421,19 +1550,19 @@ export class FilesComponent implements OnInit {
           job = JSON.parse(event.data) as FileProcessingJob;
         } catch {
           eventSource.close();
-          void this.pollProcessingJob(jobId)
+          void this.pollJob(jobId, setJobState)
             .then((fallbackJob) => finish(fallbackJob, fallbackJob.status === 'failed' ? fallbackJob.error || undefined : undefined))
             .catch(reject);
           return;
         }
 
-        this.processingJob = job;
+        setJobState(job);
         if (job.status === 'completed') {
           finish(job);
           return;
         }
         if (job.status === 'failed') {
-          finish(job, job.error || 'Verarbeitung fehlgeschlagen.');
+          finish(job, job.error || 'Job fehlgeschlagen.');
         }
       };
 
@@ -1442,11 +1571,11 @@ export class FilesComponent implements OnInit {
           return;
         }
         eventSource.close();
-        void this.pollProcessingJob(jobId)
+        void this.pollJob(jobId, setJobState)
           .then((job) => {
-            this.processingJob = job;
+            setJobState(job);
             if (job.status === 'failed') {
-              finish(job, job.error || 'Verarbeitung fehlgeschlagen.');
+              finish(job, job.error || 'Job fehlgeschlagen.');
               return;
             }
             finish(job);
@@ -1456,10 +1585,13 @@ export class FilesComponent implements OnInit {
     });
   }
 
-  private async pollProcessingJob(jobId: string): Promise<FileProcessingJob> {
+  private async pollJob(
+    jobId: string,
+    setJobState: (job: FileProcessingJob) => void,
+  ): Promise<FileProcessingJob> {
     for (;;) {
       const job = await firstValueFrom(this.api.getFileProcessingJob(this.acpId, jobId));
-      this.processingJob = job;
+      setJobState(job);
       if (job.status === 'completed' || job.status === 'failed') {
         return job;
       }
@@ -1508,23 +1640,56 @@ export class FilesComponent implements OnInit {
   private async downloadArchive(fileIds: string[], fallbackFileName: string) {
     this.downloading = true;
     this.downloadError = null;
+    this.downloadJob = null;
+    this.downloadTransferActive = false;
+    this.downloadTransferStartedAt = null;
+    this.downloadTransferredBytes = 0;
+    this.downloadTransferTotalBytes = null;
 
     try {
-      const response = await firstValueFrom(this.api.downloadFilesArchive(this.acpId, fileIds));
-      const blob = response.body;
-      if (!blob) {
+      const job = await firstValueFrom(this.api.startFileDownloadJob(this.acpId, { fileIds }));
+      this.downloadJob = job;
+
+      const completedJob = await this.waitForJob(job.id, (nextJob) => {
+        this.downloadJob = nextJob;
+      });
+      this.downloadJob = completedJob;
+      this.downloadTransferActive = true;
+      this.downloadTransferStartedAt = null;
+
+      const response = await fetch(this.api.getFileJobArchiveUrl(this.acpId, completedJob.id));
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const blob = await this.readDownloadResponseBlob(response);
+      if (!blob || blob.size === 0) {
         throw new Error('Archive response is empty');
       }
 
-      this.triggerBrowserDownload(blob, this.getArchiveFileName(response, fallbackFileName));
+      this.triggerBrowserDownload(
+        blob,
+        this.getArchiveFileName(response, completedJob.archiveFileName || fallbackFileName),
+      );
     } catch (err: any) {
-      this.downloadError = err?.error?.message || 'Fehler beim Herunterladen der Dateien.';
+      this.downloadError =
+        err?.error?.message || err?.message || 'Fehler beim Herunterladen der Dateien.';
     } finally {
       this.downloading = false;
+      this.downloadTransferActive = false;
+      this.downloadTransferStartedAt = null;
+      this.downloadTransferredBytes = 0;
+      this.downloadTransferTotalBytes = null;
+      if (!this.downloadError) {
+        this.downloadJob = null;
+      }
     }
   }
 
-  private getArchiveFileName(response: HttpResponse<Blob>, fallbackFileName: string): string {
+  private getArchiveFileName(
+    response: { headers: { get(name: string): string | null } },
+    fallbackFileName: string,
+  ): string {
     const contentDisposition = response.headers.get('content-disposition') || '';
     const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
     if (encodedMatch?.[1]) {
@@ -1539,6 +1704,48 @@ export class FilesComponent implements OnInit {
     return fallbackFileName;
   }
 
+  private async readDownloadResponseBlob(response: Response): Promise<Blob> {
+    const totalHeader = Number(response.headers.get('content-length') || '');
+    this.downloadTransferTotalBytes =
+      Number.isFinite(totalHeader) && totalHeader > 0 ? totalHeader : null;
+
+    if (!response.body) {
+      this.downloadTransferStartedAt = this.downloadTransferStartedAt || Date.now();
+      const blob = await response.blob();
+      this.downloadTransferredBytes = blob.size;
+      if (!this.downloadTransferTotalBytes && blob.size > 0) {
+        this.downloadTransferTotalBytes = blob.size;
+      }
+      return blob;
+    }
+
+    const reader = response.body.getReader();
+    const chunks: BlobPart[] = [];
+    let loadedBytes = 0;
+
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      if (!value) {
+        continue;
+      }
+      this.downloadTransferStartedAt = this.downloadTransferStartedAt || Date.now();
+      chunks.push(value.slice());
+      loadedBytes += value.byteLength;
+      this.downloadTransferredBytes = loadedBytes;
+    }
+
+    if (!this.downloadTransferTotalBytes && loadedBytes > 0) {
+      this.downloadTransferTotalBytes = loadedBytes;
+    }
+
+    return new Blob(chunks, {
+      type: response.headers.get('content-type') || 'application/zip',
+    });
+  }
+
   private triggerBrowserDownload(blob: Blob, fileName: string) {
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -1549,6 +1756,72 @@ export class FilesComponent implements OnInit {
     link.click();
     link.remove();
     URL.revokeObjectURL(objectUrl);
+  }
+
+  private isByteBasedDownloadJob(job: FileProcessingJob): boolean {
+    return job.jobType === 'archive-download' && job.phase === 'zip-files';
+  }
+
+  private getDownloadTransferRateLabel(): string | null {
+    if (!this.downloadTransferActive || !this.downloadTransferStartedAt || this.downloadTransferredBytes <= 0) {
+      return null;
+    }
+
+    const elapsedSeconds = Math.max((Date.now() - this.downloadTransferStartedAt) / 1000, 0.001);
+    const bytesPerSecond = this.downloadTransferredBytes / elapsedSeconds;
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+      return null;
+    }
+
+    return `${this.formatSize(bytesPerSecond)}/s`;
+  }
+
+  private getDownloadTransferEtaLabel(): string | null {
+    if (
+      !this.downloadTransferActive ||
+      !this.downloadTransferStartedAt ||
+      !this.downloadTransferTotalBytes ||
+      this.downloadTransferTotalBytes <= this.downloadTransferredBytes
+    ) {
+      return null;
+    }
+
+    const elapsedSeconds = Math.max((Date.now() - this.downloadTransferStartedAt) / 1000, 0.001);
+    const bytesPerSecond = this.downloadTransferredBytes / elapsedSeconds;
+    if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) {
+      return null;
+    }
+
+    const remainingSeconds =
+      (this.downloadTransferTotalBytes - this.downloadTransferredBytes) / bytesPerSecond;
+    if (!Number.isFinite(remainingSeconds) || remainingSeconds <= 0) {
+      return null;
+    }
+
+    return `${this.formatRemainingTime(remainingSeconds)} verbleibend`;
+  }
+
+  private formatRemainingTime(seconds: number): string {
+    const normalizedSeconds = Math.max(Math.ceil(seconds), 1);
+    if (normalizedSeconds < 60) {
+      return `${normalizedSeconds} s`;
+    }
+
+    const minutes = Math.floor(normalizedSeconds / 60);
+    const remainingSeconds = normalizedSeconds % 60;
+    if (minutes < 60) {
+      if (!remainingSeconds) {
+        return `${minutes} min`;
+      }
+      return `${minutes} min ${remainingSeconds} s`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    if (!remainingMinutes) {
+      return `${hours} h`;
+    }
+    return `${hours} h ${remainingMinutes} min`;
   }
 
   private normalizeFileName(fileName: string): string {

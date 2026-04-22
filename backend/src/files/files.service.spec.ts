@@ -420,6 +420,54 @@ describe("FilesService", () => {
         service.createFilesZip("acp-1", ["missing-file"]),
       ).rejects.toThrow(NotFoundException);
     });
+
+    it("should report ZIP archive progress in processed bytes", async () => {
+      repo.find.mockResolvedValue([
+        {
+          ...mockFile,
+          id: "file-1",
+          originalName: "test.json",
+          fileSize: 1200,
+          filePath: "/uploads/acp-1/test.json",
+        },
+        {
+          ...mockFile,
+          id: "file-2",
+          originalName: "second.json",
+          fileSize: 800,
+          filePath: "/uploads/acp-1/second.json",
+        },
+      ]);
+
+      const progress = {
+        startPhase: jest.fn().mockResolvedValue(undefined),
+        advance: jest.fn().mockResolvedValue(undefined),
+        setMessage: jest.fn().mockResolvedValue(undefined),
+        completePhase: jest.fn().mockResolvedValue(undefined),
+      };
+
+      await expect(
+        service.createFilesZipArchive("acp-1", ["file-1", "file-2"], progress),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          fileName: "acp-acp-1-selected-files.zip",
+        }),
+      );
+
+      expect(progress.startPhase).toHaveBeenCalledWith("zip-files", 2000, {
+        phaseLabel: "ZIP wird erstellt",
+        message: "0 von 2 Datei(en), 0 B von 2.0 KB verarbeitet",
+      });
+      expect(progress.advance).toHaveBeenNthCalledWith(1, {
+        delta: 1200,
+        message: "1 von 2 Datei(en), 1.2 KB von 2.0 KB verarbeitet",
+      });
+      expect(progress.advance).toHaveBeenNthCalledWith(2, {
+        delta: 800,
+        message: "2 von 2 Datei(en), 2.0 KB von 2.0 KB verarbeitet",
+      });
+      expect(progress.completePhase).toHaveBeenCalledWith("ZIP-Datei ist erstellt.");
+    });
   });
 
   describe("delete", () => {

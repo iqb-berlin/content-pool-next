@@ -11,6 +11,7 @@ import { Acp } from "./acp.entity";
 import {
   FileProcessingJobPhase,
   FileProcessingJobStatus,
+  FileProcessingJobType,
 } from "../../files/file-processing-progress";
 
 @Entity("acp_file_processing_jobs")
@@ -23,6 +24,9 @@ export class AcpFileProcessingJob {
 
   @Column({ name: "created_by_user_id", type: "uuid", nullable: true })
   createdByUserId?: string | null;
+
+  @Column({ name: "job_type", type: "varchar", length: 32, default: "upload-process" })
+  jobType!: FileProcessingJobType;
 
   @Column({ type: "varchar", length: 32, default: "pending" })
   status!: FileProcessingJobStatus;
@@ -62,6 +66,12 @@ export class AcpFileProcessingJob {
 
   @Column({ name: "response_state_cleanup", type: "jsonb", nullable: true })
   responseStateCleanup?: Record<string, unknown> | null;
+
+  @Column({ name: "archive_file_name", type: "varchar", length: 255, nullable: true })
+  archiveFileName?: string | null;
+
+  @Column({ name: "archive_file_path", type: "text", nullable: true })
+  archiveFilePath?: string | null;
 
   @Column({ type: "text", nullable: true })
   error?: string | null;

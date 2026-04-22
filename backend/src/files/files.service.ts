@@ -646,37 +646,42 @@ export class FilesService {
     acpId: string,
     ids?: string[],
   ): Promise<{ buffer: Buffer; fileName: string }> {
-    const allFiles = await this.findByAcp(acpId);
-    if (!allFiles.length) {
-      throw new NotFoundException(`No files found for ACP "${acpId}"`);
-    }
-
-    const normalizedIds = Array.from(
-      new Set(
-        (ids || [])
-          .map((id) => String(id || "").trim())
-          .filter((id) => id.length > 0),
-      ),
-    );
-
-    let files = allFiles;
-    let fileName = `acp-${acpId}-all-files.zip`;
-
-    if (normalizedIds.length) {
-      const filesById = new Map(allFiles.map((file) => [file.id, file]));
-      const missingIds = normalizedIds.filter((id) => !filesById.has(id));
-      if (missingIds.length) {
-        throw new NotFoundException(
-          `Files not found for ACP ${acpId}: ${missingIds.join(", ")}`,
-        );
-      }
-
-      files = normalizedIds.map((id) => filesById.get(id)!);
-      fileName = `acp-${acpId}-selected-files.zip`;
-    }
-
+    const { files, fileName } = await this.resolveFilesForArchive(acpId, ids);
     const buffer = await this.createZipBuffer(files);
     return { buffer, fileName };
+  }
+
+  async createFilesZipArchive(
+    acpId: string,
+    ids?: string[],
+    progress?: FileProcessingProgressReporter,
+  ): Promise<{ filePath: string; fileName: string }> {
+    const { files, fileName } = await this.resolveFilesForArchive(acpId, ids);
+    const totalSourceBytes = this.getArchiveSourceBytesTotal(files);
+    if (progress) {
+      await progress.startPhase("zip-files", totalSourceBytes, {
+        phaseLabel: "ZIP wird erstellt",
+        message: this.buildArchiveProgressMessage(
+          0,
+          files.length,
+          0,
+          totalSourceBytes,
+        ),
+      });
+    }
+
+    const buffer = await this.createZipBuffer(files, progress);
+    const archiveDir = path.join(this.storagePath, acpId, "__archives");
+    await fs.mkdir(archiveDir, { recursive: true });
+
+    const archivePath = path.join(archiveDir, `${crypto.randomUUID()}.zip`);
+    await fs.writeFile(archivePath, buffer);
+
+    if (progress) {
+      await progress.completePhase("ZIP-Datei ist erstellt.");
+    }
+
+    return { filePath: archivePath, fileName };
   }
 
   async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
@@ -1292,20 +1297,39 @@ export class FilesService {
     return allFiles.filter((file) => dependencyNames.has(file.originalName));
   }
 
-  private async createZipBuffer(files: AcpFile[]): Promise<Buffer> {
+  private async createZipBuffer(
+    files: AcpFile[],
+    progress?: FileProcessingProgressReporter,
+  ): Promise<Buffer> {
     // JSZip is already part of the backend dependency tree.
     // Use dynamic require here to avoid TypeScript type dependency friction.
     const JSZip = require("jszip");
     const zip = new JSZip();
 
     let added = 0;
-    for (const file of files) {
+    let processedBytes = 0;
+    const totalSourceBytes = this.getArchiveSourceBytesTotal(files);
+    for (const [index, file] of files.entries()) {
+      const fileBytes = this.getArchiveProgressBytes(file);
       try {
         const data = await fs.readFile(file.filePath);
         zip.file(file.originalName, data);
         added++;
       } catch {
         // Ignore missing on-disk files; we still zip what is available.
+      } finally {
+        processedBytes += fileBytes;
+        if (progress) {
+          await progress.advance({
+            delta: fileBytes,
+            message: this.buildArchiveProgressMessage(
+              index + 1,
+              files.length,
+              processedBytes,
+              totalSourceBytes,
+            ),
+          });
+        }
       }
     }
 
@@ -1322,6 +1346,82 @@ export class FilesService {
     });
 
     return buffer as Buffer;
+  }
+
+  private getArchiveSourceBytesTotal(files: AcpFile[]): number {
+    return files.reduce(
+      (sum, file) => sum + this.getArchiveProgressBytes(file),
+      0,
+    );
+  }
+
+  private getArchiveProgressBytes(file: AcpFile): number {
+    const fileSize = Number(file.fileSize || 0);
+    return Number.isFinite(fileSize) && fileSize > 0 ? fileSize : 0;
+  }
+
+  private buildArchiveProgressMessage(
+    processedFiles: number,
+    totalFiles: number,
+    processedBytes: number,
+    totalBytes: number,
+  ): string {
+    return (
+      `${processedFiles} von ${totalFiles} Datei(en), ` +
+      `${this.formatProgressBytes(processedBytes)} von ${this.formatProgressBytes(totalBytes)} verarbeitet`
+    );
+  }
+
+  private formatProgressBytes(bytes: number): string {
+    const normalizedBytes = Math.max(Number(bytes) || 0, 0);
+    if (normalizedBytes < 1024) {
+      return `${normalizedBytes} B`;
+    }
+    if (normalizedBytes < 1024 * 1024) {
+      return `${(normalizedBytes / 1024).toFixed(1)} KB`;
+    }
+    if (normalizedBytes < 1024 * 1024 * 1024) {
+      return `${(normalizedBytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${(normalizedBytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
+  private async resolveFilesForArchive(
+    acpId: string,
+    ids?: string[],
+  ): Promise<{ files: AcpFile[]; fileName: string }> {
+    const allFiles = await this.findByAcp(acpId);
+    if (!allFiles.length) {
+      throw new NotFoundException(`No files found for ACP "${acpId}"`);
+    }
+
+    const normalizedIds = Array.from(
+      new Set(
+        (ids || [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    if (!normalizedIds.length) {
+      return {
+        files: allFiles,
+        fileName: `acp-${acpId}-all-files.zip`,
+      };
+    }
+
+    const filesById = new Map(allFiles.map((file) => [file.id, file]));
+    const missingIds = normalizedIds.filter((id) => !filesById.has(id));
+    if (missingIds.length) {
+      throw new NotFoundException(
+        `Files not found for ACP ${acpId}: ${missingIds.join(", ")}`,
+      );
+    }
+
+    return {
+      files: normalizedIds.map((id) => filesById.get(id)!),
+      fileName: `acp-${acpId}-selected-files.zip`,
+    };
   }
 
   private resolveUploadConflictStrategy(

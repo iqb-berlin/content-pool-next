@@ -96,17 +96,29 @@ describe("FilesController", () => {
     fileProcessingJobsService = {
       createAndStartJob: jest.fn().mockResolvedValue({
         id: "job-1",
+        jobType: "upload-process",
+        status: "pending",
+      }),
+      createAndStartDownloadJob: jest.fn().mockResolvedValue({
+        id: "job-download-1",
+        jobType: "archive-download",
         status: "pending",
       }),
       getJobSnapshot: jest.fn().mockResolvedValue({
         id: "job-1",
+        jobType: "upload-process",
         status: "running",
+      }),
+      downloadArchive: jest.fn().mockResolvedValue({
+        fileName: "acp-acp-1-selected-files.zip",
+        buffer: Buffer.from("job-archive"),
       }),
       ensureJobExists: jest.fn().mockResolvedValue(undefined),
       streamJob: jest.fn().mockReturnValue(
         of({
           data: {
             id: "job-1",
+            jobType: "upload-process",
             status: "completed",
           },
         }),
@@ -321,6 +333,42 @@ describe("FilesController", () => {
     expect(res.send).toHaveBeenCalledWith(Buffer.from("files-zip"));
   });
 
+  it("starts an asynchronous ZIP creation job for bulk download", async () => {
+    const result = await controller.startBulkDownloadJob(
+      "acp-1",
+      { fileIds: ["file-1", "file-2"] },
+      { user: { sub: "user-1" } },
+    );
+
+    expect(fileProcessingJobsService.createAndStartDownloadJob).toHaveBeenCalledWith(
+      "acp-1",
+      ["file-1", "file-2"],
+      { createdByUserId: "user-1" },
+    );
+    expect(result).toEqual({
+      id: "job-download-1",
+      jobType: "archive-download",
+      status: "pending",
+    });
+  });
+
+  it("downloads the generated ZIP archive of a completed job", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.downloadJobArchive("acp-1", "job-download-1", res);
+
+    expect(fileProcessingJobsService.downloadArchive).toHaveBeenCalledWith(
+      "acp-1",
+      "job-download-1",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith("Content-Type", "application/zip");
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'attachment; filename="acp-acp-1-selected-files.zip"',
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("job-archive"));
+  });
+
   it("validates units and returns validation summary", async () => {
     const result = await controller.validateUnits("acp-1");
 
@@ -424,6 +472,7 @@ describe("FilesController", () => {
     );
     expect(result).toEqual({
       id: "job-1",
+      jobType: "upload-process",
       status: "pending",
     });
   });
@@ -431,6 +480,7 @@ describe("FilesController", () => {
   it("returns processing job snapshot", async () => {
     await expect(controller.getProcessingJob("acp-1", "job-1")).resolves.toEqual({
       id: "job-1",
+      jobType: "upload-process",
       status: "running",
     });
     expect(fileProcessingJobsService.getJobSnapshot).toHaveBeenCalledWith(
@@ -445,6 +495,7 @@ describe("FilesController", () => {
     await expect(lastValueFrom(stream.pipe(take(1)))).resolves.toEqual({
       data: {
         id: "job-1",
+        jobType: "upload-process",
         status: "completed",
       },
     });

@@ -305,6 +305,19 @@ describe('ApiService', () => {
       });
     });
 
+    it('should start a ZIP creation job for selected files', () => {
+      httpClientMock.post.mockReturnValue(of({ id: 'job-1', status: 'pending' }));
+
+      service.startFileDownloadJob('acp1', { fileIds: ['file1', 'file2'] }).subscribe((job) => {
+        expect(job).toEqual({ id: 'job-1', status: 'pending' });
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/bulk-download/jobs',
+        { fileIds: ['file1', 'file2'] },
+      );
+    });
+
     it('should request a ZIP archive for all or selected files', () => {
       const blob = new Blob(['zip']);
       httpClientMock.post.mockReturnValue(of({ body: blob }));
@@ -333,6 +346,24 @@ describe('ApiService', () => {
         { fileIds: ['file1', 'file2'] },
         {
           observe: 'response',
+          responseType: 'blob',
+        },
+      );
+    });
+
+    it('should download the generated ZIP archive of a completed job with progress events', () => {
+      const event = { type: 'response' };
+      httpClientMock.get.mockReturnValue(of(event));
+
+      service.downloadFileJobArchive('acp1', 'job-1').subscribe((result) => {
+        expect(result).toEqual(event);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/jobs/job-1/archive',
+        {
+          observe: 'events',
+          reportProgress: true,
           responseType: 'blob',
         },
       );
@@ -451,6 +482,13 @@ describe('ApiService', () => {
       expect(url).toContain('/api/acp/acp1/files/file1/download');
       expect(url).toContain('auth_token=preview-token');
       expect(url).toContain('disposition=inline');
+    });
+
+    it('should get file job archive URL with auth token', () => {
+      localStorage.setItem('cp_token', 'job-token');
+      const url = service.getFileJobArchiveUrl('acp1', 'job-1');
+
+      expect(url).toBe('/api/acp/acp1/files/jobs/job-1/archive?auth_token=job-token');
     });
 
     it('should request file preview metadata', () => {

@@ -1,8 +1,8 @@
-import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { HttpErrorResponse } from '@angular/common/http';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { of } from 'rxjs';
 import { FilesComponent } from './files.component';
-import { AcpFile, FilePreviewResponse } from '../../core/models/api.models';
+import { AcpFile, FilePreviewResponse, FileProcessingJob } from '../../core/models/api.models';
 
 function createFile(overrides: Partial<AcpFile>): AcpFile {
   return {
@@ -12,6 +12,27 @@ function createFile(overrides: Partial<AcpFile>): AcpFile {
     originalName: 'default.txt',
     fileSize: 123,
     uploadedAt: '2026-04-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+function createJob(overrides: Partial<FileProcessingJob>): FileProcessingJob {
+  return {
+    id: 'job-1',
+    acpId: 'acp-1',
+    jobType: 'archive-download',
+    status: 'running',
+    phase: 'zip-files',
+    phaseLabel: 'ZIP wird erstellt',
+    message: 'Archiv wird erstellt.',
+    phaseCurrent: 1,
+    phaseTotal: 3,
+    uploadedFileCount: 3,
+    archiveFileName: null,
+    createdAt: '2026-04-01T00:00:00.000Z',
+    updatedAt: '2026-04-01T00:00:00.000Z',
+    startedAt: '2026-04-01T00:00:00.000Z',
+    finishedAt: null,
     ...overrides,
   };
 }
@@ -57,7 +78,8 @@ describe('FilesComponent filtering', () => {
     deleteFile: ReturnType<typeof vi.fn>;
     deleteAllFiles: ReturnType<typeof vi.fn>;
     bulkDeleteFiles: ReturnType<typeof vi.fn>;
-    downloadFilesArchive: ReturnType<typeof vi.fn>;
+    startFileDownloadJob: ReturnType<typeof vi.fn>;
+    getFileJobArchiveUrl: ReturnType<typeof vi.fn>;
   };
 
   let route: {
@@ -90,14 +112,22 @@ describe('FilesComponent filtering', () => {
       deleteFile: vi.fn().mockReturnValue(of({ message: 'File deleted successfully' })),
       deleteAllFiles: vi.fn().mockReturnValue(of({ message: 'All files deleted successfully' })),
       bulkDeleteFiles: vi.fn().mockReturnValue(of({ message: 'Files deleted successfully' })),
-      downloadFilesArchive: vi.fn().mockReturnValue(
-        of({
-          body: new Blob(['zip']),
-          headers: new HttpHeaders({
-            'content-disposition': 'attachment; filename="acp-acp-1-selected-files.zip"',
+      startFileDownloadJob: vi.fn().mockReturnValue(
+        of(
+          createJob({
+            id: 'job-download-1',
+            status: 'pending',
+            phase: 'queued',
+            phaseLabel: 'Wartet auf ZIP-Erstellung',
+            message: 'Download-Job wurde erstellt.',
+            phaseCurrent: 0,
+            phaseTotal: 0,
           }),
-        }),
+        ),
       ),
+      getFileJobArchiveUrl: vi
+        .fn()
+        .mockReturnValue('/api/acp/acp-1/files/jobs/job-download-1/archive?auth_token=test'),
     };
 
     route = {
@@ -114,6 +144,24 @@ describe('FilesComponent filtering', () => {
     component.acpId = 'acp-1';
     component.files = [...seedFiles];
     component.applyFilters();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-disposition': 'attachment; filename="acp-acp-1-selected-files.zip"',
+          'content-type': 'application/zip',
+        }),
+        body: null,
+        blob: vi.fn().mockResolvedValue(new Blob(['zip'])),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('loads files on init and applies default filters', () => {
@@ -257,33 +305,101 @@ describe('FilesComponent filtering', () => {
     expect(component.files).toEqual([seedFiles[0]]);
   });
 
-  it('downloads all files as ZIP', async () => {
-    const triggerBrowserDownload = vi
-      .spyOn(component as any, 'triggerBrowserDownload')
-      .mockImplementation(() => {});
+  it('derives ZIP progress and transfer progress from the current download state', () => {
+    component.downloadJob = createJob({
+      phaseCurrent: 1_024,
+      phaseTotal: 2_048,
+      message: '1 von 2 Datei(en), 1.0 KB von 2.0 KB verarbeitet',
+    });
 
-    await component.downloadAllFiles();
+    expect(component.downloadStatusLabel).toBe('ZIP wird erstellt');
+    expect(component.downloadPercent).toBe(50);
+    expect(component.downloadProgress).toBe('1.0 KB von 2.0 KB verarbeitet');
+    expect(component.downloadMessage).toBe('1 von 2 Datei(en), 1.0 KB von 2.0 KB verarbeitet');
 
-    expect(api.downloadFilesArchive).toHaveBeenCalledWith('acp-1', []);
-    expect(triggerBrowserDownload).toHaveBeenCalledWith(
-      expect.any(Blob),
-      'acp-acp-1-selected-files.zip',
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-01T00:00:02.000Z'));
+    component.downloadTransferActive = true;
+    component.downloadTransferStartedAt = Date.now() - 2000;
+    component.downloadTransferredBytes = 1024;
+    component.downloadTransferTotalBytes = 2048;
+
+    expect(component.downloadStatusLabel).toBe('ZIP wird heruntergeladen');
+    expect(component.downloadPercent).toBe(50);
+    expect(component.downloadProgress).toBe('1.0 KB von 2.0 KB');
+    expect(component.downloadMessage).toBe(
+      'Das ZIP-Archiv wird in den Browser übertragen. 512 B/s · 2 s verbleibend',
     );
   });
 
-  it('downloads the selected files as ZIP', async () => {
+  it('downloads all files as ZIP via background job and archive endpoint', async () => {
     const triggerBrowserDownload = vi
       .spyOn(component as any, 'triggerBrowserDownload')
       .mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({
+          'content-disposition': 'attachment; filename="acp-acp-1-all-files.zip"',
+          'content-type': 'application/zip',
+        }),
+        body: null,
+        blob: vi.fn().mockResolvedValue(new Blob(['zip'])),
+      }),
+    );
+    vi.spyOn(component as any, 'waitForJob').mockResolvedValue(
+      createJob({
+        id: 'job-download-1',
+        status: 'completed',
+        phase: 'completed',
+        phaseLabel: 'ZIP bereit',
+        archiveFileName: 'acp-acp-1-all-files.zip',
+        phaseCurrent: 3,
+        phaseTotal: 3,
+        finishedAt: '2026-04-01T00:00:01.000Z',
+      }),
+    );
+
+    await component.downloadAllFiles();
+
+    expect(api.startFileDownloadJob).toHaveBeenCalledWith('acp-1', { fileIds: [] });
+    expect(api.getFileJobArchiveUrl).toHaveBeenCalledWith('acp-1', 'job-download-1');
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/acp/acp-1/files/jobs/job-download-1/archive?auth_token=test',
+    );
+    expect(triggerBrowserDownload).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'acp-acp-1-all-files.zip',
+    );
+  });
+
+  it('downloads the selected files as ZIP via background job and archive endpoint', async () => {
+    const triggerBrowserDownload = vi
+      .spyOn(component as any, 'triggerBrowserDownload')
+      .mockImplementation(() => {});
+    vi.spyOn(component as any, 'waitForJob').mockResolvedValue(
+      createJob({
+        id: 'job-download-1',
+        status: 'completed',
+        phase: 'completed',
+        phaseLabel: 'ZIP bereit',
+        archiveFileName: 'acp-acp-1-selected-files.zip',
+        phaseCurrent: 2,
+        phaseTotal: 2,
+        finishedAt: '2026-04-01T00:00:01.000Z',
+      }),
+    );
     component.toggleFileSelection('f-json-error', true);
     component.toggleFileSelection('f-no-type-unchecked', true);
 
     await component.downloadSelectedFiles();
 
-    expect(api.downloadFilesArchive).toHaveBeenCalledWith('acp-1', [
-      'f-json-error',
-      'f-no-type-unchecked',
-    ]);
+    expect(api.startFileDownloadJob).toHaveBeenCalledWith('acp-1', {
+      fileIds: ['f-json-error', 'f-no-type-unchecked'],
+    });
+    expect(api.getFileJobArchiveUrl).toHaveBeenCalledWith('acp-1', 'job-download-1');
     expect(triggerBrowserDownload).toHaveBeenCalled();
   });
 

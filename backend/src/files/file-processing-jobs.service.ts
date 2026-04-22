@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
 import { ReplaySubject, Observable, map } from "rxjs";
+import * as fs from "fs/promises";
 import {
   AcpFile,
   AcpFileProcessingJob,
@@ -77,6 +78,7 @@ export class FileProcessingJobsService {
     let job = this.jobRepository.create({
       acpId,
       createdByUserId: options.createdByUserId || null,
+      jobType: "upload-process",
       status: "pending",
       phase: "queued",
       phaseLabel: "Wartet auf Verarbeitung",
@@ -86,6 +88,68 @@ export class FileProcessingJobsService {
       uploadedFileCount: normalizedIds.length,
       uploadedFileIds: normalizedIds,
       runCleanup: !!options.runCleanup,
+      error: null,
+    });
+    job = await this.jobRepository.save(job);
+    this.emit(job);
+    void this.runJob(job.id);
+    return this.toSnapshot(job);
+  }
+
+  async createAndStartDownloadJob(
+    acpId: string,
+    fileIds: string[],
+    options: { createdByUserId?: string | null } = {},
+  ): Promise<FileProcessingJobSnapshot> {
+    const normalizedIds = Array.from(
+      new Set(
+        (fileIds || [])
+          .map((fileId) => String(fileId || "").trim())
+          .filter((fileId) => fileId.length > 0),
+      ),
+    );
+
+    await this.ensureNoActiveJob(acpId);
+
+    let fileCount = 0;
+    if (normalizedIds.length) {
+      const files = await this.fileRepository.find({
+        where: {
+          acpId,
+          id: In(normalizedIds),
+        },
+      });
+
+      if (files.length !== normalizedIds.length) {
+        throw new BadRequestException(
+          "Some selected files could not be found for archive creation",
+        );
+      }
+      fileCount = files.length;
+    } else {
+      fileCount = await this.fileRepository.count({ where: { acpId } });
+      if (!fileCount) {
+        throw new BadRequestException(
+          "At least one file is required to create an archive",
+        );
+      }
+    }
+
+    let job = this.jobRepository.create({
+      acpId,
+      createdByUserId: options.createdByUserId || null,
+      jobType: "archive-download",
+      status: "pending",
+      phase: "queued",
+      phaseLabel: "Wartet auf ZIP-Erstellung",
+      message: "Download-Job wurde erstellt.",
+      phaseCurrent: 0,
+      phaseTotal: 0,
+      uploadedFileCount: fileCount,
+      uploadedFileIds: normalizedIds,
+      runCleanup: false,
+      archiveFileName: null,
+      archiveFilePath: null,
       error: null,
     });
     job = await this.jobRepository.save(job);
@@ -111,6 +175,29 @@ export class FileProcessingJobsService {
     return stream.asObservable().pipe(map((data) => ({ data })));
   }
 
+  async downloadArchive(
+    acpId: string,
+    jobId: string,
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const job = await this.getJobForAcp(acpId, jobId);
+    if (job.jobType !== "archive-download") {
+      throw new BadRequestException("The requested job does not provide an archive");
+    }
+    if (job.status !== "completed" || !job.archiveFilePath || !job.archiveFileName) {
+      throw new ConflictException("The ZIP archive is not ready yet");
+    }
+
+    try {
+      const buffer = await fs.readFile(job.archiveFilePath);
+      return {
+        buffer,
+        fileName: job.archiveFileName,
+      };
+    } catch {
+      throw new NotFoundException("Generated ZIP archive could not be found");
+    }
+  }
+
   private async runJob(jobId: string): Promise<void> {
     if (this.runningJobs.has(jobId)) {
       return;
@@ -133,50 +220,72 @@ export class FileProcessingJobsService {
       await persist({
         status: "running",
         startedAt: job.startedAt || new Date(),
-        message: "Verarbeitungsjob wird gestartet.",
+        message:
+          job.jobType === "archive-download"
+            ? "ZIP-Erstellung wird gestartet."
+            : "Verarbeitungsjob wird gestartet.",
       });
 
-      const uploadedFiles = await this.loadUploadedFiles(job);
-      const syncReport = await this.unitParserService.syncIndexFromFiles(
-        job.acpId,
-        reporter,
-      );
-      const validationRun =
-        await this.validationService.autoValidateUploadedFiles(
+      if (job.jobType === "archive-download") {
+        const archive = await this.filesService.createFilesZipArchive(
           job.acpId,
-          uploadedFiles,
+          job.uploadedFileIds || [],
           reporter,
         );
 
-      let cleanupResult:
-        | Awaited<ReturnType<FilesService["cleanupReferencesAfterFileMutation"]>>
-        | undefined;
-      if (job.runCleanup) {
-        cleanupResult =
-          await this.filesService.cleanupReferencesAfterFileMutation(
+        await persist({
+          status: "completed",
+          phase: "completed",
+          phaseLabel: "ZIP bereit",
+          message: "Das ZIP-Archiv kann jetzt heruntergeladen werden.",
+          archiveFileName: archive.fileName,
+          archiveFilePath: archive.filePath,
+          error: null,
+          finishedAt: new Date(),
+        });
+      } else {
+        const uploadedFiles = await this.loadUploadedFiles(job);
+        const syncReport = await this.unitParserService.syncIndexFromFiles(
+          job.acpId,
+          reporter,
+        );
+        const validationRun =
+          await this.validationService.autoValidateUploadedFiles(
             job.acpId,
-            { skipValidation: true },
+            uploadedFiles,
             reporter,
           );
-      }
 
-      await persist({
-        status: "completed",
-        phase: "completed",
-        phaseLabel: "Abgeschlossen",
-        message: "Upload-Verarbeitung abgeschlossen.",
-        syncReport: syncReport as unknown as Record<string, unknown>,
-        validationSummary:
-          validationRun.summary as unknown as Record<string, unknown>,
-        cleanupReport: cleanupResult?.cleanupReport
-          ? (cleanupResult.cleanupReport as unknown as Record<string, unknown>)
-          : null,
-        responseStateCleanup: cleanupResult?.responseStateCleanup
-          ? (cleanupResult.responseStateCleanup as unknown as Record<string, unknown>)
-          : null,
-        error: null,
-        finishedAt: new Date(),
-      });
+        let cleanupResult:
+          | Awaited<ReturnType<FilesService["cleanupReferencesAfterFileMutation"]>>
+          | undefined;
+        if (job.runCleanup) {
+          cleanupResult =
+            await this.filesService.cleanupReferencesAfterFileMutation(
+              job.acpId,
+              { skipValidation: true },
+              reporter,
+            );
+        }
+
+        await persist({
+          status: "completed",
+          phase: "completed",
+          phaseLabel: "Abgeschlossen",
+          message: "Upload-Verarbeitung abgeschlossen.",
+          syncReport: syncReport as unknown as Record<string, unknown>,
+          validationSummary:
+            validationRun.summary as unknown as Record<string, unknown>,
+          cleanupReport: cleanupResult?.cleanupReport
+            ? (cleanupResult.cleanupReport as unknown as Record<string, unknown>)
+            : null,
+          responseStateCleanup: cleanupResult?.responseStateCleanup
+            ? (cleanupResult.responseStateCleanup as unknown as Record<string, unknown>)
+            : null,
+          error: null,
+          finishedAt: new Date(),
+        });
+      }
       this.ensureStream(job.id).complete();
     } catch (error) {
       const message =
@@ -298,6 +407,8 @@ export class FileProcessingJobsService {
     switch (phase) {
       case "sync-index":
         return "ACP-Index wird synchronisiert";
+      case "zip-files":
+        return "ZIP wird erstellt";
       case "validate-files":
         return "Dateien werden validiert";
       case "validate-semantic":
@@ -370,6 +481,7 @@ export class FileProcessingJobsService {
     return {
       id: job.id,
       acpId: job.acpId,
+      jobType: job.jobType,
       status: job.status,
       phase: job.phase,
       phaseLabel: job.phaseLabel,
@@ -377,6 +489,7 @@ export class FileProcessingJobsService {
       phaseCurrent: Number(job.phaseCurrent || 0),
       phaseTotal: Number(job.phaseTotal || 0),
       uploadedFileCount: Number(job.uploadedFileCount || 0),
+      archiveFileName: job.archiveFileName || null,
       syncReport: (job.syncReport as any) || null,
       validationSummary: (job.validationSummary as any) || null,
       cleanupReport: (job.cleanupReport as any) || null,

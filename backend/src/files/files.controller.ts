@@ -192,6 +192,26 @@ export class FilesController {
     return this.fileProcessingJobsService.streamJob(jobId);
   }
 
+  @Get("jobs/:jobId/archive")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Download generated ZIP archive for a completed file job" })
+  async downloadJobArchive(
+    @Param("acpId") acpId: string,
+    @Param("jobId") jobId: string,
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const archive = await this.fileProcessingJobsService.downloadArchive(acpId, jobId);
+    res?.setHeader("Content-Type", "application/zip");
+    res?.setHeader("Content-Length", String(archive.buffer.length));
+    res?.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${archive.fileName}"`,
+    );
+    res?.send(archive.buffer);
+  }
+
   @Get(":fileId")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get file metadata" })
@@ -260,11 +280,29 @@ export class FilesController {
   ) {
     const archive = await this.filesService.createFilesZip(acpId, body.fileIds);
     res?.setHeader("Content-Type", "application/zip");
+    res?.setHeader("Content-Length", String(archive.buffer.length));
     res?.setHeader(
       "Content-Disposition",
       `attachment; filename="${archive.fileName}"`,
     );
     res?.send(archive.buffer);
+  }
+
+  @Post("bulk-download/jobs")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Start ZIP creation job for all or selected ACP files" })
+  async startBulkDownloadJob(
+    @Param("acpId") acpId: string,
+    @Body() body: { fileIds?: string[] } = {},
+    @Request() req?: any,
+  ) {
+    return this.fileProcessingJobsService.createAndStartDownloadJob(
+      acpId,
+      body.fileIds || [],
+      { createdByUserId: req?.user?.sub || null },
+    );
   }
 
   @Post("process-upload")

@@ -201,11 +201,27 @@ export class ApiService {
       fileIds,
     });
   }
+  startFileDownloadJob(acpId: string, data: { fileIds: string[] }): Observable<FileProcessingJob> {
+    return this.http.post<FileProcessingJob>(
+      `${this.API}/acp/${acpId}/files/bulk-download/jobs`,
+      data,
+    );
+  }
   downloadFilesArchive(acpId: string, fileIds: string[] = []): Observable<HttpResponse<Blob>> {
     return this.http.post(`${this.API}/acp/${acpId}/files/bulk-download`, { fileIds }, {
       observe: 'response',
       responseType: 'blob',
     });
+  }
+  downloadFileJobArchive(acpId: string, jobId: string): Observable<HttpEvent<Blob>> {
+    return this.http.get(`${this.API}/acp/${acpId}/files/jobs/${jobId}/archive`, {
+      observe: 'events',
+      reportProgress: true,
+      responseType: 'blob',
+    });
+  }
+  getFileJobArchiveUrl(acpId: string, jobId: string): string {
+    return this.appendAuthToken(`${this.API}/acp/${acpId}/files/jobs/${jobId}/archive`);
   }
   getFileValidation(acpId: string, fileId: string): Observable<any> {
     return this.http.get(`${this.API}/acp/${acpId}/files/${fileId}/validation`);

@@ -7,9 +7,14 @@ export type FileProcessingJobStatus =
   | "completed"
   | "failed";
 
+export type FileProcessingJobType =
+  | "upload-process"
+  | "archive-download";
+
 export type FileProcessingJobPhase =
   | "queued"
   | "sync-index"
+  | "zip-files"
   | "validate-files"
   | "validate-semantic"
   | "cleanup-overwrite"
@@ -44,6 +49,7 @@ export interface FileProcessingResponseStateCleanup {
 export interface FileProcessingJobSnapshot {
   id: string;
   acpId: string;
+  jobType: FileProcessingJobType;
   status: FileProcessingJobStatus;
   phase: FileProcessingJobPhase;
   phaseLabel: string;
@@ -51,6 +57,7 @@ export interface FileProcessingJobSnapshot {
   phaseCurrent: number;
   phaseTotal: number;
   uploadedFileCount: number;
+  archiveFileName?: string | null;
   syncReport?: IndexSyncReport | null;
   validationSummary?: AutoValidationSummary | null;
   cleanupReport?: FileProcessingCleanupReport | null;

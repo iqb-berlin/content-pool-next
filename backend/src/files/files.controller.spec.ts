@@ -33,6 +33,10 @@ describe("FilesController", () => {
         fileName: "sequence-1.zip",
         buffer: Buffer.from("sequence-zip"),
       }),
+      createFilesZip: jest.fn().mockResolvedValue({
+        fileName: "acp-acp-1-selected-files.zip",
+        buffer: Buffer.from("files-zip"),
+      }),
       findByAcp: jest.fn().mockResolvedValue([baseFile]),
       findByIdForAcp: jest.fn().mockResolvedValue(baseFile),
       uploadMultiple: jest.fn().mockResolvedValue([baseFile]),
@@ -282,6 +286,39 @@ describe("FilesController", () => {
       },
       validationSummary: { totalFiles: 1 },
     });
+  });
+
+  it("streams ZIP download for selected files", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.bulkDownload(
+      "acp-1",
+      { fileIds: ["file-1", "file-2"] },
+      res,
+    );
+
+    expect(filesService.createFilesZip).toHaveBeenCalledWith("acp-1", [
+      "file-1",
+      "file-2",
+    ]);
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Type",
+      "application/zip",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'attachment; filename="acp-acp-1-selected-files.zip"',
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("files-zip"));
+  });
+
+  it("downloads all ACP files when no selection is provided", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.bulkDownload("acp-1", {}, res);
+
+    expect(filesService.createFilesZip).toHaveBeenCalledWith("acp-1", undefined);
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("files-zip"));
   });
 
   it("validates units and returns validation summary", async () => {

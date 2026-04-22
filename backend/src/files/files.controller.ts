@@ -248,6 +248,25 @@ export class FilesController {
     };
   }
 
+  @Post("bulk-download")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Download all or selected ACP files as ZIP archive" })
+  async bulkDownload(
+    @Param("acpId") acpId: string,
+    @Body() body: { fileIds?: string[] } = {},
+    @Res({ passthrough: true }) res?: Response,
+  ) {
+    const archive = await this.filesService.createFilesZip(acpId, body.fileIds);
+    res?.setHeader("Content-Type", "application/zip");
+    res?.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${archive.fileName}"`,
+    );
+    res?.send(archive.buffer);
+  }
+
   @Post("process-upload")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")

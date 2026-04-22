@@ -1,4 +1,4 @@
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { of } from 'rxjs';
 import { FilesComponent } from './files.component';
@@ -57,6 +57,7 @@ describe('FilesComponent filtering', () => {
     deleteFile: ReturnType<typeof vi.fn>;
     deleteAllFiles: ReturnType<typeof vi.fn>;
     bulkDeleteFiles: ReturnType<typeof vi.fn>;
+    downloadFilesArchive: ReturnType<typeof vi.fn>;
   };
 
   let route: {
@@ -89,6 +90,14 @@ describe('FilesComponent filtering', () => {
       deleteFile: vi.fn().mockReturnValue(of({ message: 'File deleted successfully' })),
       deleteAllFiles: vi.fn().mockReturnValue(of({ message: 'All files deleted successfully' })),
       bulkDeleteFiles: vi.fn().mockReturnValue(of({ message: 'Files deleted successfully' })),
+      downloadFilesArchive: vi.fn().mockReturnValue(
+        of({
+          body: new Blob(['zip']),
+          headers: new HttpHeaders({
+            'content-disposition': 'attachment; filename="acp-acp-1-selected-files.zip"',
+          }),
+        }),
+      ),
     };
 
     route = {
@@ -102,6 +111,7 @@ describe('FilesComponent filtering', () => {
     };
 
     component = new FilesComponent(route as any, api as any);
+    component.acpId = 'acp-1';
     component.files = [...seedFiles];
     component.applyFilters();
   });
@@ -229,7 +239,6 @@ describe('FilesComponent filtering', () => {
   });
 
   it('bulk deletes the current selection and clears preview + selection state', () => {
-    component.acpId = 'acp-1';
     component.toggleFileSelection('f-json-error', true);
     component.toggleFileSelection('f-no-type-unchecked', true);
     component.openPreview(seedFiles[1]);
@@ -246,6 +255,36 @@ describe('FilesComponent filtering', () => {
     expect(component.selectedPreviewFile).toBeNull();
     expect(component.selectedFilesCount).toBe(0);
     expect(component.files).toEqual([seedFiles[0]]);
+  });
+
+  it('downloads all files as ZIP', async () => {
+    const triggerBrowserDownload = vi
+      .spyOn(component as any, 'triggerBrowserDownload')
+      .mockImplementation(() => {});
+
+    await component.downloadAllFiles();
+
+    expect(api.downloadFilesArchive).toHaveBeenCalledWith('acp-1', []);
+    expect(triggerBrowserDownload).toHaveBeenCalledWith(
+      expect.any(Blob),
+      'acp-acp-1-selected-files.zip',
+    );
+  });
+
+  it('downloads the selected files as ZIP', async () => {
+    const triggerBrowserDownload = vi
+      .spyOn(component as any, 'triggerBrowserDownload')
+      .mockImplementation(() => {});
+    component.toggleFileSelection('f-json-error', true);
+    component.toggleFileSelection('f-no-type-unchecked', true);
+
+    await component.downloadSelectedFiles();
+
+    expect(api.downloadFilesArchive).toHaveBeenCalledWith('acp-1', [
+      'f-json-error',
+      'f-no-type-unchecked',
+    ]);
+    expect(triggerBrowserDownload).toHaveBeenCalled();
   });
 
   it('loads a preview for the selected file', () => {

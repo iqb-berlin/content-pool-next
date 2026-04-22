@@ -642,6 +642,43 @@ export class FilesService {
     return { buffer, fileName: `acp-${acpId}-sequence-${sequenceId}.zip` };
   }
 
+  async createFilesZip(
+    acpId: string,
+    ids?: string[],
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const allFiles = await this.findByAcp(acpId);
+    if (!allFiles.length) {
+      throw new NotFoundException(`No files found for ACP "${acpId}"`);
+    }
+
+    const normalizedIds = Array.from(
+      new Set(
+        (ids || [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => id.length > 0),
+      ),
+    );
+
+    let files = allFiles;
+    let fileName = `acp-${acpId}-all-files.zip`;
+
+    if (normalizedIds.length) {
+      const filesById = new Map(allFiles.map((file) => [file.id, file]));
+      const missingIds = normalizedIds.filter((id) => !filesById.has(id));
+      if (missingIds.length) {
+        throw new NotFoundException(
+          `Files not found for ACP ${acpId}: ${missingIds.join(", ")}`,
+        );
+      }
+
+      files = normalizedIds.map((id) => filesById.get(id)!);
+      fileName = `acp-${acpId}-selected-files.zip`;
+    }
+
+    const buffer = await this.createZipBuffer(files);
+    return { buffer, fileName };
+  }
+
   async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
     const config = await this.accessConfigRepository.findOne({
       where: { acpId },

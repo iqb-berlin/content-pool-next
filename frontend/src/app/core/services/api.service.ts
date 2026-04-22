@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpEvent } from '@angular/common/http';
+import { HttpClient, HttpEvent, HttpResponse } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
   Acp,
@@ -199,6 +199,12 @@ export class ApiService {
   bulkDeleteFiles(acpId: string, fileIds: string[]): Observable<FileDeletionResponse> {
     return this.http.post<FileDeletionResponse>(`${this.API}/acp/${acpId}/files/bulk-delete`, {
       fileIds,
+    });
+  }
+  downloadFilesArchive(acpId: string, fileIds: string[] = []): Observable<HttpResponse<Blob>> {
+    return this.http.post(`${this.API}/acp/${acpId}/files/bulk-download`, { fileIds }, {
+      observe: 'response',
+      responseType: 'blob',
     });
   }
   getFileValidation(acpId: string, fileId: string): Observable<any> {

@@ -1,4 +1,4 @@
-import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType, HttpResponse } from '@angular/common/http';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
@@ -47,6 +47,11 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
         <button class="btn btn-outline" (click)="validateFiles()" [disabled]="validating || isBusy">
           {{ validating ? '⏳ Wird geprüft...' : '🔍 Dateien prüfen' }}
         </button>
+        @if (files.length) {
+          <button class="btn btn-outline" (click)="downloadAllFiles()" [disabled]="isBusy">
+            {{ downloading ? '⏳ ZIP wird erstellt...' : '⬇ Alle herunterladen' }}
+          </button>
+        }
         <input #uploadInput type="file" multiple (change)="upload($event)" hidden />
         <button class="btn btn-primary" type="button" (click)="uploadInput.click()" [disabled]="isBusy">
           📤 Dateien oder ZIP hochladen
@@ -105,6 +110,12 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
     @if (uploadError) {
       <div class="alert alert-danger">
         {{ uploadError }}
+      </div>
+    }
+
+    @if (downloadError) {
+      <div class="alert alert-danger">
+        {{ downloadError }}
       </div>
     }
 
@@ -251,6 +262,13 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
             [disabled]="selectedFilesCount === 0"
           >
             Auswahl leeren
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            (click)="downloadSelectedFiles()"
+            [disabled]="selectedFilesCount === 0 || isBusy"
+          >
+            Auswahl herunterladen
           </button>
           <button
             class="btn btn-danger btn-sm"
@@ -667,6 +685,8 @@ export class FilesComponent implements OnInit {
   uploadPercent = 0;
   uploadProgress = '';
   uploadError: string | null = null;
+  downloading = false;
+  downloadError: string | null = null;
   validating = false;
   validationResults: UnitFileValidationResult[] = [];
   lastSyncReport: any = null;
@@ -694,7 +714,7 @@ export class FilesComponent implements OnInit {
   ) {}
 
   get isBusy(): boolean {
-    return this.uploading || this.processing;
+    return this.uploading || this.processing || this.downloading;
   }
 
   get processingPercent(): number | null {
@@ -1011,6 +1031,23 @@ export class FilesComponent implements OnInit {
         this.validating = false;
       },
     });
+  }
+
+  async downloadAllFiles() {
+    if (!this.files.length || this.isBusy) {
+      return;
+    }
+    await this.downloadArchive([], `acp-${this.acpId}-all-files.zip`);
+  }
+
+  async downloadSelectedFiles() {
+    if (this.selectedFilesCount === 0 || this.isBusy) {
+      return;
+    }
+    await this.downloadArchive(
+      this.selectedFiles.map((file) => file.id),
+      `acp-${this.acpId}-selected-files.zip`,
+    );
   }
 
   get deleteDialogTitle(): string {
@@ -1466,6 +1503,52 @@ export class FilesComponent implements OnInit {
     this.selectedFileIds = new Set(
       Array.from(this.selectedFileIds).filter((id) => existingIds.has(id)),
     );
+  }
+
+  private async downloadArchive(fileIds: string[], fallbackFileName: string) {
+    this.downloading = true;
+    this.downloadError = null;
+
+    try {
+      const response = await firstValueFrom(this.api.downloadFilesArchive(this.acpId, fileIds));
+      const blob = response.body;
+      if (!blob) {
+        throw new Error('Archive response is empty');
+      }
+
+      this.triggerBrowserDownload(blob, this.getArchiveFileName(response, fallbackFileName));
+    } catch (err: any) {
+      this.downloadError = err?.error?.message || 'Fehler beim Herunterladen der Dateien.';
+    } finally {
+      this.downloading = false;
+    }
+  }
+
+  private getArchiveFileName(response: HttpResponse<Blob>, fallbackFileName: string): string {
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const encodedMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (encodedMatch?.[1]) {
+      return decodeURIComponent(encodedMatch[1]);
+    }
+
+    const plainMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+    if (plainMatch?.[1]) {
+      return plainMatch[1];
+    }
+
+    return fallbackFileName;
+  }
+
+  private triggerBrowserDownload(blob: Blob, fileName: string) {
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = fileName;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
   }
 
   private normalizeFileName(fileName: string): string {

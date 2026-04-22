@@ -305,6 +305,39 @@ describe('ApiService', () => {
       });
     });
 
+    it('should request a ZIP archive for all or selected files', () => {
+      const blob = new Blob(['zip']);
+      httpClientMock.post.mockReturnValue(of({ body: blob }));
+
+      service.downloadFilesArchive('acp1').subscribe((result) => {
+        expect(result).toEqual({ body: blob });
+      });
+
+      expect(httpClientMock.post).toHaveBeenNthCalledWith(
+        1,
+        '/api/acp/acp1/files/bulk-download',
+        { fileIds: [] },
+        {
+          observe: 'response',
+          responseType: 'blob',
+        },
+      );
+
+      service.downloadFilesArchive('acp1', ['file1', 'file2']).subscribe((result) => {
+        expect(result).toEqual({ body: blob });
+      });
+
+      expect(httpClientMock.post).toHaveBeenNthCalledWith(
+        2,
+        '/api/acp/acp1/files/bulk-download',
+        { fileIds: ['file1', 'file2'] },
+        {
+          observe: 'response',
+          responseType: 'blob',
+        },
+      );
+    });
+
     it('should upload files without conflict strategy query', () => {
       const formData = new FormData();
       httpClientMock.post.mockReturnValue(

@@ -391,6 +391,35 @@ describe("FilesService", () => {
         NotFoundException,
       );
     });
+
+    it("should create ZIP archives for all or selected ACP files", async () => {
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: "file-1", originalName: "test.json" },
+        { ...mockFile, id: "file-2", originalName: "second.json" },
+      ]);
+
+      await expect(service.createFilesZip("acp-1")).resolves.toEqual(
+        expect.objectContaining({
+          fileName: "acp-acp-1-all-files.zip",
+        }),
+      );
+
+      await expect(
+        service.createFilesZip("acp-1", ["file-2", "file-1", "file-2"]),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          fileName: "acp-acp-1-selected-files.zip",
+        }),
+      );
+    });
+
+    it("should reject ZIP archives for unknown ACP file IDs", async () => {
+      repo.find.mockResolvedValue([{ ...mockFile, id: "file-1" }]);
+
+      await expect(
+        service.createFilesZip("acp-1", ["missing-file"]),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   describe("delete", () => {

@@ -1,7 +1,9 @@
 # IQB ContentPool - Makefile
 # Usage: make [target]
 
-.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp
+.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp \
+	server-traefik-up server-traefik-update server-traefik-stop server-traefik-logs server-traefik-config \
+	prod-traefik prod-traefik-build prod-traefik-stop prod-traefik-logs prod-traefik-config
 
 # Default target
 help: ## Show this help message
@@ -118,6 +120,55 @@ server-update: ## Pull latest images and restart server deployment
 server-clean: ## Stop and remove server deployment
 	@echo "Cleaning server deployment..."
 	docker compose -f docker-compose.server.yml down -v
+
+# ============================================
+# Traefik Edge Deployment Commands
+# ============================================
+
+server-traefik-up: ## Deploy pre-built images behind an existing Traefik edge
+	@echo "Deploying using pre-built images behind Traefik..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml pull
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml up -d
+	@echo "Traefik-backed server deployment complete!"
+	@echo "  Configure CONTENT_POOL_HOST, CONTENT_POOL_AUTH_HOST, and TRAEFIK_DOCKER_NETWORK in .env"
+
+server-traefik-update: ## Pull latest pre-built images and restart behind Traefik
+	@echo "Updating Traefik-backed server deployment..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml pull
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml up -d
+	@echo "Traefik-backed server deployment updated!"
+
+server-traefik-stop: ## Stop pre-built image deployment behind Traefik
+	@echo "Stopping Traefik-backed server deployment..."
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml down
+
+server-traefik-logs: ## View logs for pre-built image deployment behind Traefik
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml logs -f
+
+server-traefik-config: ## Validate/render pre-built image deployment behind Traefik
+	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml config
+
+prod-traefik: ## Start build-on-host production deployment behind Traefik
+	@echo "Starting production environment behind Traefik..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
+	docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d
+
+prod-traefik-build: ## Build and start production deployment behind Traefik
+	@echo "Building production environment behind Traefik..."
+	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
+	docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml up -d --build
+
+prod-traefik-stop: ## Stop build-on-host production deployment behind Traefik
+	@echo "Stopping Traefik-backed production deployment..."
+	docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml down
+
+prod-traefik-logs: ## View logs for build-on-host production deployment behind Traefik
+	docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml logs -f
+
+prod-traefik-config: ## Validate/render build-on-host production deployment behind Traefik
+	docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml config
 
 # ============================================
 # Build & Push Commands (for GHCR)

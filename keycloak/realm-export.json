@@ -23,13 +23,11 @@
   "smtpServer": {
     "from": "noreply@iqb.hu-berlin.de",
     "fromDisplayName": "IQB ContentPool",
-    "host": "mailtrap.io",
-    "port": "587",
+    "host": "host.docker.internal",
+    "port": "25",
     "ssl": "false",
-    "starttls": "true",
-    "auth": "true",
-    "user": "YOUR_SMTP_USER",
-    "password": "YOUR_SMTP_PASS"
+    "starttls": "false",
+    "auth": "false"
   },
   "roles": {
     "realm": [
@@ -372,7 +370,6 @@
     "xXSSProtection": "1; mode=block",
     "strictTransportSecurity": "max-age=31536000; includeSubDomains"
   },
-  "smtpServer": {},
   "eventsEnabled": false,
   "eventsListeners": ["jboss-logging"],
   "enabledEventTypes": [],

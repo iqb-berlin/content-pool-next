@@ -116,7 +116,7 @@ OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
 OIDC_PUBLIC_ISSUER_URL=https://auth.example.com/realms/iqb
 OIDC_CLIENT_ID=contentpool
 OIDC_REDIRECT_URI=https://app.example.com/auth/callback
-OIDC_SCOPE=openid profile email
+OIDC_SCOPE="openid profile email"
 
 # Keycloak credentials
 KEYCLOAK_DB_PASSWORD=your-keycloak-db-password

@@ -1,7 +1,7 @@
 # IQB ContentPool - Makefile
 # Usage: make [target]
 
-.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin
+.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp
 
 # Default target
 help: ## Show this help message
@@ -186,6 +186,9 @@ keycloak-export: ## Export Keycloak realm to JSON file
 	docker exec keycloak /opt/keycloak/bin/kc.sh export --realm iqb --file /tmp/realm-export.json
 	docker cp keycloak:/tmp/realm-export.json keycloak-exports/realm-export-$$(date +%Y%m%d-%H%M%S).json
 	@echo "Realm exported to keycloak-exports/"
+
+keycloak-smtp: ## Configure Keycloak SMTP from .env (run via SSH tunnel or on server)
+	@./scripts/configure-keycloak-smtp.sh
 
 # ============================================
 # Utility Commands

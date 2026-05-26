@@ -40,6 +40,8 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
     ports:
       - ${KEYCLOAK_PORT_EXPOSE:-127.0.0.1:8080:8080}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       keycloak-db:
         condition: service_healthy
@@ -50,7 +52,8 @@ services:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080'"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 60s
     restart: unless-stopped
     networks:
       - keycloak-network

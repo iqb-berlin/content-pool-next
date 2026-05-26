@@ -107,6 +107,8 @@ Before any real deployment, make sure these are in place:
 - correct `OIDC_REDIRECT_URI`,
 - `DB_SYNCHRONIZE=false`,
 - `DB_RUN_MIGRATIONS=true`.
+- local MTA/Postfix for Keycloak email delivery, relaying to
+  `mailhost.cms.hu-berlin.de`.
 
 ## Recommended Production Topology
 
@@ -116,6 +118,7 @@ The default production layout is:
 - frontend served behind nginx,
 - backend internal-only,
 - Keycloak public for browser auth flows but admin console localhost-bound,
+- Keycloak SMTP delivery through a local host MTA,
 - PostgreSQL internal-only,
 - uploads persisted in a volume.
 
@@ -208,6 +211,7 @@ For more detailed operator guidance, also read:
 - [`/Users/julian/iqb-dev/content-pool-next/DEPLOY.md`](../../DEPLOY.md)
 - [`/Users/julian/iqb-dev/content-pool-next/KEYCLOAK_SETUP.md`](../../KEYCLOAK_SETUP.md)
 - [`/Users/julian/iqb-dev/content-pool-next/RELEASE_CHECKLIST.md`](../../RELEASE_CHECKLIST.md)
+- [`/Users/julian/iqb-dev/content-pool-next/docs/operations/keycloak-email.md`](keycloak-email.md)
 
 ## Related Documents
 

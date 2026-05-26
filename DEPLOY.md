@@ -70,6 +70,33 @@ If you use TLS on an IP-based setup, use `https://YOUR_SERVER_IP/...` entries.
 The scheme must match exactly (`https` vs `http`), otherwise Keycloak rejects
 login with `Invalid parameter: redirect_uri`.
 
+## 4a. Configure Keycloak email delivery
+
+Production Keycloak sends verification and password-reset mails through a local
+MTA on the Docker host. The local MTA should relay outbound mail to the HU relay:
+
+```text
+mailhost.cms.hu-berlin.de:25
+```
+
+The production Compose files make the Docker host reachable from Keycloak as:
+
+```text
+host.docker.internal
+```
+
+For a fresh realm import, `keycloak/realm-export.json` already contains the
+matching SMTP defaults. If you changed any `KEYCLOAK_SMTP_*` values in `.env`,
+or if the realm already existed before this deployment, update the running realm
+after Keycloak is up:
+
+```bash
+make keycloak-smtp
+```
+
+Detailed Postfix setup and verification steps are in
+[`docs/operations/keycloak-email.md`](docs/operations/keycloak-email.md).
+
 ## 5. Validate config before start
 
 ```bash

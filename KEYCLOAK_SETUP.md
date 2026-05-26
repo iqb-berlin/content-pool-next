@@ -61,7 +61,7 @@ OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
 OIDC_PUBLIC_ISSUER_URL=https://auth.example.com/realms/iqb
 OIDC_REDIRECT_URI=https://app.example.com/auth/callback
 OIDC_CLIENT_ID=contentpool
-OIDC_SCOPE=openid profile email
+OIDC_SCOPE="openid profile email"
 ```
 
 ## Nginx routing requirements
@@ -86,11 +86,16 @@ Important:
 - `pkce.code.challenge.method: S256`
 - `sslRequired: external`
 - `registrationAllowed: false`
+- SMTP delivery through the Docker host at `host.docker.internal:25`
 
 You still must replace placeholder domains/IPs in:
 
 - `redirectUris`
 - `webOrigins`
+
+The default SMTP sender is `noreply@iqb.hu-berlin.de`. For production, agree on
+the final sender address or request a CMS function account if bounces should be
+handled through a mailbox.
 
 For IP-based deployments with TLS, use `https://YOUR_SERVER_IP/...` values
 (not only `http://...`).
@@ -111,6 +116,22 @@ For client `contentpool`, verify in Keycloak Admin Console:
 Important: realm JSON import is typically only applied when a realm is created.
 If realm `iqb` already exists, update the client in the Keycloak UI (or delete
 and recreate the realm) instead of only editing `realm-export.json`.
+
+## SMTP / transactional email
+
+For HU-hosted deployments, Keycloak should send to a local MTA on the Docker
+host, and that MTA should relay to `mailhost.cms.hu-berlin.de`.
+
+For existing realms, or fresh deployments where `.env` SMTP values differ from
+the defaults in `keycloak/realm-export.json`, update SMTP settings from `.env`
+after Keycloak is up:
+
+```bash
+make keycloak-smtp
+```
+
+For setup details, see
+[`docs/operations/keycloak-email.md`](docs/operations/keycloak-email.md).
 
 ## Troubleshooting: `Ungültige Redirect Uri` on logout
 

@@ -137,18 +137,18 @@ For a research/educational institution like IQB:
 
 ## SMTP Configuration (for email verification)
 
-Update `realm-export.json` SMTP settings with your actual mail server:
+Production Keycloak should send to the local MTA on the Docker host. The local
+MTA then relays to the HU relay `mailhost.cms.hu-berlin.de`.
 
 ```json
 "smtpServer": {
   "from": "noreply@iqb.hu-berlin.de",
-  "host": "mail.zedat.fu-berlin.de",
-  "port": "587",
+  "fromDisplayName": "IQB ContentPool",
+  "host": "host.docker.internal",
+  "port": "25",
   "ssl": "false",
-  "starttls": "true",
-  "auth": "true",
-  "user": "your-service-account",
-  "password": "YOUR_PASSWORD"
+  "starttls": "false",
+  "auth": "false"
 }
 ```
 

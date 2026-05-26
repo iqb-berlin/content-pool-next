@@ -558,8 +558,7 @@ export class AdminService {
     }
 
     return (
-      constraint === "UQ_application_tokens_name" ||
-      detail.includes("(name)=")
+      constraint === "UQ_application_tokens_name" || detail.includes("(name)=")
     );
   }
 

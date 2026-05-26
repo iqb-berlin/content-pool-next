@@ -343,7 +343,7 @@ describe("AdminService", () => {
     applicationTokenRepository.save.mockRejectedValueOnce({
       code: "23505",
       constraint: "UQ_d5f6164d651fcbf9f45011b841b",
-      detail: 'Key (name)=(Studio) already exists.',
+      detail: "Key (name)=(Studio) already exists.",
     });
 
     await expect(

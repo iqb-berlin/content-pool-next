@@ -572,8 +572,18 @@ build-pre-release:
   rules:
     - !reference [ .pre-release_rules, rules ]
   script:
-    - docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
-    - docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - |
+      if ! docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}; then
+        echo "Backend SHA image missing; building ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+        docker build --progress plain --pull --file backend/Dockerfile.prod --tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} backend
+        docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+      fi
+    - |
+      if ! docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}; then
+        echo "Frontend SHA image missing; building ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+        docker build --progress plain --pull --file frontend/Dockerfile.prod --tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} frontend
+        docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+      fi
     - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
     - docker tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
     - docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
@@ -585,8 +595,18 @@ build-release:
   rules:
     - !reference [ .release_rules, rules ]
   script:
-    - docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
-    - docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+    - |
+      if ! docker pull ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}; then
+        echo "Backend SHA image missing; building ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+        docker build --progress plain --pull --file backend/Dockerfile.prod --tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} backend
+        docker push ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+      fi
+    - |
+      if ! docker pull ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}; then
+        echo "Frontend SHA image missing; building ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}"
+        docker build --progress plain --pull --file frontend/Dockerfile.prod --tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} frontend
+        docker push ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA}
+      fi
     - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:${CI_COMMIT_TAG}
     - docker tag ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${FRONTEND_IMAGE_NAME}:${CI_COMMIT_TAG}
     - docker tag ${BACKEND_IMAGE_NAME}:${CI_COMMIT_SHA} ${BACKEND_IMAGE_NAME}:latest

@@ -90,8 +90,43 @@ The server API uses either:
 - `X-Integration-Token: <token>`
 - `Authorization: Bearer <token>`
 
-The token is validated against configured clients from `SERVER_API_TOKENS` or the
-legacy `SERVER_API_KEY`.
+The token is first validated against database-backed application tokens managed
+through the admin API. For compatibility and bootstrap setups, the backend can
+also validate configured clients from `SERVER_API_TOKENS` or the legacy
+`SERVER_API_KEY`.
+
+Application token secrets are only returned once when they are created. The
+backend stores a hash and a short display prefix, not the clear-text token.
+
+### Manage application tokens
+
+Admins can manage application tokens in the UI under **Token**
+(`/admin/application-tokens`) or through the admin API.
+
+Admin-only endpoints:
+
+```text
+GET   /api/admin/application-tokens?limit=50&offset=0
+POST  /api/admin/application-tokens
+PATCH /api/admin/application-tokens/:id/revoke
+```
+
+Example create payload:
+
+```json
+{
+  "name": "studio",
+  "scopes": ["acp.read", "transfer.read", "files.read"],
+  "expiresAt": "2099-01-01T00:00:00.000Z"
+}
+```
+
+The create response includes the one-time `token` field. Store it immediately in
+the external application.
+
+Create and revoke actions are written to the audit log as admin security events.
+The audit details include the token ID, name and display prefix, but never the
+clear-text token.
 
 ## Server API Scopes
 

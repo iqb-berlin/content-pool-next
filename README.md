@@ -256,7 +256,9 @@ cd frontend && npm test
 
 ## Server-to-Server API
 
-Authentication is token-based for integrations (`X-Server-Token: <token>` or `Authorization: Bearer <token>`), independent from generic user login.
+Authentication is token-based for integrations (`X-Server-Token: <token>` or `Authorization: Bearer <token>`), independent from generic user login. Production integrations should use admin-managed application tokens; `SERVER_API_TOKENS` and `SERVER_API_KEY` remain available for bootstrap and compatibility setups.
+
+Application admins can create, inspect and revoke integration tokens in the UI under **Token** (`/admin/application-tokens`).
 
 ### Core Endpoints
 

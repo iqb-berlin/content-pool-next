@@ -59,6 +59,28 @@ Then align the public URLs:
 - `OIDC_PUBLIC_ISSUER_URL=https://auth-content-pool.example.com/realms/iqb`
 - `OIDC_REDIRECT_URI=https://content-pool.example.com/auth/callback`
 
+### Scripted server install
+
+For a server deployment with pre-built GHCR images, you can let the installer
+prepare the runtime files, generate secrets, align OIDC URLs, adjust the
+Keycloak realm export, and validate the Compose config:
+
+```bash
+# plain server deployment
+./scripts/install.sh --mode server
+
+# deployment behind an existing Traefik stack
+./scripts/install.sh --mode traefik
+```
+
+The installer does not install Traefik. For Traefik mode, start the Traefik
+stack separately and expose the configured Docker network, usually `ingress-net`.
+To install into a separate deployment directory from a GitHub release/tag:
+
+```bash
+./scripts/install.sh --mode traefik --dir /opt/content-pool --ref vX.Y.Z --download
+```
+
 ## 3a. Migration strategy (required for production)
 
 Use migrations as the only schema-change mechanism in production.
@@ -242,12 +264,38 @@ git pull
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+For pre-built server deployments, prefer the safe updater because it backs up
+both databases, the upload directory, and the runtime config before restarting:
+
+```bash
+# plain server deployment
+./scripts/update.sh --mode server
+
+# Traefik-backed deployment
+./scripts/update.sh --mode traefik
+
+# update to a specific published image tag
+./scripts/update.sh --mode traefik --image-version vX.Y.Z
+```
+
+The updater runs TypeORM migrations through the normal backend startup
+configuration (`DB_RUN_MIGRATIONS=true`). It does not use the Coding-Box
+Liquibase workflow. By default it aborts if a database or upload backup source
+is not running; use `--no-backup` or `--allow-incomplete-backup` only for an
+intentional maintenance exception.
+
 ## 11. Backups (recommended)
 
 ```bash
 mkdir -p backups
 docker exec content-pool-db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/contentpool_$(date +%F_%H-%M-%S).sql
 docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > backups/keycloak_$(date +%F_%H-%M-%S).sql
+```
+
+Or use the scripted backup helper:
+
+```bash
+./scripts/update.sh --mode traefik --backup-only
 ```
 
 ## 12. Go/No-Go release checklist

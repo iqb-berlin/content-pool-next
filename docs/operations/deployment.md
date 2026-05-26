@@ -115,6 +115,16 @@ Or through the Makefile:
 make server-up
 ```
 
+The scripted installer can do the first-time setup work for this mode:
+
+```bash
+./scripts/install.sh --mode server
+```
+
+It creates `.env` when needed, generates production secrets, validates the
+Compose config, and patches the imported Keycloak realm client URLs when
+`python3` is available.
+
 ## Production Deployment Behind Traefik
 
 1. Start the Traefik stack separately.
@@ -156,6 +166,23 @@ The overlay removes ContentPool's public nginx port binding. Traefik routes to
 the internal `content-pool-nginx` facade and ContentPool keeps its existing
 internal nginx routing for SPA, API, GeoGebra assets, and Keycloak browser
 endpoints.
+
+The matching scripted installer is:
+
+```bash
+./scripts/install.sh --mode traefik
+```
+
+For a release-style deployment directory without cloning the whole repository:
+
+```bash
+./scripts/install.sh --mode traefik --dir /opt/content-pool --ref vX.Y.Z --download
+```
+
+This installs only the runtime artifacts needed for the server deployment:
+Compose files, nginx config, Keycloak realm/theme files, helper scripts, and a
+small server Makefile. It intentionally checks for Traefik's Docker network but
+does not install or modify the Traefik stack.
 
 ## Required Production Concerns
 
@@ -248,6 +275,12 @@ docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > key
 Keep in mind that ACP uploads live in a separate volume, so a complete backup strategy
 should include both databases and the upload volume.
 
+The update script can create this complete backup without deploying:
+
+```bash
+./scripts/update.sh --mode traefik --backup-only
+```
+
 ## Common Operational Commands
 
 ### Logs
@@ -276,6 +309,26 @@ make status
 ```bash
 make update
 ```
+
+For prebuilt-image server deployments, prefer the safe update wrapper:
+
+```bash
+# with direct nginx exposure
+./scripts/update.sh --mode server
+
+# behind Traefik
+./scripts/update.sh --mode traefik
+
+# switch to a specific image tag
+./scripts/update.sh --mode traefik --image-version vX.Y.Z
+```
+
+The wrapper backs up `.env`, Compose/runtime files, both PostgreSQL databases,
+and the API upload directory before pulling images and restarting. It relies on
+the backend startup migration setting (`DB_RUN_MIGRATIONS=true`) instead of the
+Coding-Box Liquibase update pattern. By default it aborts if a database or
+upload backup source is not running; use `--no-backup` or
+`--allow-incomplete-backup` only for an intentional maintenance exception.
 
 ## Security Notes
 

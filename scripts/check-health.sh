@@ -56,8 +56,12 @@ echo "=== Docker Container Status ==="
 
 if [ "$ENV" = "prod" ]; then
     docker compose -f docker-compose.prod.yml ps
+elif [ "$ENV" = "prod-traefik" ]; then
+    docker compose -f docker-compose.prod.yml -f docker-compose.traefik.yml ps
 elif [ "$ENV" = "server" ]; then
     docker compose -f docker-compose.server.yml ps
+elif [ "$ENV" = "server-traefik" ]; then
+    docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml ps
 else
     docker compose ps
 fi

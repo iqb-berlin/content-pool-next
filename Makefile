@@ -2,7 +2,9 @@
 # Usage: make [target]
 
 .PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp \
-	server-traefik-up server-traefik-update server-traefik-stop server-traefik-logs server-traefik-config \
+	server-install server-install-traefik server-update-safe server-backup \
+	server-traefik-up server-traefik-update server-traefik-update-safe server-traefik-backup \
+	server-traefik-stop server-traefik-logs server-traefik-config \
 	prod-traefik prod-traefik-build prod-traefik-stop prod-traefik-logs prod-traefik-config
 
 # Default target
@@ -96,6 +98,9 @@ prod-clean: ## Stop and remove production containers, volumes, and images
 # Server Deployment Commands (Pre-built Images)
 # ============================================
 
+server-install: ## Prepare .env and validate a pre-built image server deployment
+	@./scripts/install.sh --mode server
+
 server-up: ## Deploy on server using pre-built images (requires .env file)
 	@echo "Deploying using pre-built images from GHCR..."
 	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
@@ -117,6 +122,12 @@ server-update: ## Pull latest images and restart server deployment
 	docker compose -f docker-compose.server.yml up -d
 	@echo "Server deployment updated!"
 
+server-update-safe: ## Backup databases/uploads, pull images, restart, and health-check
+	@./scripts/update.sh --mode server
+
+server-backup: ## Backup server deployment config, databases, and uploads
+	@./scripts/update.sh --mode server --backup-only
+
 server-clean: ## Stop and remove server deployment
 	@echo "Cleaning server deployment..."
 	docker compose -f docker-compose.server.yml down -v
@@ -124,6 +135,9 @@ server-clean: ## Stop and remove server deployment
 # ============================================
 # Traefik Edge Deployment Commands
 # ============================================
+
+server-install-traefik: ## Prepare .env and validate a pre-built image deployment behind Traefik
+	@./scripts/install.sh --mode traefik
 
 server-traefik-up: ## Deploy pre-built images behind an existing Traefik edge
 	@echo "Deploying using pre-built images behind Traefik..."
@@ -139,6 +153,12 @@ server-traefik-update: ## Pull latest pre-built images and restart behind Traefi
 	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml pull
 	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml up -d
 	@echo "Traefik-backed server deployment updated!"
+
+server-traefik-update-safe: ## Backup databases/uploads, pull images, restart behind Traefik, and health-check
+	@./scripts/update.sh --mode traefik
+
+server-traefik-backup: ## Backup Traefik deployment config, databases, and uploads
+	@./scripts/update.sh --mode traefik --backup-only
 
 server-traefik-stop: ## Stop pre-built image deployment behind Traefik
 	@echo "Stopping Traefik-backed server deployment..."

@@ -1,11 +1,27 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
-import { AppSettings } from "../database/entities";
+import {
+  AppSettings,
+  ApplicationToken,
+  ServerApiAuditLog,
+} from "../database/entities";
 import { DEFAULT_ACP_INDEX_VERSION } from "../acp/acp-index.utils";
+import { ALL_SERVER_API_SCOPE_SET } from "../api/server-api-scopes";
+import {
+  generateServerApiToken,
+  getServerApiTokenDisplayPrefix,
+  hashServerApiToken,
+} from "../api/server-api-token.util";
 import {
   GEOGEBRA_PLAYER_DEPLOY_SCRIPT_PATH,
   GEOGEBRA_PLAYER_RESOURCE_BASE,
@@ -14,11 +30,54 @@ import {
   getGeoGebraBundleCurrentDir,
 } from "./geogebra-bundle.util";
 
+export interface CreateApplicationTokenInput {
+  name: string;
+  scopes: string[];
+  expiresAt?: string | null;
+}
+
+export interface ListApplicationTokensOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export interface ApplicationTokenSummary {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  scopes: string[];
+  active: boolean;
+  expiresAt: Date | null;
+  lastUsedAt: Date | null;
+  createdByUserId: string | null;
+  revokedByUserId: string | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreatedApplicationTokenResponse extends ApplicationTokenSummary {
+  token: string;
+}
+
+export interface PaginatedApplicationTokens {
+  items: ApplicationTokenSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     @InjectRepository(AppSettings)
     private readonly settingsRepository: Repository<AppSettings>,
+    @InjectRepository(ApplicationToken)
+    private readonly applicationTokenRepository: Repository<ApplicationToken>,
+    @InjectRepository(ServerApiAuditLog)
+    private readonly auditRepository: Repository<ServerApiAuditLog>,
   ) {}
 
   async getSettings(): Promise<AppSettings> {
@@ -59,6 +118,123 @@ export class AdminService {
     if (data.defaultAcpIndex !== undefined)
       settings.defaultAcpIndex = data.defaultAcpIndex;
     return this.settingsRepository.save(settings);
+  }
+
+  async listApplicationTokens(
+    options: ListApplicationTokensOptions = {},
+  ): Promise<PaginatedApplicationTokens> {
+    const limit = this.normalizeApplicationTokenListLimit(options.limit);
+    const offset = this.normalizeApplicationTokenListOffset(options.offset);
+    const [tokens, total] = await this.applicationTokenRepository.findAndCount({
+      order: { createdAt: "DESC" },
+      take: limit,
+      skip: offset,
+    });
+    return {
+      items: tokens.map((token) => this.toApplicationTokenSummary(token)),
+      total,
+      limit,
+      offset,
+    };
+  }
+
+  async createApplicationToken(
+    data: CreateApplicationTokenInput,
+    createdByUserId?: string,
+  ): Promise<CreatedApplicationTokenResponse> {
+    const name = this.normalizeApplicationTokenName(data.name);
+    const scopes = this.normalizeApplicationTokenScopes(data.scopes);
+    const expiresAt = this.parseApplicationTokenExpiresAt(data.expiresAt);
+    const token = generateServerApiToken();
+
+    let saved: ApplicationToken;
+    try {
+      saved = await this.applicationTokenRepository.manager.transaction(
+        async (manager) => {
+          const tokenRepository = manager.getRepository(ApplicationToken);
+          const auditRepository = manager.getRepository(ServerApiAuditLog);
+          const existing = await tokenRepository.findOne({
+            where: { name },
+          });
+          if (existing) {
+            throw new ConflictException(
+              `Application token "${name}" already exists`,
+            );
+          }
+
+          const entity = tokenRepository.create({
+            name,
+            tokenHash: hashServerApiToken(token),
+            tokenPrefix: getServerApiTokenDisplayPrefix(token),
+            scopes,
+            active: true,
+            expiresAt,
+            lastUsedAt: null,
+            createdByUserId: createdByUserId || null,
+            revokedByUserId: null,
+            revokedAt: null,
+          });
+
+          const savedToken = await tokenRepository.save(entity);
+          await this.logApplicationTokenAudit({
+            action: "application-token.create",
+            method: "POST",
+            path: "/api/admin/application-tokens",
+            actorUserId: createdByUserId,
+            token: savedToken,
+            details: {
+              scopes: savedToken.scopes,
+              expiresAt: savedToken.expiresAt?.toISOString() || null,
+            },
+            auditRepository,
+            requireSuccess: true,
+          });
+
+          return savedToken;
+        },
+      );
+    } catch (error) {
+      if (this.isApplicationTokenNameConflict(error)) {
+        throw new ConflictException(
+          `Application token "${name}" already exists`,
+        );
+      }
+      throw error;
+    }
+
+    return {
+      ...this.toApplicationTokenSummary(saved),
+      token,
+    };
+  }
+
+  async revokeApplicationToken(
+    id: string,
+    revokedByUserId?: string,
+  ): Promise<ApplicationTokenSummary> {
+    const token = await this.applicationTokenRepository.findOne({
+      where: { id },
+    });
+    if (!token) {
+      throw new NotFoundException("Application token not found");
+    }
+
+    if (token.active || !token.revokedAt) {
+      token.active = false;
+      token.revokedAt = token.revokedAt || new Date();
+      token.revokedByUserId = revokedByUserId || token.revokedByUserId || null;
+      const saved = await this.applicationTokenRepository.save(token);
+      await this.logApplicationTokenAudit({
+        action: "application-token.revoke",
+        method: "PATCH",
+        path: `/api/admin/application-tokens/${saved.id}/revoke`,
+        actorUserId: revokedByUserId,
+        token: saved,
+      });
+      return this.toApplicationTokenSummary(saved);
+    }
+
+    return this.toApplicationTokenSummary(token);
   }
 
   async uploadGeoGebraBundle(
@@ -258,6 +434,184 @@ export class AdminService {
 
     if (currentMoved) {
       await fs.rm(backupDir, { recursive: true, force: true });
+    }
+  }
+
+  private normalizeApplicationTokenName(name: string): string {
+    const normalized = String(name || "").trim();
+    if (!normalized) {
+      throw new BadRequestException("Application token name is required");
+    }
+    if (normalized.length > 160) {
+      throw new BadRequestException(
+        "Application token name must be 160 characters or fewer",
+      );
+    }
+    return normalized;
+  }
+
+  private normalizeApplicationTokenListLimit(limitInput?: number): number {
+    const parsed = Number(limitInput ?? 50);
+    if (!Number.isFinite(parsed)) {
+      return 50;
+    }
+    return Math.max(1, Math.min(Math.trunc(parsed), 200));
+  }
+
+  private normalizeApplicationTokenListOffset(offsetInput?: number): number {
+    const parsed = Number(offsetInput ?? 0);
+    if (!Number.isFinite(parsed)) {
+      return 0;
+    }
+    return Math.max(0, Math.trunc(parsed));
+  }
+
+  private normalizeApplicationTokenScopes(scopesInput: unknown): string[] {
+    if (!Array.isArray(scopesInput)) {
+      throw new BadRequestException("Application token scopes are required");
+    }
+
+    const scopes = Array.from(
+      new Set<string>(
+        scopesInput
+          .map((scope: unknown) => String(scope || "").trim())
+          .filter((scope: string) => scope.length > 0),
+      ),
+    );
+
+    if (!scopes.length) {
+      throw new BadRequestException(
+        "At least one application token scope is required",
+      );
+    }
+
+    const invalidScopes = scopes.filter(
+      (scope) => !ALL_SERVER_API_SCOPE_SET.has(scope),
+    );
+    if (invalidScopes.length) {
+      throw new BadRequestException(
+        `Unsupported application token scopes: ${invalidScopes.join(", ")}`,
+      );
+    }
+
+    return scopes;
+  }
+
+  private parseApplicationTokenExpiresAt(
+    expiresAt?: string | null,
+  ): Date | null {
+    if (!expiresAt) {
+      return null;
+    }
+
+    const parsed = new Date(expiresAt);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException("Application token expiresAt is invalid");
+    }
+    if (parsed <= new Date()) {
+      throw new BadRequestException(
+        "Application token expiresAt must be in the future",
+      );
+    }
+
+    return parsed;
+  }
+
+  private toApplicationTokenSummary(
+    token: ApplicationToken,
+  ): ApplicationTokenSummary {
+    return {
+      id: token.id,
+      name: token.name,
+      tokenPrefix: token.tokenPrefix,
+      scopes: Array.isArray(token.scopes) ? [...token.scopes] : [],
+      active: token.active,
+      expiresAt: token.expiresAt || null,
+      lastUsedAt: token.lastUsedAt || null,
+      createdByUserId: token.createdByUserId || null,
+      revokedByUserId: token.revokedByUserId || null,
+      revokedAt: token.revokedAt || null,
+      createdAt: token.createdAt,
+      updatedAt: token.updatedAt,
+    };
+  }
+
+  private isApplicationTokenNameConflict(error: unknown): boolean {
+    if (!error || typeof error !== "object") {
+      return false;
+    }
+
+    const code =
+      (error as { code?: string }).code ||
+      (error as { driverError?: { code?: string } }).driverError?.code;
+    const constraint =
+      (error as { constraint?: string }).constraint ||
+      (error as { driverError?: { constraint?: string } }).driverError
+        ?.constraint;
+    const detail =
+      (error as { detail?: string }).detail ||
+      (error as { driverError?: { detail?: string } }).driverError?.detail ||
+      "";
+
+    if (code !== "23505") {
+      return false;
+    }
+
+    return (
+      constraint === "UQ_application_tokens_name" ||
+      detail.includes("(name)=")
+    );
+  }
+
+  private async logApplicationTokenAudit({
+    action,
+    method,
+    path,
+    actorUserId,
+    token,
+    details,
+    auditRepository,
+    requireSuccess = false,
+  }: {
+    action: string;
+    method: string;
+    path: string;
+    actorUserId?: string;
+    token: ApplicationToken;
+    details?: Record<string, unknown>;
+    auditRepository?: Repository<ServerApiAuditLog>;
+    requireSuccess?: boolean;
+  }): Promise<void> {
+    const repository = auditRepository || this.auditRepository;
+
+    try {
+      await repository.save(
+        repository.create({
+          clientId: actorUserId ? `admin:${actorUserId}` : "admin:unknown",
+          action,
+          method,
+          path,
+          resourceId: token.id,
+          success: true,
+          details: {
+            resourceType: "application-token",
+            tokenId: token.id,
+            name: token.name,
+            tokenPrefix: token.tokenPrefix,
+            ...details,
+          },
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (requireSuccess) {
+        throw error;
+      }
+
+      this.logger.error(
+        `Could not write non-blocking application token audit entry for ${action} on ${token.id}: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
     }
   }
 }

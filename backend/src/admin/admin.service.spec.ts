@@ -1,10 +1,15 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { ConflictException, Logger } from "@nestjs/common";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
 import { AdminService } from "./admin.service";
-import { AppSettings } from "../database/entities";
+import {
+  AppSettings,
+  ApplicationToken,
+  ServerApiAuditLog,
+} from "../database/entities";
 import { DEFAULT_ACP_INDEX_VERSION } from "../acp/acp-index.utils";
 import {
   GEOGEBRA_PLAYER_DEPLOY_SCRIPT_PATH,
@@ -15,6 +20,19 @@ describe("AdminService", () => {
   let service: AdminService;
   let repo: {
     findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
+  let applicationTokenRepository: {
+    findAndCount: jest.Mock;
+    findOne: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+    manager: {
+      transaction: jest.Mock;
+    };
+  };
+  let auditRepository: {
     create: jest.Mock;
     save: jest.Mock;
   };
@@ -33,11 +51,49 @@ describe("AdminService", () => {
         .mockImplementation((dto) => ({ id: "settings-1", ...dto })),
       save: jest.fn().mockImplementation(async (entity) => entity),
     };
+    auditRepository = {
+      create: jest.fn().mockImplementation((dto) => dto),
+      save: jest.fn().mockImplementation(async (entity) => entity),
+    };
+    applicationTokenRepository = {
+      findAndCount: jest.fn(),
+      findOne: jest.fn(),
+      create: jest.fn().mockImplementation((dto) => ({
+        id: "token-1",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        ...dto,
+      })),
+      save: jest.fn().mockImplementation(async (entity) => ({
+        id: entity.id || "token-1",
+        createdAt: entity.createdAt || new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: entity.updatedAt || new Date("2026-01-01T00:00:00.000Z"),
+        ...entity,
+      })),
+      manager: {
+        transaction: jest.fn().mockImplementation(async (callback) =>
+          callback({
+            getRepository: (entity: unknown) =>
+              entity === ApplicationToken
+                ? applicationTokenRepository
+                : auditRepository,
+          }),
+        ),
+      },
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AdminService,
         { provide: getRepositoryToken(AppSettings), useValue: repo },
+        {
+          provide: getRepositoryToken(ApplicationToken),
+          useValue: applicationTokenRepository,
+        },
+        {
+          provide: getRepositoryToken(ServerApiAuditLog),
+          useValue: auditRepository,
+        },
       ],
     }).compile();
 
@@ -133,6 +189,261 @@ describe("AdminService", () => {
 
     expect(updated.language).toBe("en");
     expect(updated.defaultAcpIndex).toEqual({ quality: "standard" });
+  });
+
+  it("lists application tokens without exposing token hashes", async () => {
+    applicationTokenRepository.findAndCount.mockResolvedValue([
+      [
+        {
+          id: "token-1",
+          name: "Studio",
+          tokenHash: "hidden",
+          tokenPrefix: "cp_abc...",
+          scopes: ["acp.read"],
+          active: true,
+          expiresAt: null,
+          lastUsedAt: null,
+          createdByUserId: "user-1",
+          revokedByUserId: null,
+          revokedAt: null,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        } as ApplicationToken,
+      ],
+      1,
+    ]);
+
+    const result = await service.listApplicationTokens({
+      limit: 500,
+      offset: 2,
+    });
+
+    expect(applicationTokenRepository.findAndCount).toHaveBeenCalledWith({
+      order: { createdAt: "DESC" },
+      take: 200,
+      skip: 2,
+    });
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          id: "token-1",
+          name: "Studio",
+          tokenPrefix: "cp_abc...",
+          scopes: ["acp.read"],
+        }),
+      ],
+      total: 1,
+      limit: 200,
+      offset: 2,
+    });
+    expect(result.items[0]).not.toHaveProperty("tokenHash");
+  });
+
+  it("creates application tokens with one-time secrets and stored hashes", async () => {
+    applicationTokenRepository.findOne.mockResolvedValue(null);
+
+    const result = await service.createApplicationToken(
+      {
+        name: " Studio ",
+        scopes: ["acp.read", "files.read", "files.read"],
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+      "user-1",
+    );
+
+    expect(result.token).toMatch(/^cp_/);
+    expect(result.name).toBe("Studio");
+    expect(result.scopes).toEqual(["acp.read", "files.read"]);
+    expect(result).not.toHaveProperty("tokenHash");
+    expect(applicationTokenRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Studio",
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        tokenPrefix: expect.stringMatching(/^cp_/),
+        scopes: ["acp.read", "files.read"],
+        active: true,
+        createdByUserId: "user-1",
+        revokedAt: null,
+      }),
+    );
+    expect(applicationTokenRepository.manager.transaction).toHaveBeenCalled();
+    expect(auditRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "admin:user-1",
+        action: "application-token.create",
+        method: "POST",
+        path: "/api/admin/application-tokens",
+        resourceId: "token-1",
+        details: expect.objectContaining({
+          resourceType: "application-token",
+          tokenId: "token-1",
+          name: "Studio",
+          tokenPrefix: expect.stringMatching(/^cp_/),
+          scopes: ["acp.read", "files.read"],
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        }),
+      }),
+    );
+  });
+
+  it("fails application token creation when transactional audit write fails", async () => {
+    applicationTokenRepository.findOne.mockResolvedValue(null);
+    auditRepository.save.mockRejectedValueOnce(new Error("audit down"));
+
+    await expect(
+      service.createApplicationToken(
+        {
+          name: "Studio",
+          scopes: ["acp.read"],
+        },
+        "user-1",
+      ),
+    ).rejects.toThrow("audit down");
+  });
+
+  it("rejects duplicate names and unsupported application token scopes", async () => {
+    applicationTokenRepository.findOne.mockResolvedValueOnce({
+      id: "existing",
+      name: "Studio",
+    });
+
+    await expect(
+      service.createApplicationToken({
+        name: "Studio",
+        scopes: ["acp.read"],
+      }),
+    ).rejects.toThrow("already exists");
+
+    applicationTokenRepository.findOne.mockResolvedValueOnce(null);
+    await expect(
+      service.createApplicationToken({
+        name: "Studio 2",
+        scopes: ["not-a-scope"],
+      }),
+    ).rejects.toThrow("Unsupported application token scopes");
+  });
+
+  it("maps concurrent duplicate application token creation to conflict", async () => {
+    applicationTokenRepository.findOne.mockResolvedValue(null);
+    applicationTokenRepository.save.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "UQ_application_tokens_name",
+    });
+
+    await expect(
+      service.createApplicationToken({
+        name: "Studio",
+        scopes: ["acp.read"],
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it("maps generated database name constraints to application token conflicts", async () => {
+    applicationTokenRepository.findOne.mockResolvedValue(null);
+    applicationTokenRepository.save.mockRejectedValueOnce({
+      code: "23505",
+      constraint: "UQ_d5f6164d651fcbf9f45011b841b",
+      detail: 'Key (name)=(Studio) already exists.',
+    });
+
+    await expect(
+      service.createApplicationToken({
+        name: "Studio",
+        scopes: ["acp.read"],
+      }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it("revokes application tokens", async () => {
+    applicationTokenRepository.findOne.mockResolvedValue({
+      id: "token-1",
+      name: "Studio",
+      tokenPrefix: "cp_abc...",
+      scopes: ["acp.read"],
+      active: true,
+      expiresAt: null,
+      lastUsedAt: null,
+      createdByUserId: "user-1",
+      revokedByUserId: null,
+      revokedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    } as ApplicationToken);
+
+    const result = await service.revokeApplicationToken("token-1", "admin-1");
+
+    expect(applicationTokenRepository.findOne).toHaveBeenCalledWith({
+      where: { id: "token-1" },
+    });
+    expect(applicationTokenRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "token-1",
+        active: false,
+        revokedByUserId: "admin-1",
+        revokedAt: expect.any(Date),
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: "token-1",
+        active: false,
+        revokedByUserId: "admin-1",
+      }),
+    );
+    expect(auditRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clientId: "admin:admin-1",
+        action: "application-token.revoke",
+        method: "PATCH",
+        path: "/api/admin/application-tokens/token-1/revoke",
+        resourceId: "token-1",
+        details: expect.objectContaining({
+          resourceType: "application-token",
+          tokenId: "token-1",
+          name: "Studio",
+          tokenPrefix: "cp_abc...",
+        }),
+      }),
+    );
+  });
+
+  it("still revokes application tokens when non-blocking audit write fails", async () => {
+    const loggerErrorSpy = jest
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => undefined);
+    applicationTokenRepository.findOne.mockResolvedValue({
+      id: "token-1",
+      name: "Studio",
+      tokenPrefix: "cp_abc...",
+      scopes: ["acp.read"],
+      active: true,
+      expiresAt: null,
+      lastUsedAt: null,
+      createdByUserId: "user-1",
+      revokedByUserId: null,
+      revokedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    } as ApplicationToken);
+    auditRepository.save.mockRejectedValueOnce(new Error("audit down"));
+
+    try {
+      await expect(
+        service.revokeApplicationToken("token-1", "admin-1"),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          id: "token-1",
+          active: false,
+          revokedByUserId: "admin-1",
+        }),
+      );
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Could not write non-blocking"),
+        expect.any(String),
+      );
+    } finally {
+      loggerErrorSpy.mockRestore();
+    }
   });
 
   it("extracts and activates a GeoGebra bundle from a ZIP upload", async () => {

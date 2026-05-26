@@ -16,14 +16,14 @@ export class ServerApiAuthGuard implements CanActivate {
     private readonly authService: ServerApiAuthService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const token = this.extractToken(req);
     if (!token) {
       throw new UnauthorizedException("Missing server API token");
     }
 
-    const client = this.authService.validateToken(token);
+    const client = await this.authService.validateToken(token);
     if (!client) {
       throw new UnauthorizedException("Invalid server API token");
     }

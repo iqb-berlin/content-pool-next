@@ -2,7 +2,12 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ServerApiService } from "./server-api.service";
 import { ServerApiController } from "./server-api.controller";
-import { Acp, AcpFile, ServerApiAuditLog } from "../database/entities";
+import {
+  Acp,
+  AcpFile,
+  ApplicationToken,
+  ServerApiAuditLog,
+} from "../database/entities";
 import { FilesModule } from "../files/files.module";
 import { ServerApiAuthService } from "./server-api-auth.service";
 import { ServerApiAuthGuard } from "./server-api-auth.guard";
@@ -12,7 +17,12 @@ import { SnapshotsModule } from "../snapshots/snapshots.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Acp, AcpFile, ServerApiAuditLog]),
+    TypeOrmModule.forFeature([
+      Acp,
+      AcpFile,
+      ApplicationToken,
+      ServerApiAuditLog,
+    ]),
     FilesModule,
     SnapshotsModule,
   ],

@@ -3,8 +3,13 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
+  Patch,
+  ParseUUIDPipe,
   Post,
   Put,
+  Query,
+  Req,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -14,13 +19,48 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
   ApiTags,
 } from "@nestjs/swagger";
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsDateString,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from "class-validator";
 import { AdminService } from "./admin.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { OidcAuthGuard } from "../auth/guards/oidc-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
+import { ALL_SERVER_API_SCOPES } from "../api/server-api-scopes";
+
+class CreateApplicationTokenDto {
+  @ApiProperty({ description: "Human-readable application name" })
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty({
+    description: "Allowed server API scopes",
+    enum: ALL_SERVER_API_SCOPES,
+    isArray: true,
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  scopes!: string[];
+
+  @ApiPropertyOptional({
+    description: "Optional expiration timestamp (ISO 8601)",
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
 
 @ApiTags("Administration")
 @Controller("admin")
@@ -40,6 +80,36 @@ export class AdminController {
   @ApiOperation({ summary: "Update application settings" })
   async updateSettings(@Body() data: Record<string, unknown>) {
     return this.adminService.updateSettings(data as any);
+  }
+
+  @Get("application-tokens")
+  @ApiOperation({ summary: "List application tokens" })
+  async listApplicationTokens(
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    return this.adminService.listApplicationTokens({
+      limit: limit === undefined ? undefined : Number.parseInt(limit, 10),
+      offset: offset === undefined ? undefined : Number.parseInt(offset, 10),
+    });
+  }
+
+  @Post("application-tokens")
+  @ApiOperation({ summary: "Create an application token" })
+  async createApplicationToken(
+    @Body() data: CreateApplicationTokenDto,
+    @Req() req: any,
+  ) {
+    return this.adminService.createApplicationToken(data, req?.user?.sub);
+  }
+
+  @Patch("application-tokens/:id/revoke")
+  @ApiOperation({ summary: "Revoke an application token" })
+  async revokeApplicationToken(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+    @Req() req: any,
+  ) {
+    return this.adminService.revokeApplicationToken(id, req?.user?.sub);
   }
 
   @Post("settings/geogebra-bundle")

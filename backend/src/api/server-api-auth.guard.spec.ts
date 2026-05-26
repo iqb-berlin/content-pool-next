@@ -35,55 +35,55 @@ describe("ServerApiAuthGuard", () => {
     );
   });
 
-  it("rejects when token is missing", () => {
+  it("rejects when token is missing", async () => {
     reflector.getAllAndOverride.mockReturnValue([]);
 
-    expect(() => guard.canActivate(createContext({ headers: {} }))).toThrow(
-      UnauthorizedException,
-    );
+    await expect(
+      guard.canActivate(createContext({ headers: {} })),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects when token is invalid", () => {
+  it("rejects when token is invalid", async () => {
     reflector.getAllAndOverride.mockReturnValue([]);
-    authService.validateToken.mockReturnValue(null);
+    authService.validateToken.mockResolvedValue(null);
 
-    expect(() =>
+    await expect(
       guard.canActivate(
         createContext({ headers: { "x-server-token": "abc" } }),
       ),
-    ).toThrow(UnauthorizedException);
+    ).rejects.toThrow(UnauthorizedException);
   });
 
-  it("rejects when required scopes are missing", () => {
+  it("rejects when required scopes are missing", async () => {
     reflector.getAllAndOverride.mockImplementation((key: string) =>
       key === SERVER_API_SCOPES_KEY ? ["files.write"] : [],
     );
-    authService.validateToken.mockReturnValue({
+    authService.validateToken.mockResolvedValue({
       id: "client-1",
       scopes: ["files.read"],
     });
     authService.hasScopes.mockReturnValue(false);
 
-    expect(() =>
+    await expect(
       guard.canActivate(
         createContext({ headers: { authorization: "Bearer token-1" } }),
       ),
-    ).toThrow(ForbiddenException);
+    ).rejects.toThrow(ForbiddenException);
   });
 
-  it("accepts x-server-token and enriches request with client identity", () => {
+  it("accepts x-server-token and enriches request with client identity", async () => {
     const req: any = {
       headers: { "x-server-token": "  token-a  " },
     };
 
     reflector.getAllAndOverride.mockReturnValue(["acp.read"]);
-    authService.validateToken.mockReturnValue({
+    authService.validateToken.mockResolvedValue({
       id: "client-a",
       scopes: ["acp.read"],
     });
     authService.hasScopes.mockReturnValue(true);
 
-    expect(guard.canActivate(createContext(req))).toBe(true);
+    await expect(guard.canActivate(createContext(req))).resolves.toBe(true);
     expect(authService.validateToken).toHaveBeenCalledWith("token-a");
     expect(req.serverApiClient).toEqual({
       id: "client-a",
@@ -91,15 +91,15 @@ describe("ServerApiAuthGuard", () => {
     });
   });
 
-  it("accepts x-integration-token as fallback header", () => {
+  it("accepts x-integration-token as fallback header", async () => {
     reflector.getAllAndOverride.mockReturnValue([]);
-    authService.validateToken.mockReturnValue({ id: "client-b", scopes: [] });
+    authService.validateToken.mockResolvedValue({ id: "client-b", scopes: [] });
     authService.hasScopes.mockReturnValue(true);
 
     const req: any = {
       headers: { "x-integration-token": "integration-token" },
     };
-    expect(guard.canActivate(createContext(req))).toBe(true);
+    await expect(guard.canActivate(createContext(req))).resolves.toBe(true);
     expect(authService.validateToken).toHaveBeenCalledWith("integration-token");
   });
 });

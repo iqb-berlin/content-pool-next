@@ -5,6 +5,9 @@ This guide describes a **secure** deployment of ContentPool with Keycloak on a V
 ## 1. Preconditions (must be true)
 
 - Docker Engine + Compose v2 installed (`docker compose version`)
+  - Traefik overlay deployments require Compose support for the Compose Spec
+    `!reset` tag; validate with `make server-traefik-config` or
+    `make prod-traefik-config` before starting the stack.
 - Domain setup (recommended):
   - App: `app.example.com`
   - Keycloak: `auth.example.com` (can point to same VPS)
@@ -18,6 +21,8 @@ This guide describes a **secure** deployment of ContentPool with Keycloak on a V
 
 - `docker-compose.prod.yml`: build locally on VPS
 - `docker-compose.server.yml`: pull pre-built images from GHCR (recommended for small VPS)
+- `docker-compose.traefik.yml`: optional overlay when an existing Traefik stack
+  owns ports `80/443` on the same Docker host
 
 ## 3. Prepare configuration
 
@@ -38,6 +43,21 @@ Edit `.env` and set at least:
 - `OIDC_CLIENT_ID` (default `contentpool`)
 - `DB_SYNCHRONIZE=false`
 - `DB_RUN_MIGRATIONS=true`
+
+If deploying behind Traefik, also set:
+
+- `CONTENT_POOL_HOST` (for example `content-pool.example.com`)
+- `CONTENT_POOL_AUTH_HOST` (for example `auth-content-pool.example.com`)
+- `TRAEFIK_DOCKER_NETWORK` (for `iqb-berlin/traefik`: `ingress-net`)
+- `TRAEFIK_ENTRYPOINT` (for `iqb-berlin/traefik`: `websecure`)
+- `TRAEFIK_TLS_CERTRESOLVER` (`acme` for ACME, empty for manually configured certificates)
+
+Then align the public URLs:
+
+- `CORS_ORIGIN=https://content-pool.example.com`
+- `KEYCLOAK_HOSTNAME=auth-content-pool.example.com`
+- `OIDC_PUBLIC_ISSUER_URL=https://auth-content-pool.example.com/realms/iqb`
+- `OIDC_REDIRECT_URI=https://content-pool.example.com/auth/callback`
 
 ## 3a. Migration strategy (required for production)
 
@@ -107,6 +127,14 @@ docker compose -f docker-compose.prod.yml config >/tmp/compose.prod.resolved.yml
 
 If this fails, required env vars are missing or malformed.
 
+For Traefik-backed deployments:
+
+```bash
+make server-traefik-config
+# or:
+make prod-traefik-config
+```
+
 ## 6. Start services
 
 ### Option A: pre-built images
@@ -122,6 +150,28 @@ docker compose -f docker-compose.server.yml up -d
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+### Option C: pre-built images behind Traefik
+
+Run the Traefik stack separately first. It may live in another directory; it
+only needs to provide the external Docker network configured as
+`TRAEFIK_DOCKER_NETWORK`. For `iqb-berlin/traefik`, use `ingress-net`; avoid
+`app-net`, because Traefik's own monitoring Keycloak also lives there.
+
+```bash
+make server-traefik-up
+```
+
+### Option D: build on VPS behind Traefik
+
+```bash
+make prod-traefik-build
+```
+
+The Traefik overlay removes ContentPool's direct public nginx port. Public HTTP
+and HTTPS traffic goes through Traefik, then to the internal `content-pool-nginx`
+container. ContentPool's own nginx config still handles `/`, `/api/`,
+`/assets/GeoGebra/`, `/realms/`, and `/resources/`.
+
 ## 7. Verify health
 
 ```bash
@@ -134,6 +184,13 @@ Expected:
 - `content-pool-nginx`, `content-pool-api`, `content-pool-db`, `keycloak`, `keycloak-db` are `Up`
 - `GET /api/auth/oidc-config` returns `"enabled": true`
 - `GET /api/health/live` and `GET /api/health/ready` return `200`
+
+For Traefik-backed deployments, verify through the public hosts:
+
+```bash
+curl -fsS https://content-pool.example.com/api/health/live
+curl -fsS https://auth-content-pool.example.com/realms/iqb/.well-known/openid-configuration
+```
 
 ## 7a. Monitoring baseline
 

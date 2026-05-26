@@ -39,6 +39,26 @@ Use this when:
 - you prefer faster deploys on small VPS instances,
 - the build pipeline publishes backend and frontend images ahead of time.
 
+### 4. Traefik edge deployment
+
+File:
+
+- `docker-compose.traefik.yml` combined with either production file
+
+Use this when:
+
+- an existing Traefik stack terminates HTTPS on the same Docker host,
+- Traefik owns ports `80` and `443`,
+- ContentPool should stay internal and be routed through Docker labels.
+
+The Traefik stack can live outside this repository. It only needs to expose the
+Docker network configured through `TRAEFIK_DOCKER_NETWORK` (`ingress-net` for
+`iqb-berlin/traefik`). Do not use Traefik's `app-net` for ContentPool routing,
+because Traefik's own monitoring Keycloak also lives there.
+
+The overlay uses the Compose Spec `!reset` tag to remove ContentPool's direct
+public nginx port binding. Validate the merged configuration before deployment.
+
 ## Development Deployment
 
 Start:
@@ -95,6 +115,48 @@ Or through the Makefile:
 make server-up
 ```
 
+## Production Deployment Behind Traefik
+
+1. Start the Traefik stack separately.
+2. Make sure its ingress Docker network exists, for example `ingress-net`.
+3. Copy `.env.example` to `.env`.
+4. Fill in the normal production values and these Traefik values:
+
+```bash
+CONTENT_POOL_HOST=content-pool.example.com
+CONTENT_POOL_AUTH_HOST=auth-content-pool.example.com
+TRAEFIK_DOCKER_NETWORK=ingress-net
+TRAEFIK_ENTRYPOINT=websecure
+TRAEFIK_TLS_CERTRESOLVER=
+```
+
+For ContentPool OIDC, align the public URLs with those hosts:
+
+```bash
+CORS_ORIGIN=https://content-pool.example.com
+KEYCLOAK_HOSTNAME=auth-content-pool.example.com
+OIDC_PUBLIC_ISSUER_URL=https://auth-content-pool.example.com/realms/iqb
+OIDC_REDIRECT_URI=https://content-pool.example.com/auth/callback
+OIDC_ISSUER_URL=http://keycloak:8080/realms/iqb
+```
+
+Start with prebuilt images:
+
+```bash
+make server-traefik-up
+```
+
+Or build on the server:
+
+```bash
+make prod-traefik-build
+```
+
+The overlay removes ContentPool's public nginx port binding. Traefik routes to
+the internal `content-pool-nginx` facade and ContentPool keeps its existing
+internal nginx routing for SPA, API, GeoGebra assets, and Keycloak browser
+endpoints.
+
 ## Required Production Concerns
 
 Before any real deployment, make sure these are in place:
@@ -122,6 +184,9 @@ The default production layout is:
 - PostgreSQL internal-only,
 - uploads persisted in a volume.
 
+Behind Traefik, nginx is no longer exposed directly. Traefik is the public edge,
+and nginx stays as the internal facade that knows ContentPool's path routing.
+
 ## Health Verification
 
 After deployment, verify:
@@ -130,6 +195,21 @@ After deployment, verify:
 docker compose -f docker-compose.prod.yml ps
 curl -fsS http://localhost/api/health/live
 curl -fsS http://localhost/api/health/ready
+```
+
+Behind Traefik, validate the merged Compose configuration first:
+
+```bash
+make server-traefik-config
+# or:
+make prod-traefik-config
+```
+
+Then verify via the public hosts:
+
+```bash
+curl -fsS https://content-pool.example.com/api/health/live
+curl -fsS https://auth-content-pool.example.com/realms/iqb/.well-known/openid-configuration
 ```
 
 Or use the helper script:

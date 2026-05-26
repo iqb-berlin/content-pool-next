@@ -323,12 +323,53 @@ For prebuilt-image server deployments, prefer the safe update wrapper:
 ./scripts/update.sh --mode traefik --image-version vX.Y.Z
 ```
 
+For a controlled release update after the `v0.1.1` pipeline is green, use the
+release target from the deployment directory:
+
+```bash
+# behind Traefik
+make server-traefik-update-release VERSION=v0.1.1
+
+# or, with direct nginx exposure
+make server-update-release VERSION=v0.1.1
+```
+
 The wrapper backs up `.env`, Compose/runtime files, both PostgreSQL databases,
 and the API upload directory before pulling images and restarting. It relies on
 the backend startup migration setting (`DB_RUN_MIGRATIONS=true`) instead of the
 Coding-Box Liquibase update pattern. By default it aborts if a database or
 upload backup source is not running; use `--no-backup` or
 `--allow-incomplete-backup` only for an intentional maintenance exception.
+
+The wrapper also counts users in the Keycloak `iqb` realm before and after the
+update, stores the count in `backups/update_*/manifest.txt`, and refuses to
+accept the release if the count decreases. Use `--keycloak-realm REALM` only if
+the production realm name is different. Avoid `docker compose down -v`,
+`server-clean`, `prod-clean`, and Docker volume pruning during release work;
+those commands remove the volumes that hold PostgreSQL data, Keycloak users, and
+uploads.
+
+If the post-update Keycloak user check fails, the script attempts to redeploy the
+previous image version from `.env`, stops the public `nginx` facade, and exits
+with the backup directory in the error message. Verify or restore the Keycloak
+database before starting `nginx` again.
+
+If the health check fails after the new stack starts, the same previous-version
+redeploy and `nginx` stop happens, but the failure message points to general
+inspection with the backup rather than a Keycloak-specific restore.
+
+For a dry run without changing containers:
+
+```bash
+./scripts/update.sh --mode traefik --image-version v0.1.1 --dry-run
+```
+
+If deployment artifacts changed in the release tag as well as the images, refresh
+them explicitly:
+
+```bash
+./scripts/update.sh --mode traefik --image-version v0.1.1 --refresh-artifacts --ref v0.1.1
+```
 
 ## Security Notes
 

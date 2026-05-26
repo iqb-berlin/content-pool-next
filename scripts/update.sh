@@ -26,6 +26,8 @@ Options:
   --no-backup                  Skip database/config/upload backups
   --allow-incomplete-backup    Continue when a backup source container is not running
   --backup-only                Create backups and exit
+  --keycloak-realm REALM       Realm used for Keycloak user-count verification (default: iqb)
+  --no-keycloak-user-check     Skip pre/post Keycloak user-count verification
   --no-pull                    Skip docker compose pull
   --no-health-check            Skip post-update health check
   --refresh-artifacts          Download deploy files from GitHub before update
@@ -63,6 +65,7 @@ confirm_or_exit() {
   if [[ "$BACKUP" -eq 1 ]]; then
     printf '  allow incomplete backup: %s\n' "$([[ "$ALLOW_INCOMPLETE_BACKUP" -eq 1 ]] && printf yes || printf no)"
   fi
+  printf '  Keycloak user check: %s\n' "$([[ "$KEYCLOAK_USER_CHECK" -eq 1 ]] && printf "%s" "$KEYCLOAK_REALM" || printf no)"
   read -r -p 'Continue? [y/N]: ' answer
   case "$answer" in
     y|Y|yes|YES)
@@ -71,6 +74,42 @@ confirm_or_exit() {
       cp_die "Update aborted"
       ;;
   esac
+}
+
+validate_env_safety() {
+  local key value sync migrations failures=0
+
+  sync="$(cp_env_get .env DB_SYNCHRONIZE)"
+  if [[ "$sync" == "true" ]]; then
+    cp_die "DB_SYNCHRONIZE=true is unsafe for production updates. Set DB_SYNCHRONIZE=false before updating."
+  fi
+
+  migrations="$(cp_env_get .env DB_RUN_MIGRATIONS)"
+  if [[ "${migrations:-true}" != "true" ]]; then
+    cp_warn "DB_RUN_MIGRATIONS is not true; schema migrations will not run on backend startup"
+  fi
+
+  for key in CORS_ORIGIN OIDC_PUBLIC_ISSUER_URL OIDC_REDIRECT_URI; do
+    value="$(cp_env_get .env "$key")"
+    if cp_env_is_placeholder "$value"; then
+      cp_warn "${key} still looks like a placeholder (${value:-empty})"
+      failures=$((failures + 1))
+    fi
+  done
+
+  if [[ "$MODE" == "traefik" ]]; then
+    for key in CONTENT_POOL_HOST CONTENT_POOL_AUTH_HOST KEYCLOAK_HOSTNAME; do
+      value="$(cp_env_get .env "$key")"
+      if cp_env_is_placeholder "$value"; then
+        cp_warn "${key} still looks like a placeholder (${value:-empty})"
+        failures=$((failures + 1))
+      fi
+    done
+  fi
+
+  if [[ "$failures" -gt 0 ]]; then
+    cp_die "Refusing to update while production URL/OIDC values still look like placeholders"
+  fi
 }
 
 safe_tar_config() {
@@ -160,6 +199,116 @@ backup_uploads() {
   fi
 }
 
+keycloak_user_count() {
+  local user="$1"
+  local database="$2"
+  local realm="$3"
+  local count
+
+  count="$(
+    docker exec -i keycloak-db psql \
+      -qAt \
+      -v ON_ERROR_STOP=1 \
+      -v realm_name="$realm" \
+      -U "$user" \
+      -d "$database" <<'SQL'
+select count(*)
+from user_entity u
+join realm r on r.id = u.realm_id
+where r.name = :'realm_name';
+SQL
+  )" || return 1
+
+  count="${count//[[:space:]]/}"
+  [[ "$count" =~ ^[0-9]+$ ]] || return 1
+  printf '%s' "$count"
+}
+
+reject_started_update() {
+  local reason="$1"
+  local recovery_hint="${2:-}"
+  local previous_version backup_hint
+
+  backup_hint="${LAST_BACKUP_DIR:-the latest verified backup}"
+  if [[ -z "$recovery_hint" ]]; then
+    recovery_hint="Inspect the failed update using ${backup_hint} before reopening traffic."
+  fi
+  cp_warn "$reason"
+
+  if [[ -n "$IMAGE_VERSION_TARGET" ]]; then
+    previous_version="$(cp_env_get .env IMAGE_VERSION)"
+    cp_warn "Attempting to redeploy previous IMAGE_VERSION=${previous_version:-latest}"
+    COMPOSE_ENV=()
+    if run_compose up -d; then
+      cp_warn "Previous image version redeployed"
+    else
+      cp_warn "Automatic redeploy of the previous image version failed"
+    fi
+  else
+    cp_warn "No explicit image target was used; automatic image rollback is not available"
+  fi
+
+  cp_warn "Stopping nginx so the failed update is not served publicly"
+  if run_compose stop nginx; then
+    cp_warn "nginx stopped; restart it only after the failed update has been inspected or restored"
+  else
+    cp_warn "Could not stop nginx automatically; stop it manually before continuing"
+  fi
+
+  cp_die "${reason} ${recovery_hint}"
+}
+
+capture_keycloak_users_before() {
+  local keycloak_user keycloak_db count
+
+  [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]] || return 0
+
+  if ! cp_has_running_container keycloak-db; then
+    if [[ "$ALLOW_INCOMPLETE_BACKUP" -eq 1 ]]; then
+      cp_warn "Container keycloak-db is not running; Keycloak user-count verification skipped"
+      KEYCLOAK_USER_CHECK=0
+      return 0
+    fi
+    cp_die "Container keycloak-db is not running; cannot verify Keycloak users. Start the stack or pass --no-keycloak-user-check explicitly."
+  fi
+
+  keycloak_user="$(cp_env_get .env KEYCLOAK_DB_USER)"
+  keycloak_db="$(cp_env_get .env KEYCLOAK_DB_NAME)"
+  if ! count="$(keycloak_user_count "${keycloak_user:-keycloak}" "${keycloak_db:-keycloak}" "$KEYCLOAK_REALM")"; then
+    cp_die "Could not count Keycloak users in realm '${KEYCLOAK_REALM}'. Pass --no-keycloak-user-check only for an intentional maintenance exception."
+  fi
+
+  KEYCLOAK_USERS_BEFORE="$count"
+  cp_info "Keycloak realm '${KEYCLOAK_REALM}' users before update: ${KEYCLOAK_USERS_BEFORE}"
+}
+
+verify_keycloak_users_after() {
+  local keycloak_user keycloak_db count
+
+  [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]] || return 0
+  [[ -n "$KEYCLOAK_USERS_BEFORE" ]] || return 0
+
+  keycloak_user="$(cp_env_get .env KEYCLOAK_DB_USER)"
+  keycloak_db="$(cp_env_get .env KEYCLOAK_DB_NAME)"
+  if ! count="$(keycloak_user_count "${keycloak_user:-keycloak}" "${keycloak_db:-keycloak}" "$KEYCLOAK_REALM")"; then
+    reject_started_update \
+      "Could not count Keycloak users after update." \
+      "Restore or verify the Keycloak database from ${LAST_BACKUP_DIR:-the latest verified backup} before reopening traffic."
+  fi
+
+  KEYCLOAK_USERS_AFTER="$count"
+  if [[ -n "$LAST_BACKUP_DIR" && -f "${LAST_BACKUP_DIR}/manifest.txt" ]]; then
+    printf 'keycloak_users_after=%s\n' "$KEYCLOAK_USERS_AFTER" >> "${LAST_BACKUP_DIR}/manifest.txt"
+  fi
+
+  cp_info "Keycloak realm '${KEYCLOAK_REALM}' users after update: ${KEYCLOAK_USERS_AFTER}"
+  if (( KEYCLOAK_USERS_AFTER < KEYCLOAK_USERS_BEFORE )); then
+    reject_started_update \
+      "Keycloak user count decreased from ${KEYCLOAK_USERS_BEFORE} to ${KEYCLOAK_USERS_AFTER}." \
+      "Restore or verify the Keycloak database from ${LAST_BACKUP_DIR:-the latest verified backup} before reopening traffic."
+  fi
+}
+
 create_backup() {
   local backup_root="$1"
   local backup_dir
@@ -169,6 +318,7 @@ create_backup() {
   old_umask="$(umask)"
   umask 077
   backup_dir="$(create_backup_dir "$backup_root")"
+  LAST_BACKUP_DIR="$backup_dir"
 
   cp_info "Creating backup in ${backup_dir}"
   safe_tar_config "$backup_dir"
@@ -186,6 +336,10 @@ create_backup() {
     printf 'created_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'image_version=%s\n' "$(cp_env_get .env IMAGE_VERSION)"
     printf 'mode=%s\n' "$MODE"
+    printf 'keycloak_realm=%s\n' "$KEYCLOAK_REALM"
+    if [[ -n "$KEYCLOAK_USERS_BEFORE" ]]; then
+      printf 'keycloak_users_before=%s\n' "$KEYCLOAK_USERS_BEFORE"
+    fi
   } > "${backup_dir}/manifest.txt"
 
   chmod 700 "$backup_dir"
@@ -252,6 +406,11 @@ BACKUP_ROOT="backups"
 BACKUP=1
 ALLOW_INCOMPLETE_BACKUP=0
 BACKUP_ONLY=0
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-iqb}"
+KEYCLOAK_USER_CHECK=1
+KEYCLOAK_USERS_BEFORE=""
+KEYCLOAK_USERS_AFTER=""
+LAST_BACKUP_DIR=""
 PULL=1
 HEALTH_CHECK=1
 REFRESH_ARTIFACTS=0
@@ -296,6 +455,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --backup-only)
       BACKUP_ONLY=1
+      shift
+      ;;
+    --keycloak-realm)
+      KEYCLOAK_REALM="$2"
+      shift 2
+      ;;
+    --keycloak-realm=*)
+      KEYCLOAK_REALM="${1#*=}"
+      shift
+      ;;
+    --no-keycloak-user-check)
+      KEYCLOAK_USER_CHECK=0
       shift
       ;;
     --no-pull)
@@ -350,7 +521,9 @@ if [[ -z "$MODE" ]]; then
   MODE="$(cp_detect_mode .env)"
 fi
 cp_validate_mode "$MODE"
+[[ -n "$KEYCLOAK_REALM" ]] || cp_die "--keycloak-realm must not be empty"
 cp_require_docker_compose
+validate_env_safety
 
 confirm_or_exit "$MODE" "$IMAGE_VERSION_TARGET" "$REFRESH_ARTIFACTS"
 
@@ -360,9 +533,12 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   [[ -n "$IMAGE_VERSION_TARGET" ]] && cp_info "Would use IMAGE_VERSION=${IMAGE_VERSION_TARGET}"
   [[ "$BACKUP" -eq 1 ]] && cp_info "Would create backup under ${BACKUP_ROOT}"
   [[ "$BACKUP" -eq 1 && "$ALLOW_INCOMPLETE_BACKUP" -eq 1 ]] && cp_warn "Would allow incomplete backup sources"
+  [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]] && cp_info "Would verify Keycloak user count for realm ${KEYCLOAK_REALM}"
   [[ "$REFRESH_ARTIFACTS" -eq 1 ]] && cp_info "Would refresh artifacts from ${REPO}@${REF}"
   exit 0
 fi
+
+capture_keycloak_users_before
 
 if [[ "$BACKUP" -eq 1 ]]; then
   create_backup "$BACKUP_ROOT"
@@ -396,14 +572,18 @@ fi
 cp_info "Starting updated stack"
 run_compose up -d
 
+if [[ "$HEALTH_CHECK" -eq 1 ]]; then
+  cp_info "Running health check"
+  if ! run_health_check; then
+    reject_started_update "Health check failed after update."
+  fi
+fi
+
+verify_keycloak_users_after
+
 if [[ -n "$IMAGE_VERSION_TARGET" ]]; then
   cp_info "Persisting IMAGE_VERSION=${IMAGE_VERSION_TARGET}"
   cp_env_set .env IMAGE_VERSION "$IMAGE_VERSION_TARGET"
-fi
-
-if [[ "$HEALTH_CHECK" -eq 1 ]]; then
-  cp_info "Running health check"
-  run_health_check
 fi
 
 cp_info "Update complete"

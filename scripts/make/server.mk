@@ -1,6 +1,7 @@
 # IQB ContentPool server deployment Makefile
 
 .PHONY: help server-up server-update server-update-safe server-backup server-stop server-logs server-config \
+	server-update-release server-traefik-update-release \
 	server-traefik-up server-traefik-update server-traefik-update-safe server-traefik-backup \
 	server-traefik-stop server-traefik-logs server-traefik-config health-server health-traefik keycloak-smtp
 
@@ -21,6 +22,10 @@ server-update: ## Pull images and restart without creating backups
 
 server-update-safe: ## Backup databases/uploads, pull images, restart, and health-check
 	@./scripts/update.sh --mode server
+
+server-update-release: ## Safely update server deployment to VERSION=vX.Y.Z
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make server-update-release VERSION=v0.1.1"; exit 1; fi
+	@./scripts/update.sh --mode server --image-version "$(VERSION)"
 
 server-backup: ## Backup config, databases, and uploads without updating
 	@./scripts/update.sh --mode server --backup-only
@@ -46,6 +51,10 @@ server-traefik-update: ## Pull images and restart behind Traefik without creatin
 
 server-traefik-update-safe: ## Backup databases/uploads, pull images, restart behind Traefik, and health-check
 	@./scripts/update.sh --mode traefik
+
+server-traefik-update-release: ## Safely update Traefik deployment to VERSION=vX.Y.Z
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make server-traefik-update-release VERSION=v0.1.1"; exit 1; fi
+	@./scripts/update.sh --mode traefik --image-version "$(VERSION)"
 
 server-traefik-backup: ## Backup Traefik deployment config, databases, and uploads without updating
 	@./scripts/update.sh --mode traefik --backup-only

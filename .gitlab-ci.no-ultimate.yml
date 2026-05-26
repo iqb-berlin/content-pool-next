@@ -241,11 +241,15 @@ test-db-migrations:
     - name: postgres:16-alpine
       alias: db
   variables:
+    # DB_* is consumed by backend/TypeORM; POSTGRES_* initializes the postgres service.
     DB_HOST: db
     DB_PORT: "5432"
     DB_USERNAME: contentpool
     DB_PASSWORD: contentpool_dev
     DB_DATABASE: contentpool
+    POSTGRES_USER: contentpool
+    POSTGRES_PASSWORD: contentpool_dev
+    POSTGRES_DB: contentpool
   script:
     - npm run migration:run
     - npm run migration:revert
@@ -275,12 +279,16 @@ test-backend-e2e:
     - name: postgres:16-alpine
       alias: db
   variables:
+    # DB_* is consumed by backend/TypeORM; POSTGRES_* initializes the postgres service.
     NODE_ENV: test
     DB_HOST: db
     DB_PORT: "5432"
     DB_USERNAME: contentpool
     DB_PASSWORD: contentpool_dev
     DB_DATABASE: contentpool
+    POSTGRES_USER: contentpool
+    POSTGRES_PASSWORD: contentpool_dev
+    POSTGRES_DB: contentpool
     DB_SYNCHRONIZE: "true"
     DB_RUN_MIGRATIONS: "false"
     JWT_SECRET: ci-test-secret-at-least-32-characters

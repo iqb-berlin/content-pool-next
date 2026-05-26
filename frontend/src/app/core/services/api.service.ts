@@ -9,6 +9,10 @@ import {
   AcpFile,
   Comment,
   AppSettings,
+  ApplicationToken,
+  ApplicationTokenListResponse,
+  CreatedApplicationToken,
+  CreateApplicationTokenRequest,
   User,
   PublicAcp,
   UnitViewData,
@@ -67,6 +71,34 @@ export class ApiService {
   }
   deleteGeoGebraBundle(): Observable<AppSettings> {
     return this.http.delete<AppSettings>(`${this.API}/admin/settings/geogebra-bundle`);
+  }
+
+  // Application tokens
+  getApplicationTokens(
+    options: { limit?: number; offset?: number } = {},
+  ): Observable<ApplicationTokenListResponse> {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) {
+      params.set('limit', String(options.limit));
+    }
+    if (options.offset !== undefined) {
+      params.set('offset', String(options.offset));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return this.http.get<ApplicationTokenListResponse>(
+      `${this.API}/admin/application-tokens${suffix}`,
+    );
+  }
+
+  createApplicationToken(data: CreateApplicationTokenRequest): Observable<CreatedApplicationToken> {
+    return this.http.post<CreatedApplicationToken>(`${this.API}/admin/application-tokens`, data);
+  }
+
+  revokeApplicationToken(id: string): Observable<ApplicationToken> {
+    return this.http.patch<ApplicationToken>(
+      `${this.API}/admin/application-tokens/${id}/revoke`,
+      {},
+    );
   }
 
   // ACP

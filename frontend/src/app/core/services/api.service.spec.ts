@@ -194,6 +194,60 @@ describe('ApiService', () => {
     });
   });
 
+  describe('Application tokens', () => {
+    it('should list application tokens with pagination', () => {
+      const response = { items: [], total: 0, limit: 25, offset: 10 };
+      httpClientMock.get.mockReturnValue(of(response));
+
+      service.getApplicationTokens({ limit: 25, offset: 10 }).subscribe((tokens) => {
+        expect(tokens).toEqual(response);
+      });
+
+      expect(httpClientMock.get).toHaveBeenCalledWith(
+        '/api/admin/application-tokens?limit=25&offset=10',
+      );
+    });
+
+    it('should create application tokens', () => {
+      const payload = { name: 'Studio', scopes: ['acp.read' as const], expiresAt: null };
+      const response = {
+        id: 'token-1',
+        name: 'Studio',
+        tokenPrefix: 'cp_abc...',
+        token: 'cp_secret',
+        scopes: ['acp.read' as const],
+        active: true,
+        expiresAt: null,
+        lastUsedAt: null,
+        createdByUserId: 'admin-1',
+        revokedByUserId: null,
+        revokedAt: null,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      };
+      httpClientMock.post.mockReturnValue(of(response));
+
+      service.createApplicationToken(payload).subscribe((token) => {
+        expect(token.token).toBe('cp_secret');
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/admin/application-tokens', payload);
+    });
+
+    it('should revoke application tokens', () => {
+      httpClientMock.patch.mockReturnValue(of({ id: 'token-1', active: false }));
+
+      service.revokeApplicationToken('token-1').subscribe((token) => {
+        expect(token.active).toBe(false);
+      });
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith(
+        '/api/admin/application-tokens/token-1/revoke',
+        {},
+      );
+    });
+  });
+
   describe('ACP', () => {
     const baseAcp: Acp = {
       id: '1',

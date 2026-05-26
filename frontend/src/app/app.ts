@@ -20,6 +20,9 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         @if (auth.isLoggedIn && auth.isAdmin) {
           <a routerLink="/admin/users">Nutzer</a>
         }
+        @if (auth.isLoggedIn && auth.isAdmin) {
+          <a routerLink="/admin/application-tokens">Token</a>
+        }
         @if (auth.isLoggedIn && auth.hasManagedAcps) {
           <a routerLink="/acps">ACPs</a>
         }

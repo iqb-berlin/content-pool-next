@@ -50,6 +50,13 @@ export const routes: Routes = [
           import('./admin/settings/settings.component').then((m) => m.SettingsComponent),
       },
       {
+        path: 'application-tokens',
+        loadComponent: () =>
+          import('./admin/application-tokens/application-tokens.component').then(
+            (m) => m.ApplicationTokensComponent,
+          ),
+      },
+      {
         path: 'acp',
         loadComponent: () =>
           import('./admin/acp-list/acp-list.component').then((m) => m.AcpListComponent),

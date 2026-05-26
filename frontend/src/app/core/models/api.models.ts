@@ -13,6 +13,48 @@ export interface LoginResponse {
   user: User;
 }
 
+export type ServerApiScope =
+  | 'acp.read'
+  | 'transfer.read'
+  | 'transfer.write'
+  | 'index.read'
+  | 'index.write'
+  | 'files.read'
+  | 'files.write'
+  | 'audit.read';
+
+export interface ApplicationToken {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  scopes: ServerApiScope[];
+  active: boolean;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  createdByUserId: string | null;
+  revokedByUserId: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApplicationTokenListResponse {
+  items: ApplicationToken[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CreateApplicationTokenRequest {
+  name: string;
+  scopes: ServerApiScope[];
+  expiresAt?: string | null;
+}
+
+export interface CreatedApplicationToken extends ApplicationToken {
+  token: string;
+}
+
 export interface CredentialLoginResponse {
   accessToken: string;
   acpId: string;

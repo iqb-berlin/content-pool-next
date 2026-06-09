@@ -60,7 +60,7 @@ For ACP managers who need a task-oriented user guide, see:
 ### Operations
 
 - [Deployment](operations/deployment.md)
-  Development, production, and server-image deployment modes.
+  Development, production, server-image, and single-domain Traefik deployment modes.
 - [Monitoring and Maintenance](operations/monitoring-and-maintenance.md)
   Health checks, backups, upgrades, observability, and routine operator tasks.
 
@@ -68,10 +68,10 @@ For ACP managers who need a task-oriented user guide, see:
 
 Several operational documents already exist at the repository root and remain useful:
 
-- [`/Users/julian/iqb-dev/content-pool-next/DEPLOY.md`](../DEPLOY.md)
-- [`/Users/julian/iqb-dev/content-pool-next/KEYCLOAK_SETUP.md`](../KEYCLOAK_SETUP.md)
-- [`/Users/julian/iqb-dev/content-pool-next/GITLAB_SETUP.md`](../GITLAB_SETUP.md)
-- [`/Users/julian/iqb-dev/content-pool-next/RELEASE_CHECKLIST.md`](../RELEASE_CHECKLIST.md)
+- [DEPLOY.md](../DEPLOY.md)
+- [KEYCLOAK_SETUP.md](../KEYCLOAK_SETUP.md)
+- [GITLAB_SETUP.md](../GITLAB_SETUP.md)
+- [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
 
 The files in `docs/` are intended to be the main navigable knowledge base for the
 application. The root-level documents are still helpful as focused runbooks for

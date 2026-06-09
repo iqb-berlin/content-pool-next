@@ -81,7 +81,7 @@ describe("ServerApiService", () => {
 
   it("rejects import when package exists and conflictStrategy=reject", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -101,7 +101,7 @@ describe("ServerApiService", () => {
 
   it("merges existing ACP index when conflictStrategy=merge", async () => {
     const existing = {
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       name: "Old",
       description: "Old Desc",
@@ -149,7 +149,7 @@ describe("ServerApiService", () => {
 
   it("throws conflict on index update when expectedUpdatedAt mismatches", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -157,7 +157,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.updateAcpIndex(
-        "acp-1",
+        "11111111-1111-4111-8111-111111111111",
         { version: "0.5.0" },
         "overwrite",
         "2026-01-02T00:00:00.000Z",
@@ -167,7 +167,7 @@ describe("ServerApiService", () => {
 
   it("rejects file upload when duplicate filename exists and conflictStrategy=reject", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -175,8 +175,8 @@ describe("ServerApiService", () => {
 
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "unit.xml",
       },
     ]);
@@ -186,7 +186,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.uploadFiles(
-        "acp-1",
+        "11111111-1111-4111-8111-111111111111",
         [
           {
             originalname: "unit.xml",
@@ -202,7 +202,7 @@ describe("ServerApiService", () => {
 
   it("replaces existing coding schemes and creates a snapshot with changelog", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -210,15 +210,15 @@ describe("ServerApiService", () => {
 
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "UNIT-1.VOCS",
       },
     ]);
 
     filesService.upload.mockResolvedValue({
-      id: "file-2",
-      acpId: "acp-1",
+      id: "44444444-4444-4444-8444-444444444444",
+      acpId: "11111111-1111-4111-8111-111111111111",
       originalName: "UNIT-1.VOCS",
       fileType: "application/json",
       fileSize: 10,
@@ -227,14 +227,14 @@ describe("ServerApiService", () => {
     });
 
     snapshotsService.create.mockResolvedValue({
-      id: "snap-7",
+      id: "88888888-8888-4888-8888-888888888888",
       versionNumber: 7,
       changelog: "Kodierschema aktualisiert",
       createdAt: new Date("2026-01-02T01:00:00.000Z"),
     });
 
     const result = await service.replaceCodingSchemeFiles(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [
         {
           originalname: "unit-1.vocs",
@@ -249,16 +249,21 @@ describe("ServerApiService", () => {
       },
     );
 
-    expect(filesService.deleteForAcp).toHaveBeenCalledWith("acp-1", "file-1");
+    expect(filesService.deleteForAcp).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      "33333333-3333-4333-8333-333333333333",
+    );
     expect(filesService.upload).toHaveBeenCalledWith(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       expect.objectContaining({ originalname: "UNIT-1.VOCS" }),
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("acp-1", { skipValidation: true });
+    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      skipValidation: true,
+    });
     expect(snapshotsService.create).toHaveBeenCalledWith(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       "Kodierschema aktualisiert",
     );
     expect(result.snapshot.versionNumber).toBe(7);
@@ -267,7 +272,7 @@ describe("ServerApiService", () => {
 
   it("fails replacement if coding scheme does not exist in ACP", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -275,7 +280,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([]);
 
     await expect(
-      service.replaceCodingSchemeFiles("acp-1", [
+      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
         {
           originalname: "unit-1.vocs",
           buffer: Buffer.from("{}"),
@@ -288,7 +293,7 @@ describe("ServerApiService", () => {
 
   it("fails replacement when a non-vocs file is provided", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -296,7 +301,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([]);
 
     await expect(
-      service.replaceCodingSchemeFiles("acp-1", [
+      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
         {
           originalname: "unit-1.xml",
           buffer: Buffer.from("<xml/>"),
@@ -310,14 +315,14 @@ describe("ServerApiService", () => {
   it("lists ACPs with version fallback and ISO timestamps", async () => {
     acpRepository.find.mockResolvedValue([
       {
-        id: "acp-2",
+        id: "22222222-2222-4222-8222-222222222222",
         packageId: "pkg-2",
         name: "Second",
         acpIndex: {},
         updatedAt: new Date("2026-01-03T00:00:00.000Z"),
       },
       {
-        id: "acp-1",
+        id: "11111111-1111-4111-8111-111111111111",
         packageId: "pkg-1",
         name: "First",
         acpIndex: { version: "1.2.3" },
@@ -327,14 +332,14 @@ describe("ServerApiService", () => {
 
     await expect(service.listAcps()).resolves.toEqual([
       {
-        id: "acp-2",
+        id: "22222222-2222-4222-8222-222222222222",
         packageId: "pkg-2",
         name: "Second",
         version: "0.0.0",
         updatedAt: "2026-01-03T00:00:00.000Z",
       },
       {
-        id: "acp-1",
+        id: "11111111-1111-4111-8111-111111111111",
         packageId: "pkg-1",
         name: "First",
         version: "1.2.3",
@@ -345,7 +350,7 @@ describe("ServerApiService", () => {
 
   it("returns transfer payload and index payload for existing ACPs", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       name: "Demo",
       description: "desc",
@@ -354,8 +359,8 @@ describe("ServerApiService", () => {
     });
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 21,
@@ -364,9 +369,11 @@ describe("ServerApiService", () => {
       },
     ]);
 
-    const transfer = await service.getAcpTransferData("acp-1");
+    const transfer = await service.getAcpTransferData(
+      "11111111-1111-4111-8111-111111111111",
+    );
     expect(transfer).toEqual({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       name: "Demo",
       description: "desc",
@@ -374,20 +381,23 @@ describe("ServerApiService", () => {
       acpIndex: { version: "0.5.0" },
       files: [
         {
-          id: "file-1",
+          id: "33333333-3333-4333-8333-333333333333",
           originalName: "unit.xml",
           fileType: "text/xml",
           fileSize: 21,
           checksum: "abc",
           uploadedAt: "2026-01-01T01:00:00.000Z",
-          downloadUrl: "/api/server/acp/acp-1/files/file-1/download",
+          downloadUrl:
+            "/api/server/acp/11111111-1111-4111-8111-111111111111/files/33333333-3333-4333-8333-333333333333/download",
         },
       ],
     });
 
-    const index = await service.getAcpIndex("acp-1");
+    const index = await service.getAcpIndex(
+      "11111111-1111-4111-8111-111111111111",
+    );
     expect(index).toEqual({
-      acpId: "acp-1",
+      acpId: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: "2026-01-01T00:00:00.000Z",
       acpIndex: { version: "0.5.0" },
@@ -396,14 +406,16 @@ describe("ServerApiService", () => {
 
   it("returns empty index object if ACP index is missing", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: undefined,
     });
 
-    await expect(service.getAcpIndex("acp-1")).resolves.toEqual({
-      acpId: "acp-1",
+    await expect(
+      service.getAcpIndex("11111111-1111-4111-8111-111111111111"),
+    ).resolves.toEqual({
+      acpId: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: "2026-01-01T00:00:00.000Z",
       acpIndex: {},
@@ -412,23 +424,31 @@ describe("ServerApiService", () => {
 
   it("rejects invalid index update payload and invalid strategy values", async () => {
     await expect(
-      service.updateAcpIndex("acp-1", [] as any, "overwrite"),
+      service.updateAcpIndex(
+        "11111111-1111-4111-8111-111111111111",
+        [] as any,
+        "overwrite",
+      ),
     ).rejects.toThrow(BadRequestException);
 
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
 
     await expect(
-      service.updateAcpIndex("acp-1", { version: "0.5.0" }, "invalid-strategy"),
+      service.updateAcpIndex(
+        "11111111-1111-4111-8111-111111111111",
+        { version: "0.5.0" },
+        "invalid-strategy",
+      ),
     ).rejects.toThrow(BadRequestException);
 
     await expect(
       service.updateAcpIndex(
-        "acp-1",
+        "11111111-1111-4111-8111-111111111111",
         { version: "0.5.0" },
         "overwrite",
         "not-a-date",
@@ -438,15 +458,15 @@ describe("ServerApiService", () => {
 
   it("lists and reads transfer files and throws when file is missing", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 12,
@@ -456,8 +476,8 @@ describe("ServerApiService", () => {
     ]);
     fileRepository.findOne
       .mockResolvedValueOnce({
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 12,
@@ -466,62 +486,93 @@ describe("ServerApiService", () => {
       })
       .mockResolvedValueOnce(null);
 
-    await expect(service.listFiles("acp-1")).resolves.toHaveLength(1);
-    await expect(service.getFile("acp-1", "file-1")).resolves.toEqual(
+    await expect(
+      service.listFiles("11111111-1111-4111-8111-111111111111"),
+    ).resolves.toHaveLength(1);
+    await expect(
+      service.getFile(
+        "11111111-1111-4111-8111-111111111111",
+        "33333333-3333-4333-8333-333333333333",
+      ),
+    ).resolves.toEqual(
       expect.objectContaining({
-        id: "file-1",
-        downloadUrl: "/api/server/acp/acp-1/files/file-1/download",
+        id: "33333333-3333-4333-8333-333333333333",
+        downloadUrl:
+          "/api/server/acp/11111111-1111-4111-8111-111111111111/files/33333333-3333-4333-8333-333333333333/download",
       }),
     );
-    await expect(service.getFile("acp-1", "missing")).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(
+      service.getFile(
+        "11111111-1111-4111-8111-111111111111",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ),
+    ).rejects.toThrow(NotFoundException);
   });
 
   it("throws when file operations are requested for a missing ACP", async () => {
     acpRepository.findOne.mockResolvedValue(null);
 
-    await expect(service.listFiles("missing-acp")).rejects.toThrow(
-      NotFoundException,
-    );
-    await expect(service.downloadFile("missing-acp", "file-1")).rejects.toThrow(
-      NotFoundException,
-    );
+    await expect(
+      service.listFiles("99999999-9999-4999-8999-999999999999"),
+    ).rejects.toThrow(NotFoundException);
+    await expect(
+      service.downloadFile(
+        "99999999-9999-4999-8999-999999999999",
+        "33333333-3333-4333-8333-333333333333",
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("returns not found for invalid ACP ids before querying Postgres", async () => {
+    await expect(
+      service.listFiles("__coding-box-connection-test__"),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(acpRepository.findOne).not.toHaveBeenCalled();
+    expect(fileRepository.find).not.toHaveBeenCalled();
   });
 
   it("downloads files through FilesService when ACP exists", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
     filesService.downloadForAcp.mockResolvedValue({
       buffer: Buffer.from("x"),
-      file: { id: "f1" },
+      file: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
     });
 
-    await expect(service.downloadFile("acp-1", "f1")).resolves.toEqual({
+    await expect(
+      service.downloadFile(
+        "11111111-1111-4111-8111-111111111111",
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      ),
+    ).resolves.toEqual({
       buffer: Buffer.from("x"),
-      file: { id: "f1" },
+      file: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
     });
-    expect(filesService.downloadForAcp).toHaveBeenCalledWith("acp-1", "f1");
+    expect(filesService.downloadForAcp).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    );
   });
 
   it("rejects upload requests without files or with invalid conflictStrategy", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
 
-    await expect(service.uploadFiles("acp-1", [])).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.uploadFiles("11111111-1111-4111-8111-111111111111", []),
+    ).rejects.toThrow(BadRequestException);
     await expect(
       service.uploadFiles(
-        "acp-1",
+        "11111111-1111-4111-8111-111111111111",
         [{ originalname: "f.xml" } as any],
         "invalid",
       ),
@@ -530,23 +581,23 @@ describe("ServerApiService", () => {
 
   it("supports keep-both and overwrite upload conflict strategies", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-old",
-        acpId: "acp-1",
+        id: "55555555-5555-4555-8555-555555555555",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "unit.xml",
       },
     ]);
     filesService.uploadMultiple
       .mockResolvedValueOnce([
         {
-          id: "file-new-1",
-          acpId: "acp-1",
+          id: "66666666-6666-4666-8666-666666666666",
+          acpId: "11111111-1111-4111-8111-111111111111",
           originalName: "unit.xml",
           fileType: "text/xml",
           fileSize: 10,
@@ -556,8 +607,8 @@ describe("ServerApiService", () => {
       ] as AcpFile[])
       .mockResolvedValueOnce([
         {
-          id: "file-new-2",
-          acpId: "acp-1",
+          id: "77777777-7777-4777-8777-777777777777",
+          acpId: "11111111-1111-4111-8111-111111111111",
           originalName: "unit.xml",
           fileType: "text/xml",
           fileSize: 11,
@@ -567,19 +618,19 @@ describe("ServerApiService", () => {
       ] as AcpFile[]);
 
     const keepBoth = await service.uploadFiles(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [{ originalname: "bundle.zip" } as any],
       "keep-both",
     );
     expect(keepBoth[0]).toEqual(
       expect.objectContaining({
-        id: "file-new-1",
+        id: "66666666-6666-4666-8666-666666666666",
         fileSize: 10,
       }),
     );
     expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
       1,
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [{ originalname: "bundle.zip" }],
       "keep-both",
     );
@@ -588,49 +639,56 @@ describe("ServerApiService", () => {
     ).not.toHaveBeenCalled();
 
     const overwrite = await service.uploadFiles(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [{ originalname: "bundle.zip" } as any],
       "overwrite",
     );
-    expect(overwrite[0]).toEqual(expect.objectContaining({ id: "file-new-2" }));
+    expect(overwrite[0]).toEqual(
+      expect.objectContaining({ id: "77777777-7777-4777-8777-777777777777" }),
+    );
     expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
       2,
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [{ originalname: "bundle.zip" }],
       "overwrite",
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("acp-1", { skipValidation: true });
+    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      skipValidation: true,
+    });
   });
 
   it("validates replacement file list details before processing", async () => {
-    await expect(service.replaceCodingSchemeFiles("acp-1", [])).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.replaceCodingSchemeFiles(
+        "11111111-1111-4111-8111-111111111111",
+        [],
+      ),
+    ).rejects.toThrow(BadRequestException);
 
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "UNIT-1.VOCS",
       },
     ]);
 
     await expect(
-      service.replaceCodingSchemeFiles("acp-1", [
+      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
         { originalname: "   " } as any,
       ]),
     ).rejects.toThrow(BadRequestException);
 
     await expect(
-      service.replaceCodingSchemeFiles("acp-1", [
+      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
         { originalname: "unit-1.vocs" } as any,
         { originalname: "UNIT-1.VOCS" } as any,
       ]),
@@ -639,21 +697,21 @@ describe("ServerApiService", () => {
 
   it("generates default coding scheme changelog with source client suffix", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
     fileRepository.find.mockResolvedValue([
       {
-        id: "file-1",
-        acpId: "acp-1",
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "UNIT-1.VOCS",
       },
     ]);
     filesService.upload.mockResolvedValue({
-      id: "file-2",
-      acpId: "acp-1",
+      id: "44444444-4444-4444-8444-444444444444",
+      acpId: "11111111-1111-4111-8111-111111111111",
       originalName: "UNIT-1.VOCS",
       fileType: "application/json",
       fileSize: 10,
@@ -661,25 +719,27 @@ describe("ServerApiService", () => {
       uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
     });
     snapshotsService.create.mockResolvedValue({
-      id: "snap-7",
+      id: "88888888-8888-4888-8888-888888888888",
       versionNumber: 7,
       changelog: "generated",
       createdAt: new Date("2026-01-02T01:00:00.000Z"),
     });
 
     await service.replaceCodingSchemeFiles(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       [{ originalname: "unit-1.vocs" } as any],
       { sourceClientId: "sync-agent" },
     );
 
     expect(snapshotsService.create).toHaveBeenCalledWith(
-      "acp-1",
+      "11111111-1111-4111-8111-111111111111",
       "Kodierschema ersetzt via sync-agent: UNIT-1.VOCS",
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("acp-1", { skipValidation: true });
+    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      skipValidation: true,
+    });
   });
 
   it("validates receiveAcp payload shape and conflictStrategy", async () => {
@@ -738,7 +798,7 @@ describe("ServerApiService", () => {
 
   it("overwrites existing ACP index when conflictStrategy=overwrite", async () => {
     const existing = {
-      id: "acp-1",
+      id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
       name: "Old",
       description: "Old",

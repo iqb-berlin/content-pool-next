@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import { validate as isUuid } from "uuid";
 import { Acp, AcpFile } from "../database/entities";
 import { FilesService } from "../files/files.service";
 import { SnapshotsService } from "../snapshots/snapshots.service";
@@ -160,6 +161,11 @@ export class ServerApiService {
     uploadedAt: string;
     downloadUrl: string;
   }> {
+    this.assertValidAcpId(acpId);
+    if (!isUuid(fileId)) {
+      throw new NotFoundException("File not found");
+    }
+
     const file = await this.fileRepository.findOne({
       where: { id: fileId, acpId },
     });
@@ -174,6 +180,9 @@ export class ServerApiService {
     fileId: string,
   ): Promise<{ buffer: Buffer; file: AcpFile }> {
     await this.getAcpOrFail(acpId);
+    if (!isUuid(fileId)) {
+      throw new NotFoundException("File not found");
+    }
     return this.filesService.downloadForAcp(acpId, fileId);
   }
 
@@ -424,11 +433,19 @@ export class ServerApiService {
   }
 
   private async getAcpOrFail(acpId: string): Promise<Acp> {
+    this.assertValidAcpId(acpId);
+
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) {
       throw new NotFoundException(`ACP with ID ${acpId} not found`);
     }
     return acp;
+  }
+
+  private assertValidAcpId(acpId: string): void {
+    if (!isUuid(acpId)) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
   }
 
   private toTransferFileMeta(file: AcpFile): {

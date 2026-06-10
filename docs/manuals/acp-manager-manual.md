@@ -57,6 +57,7 @@ Bereiche:
 - `Dateien`
 - `Snapshots`
 - `Zugriffskonfiguration`
+- `Applikationstoken`
 - `Vorschau`
 
 Zusatzfunktionen direkt auf der Uebersichtsseite:
@@ -64,6 +65,25 @@ Zusatzfunktionen direkt auf der Uebersichtsseite:
 - ACP-Namen umbenennen
 - ACP-Index anzeigen, exportieren, importieren oder loeschen
 - Rollenzuweisungen verwalten
+
+### Applikationstoken fuer ein ACP verwalten
+
+Im Bereich `Applikationstoken` koennen ACP-Manager Tokens fuer externe Anwendungen
+anlegen, die ausschliesslich auf das aktuelle ACP begrenzt sind.
+
+Typischer Ablauf:
+
+1. `Applikationstoken` in der Verwaltungsuebersicht oeffnen.
+2. `Token anlegen` klicken.
+3. Namen, optionale Ablaufzeit und benoetigte Berechtigungen auswaehlen.
+4. Den neu angezeigten Klartext-Token sofort in der externen Anwendung hinterlegen.
+
+Wichtige Hinweise:
+
+- Der Klartext-Token wird nur einmal direkt nach dem Anlegen angezeigt.
+- ACP-Manager koennen keine globalen Tokens erstellen.
+- Tokens aus diesem Bereich gelten nur fuer das aktuelle ACP.
+- Ein Token kann spaeter widerrufen werden; die Aktion kann nicht rueckgaengig gemacht werden.
 
 ### ACP umbenennen
 

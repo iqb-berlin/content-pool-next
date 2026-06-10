@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
@@ -346,6 +347,41 @@ describe("ServerApiService", () => {
         updatedAt: "2026-01-02T00:00:00.000Z",
       },
     ]);
+  });
+
+  it("filters and enforces ACP restrictions for limited application tokens", async () => {
+    acpRepository.find.mockResolvedValue([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        packageId: "pkg-1",
+        name: "First",
+        acpIndex: {},
+        updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    ]);
+
+    await expect(
+      service.listAcps(["11111111-1111-4111-8111-111111111111"]),
+    ).resolves.toEqual([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        packageId: "pkg-1",
+        name: "First",
+        version: "0.0.0",
+        updatedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+    expect(acpRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: expect.any(Object) }),
+      }),
+    );
+
+    await expect(
+      service.getAcpIndex("22222222-2222-4222-8222-222222222222", [
+        "11111111-1111-4111-8111-111111111111",
+      ]),
+    ).rejects.toThrow(ForbiddenException);
   });
 
   it("returns transfer payload and index payload for existing ACPs", async () => {

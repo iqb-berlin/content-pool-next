@@ -1,11 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Repository } from "typeorm";
 import { validate as isUuid } from "uuid";
 import { Acp, AcpFile } from "../database/entities";
 import { FilesService } from "../files/files.service";
@@ -14,6 +15,7 @@ import { SnapshotsService } from "../snapshots/snapshots.service";
 export type ConflictStrategy = "reject" | "overwrite" | "merge";
 export type IndexUpdateStrategy = "overwrite" | "merge";
 export type FileConflictStrategy = "reject" | "overwrite" | "keep-both";
+export type AllowedAcpIds = string[] | null | undefined;
 
 export interface ServerImportAcpPayload {
   packageId: string;
@@ -43,7 +45,7 @@ export class ServerApiService {
   /**
    * List all ACPs available for server-to-server transfer.
    */
-  async listAcps(): Promise<
+  async listAcps(allowedAcpIds?: AllowedAcpIds): Promise<
     {
       id: string;
       packageId: string;
@@ -53,6 +55,7 @@ export class ServerApiService {
     }[]
   > {
     const acps = await this.acpRepository.find({
+      where: this.getAllowedAcpWhere(allowedAcpIds),
       order: { updatedAt: "DESC" },
     });
     return acps.map((acp) => ({
@@ -67,9 +70,13 @@ export class ServerApiService {
   /**
    * Get full ACP data for transfer (ACP-Index + file list).
    */
-  async getAcpTransferData(acpId: string): Promise<any> {
+  async getAcpTransferData(
+    acpId: string,
+    allowedAcpIds?: AllowedAcpIds,
+  ): Promise<any> {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     const acp = await this.getAcpOrFail(acpId);
-    const files = await this.listFiles(acpId);
+    const files = await this.listFiles(acpId, allowedAcpIds);
 
     return {
       id: acp.id,
@@ -82,12 +89,16 @@ export class ServerApiService {
     };
   }
 
-  async getAcpIndex(acpId: string): Promise<{
+  async getAcpIndex(
+    acpId: string,
+    allowedAcpIds?: AllowedAcpIds,
+  ): Promise<{
     acpId: string;
     packageId: string;
     updatedAt: string;
     acpIndex: Record<string, unknown>;
   }> {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     const acp = await this.getAcpOrFail(acpId);
     return {
       acpId: acp.id,
@@ -102,6 +113,7 @@ export class ServerApiService {
     acpIndex: Record<string, any>,
     strategyInput?: string,
     expectedUpdatedAt?: string,
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<{
     acpId: string;
     packageId: string;
@@ -112,6 +124,7 @@ export class ServerApiService {
       throw new BadRequestException("acpIndex must be an object");
     }
 
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     const acp = await this.getAcpOrFail(acpId);
     this.assertExpectedUpdatedAt(acp, expectedUpdatedAt);
 
@@ -130,7 +143,7 @@ export class ServerApiService {
     };
   }
 
-  async listFiles(acpId: string): Promise<
+  async listFiles(acpId: string, allowedAcpIds?: AllowedAcpIds): Promise<
     Array<{
       id: string;
       originalName: string;
@@ -141,6 +154,7 @@ export class ServerApiService {
       downloadUrl: string;
     }>
   > {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     await this.getAcpOrFail(acpId);
     const files = await this.fileRepository.find({
       where: { acpId },
@@ -152,6 +166,7 @@ export class ServerApiService {
   async getFile(
     acpId: string,
     fileId: string,
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<{
     id: string;
     originalName: string;
@@ -161,6 +176,7 @@ export class ServerApiService {
     uploadedAt: string;
     downloadUrl: string;
   }> {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     this.assertValidAcpId(acpId);
     if (!isUuid(fileId)) {
       throw new NotFoundException("File not found");
@@ -178,7 +194,9 @@ export class ServerApiService {
   async downloadFile(
     acpId: string,
     fileId: string,
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<{ buffer: Buffer; file: AcpFile }> {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     await this.getAcpOrFail(acpId);
     if (!isUuid(fileId)) {
       throw new NotFoundException("File not found");
@@ -190,6 +208,7 @@ export class ServerApiService {
     acpId: string,
     files: Express.Multer.File[],
     conflictStrategyInput?: string,
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<
     Array<{
       id: string;
@@ -201,6 +220,7 @@ export class ServerApiService {
       downloadUrl: string;
     }>
   > {
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     await this.getAcpOrFail(acpId);
 
     const conflictStrategy = this.resolveFileConflictStrategy(
@@ -238,6 +258,7 @@ export class ServerApiService {
     acpId: string,
     files: Express.Multer.File[],
     options: ReplaceCodingSchemeOptions = {},
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<{
     acpId: string;
     packageId: string;
@@ -262,6 +283,7 @@ export class ServerApiService {
       throw new BadRequestException("At least one file is required");
     }
 
+    this.assertAcpAllowed(acpId, allowedAcpIds);
     const acp = await this.getAcpOrFail(acpId);
     this.assertExpectedUpdatedAt(acp, options.expectedUpdatedAt);
 
@@ -369,6 +391,7 @@ export class ServerApiService {
   async receiveAcp(
     data: ServerImportAcpPayload,
     conflictStrategyInput?: string,
+    allowedAcpIds?: AllowedAcpIds,
   ): Promise<{
     acp: Acp;
     operation: "created" | "updated";
@@ -395,6 +418,14 @@ export class ServerApiService {
     let acp = await this.acpRepository.findOne({
       where: { packageId: data.packageId },
     });
+    if (this.isAcpRestricted(allowedAcpIds)) {
+      if (!acp) {
+        throw new ForbiddenException(
+          "ACP-limited tokens cannot create new ACPs through server import",
+        );
+      }
+      this.assertAcpAllowed(acp.id, allowedAcpIds);
+    }
     if (!acp) {
       acp = this.acpRepository.create({
         packageId: data.packageId,
@@ -430,6 +461,29 @@ export class ServerApiService {
 
     const saved = await this.acpRepository.save(acp);
     return { acp: saved, operation: "updated", conflictStrategy };
+  }
+
+  private getAllowedAcpWhere(allowedAcpIds?: AllowedAcpIds):
+    | { id: any }
+    | Record<string, never> {
+    return this.isAcpRestricted(allowedAcpIds)
+      ? { id: In(allowedAcpIds as string[]) }
+      : {};
+  }
+
+  private assertAcpAllowed(acpId: string, allowedAcpIds?: AllowedAcpIds): void {
+    if (!this.isAcpRestricted(allowedAcpIds)) {
+      return;
+    }
+    if (!(allowedAcpIds as string[]).includes(acpId)) {
+      throw new ForbiddenException(
+        "Application token is not allowed to access this ACP",
+      );
+    }
+  }
+
+  private isAcpRestricted(allowedAcpIds?: AllowedAcpIds): boolean {
+    return Array.isArray(allowedAcpIds) && allowedAcpIds.length > 0;
   }
 
   private async getAcpOrFail(acpId: string): Promise<Acp> {

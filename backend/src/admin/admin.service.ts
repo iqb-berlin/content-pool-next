@@ -1,16 +1,19 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { In, Raw, Repository } from "typeorm";
+import { validate as isUuid } from "uuid";
 import * as crypto from "crypto";
 import * as fs from "fs/promises";
 import * as path from "path";
 import {
+  Acp,
   AppSettings,
   ApplicationToken,
   ServerApiAuditLog,
@@ -34,11 +37,19 @@ export interface CreateApplicationTokenInput {
   name: string;
   scopes: string[];
   expiresAt?: string | null;
+  allowedAcpIds?: string[] | null;
 }
 
 export interface ListApplicationTokensOptions {
   limit?: number;
   offset?: number;
+  allowedAcpId?: string;
+}
+
+export interface ApplicationTokenActorConstraints {
+  allowedAcpIds?: string[];
+  requireExclusiveAcp?: boolean;
+  auditPath?: string;
 }
 
 export interface ApplicationTokenSummary {
@@ -46,6 +57,7 @@ export interface ApplicationTokenSummary {
   name: string;
   tokenPrefix: string;
   scopes: string[];
+  allowedAcpIds: string[] | null;
   active: boolean;
   expiresAt: Date | null;
   lastUsedAt: Date | null;
@@ -78,6 +90,8 @@ export class AdminService {
     private readonly applicationTokenRepository: Repository<ApplicationToken>,
     @InjectRepository(ServerApiAuditLog)
     private readonly auditRepository: Repository<ServerApiAuditLog>,
+    @InjectRepository(Acp)
+    private readonly acpRepository: Repository<Acp>,
   ) {}
 
   async getSettings(): Promise<AppSettings> {
@@ -125,7 +139,15 @@ export class AdminService {
   ): Promise<PaginatedApplicationTokens> {
     const limit = this.normalizeApplicationTokenListLimit(options.limit);
     const offset = this.normalizeApplicationTokenListOffset(options.offset);
+    const where = options.allowedAcpId
+      ? {
+          allowedAcpIds: Raw((alias) => `${alias} @> :allowedAcpIds`, {
+            allowedAcpIds: JSON.stringify([options.allowedAcpId]),
+          }),
+        }
+      : {};
     const [tokens, total] = await this.applicationTokenRepository.findAndCount({
+      where,
       order: { createdAt: "DESC" },
       take: limit,
       skip: offset,
@@ -141,11 +163,17 @@ export class AdminService {
   async createApplicationToken(
     data: CreateApplicationTokenInput,
     createdByUserId?: string,
+    constraints: ApplicationTokenActorConstraints = {},
   ): Promise<CreatedApplicationTokenResponse> {
     const name = this.normalizeApplicationTokenName(data.name);
     const scopes = this.normalizeApplicationTokenScopes(data.scopes);
+    const allowedAcpIds = await this.normalizeApplicationTokenAllowedAcpIds(
+      data.allowedAcpIds,
+      constraints,
+    );
     const expiresAt = this.parseApplicationTokenExpiresAt(data.expiresAt);
     const token = generateServerApiToken();
+    const auditPath = constraints.auditPath || "/api/admin/application-tokens";
 
     let saved: ApplicationToken;
     try {
@@ -167,6 +195,7 @@ export class AdminService {
             tokenHash: hashServerApiToken(token),
             tokenPrefix: getServerApiTokenDisplayPrefix(token),
             scopes,
+            allowedAcpIds,
             active: true,
             expiresAt,
             lastUsedAt: null,
@@ -179,11 +208,12 @@ export class AdminService {
           await this.logApplicationTokenAudit({
             action: "application-token.create",
             method: "POST",
-            path: "/api/admin/application-tokens",
+            path: auditPath,
             actorUserId: createdByUserId,
             token: savedToken,
             details: {
               scopes: savedToken.scopes,
+              allowedAcpIds: savedToken.allowedAcpIds || null,
               expiresAt: savedToken.expiresAt?.toISOString() || null,
             },
             auditRepository,
@@ -211,6 +241,7 @@ export class AdminService {
   async revokeApplicationToken(
     id: string,
     revokedByUserId?: string,
+    constraints: ApplicationTokenActorConstraints = {},
   ): Promise<ApplicationTokenSummary> {
     const token = await this.applicationTokenRepository.findOne({
       where: { id },
@@ -218,6 +249,8 @@ export class AdminService {
     if (!token) {
       throw new NotFoundException("Application token not found");
     }
+
+    this.assertApplicationTokenActorCanManage(token, constraints);
 
     if (token.active || !token.revokedAt) {
       token.active = false;
@@ -227,7 +260,9 @@ export class AdminService {
       await this.logApplicationTokenAudit({
         action: "application-token.revoke",
         method: "PATCH",
-        path: `/api/admin/application-tokens/${saved.id}/revoke`,
+        path:
+          constraints.auditPath ||
+          `/api/admin/application-tokens/${saved.id}/revoke`,
         actorUserId: revokedByUserId,
         token: saved,
       });
@@ -497,6 +532,126 @@ export class AdminService {
     return scopes;
   }
 
+  private async normalizeApplicationTokenAllowedAcpIds(
+    allowedAcpIdsInput: unknown,
+    constraints: ApplicationTokenActorConstraints,
+  ): Promise<string[] | null> {
+    const normalizedConstraintIds = this.normalizeConstraintAcpIds(
+      constraints.allowedAcpIds,
+    );
+
+    if (allowedAcpIdsInput === undefined || allowedAcpIdsInput === null) {
+      if (normalizedConstraintIds) {
+        throw new ForbiddenException(
+          "ACP managers can only create ACP-limited application tokens",
+        );
+      }
+      return null;
+    }
+
+    if (!Array.isArray(allowedAcpIdsInput)) {
+      throw new BadRequestException("allowedAcpIds must be an array or null");
+    }
+
+    const allowedAcpIds = Array.from(
+      new Set<string>(
+        allowedAcpIdsInput
+          .map((acpId: unknown) => String(acpId || "").trim())
+          .filter((acpId: string) => acpId.length > 0),
+      ),
+    );
+
+    if (!allowedAcpIds.length) {
+      if (normalizedConstraintIds) {
+        throw new ForbiddenException(
+          "ACP managers can only create ACP-limited application tokens",
+        );
+      }
+      return null;
+    }
+
+    const invalidIds = allowedAcpIds.filter((acpId) => !isUuid(acpId));
+    if (invalidIds.length) {
+      throw new BadRequestException(
+        `Invalid ACP IDs for application token: ${invalidIds.join(", ")}`,
+      );
+    }
+
+    if (normalizedConstraintIds) {
+      const allowedConstraintSet = new Set(normalizedConstraintIds);
+      const forbiddenIds = allowedAcpIds.filter(
+        (acpId) => !allowedConstraintSet.has(acpId),
+      );
+      if (forbiddenIds.length) {
+        throw new ForbiddenException(
+          "Application token can only be limited to ACPs managed by the current user",
+        );
+      }
+    }
+
+    const existingAcps = await this.acpRepository.find({
+      where: { id: In(allowedAcpIds) },
+      select: ["id"],
+    });
+    const existingIds = new Set(existingAcps.map((acp) => acp.id));
+    const missingIds = allowedAcpIds.filter((acpId) => !existingIds.has(acpId));
+    if (missingIds.length) {
+      throw new BadRequestException(
+        `Unknown ACP IDs for application token: ${missingIds.join(", ")}`,
+      );
+    }
+
+    return allowedAcpIds;
+  }
+
+  private normalizeConstraintAcpIds(acpIds?: string[]): string[] | null {
+    if (!acpIds) {
+      return null;
+    }
+    return Array.from(
+      new Set(
+        acpIds
+          .map((acpId) => String(acpId || "").trim())
+          .filter((acpId) => acpId.length > 0),
+      ),
+    );
+  }
+
+  private assertApplicationTokenActorCanManage(
+    token: ApplicationToken,
+    constraints: ApplicationTokenActorConstraints,
+  ): void {
+    const constraintAcpIds = this.normalizeConstraintAcpIds(
+      constraints.allowedAcpIds,
+    );
+    if (!constraintAcpIds) {
+      return;
+    }
+
+    const tokenAcpIds = Array.isArray(token.allowedAcpIds)
+      ? token.allowedAcpIds
+      : null;
+    if (!tokenAcpIds?.length) {
+      throw new ForbiddenException(
+        "ACP managers cannot manage global application tokens",
+      );
+    }
+
+    const constraintSet = new Set(constraintAcpIds);
+    const hasAllowedAcp = tokenAcpIds.some((acpId) => constraintSet.has(acpId));
+    const isExclusive =
+      tokenAcpIds.length === 1 && constraintSet.has(tokenAcpIds[0]);
+
+    if (
+      !hasAllowedAcp ||
+      (constraints.requireExclusiveAcp !== false && !isExclusive)
+    ) {
+      throw new ForbiddenException(
+        "Application token is not exclusively owned by this ACP",
+      );
+    }
+  }
+
   private parseApplicationTokenExpiresAt(
     expiresAt?: string | null,
   ): Date | null {
@@ -525,6 +680,9 @@ export class AdminService {
       name: token.name,
       tokenPrefix: token.tokenPrefix,
       scopes: Array.isArray(token.scopes) ? [...token.scopes] : [],
+      allowedAcpIds: Array.isArray(token.allowedAcpIds)
+        ? [...token.allowedAcpIds]
+        : null,
       active: token.active,
       expiresAt: token.expiresAt || null,
       lastUsedAt: token.lastUsedAt || null,

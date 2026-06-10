@@ -15,8 +15,22 @@ import {
   Logger,
   ForbiddenException,
 } from "@nestjs/common";
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsDateString,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from "class-validator";
 import { Response } from "express";
-import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiProperty,
+  ApiPropertyOptional,
+  ApiTags,
+} from "@nestjs/swagger";
 import { AcpService } from "./acp.service";
 import {
   CreateAcpDto,
@@ -34,6 +48,32 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { AdminService } from "../admin/admin.service";
+import { ALL_SERVER_API_SCOPES } from "../api/server-api-scopes";
+
+class CreateAcpApplicationTokenDto {
+  @ApiProperty({ description: "Human-readable application name" })
+  @IsString()
+  @IsNotEmpty()
+  name!: string;
+
+  @ApiProperty({
+    description: "Allowed server API scopes",
+    enum: ALL_SERVER_API_SCOPES,
+    isArray: true,
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  scopes!: string[];
+
+  @ApiPropertyOptional({
+    description: "Optional expiration timestamp (ISO 8601)",
+  })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
 
 @ApiTags("ACP Management")
 @Controller("acp")
@@ -45,6 +85,7 @@ export class AcpController {
   constructor(
     private readonly acpService: AcpService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
+    private readonly adminService: AdminService,
   ) {}
 
   @Get()
@@ -204,6 +245,62 @@ export class AcpController {
       }
     }
     return this.acpService.removeRole(id, userId);
+  }
+
+  @Get(":id/application-tokens")
+  @UseGuards(RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiOperation({ summary: "List application tokens limited to this ACP" })
+  async listApplicationTokens(
+    @Param("id") id: string,
+    @Query("limit") limit?: string,
+    @Query("offset") offset?: string,
+  ) {
+    return this.adminService.listApplicationTokens({
+      limit: limit === undefined ? undefined : Number.parseInt(limit, 10),
+      offset: offset === undefined ? undefined : Number.parseInt(offset, 10),
+      allowedAcpId: id,
+    });
+  }
+
+  @Post(":id/application-tokens")
+  @UseGuards(RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiOperation({ summary: "Create an application token limited to this ACP" })
+  async createApplicationToken(
+    @Param("id") id: string,
+    @Body() dto: CreateAcpApplicationTokenDto,
+    @Request() req: any,
+  ) {
+    return this.adminService.createApplicationToken(
+      {
+        ...dto,
+        allowedAcpIds: [id],
+      },
+      req?.user?.sub,
+      {
+        allowedAcpIds: [id],
+        auditPath: `/api/acp/${id}/application-tokens`,
+      },
+    );
+  }
+
+  @Patch(":id/application-tokens/:tokenId/revoke")
+  @UseGuards(RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiOperation({
+    summary: "Revoke an application token exclusively limited to this ACP",
+  })
+  async revokeApplicationToken(
+    @Param("id") id: string,
+    @Param("tokenId") tokenId: string,
+    @Request() req: any,
+  ) {
+    return this.adminService.revokeApplicationToken(tokenId, req?.user?.sub, {
+      allowedAcpIds: [id],
+      requireExclusiveAcp: true,
+      auditPath: `/api/acp/${id}/application-tokens/${tokenId}/revoke`,
+    });
   }
 
   // Access configuration

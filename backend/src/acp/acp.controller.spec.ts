@@ -5,6 +5,7 @@ describe("AcpController", () => {
   let controller: AcpController;
   let acpService: any;
   let itemExplorerStateService: any;
+  let adminService: any;
 
   beforeEach(() => {
     acpService = {
@@ -60,7 +61,17 @@ describe("AcpController", () => {
       listChanges: jest.fn().mockResolvedValue([{ id: "change-1" }]),
     };
 
-    controller = new AcpController(acpService, itemExplorerStateService);
+    adminService = {
+      listApplicationTokens: jest.fn().mockResolvedValue({ items: [] }),
+      createApplicationToken: jest.fn().mockResolvedValue({ id: "token-1" }),
+      revokeApplicationToken: jest.fn().mockResolvedValue({ id: "token-1" }),
+    };
+
+    controller = new AcpController(
+      acpService,
+      itemExplorerStateService,
+      adminService,
+    );
     jest
       .spyOn((controller as any).logger, "log")
       .mockImplementation(() => undefined);
@@ -197,6 +208,52 @@ describe("AcpController", () => {
 
     expect(acpService.getRoles).not.toHaveBeenCalled();
     expect(acpService.removeRole).toHaveBeenCalledWith("acp-1", "u-3");
+  });
+
+  it("delegates ACP-limited application token management", async () => {
+    await expect(
+      controller.listApplicationTokens("acp-1", "10", "5"),
+    ).resolves.toEqual({ items: [] });
+    expect(adminService.listApplicationTokens).toHaveBeenCalledWith({
+      limit: 10,
+      offset: 5,
+      allowedAcpId: "acp-1",
+    });
+
+    await expect(
+      controller.createApplicationToken(
+        "acp-1",
+        { name: "Studio", scopes: ["acp.read"] } as any,
+        { user: { sub: "u-1" } },
+      ),
+    ).resolves.toEqual({ id: "token-1" });
+    expect(adminService.createApplicationToken).toHaveBeenCalledWith(
+      {
+        name: "Studio",
+        scopes: ["acp.read"],
+        allowedAcpIds: ["acp-1"],
+      },
+      "u-1",
+      {
+        allowedAcpIds: ["acp-1"],
+        auditPath: "/api/acp/acp-1/application-tokens",
+      },
+    );
+
+    await expect(
+      controller.revokeApplicationToken("acp-1", "token-1", {
+        user: { sub: "u-1" },
+      }),
+    ).resolves.toEqual({ id: "token-1" });
+    expect(adminService.revokeApplicationToken).toHaveBeenCalledWith(
+      "token-1",
+      "u-1",
+      {
+        allowedAcpIds: ["acp-1"],
+        requireExclusiveAcp: true,
+        auditPath: "/api/acp/acp-1/application-tokens/token-1/revoke",
+      },
+    );
   });
 
   it("handles access config and credential endpoints", async () => {

@@ -88,6 +88,7 @@ describe("ServerApiAuthGuard", () => {
     expect(req.serverApiClient).toEqual({
       id: "client-a",
       scopes: ["acp.read"],
+      allowedAcpIds: null,
     });
   });
 

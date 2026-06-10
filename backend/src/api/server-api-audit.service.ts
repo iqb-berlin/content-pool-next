@@ -42,6 +42,7 @@ export class ServerApiAuditService {
     limit = 100,
     action?: string,
     clientId?: string,
+    allowedAcpIds?: string[] | null,
   ): Promise<ServerApiAuditLog[]> {
     const safeLimit = Math.max(1, Math.min(limit, 500));
     const qb = this.auditRepository
@@ -55,6 +56,10 @@ export class ServerApiAuditService {
 
     if (clientId) {
       qb.andWhere("log.client_id = :clientId", { clientId });
+    }
+
+    if (Array.isArray(allowedAcpIds) && allowedAcpIds.length > 0) {
+      qb.andWhere("log.acp_id IN (:...allowedAcpIds)", { allowedAcpIds });
     }
 
     return qb.getMany();

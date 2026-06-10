@@ -75,7 +75,7 @@ export class ApiService {
 
   // Application tokens
   getApplicationTokens(
-    options: { limit?: number; offset?: number } = {},
+    options: { limit?: number; offset?: number; allowedAcpId?: string } = {},
   ): Observable<ApplicationTokenListResponse> {
     const params = new URLSearchParams();
     if (options.limit !== undefined) {
@@ -83,6 +83,9 @@ export class ApiService {
     }
     if (options.offset !== undefined) {
       params.set('offset', String(options.offset));
+    }
+    if (options.allowedAcpId) {
+      params.set('allowedAcpId', options.allowedAcpId);
     }
     const suffix = params.toString() ? `?${params.toString()}` : '';
     return this.http.get<ApplicationTokenListResponse>(
@@ -97,6 +100,40 @@ export class ApiService {
   revokeApplicationToken(id: string): Observable<ApplicationToken> {
     return this.http.patch<ApplicationToken>(
       `${this.API}/admin/application-tokens/${id}/revoke`,
+      {},
+    );
+  }
+
+  getAcpApplicationTokens(
+    acpId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): Observable<ApplicationTokenListResponse> {
+    const params = new URLSearchParams();
+    if (options.limit !== undefined) {
+      params.set('limit', String(options.limit));
+    }
+    if (options.offset !== undefined) {
+      params.set('offset', String(options.offset));
+    }
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    return this.http.get<ApplicationTokenListResponse>(
+      `${this.API}/acp/${acpId}/application-tokens${suffix}`,
+    );
+  }
+
+  createAcpApplicationToken(
+    acpId: string,
+    data: CreateApplicationTokenRequest,
+  ): Observable<CreatedApplicationToken> {
+    return this.http.post<CreatedApplicationToken>(
+      `${this.API}/acp/${acpId}/application-tokens`,
+      data,
+    );
+  }
+
+  revokeAcpApplicationToken(acpId: string, tokenId: string): Observable<ApplicationToken> {
+    return this.http.patch<ApplicationToken>(
+      `${this.API}/acp/${acpId}/application-tokens/${tokenId}/revoke`,
       {},
     );
   }

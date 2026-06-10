@@ -91,6 +91,13 @@ export const routes: Routes = [
             (m) => m.AccessConfigComponent,
           ),
       },
+      {
+        path: 'application-tokens',
+        loadComponent: () =>
+          import('./acp-manager/application-tokens/application-tokens.component').then(
+            (m) => m.AcpApplicationTokensComponent,
+          ),
+      },
     ],
   },
 

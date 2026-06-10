@@ -117,9 +117,31 @@ Example create payload:
 {
   "name": "studio",
   "scopes": ["acp.read", "transfer.read", "files.read"],
-  "expiresAt": "2099-01-01T00:00:00.000Z"
+  "expiresAt": "2099-01-01T00:00:00.000Z",
+  "allowedAcpIds": ["2d41b6f7-9c25-4c7c-8d35-d9314cc4d3b7"]
 }
 ```
+
+`allowedAcpIds` is optional for admins. If it is omitted, `null`, or an empty
+array, the token is global and can access every ACP permitted by its scopes.
+If ACP IDs are provided, the server API limits list, read, transfer, index and
+file operations to those ACPs.
+
+For audit access, ACP-limited tokens can only read audit entries whose `acp_id`
+is one of their `allowedAcpIds`. Global audit events without an `acp_id` are
+visible only to global tokens with `audit.read`.
+
+ACP managers can manage ACP-limited application tokens from the ACP management
+area. These endpoints always bind the token to the current ACP:
+
+```text
+GET   /api/acp/:acpId/application-tokens?limit=50&offset=0
+POST  /api/acp/:acpId/application-tokens
+PATCH /api/acp/:acpId/application-tokens/:tokenId/revoke
+```
+
+ACP managers cannot create global tokens. They can revoke only tokens that are
+exclusively limited to the ACP they manage.
 
 The create response includes the one-time `token` field. Store it immediately in
 the external application.
@@ -142,6 +164,8 @@ Supported scopes:
 - `audit.read`
 
 Each endpoint declares the required scope through the `ServerApiScopes` decorator.
+Scopes are necessary but not sufficient for ACP-limited tokens: the target ACP
+must also be part of the token's `allowedAcpIds`.
 
 ## Main Server API Workflows
 
@@ -160,6 +184,7 @@ Scope:
 Use case:
 
 - discover transferable ACPs and their latest update timestamp.
+- ACP-limited tokens only see their allowed ACPs.
 
 ### Export full ACP transfer payload
 
@@ -286,6 +311,10 @@ Supports filtering by:
 - limit,
 - action,
 - client ID.
+
+Global tokens with `audit.read` can read all server API audit logs. ACP-limited
+tokens with `audit.read` only receive logs explicitly tied to their allowed ACPs.
+Audit entries without `acp_id` are intentionally hidden from ACP-limited tokens.
 
 ## Example Token Configuration
 

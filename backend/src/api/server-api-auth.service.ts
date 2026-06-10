@@ -13,6 +13,7 @@ export interface ServerApiClient {
   id: string;
   token: string;
   scopes: string[];
+  allowedAcpIds?: string[] | null;
 }
 
 @Injectable()
@@ -64,9 +65,10 @@ export class ServerApiAuthService {
       if (this.tokensEqual(client.token, token)) {
         return {
           id: client.id,
-          scopes: [...client.scopes],
-        };
-      }
+        scopes: [...client.scopes],
+        allowedAcpIds: client.allowedAcpIds || null,
+      };
+    }
     }
 
     return null;
@@ -109,6 +111,9 @@ export class ServerApiAuthService {
       scopes: Array.isArray(applicationToken.scopes)
         ? [...applicationToken.scopes]
         : [],
+      allowedAcpIds: Array.isArray(applicationToken.allowedAcpIds)
+        ? [...applicationToken.allowedAcpIds]
+        : null,
     };
   }
 
@@ -134,6 +139,7 @@ export class ServerApiAuthService {
           id: "legacy",
           token: legacyToken,
           scopes: [...ALL_SERVER_API_SCOPES],
+          allowedAcpIds: null,
         },
       ];
     }
@@ -253,6 +259,7 @@ export class ServerApiAuthService {
           id,
           token,
           scopes: scopes.length ? scopes : [...ALL_SERVER_API_SCOPES],
+          allowedAcpIds: null,
         });
       }
 

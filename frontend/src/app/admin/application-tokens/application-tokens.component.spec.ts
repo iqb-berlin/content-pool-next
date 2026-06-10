@@ -9,6 +9,7 @@ function createToken(overrides: Partial<ApplicationToken> = {}): ApplicationToke
     name: 'Studio',
     tokenPrefix: 'cp_abc...',
     scopes: ['acp.read'],
+    allowedAcpIds: null,
     active: true,
     expiresAt: null,
     lastUsedAt: null,
@@ -26,6 +27,7 @@ describe('ApplicationTokensComponent', () => {
     getApplicationTokens: ReturnType<typeof vi.fn>;
     createApplicationToken: ReturnType<typeof vi.fn>;
     revokeApplicationToken: ReturnType<typeof vi.fn>;
+    getAcps: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -40,6 +42,7 @@ describe('ApplicationTokensComponent', () => {
       ),
       createApplicationToken: vi.fn(),
       revokeApplicationToken: vi.fn(),
+      getAcps: vi.fn().mockReturnValue(of([])),
     };
   });
 
@@ -61,6 +64,7 @@ describe('ApplicationTokensComponent', () => {
     component.ngOnInit();
 
     expect(api.getApplicationTokens).toHaveBeenCalledWith({ limit: 50, offset: 0 });
+    expect(api.getAcps).toHaveBeenCalled();
     expect(component.tokens).toHaveLength(1);
     expect(component.total).toBe(1);
   });
@@ -71,6 +75,7 @@ describe('ApplicationTokensComponent', () => {
       name: ' Studio ',
       expiresAtLocal: '',
       scopes: ['acp.read', 'files.read'],
+      allowedAcpIds: [],
     };
     api.createApplicationToken.mockReturnValue(
       of({
@@ -85,6 +90,7 @@ describe('ApplicationTokensComponent', () => {
       name: 'Studio',
       scopes: ['acp.read', 'files.read'],
       expiresAt: null,
+      allowedAcpIds: null,
     });
     expect(component.createdToken?.token).toBe('cp_secret');
     expect(component.showCreate).toBe(false);
@@ -92,7 +98,7 @@ describe('ApplicationTokensComponent', () => {
 
   it('rejects create when name or scopes are missing', () => {
     const component = new ApplicationTokensComponent(api as any);
-    component.newToken = { name: ' ', expiresAtLocal: '', scopes: ['acp.read'] };
+    component.newToken = { name: ' ', expiresAtLocal: '', scopes: ['acp.read'], allowedAcpIds: [] };
 
     component.createToken();
 
@@ -100,7 +106,7 @@ describe('ApplicationTokensComponent', () => {
     expect(component.error).toContain('Name');
 
     component.error = '';
-    component.newToken = { name: 'Studio', expiresAtLocal: '', scopes: [] };
+    component.newToken = { name: 'Studio', expiresAtLocal: '', scopes: [], allowedAcpIds: [] };
     component.createToken();
 
     expect(api.createApplicationToken).not.toHaveBeenCalled();

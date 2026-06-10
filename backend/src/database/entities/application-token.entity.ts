@@ -23,6 +23,9 @@ export class ApplicationToken {
   @Column({ type: "jsonb", default: () => "'[]'::jsonb" })
   scopes!: string[];
 
+  @Column({ name: "allowed_acp_ids", type: "jsonb", nullable: true })
+  allowedAcpIds?: string[] | null;
+
   @Column({ default: true })
   active!: boolean;
 

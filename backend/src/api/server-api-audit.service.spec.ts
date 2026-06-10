@@ -64,7 +64,10 @@ describe("ServerApiAuditService", () => {
   });
 
   it("returns filtered logs with a clamped limit", async () => {
-    const rows = await service.list(900, "acp.read", "client-1");
+    const rows = await service.list(900, "acp.read", "client-1", [
+      "acp-1",
+      "acp-2",
+    ]);
 
     const qb = auditRepository.createQueryBuilder.mock.results[0].value;
     expect(auditRepository.createQueryBuilder).toHaveBeenCalledWith("log");
@@ -76,6 +79,11 @@ describe("ServerApiAuditService", () => {
       2,
       "log.client_id = :clientId",
       { clientId: "client-1" },
+    );
+    expect(qb.andWhere).toHaveBeenNthCalledWith(
+      3,
+      "log.acp_id IN (:...allowedAcpIds)",
+      { allowedAcpIds: ["acp-1", "acp-2"] },
     );
     expect(rows).toEqual([{ id: "log-1" }]);
   });

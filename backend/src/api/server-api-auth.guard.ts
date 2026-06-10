@@ -43,6 +43,7 @@ export class ServerApiAuthGuard implements CanActivate {
     req.serverApiClient = {
       id: client.id,
       scopes: client.scopes,
+      allowedAcpIds: client.allowedAcpIds || null,
     };
 
     return true;

@@ -30,6 +30,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
 } from "class-validator";
 import { AdminService } from "./admin.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -60,6 +61,16 @@ class CreateApplicationTokenDto {
   @IsOptional()
   @IsDateString()
   expiresAt?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Optional ACP IDs this token is allowed to access. Omit or pass null for a global token.",
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID("4", { each: true })
+  allowedAcpIds?: string[] | null;
 }
 
 @ApiTags("Administration")
@@ -87,10 +98,12 @@ export class AdminController {
   async listApplicationTokens(
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
+    @Query("allowedAcpId") allowedAcpId?: string,
   ) {
     return this.adminService.listApplicationTokens({
       limit: limit === undefined ? undefined : Number.parseInt(limit, 10),
       offset: offset === undefined ? undefined : Number.parseInt(offset, 10),
+      allowedAcpId,
     });
   }
 

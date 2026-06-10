@@ -37,6 +37,7 @@ describe("ServerApiAuthService", () => {
     expect(client).toEqual({
       id: "studio-db",
       scopes: ["acp.read", "files.read"],
+      allowedAcpIds: null,
     });
     expect(applicationTokenRepository.findOne).toHaveBeenCalledWith({
       where: { tokenHash },
@@ -73,6 +74,7 @@ describe("ServerApiAuthService", () => {
     await expect(service.validateToken("db-token")).resolves.toEqual({
       id: "studio-db",
       scopes: ["acp.read"],
+      allowedAcpIds: null,
     });
     expect(applicationTokenRepository.update).not.toHaveBeenCalled();
   });
@@ -111,6 +113,7 @@ describe("ServerApiAuthService", () => {
       await expect(service.validateToken("db-token")).resolves.toEqual({
         id: "studio-db",
         scopes: ["acp.read"],
+        allowedAcpIds: null,
       });
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("Could not update lastUsedAt"),
@@ -178,6 +181,7 @@ describe("ServerApiAuthService", () => {
     expect(client).toEqual({
       id: "studio",
       scopes: ["transfer.read", "files.read"],
+      allowedAcpIds: null,
     });
     expect(service.hasScopes(client?.scopes || [], ["files.read"])).toBe(true);
     expect(service.hasScopes(client?.scopes || [], ["files.write"])).toBe(
@@ -215,6 +219,7 @@ describe("ServerApiAuthService", () => {
     await expect(service.validateToken("token-studio")).resolves.toEqual({
       id: "studio",
       scopes: ["acp.read"],
+      allowedAcpIds: null,
     });
   });
 
@@ -323,6 +328,7 @@ describe("ServerApiAuthService", () => {
     await expect(service.validateToken("token-b")).resolves.toEqual({
       id: "custom-scope",
       scopes: ["files.read", "files.write"],
+      allowedAcpIds: null,
     });
     expect(service.hasScopes(["x"], [])).toBe(true);
   });

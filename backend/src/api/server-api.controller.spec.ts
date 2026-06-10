@@ -65,12 +65,17 @@ describe("ServerApiController", () => {
     expect(serverApiService.getAcpTransferData).toHaveBeenNthCalledWith(
       1,
       "acp-1",
+      undefined,
     );
     expect(serverApiService.getAcpTransferData).toHaveBeenNthCalledWith(
       2,
       "acp-1",
+      undefined,
     );
-    expect(serverApiService.getAcpIndex).toHaveBeenCalledWith("acp-1");
+    expect(serverApiService.getAcpIndex).toHaveBeenCalledWith(
+      "acp-1",
+      undefined,
+    );
   });
 
   it("updates ACP index using strategy and optimistic timestamp", async () => {
@@ -89,6 +94,7 @@ describe("ServerApiController", () => {
       { a: 1 },
       "merge",
       "2026-01-01T00:00:00.000Z",
+      undefined,
     );
   });
 
@@ -106,12 +112,20 @@ describe("ServerApiController", () => {
     expect(oneFile).toEqual({ id: "file-1" });
     expect(uploadResult).toEqual({ uploaded: 1 });
 
-    expect(serverApiService.listFiles).toHaveBeenCalledWith("acp-1");
-    expect(serverApiService.getFile).toHaveBeenCalledWith("acp-1", "file-1");
+    expect(serverApiService.listFiles).toHaveBeenCalledWith(
+      "acp-1",
+      undefined,
+    );
+    expect(serverApiService.getFile).toHaveBeenCalledWith(
+      "acp-1",
+      "file-1",
+      undefined,
+    );
     expect(serverApiService.uploadFiles).toHaveBeenCalledWith(
       "acp-1",
       [{ originalname: "a.xml" }],
       "overwrite",
+      undefined,
     );
   });
 
@@ -126,6 +140,7 @@ describe("ServerApiController", () => {
     expect(serverApiService.downloadFile).toHaveBeenCalledWith(
       "acp-1",
       "file-1",
+      undefined,
     );
     expect(res.setHeader).toHaveBeenNthCalledWith(
       1,
@@ -160,6 +175,7 @@ describe("ServerApiController", () => {
         expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
         sourceClientId: "sync-client",
       },
+      undefined,
     );
   });
 
@@ -179,17 +195,21 @@ describe("ServerApiController", () => {
       1,
       payload,
       "merge",
+      undefined,
     );
     expect(serverApiService.receiveAcp).toHaveBeenNthCalledWith(
       2,
       payload,
       "overwrite",
+      undefined,
     );
   });
 
   it("uses parsed audit limit and defaults to 100 for invalid values", async () => {
     await expect(
-      controller.getAuditLogs("50", "acp.read", "client-1"),
+      controller.getAuditLogs("50", "acp.read", "client-1", {
+        serverApiClient: { allowedAcpIds: ["acp-1"] },
+      }),
     ).resolves.toEqual([{ id: "log-1" }]);
     await expect(
       controller.getAuditLogs("NaN", undefined, undefined),
@@ -200,10 +220,12 @@ describe("ServerApiController", () => {
       50,
       "acp.read",
       "client-1",
+      ["acp-1"],
     );
     expect(serverApiAuditService.list).toHaveBeenNthCalledWith(
       2,
       100,
+      undefined,
       undefined,
       undefined,
     );

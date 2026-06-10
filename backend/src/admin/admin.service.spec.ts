@@ -6,6 +6,7 @@ import * as os from "os";
 import * as path from "path";
 import { AdminService } from "./admin.service";
 import {
+  Acp,
   AppSettings,
   ApplicationToken,
   ServerApiAuditLog,
@@ -36,6 +37,9 @@ describe("AdminService", () => {
     create: jest.Mock;
     save: jest.Mock;
   };
+  let acpRepository: {
+    find: jest.Mock;
+  };
   let tempStoragePath: string;
 
   beforeEach(async () => {
@@ -54,6 +58,9 @@ describe("AdminService", () => {
     auditRepository = {
       create: jest.fn().mockImplementation((dto) => dto),
       save: jest.fn().mockImplementation(async (entity) => entity),
+    };
+    acpRepository = {
+      find: jest.fn().mockResolvedValue([]),
     };
     applicationTokenRepository = {
       findAndCount: jest.fn(),
@@ -94,6 +101,7 @@ describe("AdminService", () => {
           provide: getRepositoryToken(ServerApiAuditLog),
           useValue: auditRepository,
         },
+        { provide: getRepositoryToken(Acp), useValue: acpRepository },
       ],
     }).compile();
 
@@ -219,6 +227,7 @@ describe("AdminService", () => {
     });
 
     expect(applicationTokenRepository.findAndCount).toHaveBeenCalledWith({
+      where: {},
       order: { createdAt: "DESC" },
       take: 200,
       skip: 2,
@@ -230,6 +239,7 @@ describe("AdminService", () => {
           name: "Studio",
           tokenPrefix: "cp_abc...",
           scopes: ["acp.read"],
+          allowedAcpIds: null,
         }),
       ],
       total: 1,
@@ -261,6 +271,7 @@ describe("AdminService", () => {
         tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         tokenPrefix: expect.stringMatching(/^cp_/),
         scopes: ["acp.read", "files.read"],
+        allowedAcpIds: null,
         active: true,
         createdByUserId: "user-1",
         revokedAt: null,
@@ -280,6 +291,7 @@ describe("AdminService", () => {
           name: "Studio",
           tokenPrefix: expect.stringMatching(/^cp_/),
           scopes: ["acp.read", "files.read"],
+          allowedAcpIds: null,
           expiresAt: "2099-01-01T00:00:00.000Z",
         }),
       }),

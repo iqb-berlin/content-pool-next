@@ -58,6 +58,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
           <h3>🔐 Zugriffskonfiguration</h3>
           <p>Zugriffsrechte und Features konfigurieren</p>
         </a>
+        <a [routerLink]="['/manage', acp.id, 'application-tokens']" class="card link-card">
+          <h3>Applikationstoken</h3>
+          <p>Tokens für externe Anwendungen auf dieses ACP begrenzen</p>
+        </a>
         <a [routerLink]="['/view', acp.id]" class="card link-card">
           <h3>👁️ Vorschau</h3>
           <p>Read-Only-Ansicht des ACP</p>

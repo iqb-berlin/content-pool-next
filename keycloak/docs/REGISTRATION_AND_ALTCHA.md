@@ -73,24 +73,41 @@ The script:
 - enables self-registration,
 - enables email verification,
 - keeps duplicate emails disabled,
-- adds the `registration-altcha-action` execution to the `registration` flow,
+- copies the built-in `registration` flow to `contentpool registration` if needed,
+- points the realm registration flow to `contentpool registration`,
+- adds the `registration-altcha-action` execution to the copied form subflow,
 - marks the ALTCHA execution as `REQUIRED`.
 
 If the script reports that it cannot find `registration-altcha-action`, rebuild
 the provider and restart Keycloak so the JAR is loaded.
+
+If the Keycloak admin API credentials are unavailable on an existing server,
+use the database fallback only as an operational repair path:
+
+```bash
+make keycloak-registration-db
+```
+
+That fallback updates the currently active registration flow directly in the
+Keycloak database and restarts Keycloak. Prefer `make keycloak-registration`
+whenever valid admin API credentials are available.
 
 ## Manual Admin Console Setup
 
 If needed, configure the flow manually:
 
 1. Open `Authentication -> Flows`.
-2. Select the `registration` flow.
-3. Add execution `ALTCHA`.
-4. Set the execution requirement to `Required`.
-5. Open `Realm settings -> Login`.
-6. Enable `User registration`.
-7. Enable `Verify email`.
-8. Keep `Duplicate emails` disabled.
+2. Duplicate the built-in `registration` flow, for example as
+   `contentpool registration`.
+3. Open the copied flow and expand its form subflow, usually named
+   `contentpool registration registration form`.
+4. Add execution `ALTCHA` to that form subflow.
+5. Set the `ALTCHA` execution requirement to `Required`.
+6. Open `Realm settings -> Login`.
+7. Set the registration flow to `contentpool registration`.
+8. Enable `User registration`.
+9. Enable `Verify email`.
+10. Keep `Duplicate emails` disabled.
 
 The provider can read its HMAC secret from `ALTCHA_HMAC_SECRET`, so the
 execution does not need to store the secret in Keycloak's database. If you do
@@ -103,6 +120,28 @@ ALTCHA raises the cost of automated registrations but does not replace rate
 limits. Keep reverse-proxy rate limits for registration, password reset, and
 token endpoints, and keep Keycloak brute-force protection enabled.
 
+The production nginx facade applies per-client rate limits to the most sensitive
+Keycloak endpoints:
+
+- registration: 5 requests per minute, with a burst of 5,
+- password reset: 10 requests per minute, with a burst of 10,
+- token endpoint: 120 requests per minute, with a burst of 120.
+
+The token endpoint limit is intentionally higher because normal OIDC login and
+refresh flows use it, and multiple legitimate users may share one institutional
+NAT address.
+
+The vendored browser widget must be the regular ALTCHA browser bundle, not the
+`external` bundle. The versioned theme asset
+`resources/js/altcha/altcha-main-3.0.11.min.js` is copied from
+`dist/main/altcha.min.js`. The provider emits `PBKDF2/SHA-256` challenges by
+default, and the `external` bundle does not include the worker/algorithm
+registration needed to solve them in the browser.
+
 Newly registered users should receive only minimal default roles. Access to ACPs
 and administrative features must continue to be controlled by ContentPool roles
 and access configuration.
+
+The default Keycloak realm role is `user`. That role is not sufficient for
+ContentPool administration or ACP management; application access still depends on
+local `APP_ADMIN` status and explicit ACP roles.

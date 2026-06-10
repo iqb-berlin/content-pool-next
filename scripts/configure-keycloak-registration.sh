@@ -42,13 +42,19 @@ require_command() {
 require_command curl
 require_command jq
 
+url_encode() {
+  jq -nr --arg value "$1" '$value | @uri'
+}
+
 KEYCLOAK_URL="${1:-$(read_env_value KEYCLOAK_URL http://localhost:8080)}"
 KEYCLOAK_REALM="$(read_env_value KEYCLOAK_REALM iqb)"
 KEYCLOAK_ADMIN_USER="$(read_env_value KEYCLOAK_ADMIN_USER admin)"
 KEYCLOAK_ADMIN_PASSWORD="$(read_env_value KEYCLOAK_ADMIN_PASSWORD admin)"
 ALTCHA_HMAC_SECRET="$(read_env_value ALTCHA_HMAC_SECRET '')"
 ALTCHA_PROVIDER_ID="registration-altcha-action"
-REGISTRATION_FLOW_ALIAS="${KEYCLOAK_REGISTRATION_FLOW_ALIAS:-registration}"
+SOURCE_REGISTRATION_FLOW_ALIAS="$(read_env_value KEYCLOAK_SOURCE_REGISTRATION_FLOW_ALIAS registration)"
+TARGET_REGISTRATION_FLOW_ALIAS="$(read_env_value KEYCLOAK_REGISTRATION_FLOW_ALIAS "contentpool registration")"
+REGISTRATION_FORM_FLOW_ALIAS="$(read_env_value KEYCLOAK_REGISTRATION_FORM_FLOW_ALIAS '')"
 
 if [[ -z "$ALTCHA_HMAC_SECRET" ]]; then
   echo "ALTCHA_HMAC_SECRET must be set in the environment or .env." >&2
@@ -68,6 +74,8 @@ AUTH_HEADER_FILE="$TMP_DIR/keycloak-auth-header"
 REALM_FILE="$TMP_DIR/realm.json"
 UPDATED_REALM_FILE="$TMP_DIR/realm-updated.json"
 EXECUTIONS_FILE="$TMP_DIR/executions.json"
+FORM_EXECUTIONS_FILE="$TMP_DIR/form-executions.json"
+FLOWS_FILE="$TMP_DIR/flows.json"
 UPDATE_EXECUTION_FILE="$TMP_DIR/update-execution.json"
 
 printf '%s' "$KEYCLOAK_ADMIN_PASSWORD" > "$KEYCLOAK_ADMIN_PASSWORD_FILE"
@@ -91,15 +99,33 @@ fi
 printf 'Authorization: Bearer %s\n' "$ACCESS_TOKEN" > "$AUTH_HEADER_FILE"
 chmod 600 "$AUTH_HEADER_FILE"
 
+curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows" \
+  -H "@$AUTH_HEADER_FILE" \
+  > "$FLOWS_FILE"
+
+target_flow_exists="$(jq -r --arg alias "$TARGET_REGISTRATION_FLOW_ALIAS" '
+  any(.[]; .alias == $alias)
+  ' "$FLOWS_FILE")"
+
+if [[ "$target_flow_exists" != "true" ]]; then
+  SOURCE_REGISTRATION_FLOW_PATH="$(url_encode "$SOURCE_REGISTRATION_FLOW_ALIAS")"
+  jq -n --arg newName "$TARGET_REGISTRATION_FLOW_ALIAS" '{newName: $newName}' > "$TMP_DIR/copy-flow.json"
+  curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$SOURCE_REGISTRATION_FLOW_PATH/copy" \
+    -H "@$AUTH_HEADER_FILE" \
+    -H "Content-Type: application/json" \
+    --data-binary "@$TMP_DIR/copy-flow.json" >/dev/null
+fi
+
 curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM" \
   -H "@$AUTH_HEADER_FILE" \
   > "$REALM_FILE"
 
-jq '
+jq --arg registrationFlow "$TARGET_REGISTRATION_FLOW_ALIAS" '
   .registrationAllowed = true
   | .verifyEmail = true
   | .duplicateEmailsAllowed = false
   | .loginWithEmailAllowed = true
+  | .registrationFlow = $registrationFlow
 ' "$REALM_FILE" > "$UPDATED_REALM_FILE"
 
 curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM" \
@@ -107,42 +133,76 @@ curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM" \
   -H "Content-Type: application/json" \
   --data-binary "@$UPDATED_REALM_FILE" >/dev/null
 
-curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FLOW_ALIAS/executions" \
+REGISTRATION_FLOW_PATH="$(url_encode "$TARGET_REGISTRATION_FLOW_ALIAS")"
+
+curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FLOW_PATH/executions" \
   -H "@$AUTH_HEADER_FILE" \
   > "$EXECUTIONS_FILE"
+
+if [[ -z "$REGISTRATION_FORM_FLOW_ALIAS" ]]; then
+  REGISTRATION_FORM_FLOW_ALIAS="$(jq -r '
+    .[]
+    | select(.providerId == "registration-page-form" and .authenticationFlow == true)
+    | .displayName // empty
+    ' "$EXECUTIONS_FILE" | head -n 1)"
+fi
+
+if [[ -z "$REGISTRATION_FORM_FLOW_ALIAS" ]]; then
+  echo "Could not find registration-page-form subflow in '$TARGET_REGISTRATION_FLOW_ALIAS'." >&2
+  echo "The target registration flow may be incomplete or corrupted." >&2
+  exit 1
+fi
+
+wrong_execution_ids="$(jq -r --arg provider "$ALTCHA_PROVIDER_ID" '
+  .[]
+  | select((.providerId == $provider or .authenticator == $provider) and (.level // 0) == 0)
+  | .id
+  ' "$EXECUTIONS_FILE")"
+
+while IFS= read -r wrong_execution_id; do
+  [[ -z "$wrong_execution_id" ]] && continue
+  curl -fsS -X DELETE "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/executions/$wrong_execution_id" \
+    -H "@$AUTH_HEADER_FILE" >/dev/null
+done <<< "$wrong_execution_ids"
+
+REGISTRATION_FORM_FLOW_PATH="$(url_encode "$REGISTRATION_FORM_FLOW_ALIAS")"
+
+curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FORM_FLOW_PATH/executions" \
+  -H "@$AUTH_HEADER_FILE" \
+  > "$FORM_EXECUTIONS_FILE"
 
 execution_id="$(jq -r --arg provider "$ALTCHA_PROVIDER_ID" '
   .[]
   | select(.providerId == $provider or .authenticator == $provider)
   | .id
-  ' "$EXECUTIONS_FILE" | head -n 1)"
+  ' "$FORM_EXECUTIONS_FILE" | head -n 1)"
 
 if [[ -z "$execution_id" ]]; then
-  curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FLOW_ALIAS/executions/execution" \
+  curl -fsS -X POST "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FORM_FLOW_PATH/executions/execution" \
     -H "@$AUTH_HEADER_FILE" \
     -H "Content-Type: application/json" \
     --data-binary "{\"provider\":\"$ALTCHA_PROVIDER_ID\"}" >/dev/null
 
-  curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FLOW_ALIAS/executions" \
+  curl -fsS "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FORM_FLOW_PATH/executions" \
     -H "@$AUTH_HEADER_FILE" \
-    > "$EXECUTIONS_FILE"
+    > "$FORM_EXECUTIONS_FILE"
 
   execution_id="$(jq -r --arg provider "$ALTCHA_PROVIDER_ID" '
     .[]
     | select(.providerId == $provider or .authenticator == $provider)
     | .id
-    ' "$EXECUTIONS_FILE" | head -n 1)"
+    ' "$FORM_EXECUTIONS_FILE" | head -n 1)"
 fi
 
 if [[ -z "$execution_id" ]]; then
-  echo "Could not find or add $ALTCHA_PROVIDER_ID in flow '$REGISTRATION_FLOW_ALIAS'." >&2
+  echo "Could not find or add $ALTCHA_PROVIDER_ID in flow '$REGISTRATION_FORM_FLOW_ALIAS'." >&2
   echo "Make sure the provider JAR is mounted and Keycloak was restarted." >&2
   exit 1
 fi
 
 jq -n --arg id "$execution_id" '{id: $id, requirement: "REQUIRED"}' > "$UPDATE_EXECUTION_FILE"
 
-curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FLOW_ALIAS/executions" \
+curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flows/$REGISTRATION_FORM_FLOW_PATH/executions" \
   -H "@$AUTH_HEADER_FILE" \
   -H "Content-Type: application/json" \
   --data-binary "@$UPDATE_EXECUTION_FILE" >/dev/null
@@ -150,4 +210,5 @@ curl -fsS -X PUT "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM/authentication/flow
 echo "Configured Keycloak registration for realm '$KEYCLOAK_REALM'."
 echo "Self-registration: enabled"
 echo "Email verification: enabled"
+echo "Registration form flow: $REGISTRATION_FORM_FLOW_ALIAS"
 echo "ALTCHA execution: $execution_id REQUIRED"

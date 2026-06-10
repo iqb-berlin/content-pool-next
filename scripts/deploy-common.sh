@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# shellcheck disable=SC2034 # used by scripts that source this file
 CONTENT_POOL_REPO_DEFAULT="iqb-berlin/content-pool-next"
 
 cp_info() {
@@ -216,6 +217,7 @@ cp_install_runtime_artifacts() {
     scripts/check-health.sh \
     scripts/build-keycloak-altcha.sh \
     scripts/configure-keycloak-registration.sh \
+    scripts/configure-keycloak-registration-db.sh \
     scripts/configure-keycloak-smtp.sh \
     scripts/configure-hu-postfix-relay.sh \
     scripts/init-keycloak.sh \

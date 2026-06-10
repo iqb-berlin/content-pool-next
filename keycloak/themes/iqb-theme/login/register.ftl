@@ -55,7 +55,7 @@
             <#if altchaRequired??>
                 <div class="form-group altcha-form-group">
                     <altcha-widget
-                        challenge='${altchaChallengeJson?html}'
+                        challenge='${altchaChallengeJson}'
                         configuration='{"hideFooter":true}'
                         language="${altchaLanguage!'de'}"
                         name="altcha"
@@ -71,6 +71,6 @@
         </form>
 
         <script type="module" src="${url.resourcesPath}/js/passwordVisibility.js"></script>
-        <script type="module" src="${url.resourcesPath}/js/altcha/altcha.min.js"></script>
+        <script type="module" src="${url.resourcesPath}/js/altcha/altcha-main-3.0.11.min.js"></script>
     </#if>
 </@layout.registrationLayout>

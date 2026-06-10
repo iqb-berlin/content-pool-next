@@ -1,7 +1,7 @@
 # IQB ContentPool - Makefile
 # Usage: make [target]
 
-.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp keycloak-registration keycloak-altcha-provider \
+.PHONY: help dev prod stop logs status clean db-backup db-restore keycloak-admin keycloak-smtp keycloak-registration keycloak-registration-db keycloak-altcha-provider \
 	server-install server-install-traefik server-update-safe server-backup \
 	server-update-release server-traefik-update-release \
 	server-traefik-up server-traefik-update server-traefik-update-safe server-traefik-backup \
@@ -272,6 +272,9 @@ keycloak-smtp: ## Configure Keycloak SMTP from .env (run via SSH tunnel or on se
 
 keycloak-registration: ## Enable Keycloak self-registration with email verification and ALTCHA
 	@./scripts/configure-keycloak-registration.sh
+
+keycloak-registration-db: ## Enable Keycloak registration through DB fallback when admin API credentials are unavailable
+	@./scripts/configure-keycloak-registration-db.sh
 
 keycloak-altcha-provider: ## Build the Keycloak ALTCHA provider JAR
 	@./scripts/build-keycloak-altcha.sh

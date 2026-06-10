@@ -1,13 +1,14 @@
-import { Component, OnInit } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService } from '../../core/services/api.service';
+import { ActivatedRoute } from '@angular/router';
 import {
-  Acp,
   ApplicationToken,
   CreatedApplicationToken,
   ServerApiScope,
 } from '../../core/models/api.models';
+import { ApiService } from '../../core/services/api.service';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 
 type ScopeOption = {
@@ -27,10 +28,12 @@ const SCOPE_OPTIONS: ScopeOption[] = [
 ];
 
 @Component({
-  selector: 'app-application-tokens',
+  selector: 'app-acp-application-tokens',
   standalone: true,
-  imports: [DatePipe, FormsModule, ConfirmDialogComponent],
+  imports: [DatePipe, FormsModule, AcpManagerContextComponent, ConfirmDialogComponent],
   template: `
+    <app-acp-manager-context />
+
     <div class="page-header">
       <h1>Applikationstoken</h1>
       <div class="header-actions">
@@ -57,11 +60,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
           <button class="btn btn-outline btn-sm" (click)="dismissCreatedToken()">Schließen</button>
         </div>
         <div class="secret-row">
-          <input
-            [value]="createdToken.token"
-            readonly
-            aria-label="Neu erzeugter Applikationstoken"
-          />
+          <input [value]="createdToken.token" readonly aria-label="Neu erzeugter Applikationstoken" />
           <button class="btn btn-outline" (click)="copyCreatedToken()">Kopieren</button>
         </div>
       </div>
@@ -69,7 +68,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
 
     @if (showCreate) {
       <div class="card">
-        <h3>Neues Token</h3>
+        <h3>Neues Token für dieses ACP</h3>
         <form (ngSubmit)="createToken()">
           <div class="form-grid">
             <div class="form-group">
@@ -109,33 +108,6 @@ const SCOPE_OPTIONS: ScopeOption[] = [
             </div>
           </div>
 
-          <div class="form-group">
-            <label>ACP-Begrenzung</label>
-            <div class="acp-limit-actions">
-              <button type="button" class="btn btn-outline btn-sm" (click)="clearAcpLimits()">
-                Global
-              </button>
-              <span class="subtle">
-                Ohne Auswahl gilt der Token für alle ACPs.
-              </span>
-            </div>
-            <div class="acp-grid">
-              @for (acp of acps; track acp.id) {
-                <label class="scope-option">
-                  <input
-                    type="checkbox"
-                    [checked]="isAcpSelected(acp.id)"
-                    (change)="toggleAcp(acp.id, $any($event.target).checked)"
-                  />
-                  <span>{{ acp.name }}</span>
-                  <code>{{ acp.packageId }}</code>
-                </label>
-              } @empty {
-                <div class="subtle">Keine ACPs verfügbar.</div>
-              }
-            </div>
-          </div>
-
           <div class="toolbar">
             <button type="submit" class="btn btn-primary" [disabled]="creating">
               {{ creating ? 'Lege an...' : 'Token anlegen' }}
@@ -156,7 +128,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     <div class="card">
       <div class="table-header">
         <div>
-          <h3>Ausgestellte Token</h3>
+          <h3>Ausgestellte ACP-Tokens</h3>
           <span class="table-meta">{{ total }} insgesamt</span>
         </div>
         <div class="pager">
@@ -181,7 +153,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
       @if (loading) {
         <div class="empty-state"><h3>Lade Token...</h3></div>
       } @else if (!tokens.length) {
-        <div class="empty-state"><h3>Keine Applikationstoken vorhanden</h3></div>
+        <div class="empty-state"><h3>Keine Applikationstoken für dieses ACP vorhanden</h3></div>
       } @else {
         <div class="table-scroll">
           <table class="table token-table">
@@ -190,7 +162,6 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                 <th>Name</th>
                 <th>Prefix</th>
                 <th>Berechtigungen</th>
-                <th>ACP</th>
                 <th>Status</th>
                 <th>Ablauf</th>
                 <th>Letzte Nutzung</th>
@@ -204,9 +175,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                     <strong>{{ token.name }}</strong>
                     <div class="subtle">{{ token.createdAt | date: 'dd.MM.yyyy HH:mm' }}</div>
                   </td>
-                  <td>
-                    <code>{{ token.tokenPrefix }}</code>
-                  </td>
+                  <td><code>{{ token.tokenPrefix }}</code></td>
                   <td>
                     <div class="scope-tags">
                       @for (scope of token.scopes; track scope) {
@@ -214,7 +183,6 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                       }
                     </div>
                   </td>
-                  <td>{{ acpLimitLabel(token) }}</td>
                   <td>
                     <span
                       class="badge"
@@ -225,9 +193,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                       {{ statusLabel(token) }}
                     </span>
                   </td>
-                  <td>
-                    {{ token.expiresAt ? (token.expiresAt | date: 'dd.MM.yyyy HH:mm') : 'Nie' }}
-                  </td>
+                  <td>{{ token.expiresAt ? (token.expiresAt | date: 'dd.MM.yyyy HH:mm') : 'Nie' }}</td>
                   <td>
                     {{
                       token.lastUsedAt ? (token.lastUsedAt | date: 'dd.MM.yyyy HH:mm') : 'Noch nie'
@@ -325,22 +291,6 @@ const SCOPE_OPTIONS: ScopeOption[] = [
         gap: 8px;
       }
 
-      .acp-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 8px;
-        max-height: 260px;
-        overflow: auto;
-      }
-
-      .acp-limit-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 8px;
-        flex-wrap: wrap;
-      }
-
       .scope-option {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
@@ -395,9 +345,9 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     `,
   ],
 })
-export class ApplicationTokensComponent implements OnInit {
+export class AcpApplicationTokensComponent implements OnInit {
+  acpId = '';
   tokens: ApplicationToken[] = [];
-  acps: Acp[] = [];
   total = 0;
   limit = 50;
   offset = 0;
@@ -412,12 +362,10 @@ export class ApplicationTokensComponent implements OnInit {
     name: string;
     expiresAtLocal: string;
     scopes: ServerApiScope[];
-    allowedAcpIds: string[];
   } = {
     name: '',
     expiresAtLocal: '',
     scopes: ['acp.read'],
-    allowedAcpIds: [],
   };
 
   revokeDialogOpen = false;
@@ -425,11 +373,14 @@ export class ApplicationTokensComponent implements OnInit {
   revokeDialogError = '';
   revokeDialogToken: ApplicationToken | null = null;
 
-  constructor(private api: ApiService) {}
+  constructor(
+    private api: ApiService,
+    private route: ActivatedRoute,
+  ) {}
 
   ngOnInit() {
+    this.acpId = this.route.parent?.snapshot.paramMap.get('acpId') || '';
     this.load();
-    this.loadAcps();
   }
 
   get hasNextPage(): boolean {
@@ -460,10 +411,11 @@ export class ApplicationTokensComponent implements OnInit {
   }
 
   load() {
+    if (!this.acpId) return;
     this.loading = true;
     this.error = '';
 
-    this.api.getApplicationTokens({ limit: this.limit, offset: this.offset }).subscribe({
+    this.api.getAcpApplicationTokens(this.acpId, { limit: this.limit, offset: this.offset }).subscribe({
       next: (result) => {
         this.tokens = result.items;
         this.total = result.total;
@@ -504,24 +456,6 @@ export class ApplicationTokensComponent implements OnInit {
     }
   }
 
-  isAcpSelected(acpId: string): boolean {
-    return this.newToken.allowedAcpIds.includes(acpId);
-  }
-
-  toggleAcp(acpId: string, checked: boolean) {
-    if (checked && !this.newToken.allowedAcpIds.includes(acpId)) {
-      this.newToken.allowedAcpIds = [...this.newToken.allowedAcpIds, acpId];
-      return;
-    }
-    if (!checked) {
-      this.newToken.allowedAcpIds = this.newToken.allowedAcpIds.filter((selected) => selected !== acpId);
-    }
-  }
-
-  clearAcpLimits() {
-    this.newToken.allowedAcpIds = [];
-  }
-
   createToken() {
     const name = this.newToken.name.trim();
     if (!name) {
@@ -543,11 +477,10 @@ export class ApplicationTokensComponent implements OnInit {
     this.creating = true;
 
     this.api
-      .createApplicationToken({
+      .createAcpApplicationToken(this.acpId, {
         name,
         scopes: this.newToken.scopes,
         expiresAt,
-        allowedAcpIds: this.newToken.allowedAcpIds?.length ? this.newToken.allowedAcpIds : null,
       })
       .subscribe({
         next: (created) => {
@@ -611,7 +544,7 @@ export class ApplicationTokensComponent implements OnInit {
     this.revokeDialogError = '';
     const tokenId = this.revokeDialogToken.id;
 
-    this.api.revokeApplicationToken(tokenId).subscribe({
+    this.api.revokeAcpApplicationToken(this.acpId, tokenId).subscribe({
       next: () => {
         this.revokeDialogBusy = false;
         this.revokeDialogOpen = false;
@@ -641,27 +574,12 @@ export class ApplicationTokensComponent implements OnInit {
   }
 
   canRevoke(token: ApplicationToken): boolean {
-    return token.active && !token.revokedAt;
-  }
-
-  acpLimitLabel(token: ApplicationToken): string {
-    if (!token.allowedAcpIds?.length) {
-      return 'Global';
-    }
-    return token.allowedAcpIds
-      .map((acpId) => this.acps.find((acp) => acp.id === acpId)?.name || acpId)
-      .join(', ');
-  }
-
-  private loadAcps() {
-    this.api.getAcps().subscribe({
-      next: (acps) => {
-        this.acps = acps;
-      },
-      error: () => {
-        this.acps = [];
-      },
-    });
+    return (
+      token.active &&
+      !token.revokedAt &&
+      token.allowedAcpIds?.length === 1 &&
+      token.allowedAcpIds[0] === this.acpId
+    );
   }
 
   private parseExpiresAt(): string | null | false {
@@ -686,7 +604,6 @@ export class ApplicationTokensComponent implements OnInit {
       name: '',
       expiresAtLocal: '',
       scopes: ['acp.read'],
-      allowedAcpIds: [],
     };
   }
 }

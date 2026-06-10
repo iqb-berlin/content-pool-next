@@ -28,6 +28,7 @@ export interface ApplicationToken {
   name: string;
   tokenPrefix: string;
   scopes: ServerApiScope[];
+  allowedAcpIds: string[] | null;
   active: boolean;
   expiresAt: string | null;
   lastUsedAt: string | null;
@@ -49,6 +50,7 @@ export interface CreateApplicationTokenRequest {
   name: string;
   scopes: ServerApiScope[];
   expiresAt?: string | null;
+  allowedAcpIds?: string[] | null;
 }
 
 export interface CreatedApplicationToken extends ApplicationToken {

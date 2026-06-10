@@ -6,11 +6,13 @@ password reset, and administrative notifications.
 The recommended HU deployment path is:
 
 ```text
-Keycloak container -> local MTA/Postfix on Docker host -> mailhost.cms.hu-berlin.de
+Keycloak container -> local MTA/Postfix on Docker host -> mailhost.cms.hu-berlin.de:587
 ```
 
 This keeps Keycloak simple and gives the server a local mail queue if the HU
-relay is temporarily unavailable.
+relay is temporarily unavailable. Because the ContentPool server is outside the
+HU network, Postfix must authenticate to the HU relay with the CMS function
+account.
 
 ## 1. Install a local MTA on the server
 
@@ -23,10 +25,42 @@ sudo apt-get install postfix mailutils curl jq
 ```
 
 During the Postfix prompt, choose a relay/smarthost-style setup if offered.
-The important final setting is that outbound mail is relayed to the HU relay:
+The important final setting is that outbound mail is relayed to the HU relay
+over authenticated submission:
+
+For the ContentPool server, run the helper script from the deployment checkout:
 
 ```bash
-sudo postconf -e 'relayhost = [mailhost.cms.hu-berlin.de]:25'
+./scripts/configure-hu-postfix-relay.sh
+```
+
+The script asks for the CMS function account username and password, backs up
+the existing Postfix configuration, writes the SASL credential map, restarts
+Postfix, and updates the running Keycloak realm to use
+`iqb-noreply@hu-berlin.de` as sender.
+
+Equivalent manual Postfix commands:
+
+```bash
+sudo postconf -e 'relayhost = [mailhost.cms.hu-berlin.de]:587'
+sudo postconf -e 'smtp_sasl_auth_enable = yes'
+sudo postconf -e 'smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd'
+sudo postconf -e 'smtp_sasl_security_options = noanonymous'
+sudo postconf -e 'smtp_tls_security_level = encrypt'
+```
+
+Create `/etc/postfix/sasl_passwd` with the CMS function account credentials:
+
+```text
+[mailhost.cms.hu-berlin.de]:587 iqbitnor:<function-account-password>
+```
+
+Then protect and index the credential map:
+
+```bash
+sudo postmap /etc/postfix/sasl_passwd
+sudo chmod 600 /etc/postfix/sasl_passwd /etc/postfix/sasl_passwd.db
+sudo systemctl restart postfix
 ```
 
 ## 2. Allow the Keycloak container to reach Postfix
@@ -79,7 +113,7 @@ host: host.docker.internal
 port: 25
 auth: false
 ssl/starttls: false
-from: noreply@iqb.hu-berlin.de
+from: iqb-noreply@hu-berlin.de
 ```
 
 For an existing Keycloak database, realm imports are not automatically
@@ -96,12 +130,15 @@ The script reads these optional values from `.env`:
 ```text
 KEYCLOAK_SMTP_HOST=host.docker.internal
 KEYCLOAK_SMTP_PORT=25
-KEYCLOAK_SMTP_FROM=noreply@iqb.hu-berlin.de
+KEYCLOAK_SMTP_FROM=iqb-noreply@hu-berlin.de
 KEYCLOAK_SMTP_FROM_DISPLAY_NAME="IQB ContentPool"
 KEYCLOAK_SMTP_SSL=false
 KEYCLOAK_SMTP_STARTTLS=false
 KEYCLOAK_SMTP_AUTH=false
 ```
+
+Keep SMTP authentication disabled in Keycloak for this topology. The CMS
+function account is configured in Postfix, not in the Keycloak realm.
 
 If the Keycloak admin console is only reachable through an SSH tunnel, open the
 tunnel first:
@@ -139,8 +176,8 @@ Expected behavior:
 
 - Keycloak hands the message to `host.docker.internal:25`.
 - Postfix accepts the message into its local queue.
-- Postfix relays the message to `mailhost.cms.hu-berlin.de`.
+- Postfix authenticates as the CMS function account and relays the message to
+  `mailhost.cms.hu-berlin.de:587`.
 
-The HU relay currently allows 300 target addresses per hour for the normal path.
-For reliable bounce handling, request a CMS function account or agreed sender
-address through the CMS user support channel.
+If the HU relay rejects the sender address, confirm with CMS that the function
+account may send as `iqb-noreply@hu-berlin.de`.

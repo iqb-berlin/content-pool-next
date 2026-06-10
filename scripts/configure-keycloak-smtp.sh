@@ -49,7 +49,7 @@ KEYCLOAK_ADMIN_PASSWORD="$(read_env_value KEYCLOAK_ADMIN_PASSWORD admin)"
 
 SMTP_HOST="$(read_env_value KEYCLOAK_SMTP_HOST host.docker.internal)"
 SMTP_PORT="$(read_env_value KEYCLOAK_SMTP_PORT 25)"
-SMTP_FROM="$(read_env_value KEYCLOAK_SMTP_FROM noreply@iqb.hu-berlin.de)"
+SMTP_FROM="$(read_env_value KEYCLOAK_SMTP_FROM iqb-noreply@hu-berlin.de)"
 SMTP_FROM_DISPLAY_NAME="$(read_env_value KEYCLOAK_SMTP_FROM_DISPLAY_NAME 'IQB ContentPool')"
 SMTP_SSL="$(read_env_value KEYCLOAK_SMTP_SSL false)"
 SMTP_STARTTLS="$(read_env_value KEYCLOAK_SMTP_STARTTLS false)"

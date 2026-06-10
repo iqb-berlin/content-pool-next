@@ -423,8 +423,8 @@ Before any real deployment, make sure these are in place:
 - correct `OIDC_REDIRECT_URI`,
 - `DB_SYNCHRONIZE=false`,
 - `DB_RUN_MIGRATIONS=true`.
-- local MTA/Postfix for Keycloak email delivery, relaying to
-  `mailhost.cms.hu-berlin.de`.
+- local MTA/Postfix for Keycloak email delivery, relaying with the CMS function
+  account to `mailhost.cms.hu-berlin.de:587`.
 
 ## Recommended Production Topology
 

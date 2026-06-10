@@ -21,7 +21,7 @@
   "maxDeltaTimeSeconds": 43200,
   "failureFactor": 30,
   "smtpServer": {
-    "from": "noreply@iqb.hu-berlin.de",
+    "from": "iqb-noreply@hu-berlin.de",
     "fromDisplayName": "IQB ContentPool",
     "host": "host.docker.internal",
     "port": "25",

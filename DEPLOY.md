@@ -115,10 +115,11 @@ login with `Invalid parameter: redirect_uri`.
 ## 4a. Configure Keycloak email delivery
 
 Production Keycloak sends verification and password-reset mails through a local
-MTA on the Docker host. The local MTA should relay outbound mail to the HU relay:
+MTA on the Docker host. The local MTA should relay outbound mail to the HU relay
+with the CMS function account:
 
 ```text
-mailhost.cms.hu-berlin.de:25
+mailhost.cms.hu-berlin.de:587
 ```
 
 The production Compose files make the Docker host reachable from Keycloak as:

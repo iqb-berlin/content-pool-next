@@ -138,11 +138,12 @@ For a research/educational institution like IQB:
 ## SMTP Configuration (for email verification)
 
 Production Keycloak should send to the local MTA on the Docker host. The local
-MTA then relays to the HU relay `mailhost.cms.hu-berlin.de`.
+MTA then authenticates with the CMS function account and relays to the HU relay
+`mailhost.cms.hu-berlin.de:587`.
 
 ```json
 "smtpServer": {
-  "from": "noreply@iqb.hu-berlin.de",
+  "from": "iqb-noreply@hu-berlin.de",
   "fromDisplayName": "IQB ContentPool",
   "host": "host.docker.internal",
   "port": "25",

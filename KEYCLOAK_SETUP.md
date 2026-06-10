@@ -93,9 +93,8 @@ You still must replace placeholder domains/IPs in:
 - `redirectUris`
 - `webOrigins`
 
-The default SMTP sender is `noreply@iqb.hu-berlin.de`. For production, agree on
-the final sender address or request a CMS function account if bounces should be
-handled through a mailbox.
+The default SMTP sender is `iqb-noreply@hu-berlin.de`. For production, Postfix
+should authenticate to the HU relay with the CMS function account.
 
 For IP-based deployments with TLS, use `https://YOUR_SERVER_IP/...` values
 (not only `http://...`).
@@ -119,8 +118,9 @@ and recreate the realm) instead of only editing `realm-export.json`.
 
 ## SMTP / transactional email
 
-For HU-hosted deployments, Keycloak should send to a local MTA on the Docker
-host, and that MTA should relay to `mailhost.cms.hu-berlin.de`.
+For HU-related deployments, Keycloak should send to a local MTA on the Docker
+host, and that MTA should relay to `mailhost.cms.hu-berlin.de:587` with the CMS
+function account.
 
 For existing realms, or fresh deployments where `.env` SMTP values differ from
 the defaults in `keycloak/realm-export.json`, update SMTP settings from `.env`

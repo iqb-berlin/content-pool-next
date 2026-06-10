@@ -5,7 +5,7 @@
   "loginTheme": "iqb-theme",
   "accountTheme": "keycloak.v2",
   "sslRequired": "external",
-  "registrationAllowed": false,
+  "registrationAllowed": true,
   "verifyEmail": true,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,

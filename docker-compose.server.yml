@@ -38,6 +38,7 @@ services:
       KC_HEALTH_ENABLED: "true"
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
+      ALTCHA_HMAC_SECRET: ${ALTCHA_HMAC_SECRET:?ALTCHA_HMAC_SECRET must be set}
     ports:
       - ${KEYCLOAK_PORT_EXPOSE:-127.0.0.1:8080:8080}
     extra_hosts:
@@ -48,6 +49,7 @@ services:
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - ./keycloak/themes:/opt/keycloak/themes:ro
+      - ./keycloak/providers:/opt/keycloak/providers:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080'"]
       interval: 10s

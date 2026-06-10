@@ -425,6 +425,8 @@ Before any real deployment, make sure these are in place:
 - `DB_RUN_MIGRATIONS=true`.
 - local MTA/Postfix for Keycloak email delivery, relaying with the CMS function
   account to `mailhost.cms.hu-berlin.de:587`.
+- `ALTCHA_HMAC_SECRET` set and the Keycloak ALTCHA provider built with
+  `make keycloak-altcha-provider`.
 
 ## Recommended Production Topology
 

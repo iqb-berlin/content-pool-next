@@ -3,7 +3,7 @@
 .PHONY: help server-up server-update server-update-safe server-backup server-stop server-logs server-config \
 	server-update-release server-traefik-update-release \
 	server-traefik-up server-traefik-update server-traefik-update-safe server-traefik-backup \
-	server-traefik-stop server-traefik-logs server-traefik-config health-server health-traefik keycloak-smtp
+	server-traefik-stop server-traefik-logs server-traefik-config health-server health-traefik keycloak-smtp keycloak-registration keycloak-altcha-provider
 
 help: ## Show this help message
 	@echo "IQB ContentPool - Server Commands"
@@ -76,3 +76,9 @@ health-traefik: ## Run health checks against public Traefik hosts
 
 keycloak-smtp: ## Apply Keycloak SMTP settings from .env to the running realm
 	@./scripts/configure-keycloak-smtp.sh
+
+keycloak-registration: ## Enable Keycloak self-registration with email verification and ALTCHA
+	@./scripts/configure-keycloak-registration.sh
+
+keycloak-altcha-provider: ## Build the Keycloak ALTCHA provider JAR
+	@./scripts/build-keycloak-altcha.sh

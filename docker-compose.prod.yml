@@ -48,6 +48,7 @@ services:
       # Admin credentials - MUST be changed from defaults
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set}
+      ALTCHA_HMAC_SECRET: ${ALTCHA_HMAC_SECRET:?ALTCHA_HMAC_SECRET must be set}
     # Port exposure - only needed for IP mode without reverse proxy
     # In domain mode with nginx, Keycloak is accessed via proxy (no direct port needed)
     ports:
@@ -60,6 +61,7 @@ services:
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
       - ./keycloak/themes:/opt/keycloak/themes:ro
+      - ./keycloak/providers:/opt/keycloak/providers:ro
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8080'"]
       interval: 10s

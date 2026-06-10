@@ -321,76 +321,6 @@ a:hover {
     text-decoration: none;
 }
 
-/* Domain validation error message */
-.domain-error-message {
-    display: none;
-    background: linear-gradient(135deg, #fff5f5 0%, #fff 100%);
-    border: 1px solid #fc8181;
-    border-left: 4px solid #e53e3e;
-    border-radius: 8px;
-    padding: 20px 24px;
-    margin: 20px 0;
-    gap: 16px;
-    align-items: flex-start;
-    animation: slideIn 0.3s ease-out;
-}
-
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-.domain-error-message .error-icon {
-    font-size: 32px;
-    flex-shrink: 0;
-}
-
-.domain-error-message .error-content h3 {
-    color: #c53030;
-    font-size: 17px;
-    font-weight: 600;
-    margin: 0 0 8px 0;
-}
-
-.domain-error-message .error-content p {
-    color: #666;
-    font-size: 14px;
-    margin: 0 0 12px 0;
-    line-height: 1.5;
-}
-
-.domain-error-message .allowed-domains {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 8px;
-}
-
-.domain-error-message .domain-tag {
-    background: #fed7d7;
-    color: #9b2c2c;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    font-family: 'SF Mono', Monaco, monospace;
-}
-
-.input-error {
-    border-color: #fc8181 !important;
-    background-color: #fff5f5 !important;
-}
-
-.input-error:focus {
-    box-shadow: 0 0 0 3px rgba(252, 129, 129, 0.2) !important;
-}
-
 /* Registration form specific styles */
 .iqb-register-form {
     max-width: 100%;
@@ -398,6 +328,20 @@ a:hover {
 
 .iqb-register-form .form-group {
     margin-bottom: 22px;
+}
+
+.altcha-form-group {
+    margin-top: 6px;
+}
+
+.altcha-form-group altcha-widget {
+    --altcha-color-base: #ffffff;
+    --altcha-color-border: #cccccc;
+    --altcha-color-border-focus: #003366;
+    --altcha-color-text: #333333;
+    --altcha-color-border-verified: #2f855a;
+    display: block;
+    width: 100%;
 }
 
 .form-group-buttons {

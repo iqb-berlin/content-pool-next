@@ -63,6 +63,8 @@ For ACP managers who need a task-oriented user guide, see:
   Development, production, server-image, and single-domain Traefik deployment modes.
 - [Monitoring and Maintenance](operations/monitoring-and-maintenance.md)
   Health checks, backups, upgrades, observability, and routine operator tasks.
+- [Keycloak Email Delivery](operations/keycloak-email.md)
+  Local Postfix relay and HU authenticated SMTP setup for transactional Keycloak mail.
 
 ## Existing Root-Level Runbooks
 
@@ -70,6 +72,7 @@ Several operational documents already exist at the repository root and remain us
 
 - [DEPLOY.md](../DEPLOY.md)
 - [KEYCLOAK_SETUP.md](../KEYCLOAK_SETUP.md)
+- [Keycloak Registration and ALTCHA](../keycloak/docs/REGISTRATION_AND_ALTCHA.md)
 - [GITLAB_SETUP.md](../GITLAB_SETUP.md)
 - [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)
 

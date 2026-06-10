@@ -214,7 +214,10 @@ cp_install_runtime_artifacts() {
   mkdir -p "${target_abs}/scripts/make"
   for file in \
     scripts/check-health.sh \
+    scripts/build-keycloak-altcha.sh \
+    scripts/configure-keycloak-registration.sh \
     scripts/configure-keycloak-smtp.sh \
+    scripts/configure-hu-postfix-relay.sh \
     scripts/init-keycloak.sh \
     scripts/deploy-common.sh \
     scripts/install.sh \

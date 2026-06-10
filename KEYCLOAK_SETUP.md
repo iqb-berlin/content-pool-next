@@ -85,8 +85,9 @@ Important:
 - `publicClient: true`
 - `pkce.code.challenge.method: S256`
 - `sslRequired: external`
-- `registrationAllowed: false`
+- `registrationAllowed: true`
 - SMTP delivery through the Docker host at `host.docker.internal:25`
+- self-hosted ALTCHA bot protection in the registration flow
 
 You still must replace placeholder domains/IPs in:
 
@@ -132,6 +133,29 @@ make keycloak-smtp
 
 For setup details, see
 [`docs/operations/keycloak-email.md`](docs/operations/keycloak-email.md).
+
+## Self-registration and bot protection
+
+ContentPool allows direct Keycloak self-registration. New users must verify
+their email address before they can sign in. The registration form is not
+restricted to HU/IQB email domains.
+
+Registrations are protected by a self-hosted ALTCHA Keycloak provider. Build the
+provider before starting Keycloak:
+
+```bash
+make keycloak-altcha-provider
+```
+
+Set `ALTCHA_HMAC_SECRET` in `.env`, restart Keycloak, then apply the registration
+flow settings for existing realms:
+
+```bash
+make keycloak-registration
+```
+
+For details, see
+[`keycloak/docs/REGISTRATION_AND_ALTCHA.md`](keycloak/docs/REGISTRATION_AND_ALTCHA.md).
 
 ## Troubleshooting: `Ungültige Redirect Uri` on logout
 

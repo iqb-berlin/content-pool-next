@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 build/
+keycloak/extensions/altcha/target/
+keycloak/providers/*.jar
 
 # Environment
 .env

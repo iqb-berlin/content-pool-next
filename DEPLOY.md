@@ -140,6 +140,31 @@ make keycloak-smtp
 Detailed Postfix setup and verification steps are in
 [`docs/operations/keycloak-email.md`](docs/operations/keycloak-email.md).
 
+## 4b. Build and configure registration bot protection
+
+Before starting Keycloak, build the self-hosted ALTCHA provider:
+
+```bash
+make keycloak-altcha-provider
+```
+
+Set a strong random secret in `.env`:
+
+```bash
+ALTCHA_HMAC_SECRET=<output of openssl rand -hex 32>
+```
+
+After the stack is up, configure existing realms for self-registration, email
+verification, and the required ALTCHA registration action:
+
+```bash
+make keycloak-registration
+```
+
+Fresh realm imports already enable registration and email verification, but the
+script should still be run after Keycloak has loaded the provider JAR so the
+ALTCHA execution is present and required.
+
 ## 5. Validate config before start
 
 ```bash

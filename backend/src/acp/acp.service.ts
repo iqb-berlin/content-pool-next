@@ -272,16 +272,33 @@ export class AcpService {
   ): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
+    let config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
+    const canRetainCredentialValidity =
+      config?.accessModel === AccessModel.CREDENTIALS_LIST &&
+      dto.accessModel === AccessModel.CREDENTIALS_LIST;
+    const existingValidFrom = canRetainCredentialValidity
+      ? config?.validFrom
+      : undefined;
+    const existingValidUntil = canRetainCredentialValidity
+      ? config?.validUntil
+      : undefined;
+    const validFrom = dto.validFrom
+      ? new Date(dto.validFrom)
+      : existingValidFrom;
+    const validUntil = dto.validUntil
+      ? new Date(dto.validUntil)
+      : existingValidUntil;
+
     // Validate time limit for CREDENTIALS_LIST
     if (dto.accessModel === "CREDENTIALS_LIST") {
-      if (!dto.validFrom || !dto.validUntil) {
+      if (!validFrom || !validUntil) {
         throw new BadRequestException(
           "Credential-based access requires validFrom and validUntil",
         );
       }
 
-      const validFrom = new Date(dto.validFrom);
-      const validUntil = new Date(dto.validUntil);
       if (
         Number.isNaN(validFrom.getTime()) ||
         Number.isNaN(validUntil.getTime())
@@ -303,9 +320,6 @@ export class AcpService {
       }
     }
 
-    let config = await this.accessConfigRepository.findOne({
-      where: { acpId },
-    });
     if (config) {
       config.accessModel = dto.accessModel as AccessModel;
       if (dto.allowRegistered !== undefined)
@@ -313,13 +327,9 @@ export class AcpService {
       if (dto.featureConfig)
         config.featureConfig = normalizeFeatureConfig(dto.featureConfig);
       config.validFrom =
-        dto.accessModel === "CREDENTIALS_LIST" && dto.validFrom
-          ? new Date(dto.validFrom)
-          : undefined;
+        dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null;
       config.validUntil =
-        dto.accessModel === "CREDENTIALS_LIST" && dto.validUntil
-          ? new Date(dto.validUntil)
-          : undefined;
+        dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null;
     } else {
       config = this.accessConfigRepository.create({
         acpId,
@@ -329,14 +339,8 @@ export class AcpService {
           [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: false,
           ...(dto.featureConfig || {}),
         }),
-        validFrom:
-          dto.accessModel === "CREDENTIALS_LIST" && dto.validFrom
-            ? new Date(dto.validFrom)
-            : undefined,
-        validUntil:
-          dto.accessModel === "CREDENTIALS_LIST" && dto.validUntil
-            ? new Date(dto.validUntil)
-            : undefined,
+        validFrom: dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null,
+        validUntil: dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null,
       });
     }
 
@@ -384,93 +388,125 @@ export class AcpService {
       );
     }
 
-    // Get existing credentials for comparison
-    const existingCreds = await this.credentialRepository.find({
-      where: { accessConfigId: config.id },
-    });
-    const existingMap = new Map(existingCreds.map((c) => [c.username, c]));
-
-    let added = 0;
-    let updated = 0;
-    let skipped = 0;
     const duplicates: string[] = [];
     const seenInUpload = new Set<string>();
-
-    // Check for duplicates within the upload itself
-    for (const cred of credentials) {
+    const uniqueCredentials = credentials.filter((cred) => {
       if (seenInUpload.has(cred.username)) {
-        duplicates.push(cred.username);
-        continue;
+        if (!duplicates.includes(cred.username)) duplicates.push(cred.username);
+        return false;
       }
       seenInUpload.add(cred.username);
+      return true;
+    });
+    const existingAppendUsernames =
+      mode === "append"
+        ? new Set(
+            (
+              await this.credentialRepository.find({
+                where: { accessConfigId: config.id },
+                select: ["username"],
+              })
+            ).map((credential) => credential.username),
+          )
+        : new Set<string>();
+    const credentialsToHash =
+      mode === "append"
+        ? uniqueCredentials.filter(
+            (credential) => !existingAppendUsernames.has(credential.username),
+          )
+        : uniqueCredentials;
+    const passwordHashes = await this.hashCredentials(credentialsToHash);
 
-      const existing = existingMap.get(cred.username);
-
-      if (mode === "replace") {
-        // Replace: just collect for recreation
-        continue;
-      } else if (mode === "append") {
-        // Append: skip if exists
-        if (existing) {
-          skipped++;
-          continue;
-        }
-      } else if (mode === "upsert") {
-        // Upsert: update if exists
-        if (existing) {
-          const passwordHash = await bcrypt.hash(cred.password, 12);
-          existing.passwordHash = passwordHash;
-          await this.credentialRepository.save(existing);
-          updated++;
-          continue;
+    return this.credentialRepository.manager.transaction(async (manager) => {
+      const credentialRepository = manager.getRepository(AcpCredential);
+      const existingCredentials = await credentialRepository.find({
+        where: { accessConfigId: config.id },
+        order: { id: "ASC" },
+      });
+      const existingByUsername = new Map<string, AcpCredential>();
+      const duplicateCredentials: AcpCredential[] = [];
+      for (const credential of existingCredentials) {
+        if (existingByUsername.has(credential.username)) {
+          duplicateCredentials.push(credential);
+        } else {
+          existingByUsername.set(credential.username, credential);
         }
       }
+      let added = 0;
+      let updated = 0;
+      let skipped = 0;
+      const credentialsToSave: AcpCredential[] = [];
 
-      added++;
-    }
+      for (const credential of uniqueCredentials) {
+        const existing = existingByUsername.get(credential.username);
+        if (existing && mode === "append") {
+          skipped += 1;
+          continue;
+        }
 
-    if (mode === "replace") {
-      // Delete all existing
-      await this.credentialRepository.delete({ accessConfigId: config.id });
+        const passwordHash =
+          passwordHashes.get(credential.username) ||
+          (await bcrypt.hash(credential.password, 12));
 
-      // Create new credentials
-      const entities = await Promise.all(
-        credentials.map(async (cred) => {
-          const passwordHash = await bcrypt.hash(cred.password, 12);
-          return this.credentialRepository.create({
+        if (existing) {
+          existing.passwordHash = passwordHash;
+          credentialsToSave.push(existing);
+          updated += 1;
+          continue;
+        }
+
+        credentialsToSave.push(
+          credentialRepository.create({
             accessConfigId: config.id,
-            username: cred.username,
+            username: credential.username,
             passwordHash,
-          });
-        }),
-      );
+          }),
+        );
+        added += 1;
+      }
 
-      await this.credentialRepository.save(entities);
-      added = entities.length;
-    } else {
-      // For append/upsert: create only new credentials
-      const newCreds = credentials.filter((cred) => {
-        if (duplicates.includes(cred.username)) return false;
-        if (mode === "append" && existingMap.has(cred.username)) return false;
-        if (mode === "upsert" && existingMap.has(cred.username)) return false;
-        return true;
-      });
+      if (credentialsToSave.length) {
+        await credentialRepository.save(credentialsToSave);
+      }
 
-      const entities = await Promise.all(
-        newCreds.map(async (cred) => {
-          const passwordHash = await bcrypt.hash(cred.password, 12);
-          return this.credentialRepository.create({
-            accessConfigId: config.id,
-            username: cred.username,
-            passwordHash,
-          });
-        }),
-      );
+      if (mode === "replace") {
+        const incomingUsernames = new Set(
+          uniqueCredentials.map((credential) => credential.username),
+        );
+        const removedCredentials = existingCredentials.filter(
+          (credential) =>
+            duplicateCredentials.includes(credential) ||
+            !incomingUsernames.has(credential.username),
+        );
+        if (removedCredentials.length) {
+          await credentialRepository.remove(removedCredentials);
+        }
+      } else if (duplicateCredentials.length) {
+        await credentialRepository.remove(duplicateCredentials);
+      }
 
-      await this.credentialRepository.save(entities);
-    }
+      return { added, updated, skipped, duplicates };
+    });
+  }
 
-    return { added, updated, skipped, duplicates };
+  private async hashCredentials(
+    credentials: CredentialEntryDto[],
+  ): Promise<Map<string, string>> {
+    const passwordHashes = new Map<string, string>();
+    let nextIndex = 0;
+    const workerCount = Math.min(4, credentials.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      while (nextIndex < credentials.length) {
+        const credential = credentials[nextIndex];
+        nextIndex += 1;
+        passwordHashes.set(
+          credential.username,
+          await bcrypt.hash(credential.password, 12),
+        );
+      }
+    });
+    await Promise.all(workers);
+    return passwordHashes;
   }
 
   async getCredentials(acpId: string): Promise<CredentialResponseDto[]> {

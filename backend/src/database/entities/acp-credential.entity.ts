@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
@@ -8,6 +9,9 @@ import {
 import { AcpAccessConfig } from "./acp-access-config.entity";
 
 @Entity("acp_credentials")
+@Index("IDX_acp_credentials_unique_username", ["accessConfigId", "username"], {
+  unique: true,
+})
 export class AcpCredential {
   @PrimaryGeneratedColumn("uuid")
   id!: string;

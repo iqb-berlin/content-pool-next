@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
@@ -9,8 +10,18 @@ import {
 } from "typeorm";
 import { Acp } from "./acp.entity";
 import { User } from "./user.entity";
+import { AcpCredential } from "./acp-credential.entity";
 
 @Entity("acp_item_preferences")
+@Index("IDX_acp_item_preferences_unique_user", ["acpId", "viewId", "userId"], {
+  unique: true,
+  where: '"user_id" IS NOT NULL',
+})
+@Index(
+  "IDX_acp_item_preferences_unique_credential",
+  ["acpId", "viewId", "credentialId"],
+  { unique: true, where: '"credential_id" IS NOT NULL' },
+)
 export class AcpItemPreference {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
@@ -26,6 +37,9 @@ export class AcpItemPreference {
 
   @Column({ name: "credential_username", type: "varchar", nullable: true })
   credentialUsername?: string | null;
+
+  @Column({ name: "credential_id", type: "uuid", nullable: true })
+  credentialId?: string | null;
 
   @Column({ type: "jsonb", default: {} })
   preferences!: Record<string, unknown>;
@@ -43,4 +57,11 @@ export class AcpItemPreference {
   @ManyToOne(() => User, { onDelete: "SET NULL", nullable: true })
   @JoinColumn({ name: "user_id" })
   user?: User;
+
+  @ManyToOne(() => AcpCredential, { onDelete: "CASCADE", nullable: true })
+  @JoinColumn({
+    name: "credential_id",
+    foreignKeyConstraintName: "FK_acp_item_preferences_credential",
+  })
+  credential?: AcpCredential;
 }

@@ -34,10 +34,10 @@ export class AcpAccessConfig {
   featureConfig!: Record<string, unknown>;
 
   @Column({ name: "valid_from", type: "timestamptz", nullable: true })
-  validFrom?: Date;
+  validFrom?: Date | null;
 
   @Column({ name: "valid_until", type: "timestamptz", nullable: true })
-  validUntil?: Date;
+  validUntil?: Date | null;
 
   @ManyToOne(() => Acp, (acp) => acp.accessConfigs, { onDelete: "CASCADE" })
   @JoinColumn({ name: "acp_id" })

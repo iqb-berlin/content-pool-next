@@ -19,7 +19,7 @@ describe("ItemResponseStateService", () => {
         .fn()
         .mockImplementation(async (value) => ({ id: "state-1", ...value })),
       delete: jest.fn(),
-      find: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
     };
 
     service = new ItemResponseStateService(stateRepository as any);
@@ -87,6 +87,73 @@ describe("ItemResponseStateService", () => {
     expect(stateRepository.save).toHaveBeenCalled();
   });
 
+  it("finds UUID-backed standard states for callers without a row key", async () => {
+    const canonicalState = {
+      id: "state-canonical",
+      acpId: "acp-1",
+      itemId: "item-1",
+      unitId: "unit-1",
+      rowKey: "uuid-1",
+      responseData: { answer: 1 },
+      updatedAt: new Date("2026-07-13T10:00:00.000Z"),
+    };
+    stateRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(canonicalState);
+
+    await expect(
+      service.getResponseState("acp-1", "item-1", "unit-1"),
+    ).resolves.toEqual(canonicalState);
+
+    expect(stateRepository.findOne).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          acpId: "acp-1",
+          itemId: "item-1",
+          unitId: "unit-1",
+          rowKey: expect.anything(),
+        }),
+        order: { updatedAt: "DESC" },
+      }),
+    );
+    const rowKeyOperator = stateRepository.findOne.mock.calls[1][0].where
+      .rowKey as any;
+    expect(rowKeyOperator.type).toBe("not");
+    expect(rowKeyOperator.child.type).toBe("like");
+    expect(rowKeyOperator.child.value).toBe("%::%");
+  });
+
+  it("does not rename a canonical standard state back to its legacy key", async () => {
+    const canonicalState = {
+      id: "state-canonical",
+      acpId: "acp-1",
+      itemId: "item-1",
+      unitId: "unit-1",
+      rowKey: "uuid-1",
+      responseData: { answer: 1 },
+    };
+    stateRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(canonicalState);
+
+    await service.saveResponseState(
+      "acp-1",
+      "item-1",
+      "unit-1",
+      { answer: 2 },
+      true,
+    );
+
+    expect(stateRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "state-canonical",
+        rowKey: "uuid-1",
+        responseData: { answer: 2 },
+      }),
+    );
+  });
+
   it("returns direct response state when available", async () => {
     stateRepository.findOne.mockResolvedValueOnce({ id: "state-direct" });
 
@@ -108,6 +175,7 @@ describe("ItemResponseStateService", () => {
 
   it("returns fallback state from previous item in same unit", async () => {
     stateRepository.findOne
+      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "state-prev", itemId: "item-1" });
 

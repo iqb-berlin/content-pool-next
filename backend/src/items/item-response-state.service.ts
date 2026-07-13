@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Like, Not, Repository } from "typeorm";
 import { ItemResponseState } from "../database/entities";
 
 @Injectable()
@@ -29,12 +29,15 @@ export class ItemResponseStateService {
     }
 
     // Check if state already exists
-    const resolvedRowKey = this.resolveRowKey(rowKey, unitId, itemId);
-    let state = await this.findState(acpId, itemId, unitId, resolvedRowKey);
+    const explicitRowKey = this.normalizeRowKey(rowKey);
+    const resolvedRowKey = this.resolveRowKey(explicitRowKey, unitId, itemId);
+    let state = await this.findState(acpId, itemId, unitId, explicitRowKey);
 
     if (state) {
       // Update existing
-      state.rowKey = resolvedRowKey;
+      if (explicitRowKey) {
+        state.rowKey = resolvedRowKey;
+      }
       state.responseData = responseData;
     } else {
       // Create new
@@ -59,12 +62,7 @@ export class ItemResponseStateService {
     unitId: string,
     rowKey?: string,
   ): Promise<ItemResponseState | null> {
-    return this.findState(
-      acpId,
-      itemId,
-      unitId,
-      this.resolveRowKey(rowKey, unitId, itemId),
-    );
+    return this.findState(acpId, itemId, unitId, this.normalizeRowKey(rowKey));
   }
 
   /**
@@ -144,8 +142,12 @@ export class ItemResponseStateService {
       );
     }
 
-    const resolvedRowKey = this.resolveRowKey(rowKey, unitId, itemId);
-    const state = await this.findState(acpId, itemId, unitId, resolvedRowKey);
+    const state = await this.findState(
+      acpId,
+      itemId,
+      unitId,
+      this.normalizeRowKey(rowKey),
+    );
     const result = state
       ? await this.stateRepository.delete({ id: state.id })
       : { affected: 0 };
@@ -194,25 +196,47 @@ export class ItemResponseStateService {
     return String(rowKey || "").trim() || `${unitId}::${itemId}`;
   }
 
+  private normalizeRowKey(rowKey?: string): string | undefined {
+    const normalized = String(rowKey || "").trim();
+    return normalized || undefined;
+  }
+
   private async findState(
     acpId: string,
     itemId: string,
     unitId: string,
-    rowKey: string,
+    explicitRowKey?: string,
   ): Promise<ItemResponseState | null> {
+    const legacyRowKey = `${unitId}::${itemId}`;
+    const requestedRowKey = explicitRowKey || legacyRowKey;
     const direct = await this.stateRepository.findOne({
-      where: { acpId, itemId, unitId, rowKey },
+      where: { acpId, itemId, unitId, rowKey: requestedRowKey },
     });
-    if (direct || rowKey.includes("::")) {
+    if (direct) {
       return direct;
     }
 
-    const legacyRowKey = `${unitId}::${itemId}`;
+    if (!explicitRowKey) {
+      return this.stateRepository.findOne({
+        where: {
+          acpId,
+          itemId,
+          unitId,
+          rowKey: Not(Like("%::%")),
+        },
+        order: { updatedAt: "DESC" },
+      });
+    }
+
+    if (explicitRowKey.includes("::")) {
+      return null;
+    }
+
     const legacy = await this.stateRepository.findOne({
       where: { acpId, itemId, unitId, rowKey: legacyRowKey },
     });
     if (legacy) {
-      legacy.rowKey = rowKey;
+      legacy.rowKey = explicitRowKey;
       return this.stateRepository.save(legacy);
     }
     return null;

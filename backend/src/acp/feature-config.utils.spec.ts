@@ -23,25 +23,6 @@ describe("normalizeFeatureConfig", () => {
     });
   });
 
-  it("normalizes partial-credit labels", () => {
-    const normalized = normalizeFeatureConfig({
-      itemSubIdLabel: "  Kategorie  ",
-      itemSubIdLabels: {
-        " 1 ": "  teilweise richtig ",
-        "2": "vollständig richtig",
-        empty: "   ",
-      },
-    });
-
-    expect(normalized).toMatchObject({
-      itemSubIdLabel: "Kategorie",
-      itemSubIdLabels: {
-        "1": "teilweise richtig",
-        "2": "vollständig richtig",
-      },
-    });
-  });
-
   it("migrates legacy itemListMetadataColumns to metadataColumns", () => {
     const normalized = normalizeFeatureConfig({
       enableItemList: true,

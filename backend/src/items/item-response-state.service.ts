@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Like, Not, Repository } from "typeorm";
+import { Repository } from "typeorm";
 import { ItemResponseState } from "../database/entities";
 
 @Injectable()
@@ -20,7 +20,6 @@ export class ItemResponseStateService {
     unitId: string,
     responseData: Record<string, any>,
     userIsManager: boolean,
-    rowKey?: string,
   ): Promise<ItemResponseState> {
     if (!userIsManager) {
       throw new ForbiddenException(
@@ -29,15 +28,12 @@ export class ItemResponseStateService {
     }
 
     // Check if state already exists
-    const explicitRowKey = this.normalizeRowKey(rowKey);
-    const resolvedRowKey = this.resolveRowKey(explicitRowKey, unitId, itemId);
-    let state = await this.findState(acpId, itemId, unitId, explicitRowKey);
+    let state = await this.stateRepository.findOne({
+      where: { acpId, itemId, unitId },
+    });
 
     if (state) {
       // Update existing
-      if (explicitRowKey) {
-        state.rowKey = resolvedRowKey;
-      }
       state.responseData = responseData;
     } else {
       // Create new
@@ -45,7 +41,6 @@ export class ItemResponseStateService {
         acpId,
         itemId,
         unitId,
-        rowKey: resolvedRowKey,
         responseData,
       });
     }
@@ -60,9 +55,10 @@ export class ItemResponseStateService {
     acpId: string,
     itemId: string,
     unitId: string,
-    rowKey?: string,
   ): Promise<ItemResponseState | null> {
-    return this.findState(acpId, itemId, unitId, this.normalizeRowKey(rowKey));
+    return this.stateRepository.findOne({
+      where: { acpId, itemId, unitId },
+    });
   }
 
   /**
@@ -73,30 +69,21 @@ export class ItemResponseStateService {
     acpId: string,
     itemId: string,
     unitId: string,
-    itemList: { itemId: string; unitId: string; rowKey?: string }[],
-    rowKey?: string,
+    itemList: { itemId: string; unitId: string }[],
   ): Promise<{
     state: ItemResponseState | null;
     isFallback: boolean;
     fallbackItemId?: string;
   }> {
     // First try to get direct state
-    const directState = await this.getResponseState(
-      acpId,
-      itemId,
-      unitId,
-      rowKey,
-    );
+    const directState = await this.getResponseState(acpId, itemId, unitId);
     if (directState) {
       return { state: directState, isFallback: false };
     }
 
     // Find position of current item in the list
     const currentIndex = itemList.findIndex(
-      (i) =>
-        i.itemId === itemId &&
-        i.unitId === unitId &&
-        (!rowKey || i.rowKey === rowKey),
+      (i) => i.itemId === itemId && i.unitId === unitId,
     );
     if (currentIndex <= 0) {
       return { state: null, isFallback: false };
@@ -110,7 +97,6 @@ export class ItemResponseStateService {
           acpId,
           prevItem.itemId,
           prevItem.unitId,
-          prevItem.rowKey,
         );
         if (prevState) {
           return {
@@ -134,7 +120,6 @@ export class ItemResponseStateService {
     itemId: string,
     unitId: string,
     userIsManager: boolean,
-    rowKey?: string,
   ): Promise<{ success: boolean }> {
     if (!userIsManager) {
       throw new ForbiddenException(
@@ -142,15 +127,7 @@ export class ItemResponseStateService {
       );
     }
 
-    const state = await this.findState(
-      acpId,
-      itemId,
-      unitId,
-      this.normalizeRowKey(rowKey),
-    );
-    const result = state
-      ? await this.stateRepository.delete({ id: state.id })
-      : { affected: 0 };
+    const result = await this.stateRepository.delete({ acpId, itemId, unitId });
     return {
       success:
         result.affected !== undefined &&
@@ -175,7 +152,7 @@ export class ItemResponseStateService {
 
     return this.stateRepository.find({
       where: { acpId },
-      order: { unitId: "ASC", itemId: "ASC", rowKey: "ASC" },
+      order: { unitId: "ASC", itemId: "ASC" },
     });
   }
 
@@ -186,55 +163,5 @@ export class ItemResponseStateService {
     // This is a placeholder - actual role checking should be done via AcpUserRole entity
     // The controller will handle the actual authorization check
     return false;
-  }
-
-  private resolveRowKey(
-    rowKey: string | undefined,
-    unitId: string,
-    itemId: string,
-  ): string {
-    return String(rowKey || "").trim() || `${unitId}::${itemId}`;
-  }
-
-  private normalizeRowKey(rowKey?: string): string | undefined {
-    const normalized = String(rowKey || "").trim();
-    return normalized || undefined;
-  }
-
-  private async findState(
-    acpId: string,
-    itemId: string,
-    unitId: string,
-    explicitRowKey?: string,
-  ): Promise<ItemResponseState | null> {
-    const legacyRowKey = `${unitId}::${itemId}`;
-    const requestedRowKey = explicitRowKey || legacyRowKey;
-    const direct = await this.stateRepository.findOne({
-      where: { acpId, itemId, unitId, rowKey: requestedRowKey },
-    });
-    if (direct) {
-      return direct;
-    }
-
-    if (!explicitRowKey) {
-      return this.stateRepository.findOne({
-        where: {
-          acpId,
-          itemId,
-          unitId,
-          rowKey: Not(Like("%::%")),
-        },
-        order: { updatedAt: "DESC" },
-      });
-    }
-
-    if (explicitRowKey.includes("::")) {
-      return null;
-    }
-
-    const legacy = await this.stateRepository.findOne({
-      where: { acpId, itemId, unitId, rowKey: legacyRowKey },
-    });
-    return legacy;
   }
 }

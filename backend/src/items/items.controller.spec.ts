@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { ForbiddenException } from "@nestjs/common";
 import { ItemsController } from "./items.controller";
 
 describe("ItemsController", () => {
@@ -12,6 +12,7 @@ describe("ItemsController", () => {
       getFilteredItems: jest.fn().mockResolvedValue([{ itemId: "item-1" }]),
       canUseItemTags: jest.fn().mockResolvedValue(true),
       getItemTags: jest.fn().mockResolvedValue({ item1: ["A"] }),
+      saveItemTags: jest.fn().mockResolvedValue({ saved: true }),
       getItem: jest.fn().mockResolvedValue({ itemId: "item-1" }),
       uploadEmpiricalDifficulties: jest.fn().mockResolvedValue({
         updated: 2,
@@ -43,13 +44,6 @@ describe("ItemsController", () => {
 
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
-        status: "CLEAN",
-        version: 4,
-        publishedState: {
-          itemProperties: {
-            "item-1": { id: "item-1", empiricalDifficulty: 0.4 },
-          },
-        },
         draftState: {
           itemProperties: {
             "item-1": { id: "item-1" },
@@ -58,14 +52,6 @@ describe("ItemsController", () => {
       }),
       resolveActor: jest.fn().mockReturnValue({ type: "user", id: "u-1" }),
       patchDraft: jest.fn().mockResolvedValue({ status: "DIRTY", version: 5 }),
-      saveDraft: jest.fn().mockResolvedValue({ status: "CLEAN", version: 6 }),
-      publishItemPropertiesImmediately: jest
-        .fn()
-        .mockResolvedValue({ status: "CLEAN", version: 5 }),
-      publishTagsImmediately: jest.fn().mockResolvedValue({
-        tags: { item1: ["A"] },
-        state: { status: "CLEAN", version: 5 },
-      }),
     };
 
     controller = new ItemsController(
@@ -123,16 +109,9 @@ describe("ItemsController", () => {
       req,
     );
 
-    expect(
-      itemExplorerStateService.publishTagsImmediately,
-    ).toHaveBeenCalledWith(
-      "acp-1",
-      { item1: ["A"] },
-      expect.objectContaining({
-        actor: { type: "user", id: "u-1" },
-        changeType: "REPLACE_ITEM_TAGS",
-      }),
-    );
+    expect(itemsService.saveItemTags).toHaveBeenCalledWith("acp-1", {
+      item1: ["A"],
+    });
   });
 
   it("uses empty map when save item tags payload has no tags", async () => {
@@ -140,13 +119,7 @@ describe("ItemsController", () => {
 
     await controller.saveItemTags("acp-1", {} as any, req);
 
-    expect(
-      itemExplorerStateService.publishTagsImmediately,
-    ).toHaveBeenCalledWith(
-      "acp-1",
-      {},
-      expect.objectContaining({ changeType: "REPLACE_ITEM_TAGS" }),
-    );
+    expect(itemsService.saveItemTags).toHaveBeenCalledWith("acp-1", {});
   });
 
   it("rejects save item tags for non-managers when feature disabled", async () => {
@@ -184,27 +157,11 @@ describe("ItemsController", () => {
     expect(itemsService.uploadEmpiricalDifficulties).toHaveBeenCalledWith(
       "acp-1",
       file.buffer,
-      {
-        persist: false,
-        itemPropertiesOverride: {
-          "item-1": { id: "item-1", empiricalDifficulty: 0.4 },
-        },
-      },
     );
     expect(
       itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty,
     ).toHaveBeenCalledWith("acp-1");
-    expect(
-      itemExplorerStateService.publishItemPropertiesImmediately,
-    ).toHaveBeenCalledWith(
-      "acp-1",
-      {
-        "item-1": { id: "item-1", empiricalDifficulty: 0.7 },
-      },
-      expect.objectContaining({ baseVersion: 4 }),
-    );
-    expect(itemExplorerStateService.patchDraft).not.toHaveBeenCalled();
-    expect(itemExplorerStateService.saveDraft).not.toHaveBeenCalled();
+    expect(itemExplorerStateService.getStateForViewer).not.toHaveBeenCalled();
   });
 
   it("uploads empirical difficulties in draft mode and patches explorer state", async () => {
@@ -274,40 +231,8 @@ describe("ItemsController", () => {
 
     expect(itemsService.clearEmpiricalDifficulties).toHaveBeenCalledWith(
       "acp-1",
-      {
-        persist: false,
-        itemPropertiesOverride: {
-          "item-1": { id: "item-1", empiricalDifficulty: 0.4 },
-        },
-      },
-    );
-    expect(
-      itemExplorerStateService.publishItemPropertiesImmediately,
-    ).toHaveBeenCalledWith(
-      "acp-1",
-      { "item-1": { id: "item-1" } },
-      expect.objectContaining({
-        changeType: "CLEAR_EMPIRICAL_DIFFICULTY",
-        baseVersion: 4,
-      }),
     );
     expect(itemExplorerStateService.patchDraft).not.toHaveBeenCalled();
-    expect(itemExplorerStateService.saveDraft).not.toHaveBeenCalled();
-  });
-
-  it("rejects direct item-property writes while a draft is pending", async () => {
-    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
-      status: "DIRTY",
-      version: 7,
-      publishedState: { itemProperties: {} },
-      draftState: { itemProperties: {} },
-    });
-    const file = { buffer: Buffer.from("csv-data") } as Express.Multer.File;
-
-    await expect(
-      controller.uploadEmpiricalDifficulties("acp-1", file, "false"),
-    ).rejects.toThrow(ConflictException);
-    expect(itemsService.uploadEmpiricalDifficulties).not.toHaveBeenCalled();
   });
 
   it("clears empirical difficulties in draft mode and patches explorer state", async () => {
@@ -378,7 +303,6 @@ describe("ItemsController", () => {
       "unit-1",
       { answer: 1 },
       true,
-      undefined,
     );
   });
 
@@ -392,7 +316,6 @@ describe("ItemsController", () => {
       "acp-1",
       "item-1",
       "unit-1",
-      undefined,
     );
 
     stateService.getResponseState.mockResolvedValueOnce(null);
@@ -417,7 +340,6 @@ describe("ItemsController", () => {
       "item-1",
       "unit-1",
       itemList,
-      undefined,
     );
   });
 
@@ -437,7 +359,6 @@ describe("ItemsController", () => {
       "item-1",
       "unit-1",
       true,
-      undefined,
     );
   });
 

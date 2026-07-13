@@ -29,7 +29,6 @@ import {
   AutoValidationSummary,
 } from "../validation/validation.service";
 import { FileProcessingProgressReporter } from "./file-processing-progress";
-import { parseItemRowKeyParts } from "../items/item-row-key.util";
 
 type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
 export type FilePreviewMode =
@@ -402,7 +401,6 @@ export class FilesService {
         id: true,
         unitId: true,
         itemId: true,
-        rowKey: true,
       },
     });
 
@@ -416,24 +414,14 @@ export class FilesService {
 
     const fileItemList =
       await this.unitParserService.getItemListFromFiles(acpId);
-    const validKeys = new Set<string>();
-    const validItemUuids = new Set<string>();
-    for (const item of fileItemList.items || []) {
-      validKeys.add(item.rowKey);
-      validKeys.add(`${item.unitId}::${item.itemId}`);
-      if (item.uuid) {
-        validItemUuids.add(item.uuid);
-      }
-    }
+    const validKeys = new Set(
+      (fileItemList.items || []).map(
+        (item) => `${item.unitId}::${item.itemId}`,
+      ),
+    );
 
     const staleStateIds = existingStates
-      .filter((state) => {
-        if (validKeys.has(state.rowKey)) {
-          return false;
-        }
-        const partialRow = parseItemRowKeyParts(state.rowKey);
-        return !partialRow || !validItemUuids.has(partialRow.itemUuid);
-      })
+      .filter((state) => !validKeys.has(`${state.unitId}::${state.itemId}`))
       .map((state) => state.id);
 
     if (staleStateIds.length) {

@@ -13,7 +13,6 @@ import {
   Put,
   ForbiddenException,
   BadRequestException,
-  ConflictException,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -95,16 +94,7 @@ export class ItemsController {
     if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
       throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
-    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
-    const result = await this.itemExplorerStateService.publishTagsImmediately(
-      acpId,
-      dto.tags || {},
-      {
-        actor,
-        changeType: "REPLACE_ITEM_TAGS",
-      },
-    );
-    return result.tags;
+    return this.itemsService.saveItemTags(acpId, dto.tags || {});
   }
 
   @Get(":itemId")
@@ -148,35 +138,10 @@ export class ItemsController {
     const parsedBaseVersion = parseInt(baseVersion || "", 10);
 
     if (!draftMode) {
-      const currentState =
-        await this.itemExplorerStateService.getStateForViewer(acpId, true);
-      this.assertCleanExplorerStateForDirectWrite(currentState.status);
       const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(
         acpId,
         file.buffer,
-        {
-          persist: false,
-          itemPropertiesOverride: currentState.publishedState.itemProperties,
-        },
       );
-      if (uploadResult.updated > 0) {
-        const actor = this.itemExplorerStateService.resolveActor(
-          req?.user,
-          acpId,
-        );
-        await this.itemExplorerStateService.publishItemPropertiesImmediately(
-          acpId,
-          uploadResult.nextItemProperties as Record<
-            string,
-            Record<string, unknown>
-          >,
-          {
-            actor,
-            changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
-            baseVersion: currentState.version,
-          },
-        );
-      }
       const showOnlyItemsWithEmpiricalDifficulty =
         uploadResult.updated > 0
           ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
@@ -251,38 +216,7 @@ export class ItemsController {
     const parsedBaseVersion = parseInt(baseVersion || "", 10);
 
     if (!draftMode) {
-      const currentState =
-        await this.itemExplorerStateService.getStateForViewer(acpId, true);
-      this.assertCleanExplorerStateForDirectWrite(currentState.status);
-      const clearResult = await this.itemsService.clearEmpiricalDifficulties(
-        acpId,
-        {
-          persist: false,
-          itemPropertiesOverride: currentState.publishedState.itemProperties,
-        },
-      );
-      if (
-        JSON.stringify(clearResult.nextItemProperties) !==
-        JSON.stringify(currentState.publishedState.itemProperties)
-      ) {
-        const actor = this.itemExplorerStateService.resolveActor(
-          req?.user,
-          acpId,
-        );
-        await this.itemExplorerStateService.publishItemPropertiesImmediately(
-          acpId,
-          clearResult.nextItemProperties as Record<
-            string,
-            Record<string, unknown>
-          >,
-          {
-            actor,
-            changeType: "CLEAR_EMPIRICAL_DIFFICULTY",
-            baseVersion: currentState.version,
-          },
-        );
-      }
-      return clearResult;
+      return this.itemsService.clearEmpiricalDifficulties(acpId);
     }
 
     const currentState = await this.itemExplorerStateService.getStateForViewer(
@@ -345,12 +279,7 @@ export class ItemsController {
   async saveResponseState(
     @Param("acpId") acpId: string,
     @Param("itemId") itemId: string,
-    @Body()
-    body: {
-      unitId: string;
-      rowKey?: string;
-      responseData: Record<string, any>;
-    },
+    @Body() body: { unitId: string; responseData: Record<string, any> },
     @Request() _req: any,
   ) {
     return this.stateService.saveResponseState(
@@ -359,7 +288,6 @@ export class ItemsController {
       body.unitId,
       body.responseData,
       true,
-      body.rowKey,
     );
   }
 
@@ -370,7 +298,6 @@ export class ItemsController {
     @Param("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Query("unitId") unitId?: string,
-    @Query("rowKey") rowKey?: string,
   ) {
     if (!unitId) {
       throw new BadRequestException('Query parameter "unitId" is required.');
@@ -379,7 +306,6 @@ export class ItemsController {
       acpId,
       itemId,
       unitId,
-      rowKey,
     );
     return state || { state: null };
   }
@@ -394,18 +320,13 @@ export class ItemsController {
     @Param("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Body()
-    body: {
-      unitId: string;
-      rowKey?: string;
-      itemList: { itemId: string; unitId: string; rowKey?: string }[];
-    },
+    body: { unitId: string; itemList: { itemId: string; unitId: string }[] },
   ) {
     return this.stateService.getResponseStateWithFallback(
       acpId,
       itemId,
       body.unitId,
       body.itemList,
-      body.rowKey,
     );
   }
 
@@ -419,25 +340,10 @@ export class ItemsController {
     @Param("itemId") itemId: string,
     @Query("unitId") unitId: string | undefined,
     @Request() _req: any,
-    @Query("rowKey") rowKey?: string,
   ) {
     if (!unitId) {
       throw new BadRequestException('Query parameter "unitId" is required.');
     }
-    return this.stateService.deleteResponseState(
-      acpId,
-      itemId,
-      unitId,
-      true,
-      rowKey,
-    );
-  }
-
-  private assertCleanExplorerStateForDirectWrite(status: string): void {
-    if (status === "DIRTY") {
-      throw new ConflictException(
-        "Direct item-property changes are not allowed while an Item Explorer draft is pending. Use draft mode or publish/discard the draft first.",
-      );
-    }
+    return this.stateService.deleteResponseState(acpId, itemId, unitId, true);
   }
 }

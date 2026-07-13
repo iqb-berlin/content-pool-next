@@ -51,15 +51,6 @@ class SaveItemPreferencesDto {
   @IsOptional()
   @IsObject()
   tags?: Record<string, string[]>;
-
-  @ApiPropertyOptional({
-    description: "Personal working data keyed by stable item row key",
-    type: "object",
-    additionalProperties: true,
-  })
-  @IsOptional()
-  @IsObject()
-  rowData?: Record<string, Record<string, unknown>>;
 }
 
 @ApiTags("Public Views")
@@ -176,7 +167,7 @@ export class ViewsController {
     @Query("viewId") viewId?: string,
   ) {
     if (!(await this.isPreferencePersistenceEnabled(acpId))) {
-      return { ui: {}, tags: {}, rowData: {} };
+      return { ui: {}, tags: {} };
     }
 
     return this.viewsService.getItemPreferences(acpId, req?.user, viewId);
@@ -192,7 +183,7 @@ export class ViewsController {
     @Request() req: any,
   ) {
     if (!(await this.isPreferencePersistenceEnabled(acpId))) {
-      return { ui: {}, tags: {}, rowData: {} };
+      return { ui: {}, tags: {} };
     }
 
     return this.viewsService.saveItemPreferences(
@@ -201,7 +192,6 @@ export class ViewsController {
       {
         ui: dto.ui,
         tags: dto.tags,
-        rowData: dto.rowData,
       },
       dto.viewId,
     );

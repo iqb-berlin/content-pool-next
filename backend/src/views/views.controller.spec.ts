@@ -184,7 +184,7 @@ describe("ViewsController", () => {
       "item-list",
     );
 
-    expect(result).toEqual({ ui: {}, tags: {}, rowData: {} });
+    expect(result).toEqual({ ui: {}, tags: {} });
     expect(viewsService.getItemPreferences).not.toHaveBeenCalled();
   });
 
@@ -217,7 +217,7 @@ describe("ViewsController", () => {
       { user: { sub: "u-1" } },
     );
 
-    expect(result).toEqual({ ui: {}, tags: {}, rowData: {} });
+    expect(result).toEqual({ ui: {}, tags: {} });
     expect(viewsService.saveItemPreferences).not.toHaveBeenCalled();
   });
 

@@ -14,7 +14,6 @@ import { ValidationModule } from "./validation/validation.module";
 import { ServerApiModule } from "./api/server-api.module";
 import { HealthModule } from "./health/health.module";
 import { ItemExplorerModule } from "./item-explorer/item-explorer.module";
-import { createApplicationDataSource } from "./database/database-compatibility";
 
 @Module({
   imports: [
@@ -25,7 +24,6 @@ import { createApplicationDataSource } from "./database/database-compatibility";
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      dataSourceFactory: createApplicationDataSource,
       useFactory: (configService: ConfigService) => {
         const nodeEnv = configService.get<string>("NODE_ENV", "development");
         const synchronizeDefault = nodeEnv === "development" ? "true" : "false";

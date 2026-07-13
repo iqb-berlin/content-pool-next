@@ -168,10 +168,7 @@ Two modes exist:
 
 ### Direct persistence
 
-The import updates ACP item properties and the clean published explorer state immediately. If an
-unpublished explorer draft already exists, the direct operation is rejected with a conflict so it
-cannot silently overwrite or be overwritten by that draft. The caller must then use draft-aware
-persistence or publish/discard the pending draft first.
+The import updates ACP item properties immediately.
 
 ### Draft-aware persistence
 
@@ -179,27 +176,6 @@ The import updates explorer draft state instead, allowing managers to review and
 the result later.
 
 The same distinction exists when clearing empirical difficulty values.
-
-### Partial-credit rows
-
-Difficulty CSV files may use the second column as a Sub-ID, category, or score level. The
-expected shape is `item;<sub-id>;est`; the middle header may be chosen freely. Multiple rows may
-refer to the same item as long as their Sub-IDs differ.
-
-The explorer then creates one table row per Sub-ID. Every row has:
-
-- a stable key made from the item UUID and the encoded Sub-ID,
-- its own empirical difficulty,
-- a visible and sortable/filterable Sub-ID column,
-- the normal item preview and coding view of the underlying item.
-
-The ACP feature configuration controls `itemSubIdLabel` (the column heading) and
-`itemSubIdLabels` (display labels keyed by imported Sub-ID). Items without a Sub-ID continue to
-use their item UUID as their row key and remain single rows.
-
-Shared explorer properties, tags, manual ordering, saved response states, and personal
-`rowData` preferences use the stable row key. This prevents two partial-credit rows of the same
-item from overwriting one another and gives exports a unique identifier for every table row.
 
 ## Player Preview and Legacy Player Compatibility
 

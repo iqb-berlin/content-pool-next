@@ -9,11 +9,6 @@ import { Acp, AcpAccessConfig, AccessModel } from "../database/entities";
 import { UnitParserService } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
-import {
-  buildItemRowKey,
-  normalizeItemSubId,
-  parseItemRowKeyParts,
-} from "./item-row-key.util";
 
 const SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY =
   "showOnlyItemsWithEmpiricalDifficulty";
@@ -137,13 +132,11 @@ export class ItemsService {
     const lines = content.split(/\r?\n/);
     if (lines.length < 2) return { updated: 0, failed: [] };
 
-    const headers = this.parseCsvLine(lines[0]).map((header) =>
-      header.trim().toLowerCase(),
-    );
+    const headers = lines[0]
+      .split(";")
+      .map((h) => h.replace(/^"|"$/g, "").trim());
     const itemIdx = headers.indexOf("item");
     const estIdx = headers.indexOf("est");
-    const subIdIdx =
-      headers.length > 2 && ![itemIdx, estIdx].includes(1) ? 1 : -1;
 
     if (itemIdx === -1 || estIdx === -1) {
       throw new BadRequestException(
@@ -153,11 +146,7 @@ export class ItemsService {
 
     const failed = [];
     const successes = [];
-    const matchedRowKeys = new Map<string, number>(); // stable row key -> row index
-    const matchedItemModes = new Map<
-      string,
-      { mode: "standard" | "partial"; rowIndex: number }
-    >();
+    const matchedUuids = new Map<string, number>(); // uuid -> row index
     let updatedCount = 0;
 
     // Copy existing prop configurations
@@ -174,10 +163,9 @@ export class ItemsService {
       const line = lines[i].trim();
       if (!line) continue;
 
-      const row = this.parseCsvLine(line);
-      const itemValRaw = row[itemIdx]?.trim() || "";
-      const estValRaw = row[estIdx]?.trim() || "";
-      const subId = subIdIdx >= 0 ? normalizeItemSubId(row[subIdIdx]) : "";
+      const row = line.split(";");
+      const itemValRaw = row[itemIdx]?.replace(/^"|"$/g, "") || "";
+      const estValRaw = row[estIdx]?.replace(/^"|"$/g, "") || "";
 
       const estValNum = parseFloat(estValRaw.replace(",", "."));
 
@@ -199,57 +187,20 @@ export class ItemsService {
       });
 
       if (match) {
-        const rowKey = buildItemRowKey(match.uuid, subId);
-        const mode = subId ? "partial" : "standard";
-        const previousMode = matchedItemModes.get(match.uuid);
-        if (previousMode && previousMode.mode !== mode) {
+        if (matchedUuids.has(match.uuid)) {
           throw new BadRequestException(
-            `Konflikt: Das Item "${match.itemId}" wird in derselben CSV sowohl mit als auch ohne Sub-ID verwendet (Zeile ${previousMode.rowIndex + 1} und Zeile ${i + 1}). Bitte verwenden Sie pro Item nur eine Darstellungsform.`,
+            `Konflikt: Das Item "${match.itemId}" (Aufgabe: ${match.unitId}) kommt mehrfach in der CSV vor (Zeile ${matchedUuids.get(match.uuid)! + 1} und Zeile ${i + 1}). Bitte bereinigen Sie die Datei.`,
           );
         }
-        matchedItemModes.set(match.uuid, { mode, rowIndex: i });
+        matchedUuids.set(match.uuid, i);
 
-        if (matchedRowKeys.has(rowKey)) {
-          throw new BadRequestException(
-            `Konflikt: Die Zeile für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} kommt mehrfach in der CSV vor (Zeile ${matchedRowKeys.get(rowKey)! + 1} und Zeile ${i + 1}). Bitte bereinigen Sie die Datei.`,
-          );
-        }
-        matchedRowKeys.set(rowKey, i);
-
-        const partialRowKeys = this.getPartialCreditRowKeys(props, match.uuid);
-        let affectedRowKeys = [rowKey];
-        if (mode === "standard" && partialRowKeys.length) {
-          affectedRowKeys = partialRowKeys;
-          if (props[match.uuid]?.empiricalDifficulty !== undefined) {
-            delete props[match.uuid].empiricalDifficulty;
-          }
-          for (const partialRowKey of partialRowKeys) {
-            props[partialRowKey] = {
-              ...props[partialRowKey],
-              empiricalDifficulty: estValNum,
-            };
-          }
-        } else {
-          if (
-            mode === "partial" &&
-            props[match.uuid]?.empiricalDifficulty !== undefined
-          ) {
-            delete props[match.uuid].empiricalDifficulty;
-          }
-          props[rowKey] = {
-            ...props[rowKey],
-            ...(subId ? { itemUuid: match.uuid, subId } : {}),
-            empiricalDifficulty: estValNum,
-          };
-        }
+        props[match.uuid] = {
+          ...props[match.uuid],
+          empiricalDifficulty: estValNum,
+        };
         successes.push({
           itemId: match.itemId,
           unitId: match.unitId,
-          ...(affectedRowKeys.length === 1
-            ? { rowKey: affectedRowKeys[0] }
-            : {}),
-          affectedRowKeys,
-          subId: subId || undefined,
           value: estValNum,
         });
         updatedCount++;
@@ -273,40 +224,6 @@ export class ItemsService {
       successes,
       nextItemProperties: props,
     };
-  }
-
-  private getPartialCreditRowKeys(
-    itemProperties: Record<string, Record<string, unknown>>,
-    itemUuid: string,
-  ): string[] {
-    return Object.keys(itemProperties).filter(
-      (rowKey) => parseItemRowKeyParts(rowKey)?.itemUuid === itemUuid,
-    );
-  }
-
-  private parseCsvLine(line: string): string[] {
-    const cells: string[] = [];
-    let current = "";
-    let quoted = false;
-
-    for (let index = 0; index < line.length; index++) {
-      const character = line[index];
-      if (character === '"') {
-        if (quoted && line[index + 1] === '"') {
-          current += '"';
-          index += 1;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (character === ";" && !quoted) {
-        cells.push(current);
-        current = "";
-      } else {
-        current += character;
-      }
-    }
-    cells.push(current);
-    return cells;
   }
 
   /**
@@ -357,6 +274,36 @@ export class ItemsService {
       unknown
     >;
     return Boolean(featureConfig.enableItemListTags);
+  }
+
+  async saveItemTags(
+    acpId: string,
+    tags: Record<string, string[]>,
+  ): Promise<Record<string, string[]>> {
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) throw new NotFoundException("ACP not found");
+
+    const normalizedTags = this.normalizeTags(tags || {});
+    const itemProperties = { ...(acp.itemProperties || {}) };
+
+    // Replace current tag state completely to keep client and server in sync.
+    for (const itemId of Object.keys(itemProperties)) {
+      if (itemProperties[itemId] && "tags" in itemProperties[itemId]) {
+        delete itemProperties[itemId].tags;
+      }
+    }
+
+    for (const [itemId, tagList] of Object.entries(normalizedTags)) {
+      if (!tagList.length) continue;
+      itemProperties[itemId] = {
+        ...(itemProperties[itemId] || {}),
+        tags: tagList,
+      };
+    }
+
+    acp.itemProperties = itemProperties;
+    await this.acpRepository.save(acp);
+    return normalizedTags;
   }
 
   async ensureShowOnlyItemsWithEmpiricalDifficulty(
@@ -421,11 +368,25 @@ export class ItemsService {
     for (const [itemId, props] of Object.entries(itemProperties || {})) {
       if (!Array.isArray(props?.tags)) continue;
       const normalized = this.normalizeTagArray(props.tags);
-      if (normalized.length || parseItemRowKeyParts(itemId) !== null) {
+      if (normalized.length) {
         tags[itemId] = normalized;
       }
     }
     return tags;
+  }
+
+  private normalizeTags(
+    tags: Record<string, string[]>,
+  ): Record<string, string[]> {
+    const normalized: Record<string, string[]> = {};
+    for (const [itemId, values] of Object.entries(tags || {})) {
+      if (!itemId || !itemId.trim()) continue;
+      const clean = this.normalizeTagArray(values);
+      if (clean.length) {
+        normalized[itemId] = clean;
+      }
+    }
+    return normalized;
   }
 
   private normalizeTagArray(values: unknown[]): string[] {

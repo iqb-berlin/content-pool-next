@@ -565,36 +565,22 @@ export class ApiService {
     itemId: string,
     unitId: string,
     responseData: Record<string, any>,
-    rowKey?: string,
   ): Observable<any> {
     return this.http.post(`${this.API}/acp/${acpId}/items/${itemId}/response-state`, {
       unitId,
       responseData,
-      ...(rowKey ? { rowKey } : {}),
     });
   }
 
-  getResponseState(
-    acpId: string,
-    itemId: string,
-    unitId: string,
-    rowKey?: string,
-  ): Observable<any> {
-    const rowKeyQuery = rowKey ? `&rowKey=${encodeURIComponent(rowKey)}` : '';
+  getResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
     return this.http.get(
-      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}${rowKeyQuery}`,
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
     );
   }
 
-  deleteResponseState(
-    acpId: string,
-    itemId: string,
-    unitId: string,
-    rowKey?: string,
-  ): Observable<any> {
-    const rowKeyQuery = rowKey ? `&rowKey=${encodeURIComponent(rowKey)}` : '';
+  deleteResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
     return this.http.delete(
-      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}${rowKeyQuery}`,
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
     );
   }
 
@@ -602,12 +588,11 @@ export class ApiService {
     acpId: string,
     itemId: string,
     unitId: string,
-    itemList: { itemId: string; unitId: string; rowKey?: string }[],
-    rowKey?: string,
+    itemList: { itemId: string; unitId: string }[],
   ): Observable<{ state: any; isFallback: boolean; fallbackItemId?: string }> {
     return this.http.post<{ state: any; isFallback: boolean; fallbackItemId?: string }>(
       `${this.API}/acp/${acpId}/items/${itemId}/response-state/with-fallback`,
-      { unitId, itemList, ...(rowKey ? { rowKey } : {}) },
+      { unitId, itemList },
     );
   }
 

@@ -15,7 +15,6 @@ import {
 import { AuthModule } from "../auth/auth.module";
 import { ValidationModule } from "../validation/validation.module";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
-import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
@@ -34,7 +33,6 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     }),
     AuthModule,
     ValidationModule,
-    ItemExplorerModule,
   ],
   controllers: [FilesController],
   providers: [FilesService, UnitParserService, FileProcessingJobsService],

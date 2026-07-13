@@ -176,7 +176,7 @@ describe("ViewsService", () => {
 
   it("returns empty item preferences when no authenticated identity is available", async () => {
     const prefs = await service.getItemPreferences("acp-1", null, "item-list");
-    expect(prefs).toEqual({ ui: {}, tags: {}, rowData: {} });
+    expect(prefs).toEqual({ ui: {}, tags: {} });
     expect(itemPreferenceRepository.findOne).not.toHaveBeenCalled();
   });
 
@@ -207,7 +207,6 @@ describe("ViewsService", () => {
       tags: {
         item1: ["alpha", "beta"],
       },
-      rowData: {},
     });
   });
 
@@ -235,7 +234,6 @@ describe("ViewsService", () => {
       tags: {
         item1: ["tag1", "tag2"],
       },
-      rowData: {},
     });
     expect(itemPreferenceRepository.save).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -505,7 +503,6 @@ describe("ViewsService", () => {
     ).resolves.toEqual({
       ui: { filterText: "abc" },
       tags: { item1: ["x"] },
-      rowData: {},
     });
     expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
   });
@@ -536,29 +533,8 @@ describe("ViewsService", () => {
         preferences: {
           ui: { sortBy: "name" },
           tags: { itemA: ["A", "B"] },
-          rowData: {},
         },
       }),
     );
-  });
-
-  it("persists personal working data by stable row key", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue(null);
-
-    const saved = await service.saveItemPreferences(
-      "acp-1",
-      { sub: "user-1", type: "oidc" },
-      {
-        rowData: {
-          "uuid-1::1": { category: "A", note: "Notiz" },
-          "  ": { category: "ignored" },
-        },
-      },
-      "item-explorer",
-    );
-
-    expect(saved.rowData).toEqual({
-      "uuid-1::1": { category: "A", note: "Notiz" },
-    });
   });
 });

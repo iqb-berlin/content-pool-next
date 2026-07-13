@@ -143,7 +143,10 @@ export class ServerApiService {
     };
   }
 
-  async listFiles(acpId: string, allowedAcpIds?: AllowedAcpIds): Promise<
+  async listFiles(
+    acpId: string,
+    allowedAcpIds?: AllowedAcpIds,
+  ): Promise<
     Array<{
       id: string;
       originalName: string;
@@ -463,9 +466,9 @@ export class ServerApiService {
     return { acp: saved, operation: "updated", conflictStrategy };
   }
 
-  private getAllowedAcpWhere(allowedAcpIds?: AllowedAcpIds):
-    | { id: any }
-    | Record<string, never> {
+  private getAllowedAcpWhere(
+    allowedAcpIds?: AllowedAcpIds,
+  ): { id: any } | Record<string, never> {
     return this.isAcpRestricted(allowedAcpIds)
       ? { id: In(allowedAcpIds as string[]) }
       : {};

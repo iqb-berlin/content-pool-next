@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
-import { ConflictException, Logger } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Logger } from "@nestjs/common";
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
@@ -298,6 +298,67 @@ describe("AdminService", () => {
     );
   });
 
+  it("creates ACP-limited tokens only within the manager constraints", async () => {
+    const acpId = "11111111-1111-4111-8111-111111111111";
+    applicationTokenRepository.findOne.mockResolvedValue(null);
+    acpRepository.find.mockResolvedValue([{ id: acpId }]);
+
+    const result = await service.createApplicationToken(
+      {
+        name: "ACP Studio",
+        scopes: ["acp.read"],
+        allowedAcpIds: [acpId],
+      },
+      "manager-1",
+      {
+        allowedAcpIds: [acpId],
+        auditAcpId: acpId,
+        auditPath: `/api/acp/${acpId}/application-tokens`,
+      },
+    );
+
+    expect(result.allowedAcpIds).toEqual([acpId]);
+    expect(applicationTokenRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ allowedAcpIds: [acpId] }),
+    );
+    expect(auditRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: `/api/acp/${acpId}/application-tokens`,
+        acpId,
+        details: expect.objectContaining({ allowedAcpIds: [acpId] }),
+      }),
+    );
+  });
+
+  it("rejects global or out-of-scope tokens created by ACP managers", async () => {
+    const managedAcpId = "11111111-1111-4111-8111-111111111111";
+    const otherAcpId = "22222222-2222-4222-8222-222222222222";
+
+    await expect(
+      service.createApplicationToken(
+        { name: "Global", scopes: ["acp.read"] },
+        "manager-1",
+        { allowedAcpIds: [managedAcpId] },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    await expect(
+      service.createApplicationToken(
+        {
+          name: "Other ACP",
+          scopes: ["acp.read"],
+          allowedAcpIds: [otherAcpId],
+        },
+        "manager-1",
+        { allowedAcpIds: [managedAcpId] },
+      ),
+    ).rejects.toThrow(ForbiddenException);
+
+    expect(
+      applicationTokenRepository.manager.transaction,
+    ).not.toHaveBeenCalled();
+  });
+
   it("fails application token creation when transactional audit write fails", async () => {
     applicationTokenRepository.findOne.mockResolvedValue(null);
     auditRepository.save.mockRejectedValueOnce(new Error("audit down"));
@@ -416,6 +477,56 @@ describe("AdminService", () => {
           tokenPrefix: "cp_abc...",
         }),
       }),
+    );
+  });
+
+  it("allows ACP managers to revoke only tokens exclusive to their ACP", async () => {
+    const managedAcpId = "11111111-1111-4111-8111-111111111111";
+    const tokenBase = {
+      id: "token-1",
+      name: "Studio",
+      tokenPrefix: "cp_abc...",
+      scopes: ["acp.read"],
+      active: true,
+      expiresAt: null,
+      lastUsedAt: null,
+      createdByUserId: "user-1",
+      revokedByUserId: null,
+      revokedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    } as ApplicationToken;
+
+    applicationTokenRepository.findOne
+      .mockResolvedValueOnce({ ...tokenBase, allowedAcpIds: null })
+      .mockResolvedValueOnce({
+        ...tokenBase,
+        allowedAcpIds: [managedAcpId, "22222222-2222-4222-8222-222222222222"],
+      })
+      .mockResolvedValueOnce({ ...tokenBase, allowedAcpIds: [managedAcpId] });
+
+    const constraints = {
+      allowedAcpIds: [managedAcpId],
+      requireExclusiveAcp: true,
+      auditAcpId: managedAcpId,
+    };
+    await expect(
+      service.revokeApplicationToken("token-1", "manager-1", constraints),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.revokeApplicationToken("token-1", "manager-1", constraints),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.revokeApplicationToken("token-1", "manager-1", constraints),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: "token-1",
+        active: false,
+        allowedAcpIds: [managedAcpId],
+      }),
+    );
+    expect(auditRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ acpId: managedAcpId }),
     );
   });
 

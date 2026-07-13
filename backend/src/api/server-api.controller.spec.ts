@@ -112,10 +112,7 @@ describe("ServerApiController", () => {
     expect(oneFile).toEqual({ id: "file-1" });
     expect(uploadResult).toEqual({ uploaded: 1 });
 
-    expect(serverApiService.listFiles).toHaveBeenCalledWith(
-      "acp-1",
-      undefined,
-    );
+    expect(serverApiService.listFiles).toHaveBeenCalledWith("acp-1", undefined);
     expect(serverApiService.getFile).toHaveBeenCalledWith(
       "acp-1",
       "file-1",

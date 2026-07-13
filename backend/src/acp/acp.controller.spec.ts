@@ -236,6 +236,7 @@ describe("AcpController", () => {
       "u-1",
       {
         allowedAcpIds: ["acp-1"],
+        auditAcpId: "acp-1",
         auditPath: "/api/acp/acp-1/application-tokens",
       },
     );
@@ -251,6 +252,7 @@ describe("AcpController", () => {
       {
         allowedAcpIds: ["acp-1"],
         requireExclusiveAcp: true,
+        auditAcpId: "acp-1",
         auditPath: "/api/acp/acp-1/application-tokens/token-1/revoke",
       },
     );

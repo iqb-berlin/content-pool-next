@@ -65,10 +65,10 @@ export class ServerApiAuthService {
       if (this.tokensEqual(client.token, token)) {
         return {
           id: client.id,
-        scopes: [...client.scopes],
-        allowedAcpIds: client.allowedAcpIds || null,
-      };
-    }
+          scopes: [...client.scopes],
+          allowedAcpIds: client.allowedAcpIds || null,
+        };
+      }
     }
 
     return null;

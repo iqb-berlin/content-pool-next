@@ -437,6 +437,17 @@ export class ApiService {
       ...data,
     });
   }
+  patchViewItemPreferenceRow(
+    acpId: string,
+    rowKey: string,
+    rowData: Record<string, unknown> | null,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemViewPreferences> {
+    return this.http.patch<ItemViewPreferences>(
+      `${this.API}/view/acp/${acpId}/items/preferences/row-data`,
+      { rowKey, rowData, perspective },
+    );
+  }
   getViewSequences(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`);
   }

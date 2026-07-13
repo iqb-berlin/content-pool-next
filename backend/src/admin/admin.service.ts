@@ -49,6 +49,7 @@ export interface ListApplicationTokensOptions {
 export interface ApplicationTokenActorConstraints {
   allowedAcpIds?: string[];
   requireExclusiveAcp?: boolean;
+  auditAcpId?: string;
   auditPath?: string;
 }
 
@@ -209,6 +210,7 @@ export class AdminService {
             action: "application-token.create",
             method: "POST",
             path: auditPath,
+            acpId: constraints.auditAcpId,
             actorUserId: createdByUserId,
             token: savedToken,
             details: {
@@ -263,6 +265,7 @@ export class AdminService {
         path:
           constraints.auditPath ||
           `/api/admin/application-tokens/${saved.id}/revoke`,
+        acpId: constraints.auditAcpId,
         actorUserId: revokedByUserId,
         token: saved,
       });
@@ -724,6 +727,7 @@ export class AdminService {
     action,
     method,
     path,
+    acpId,
     actorUserId,
     token,
     details,
@@ -733,6 +737,7 @@ export class AdminService {
     action: string;
     method: string;
     path: string;
+    acpId?: string;
     actorUserId?: string;
     token: ApplicationToken;
     details?: Record<string, unknown>;
@@ -748,6 +753,7 @@ export class AdminService {
           action,
           method,
           path,
+          acpId,
           resourceId: token.id,
           success: true,
           details: {

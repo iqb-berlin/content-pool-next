@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class AddAllowedAcpIdsToApplicationTokens1770002000000
-  implements MigrationInterface
-{
+export class AddAllowedAcpIdsToApplicationTokens1770002000000 implements MigrationInterface {
   name = "AddAllowedAcpIdsToApplicationTokens1770002000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {

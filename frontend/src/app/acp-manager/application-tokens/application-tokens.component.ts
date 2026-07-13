@@ -60,7 +60,11 @@ const SCOPE_OPTIONS: ScopeOption[] = [
           <button class="btn btn-outline btn-sm" (click)="dismissCreatedToken()">Schließen</button>
         </div>
         <div class="secret-row">
-          <input [value]="createdToken.token" readonly aria-label="Neu erzeugter Applikationstoken" />
+          <input
+            [value]="createdToken.token"
+            readonly
+            aria-label="Neu erzeugter Applikationstoken"
+          />
           <button class="btn btn-outline" (click)="copyCreatedToken()">Kopieren</button>
         </div>
       </div>
@@ -175,7 +179,9 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                     <strong>{{ token.name }}</strong>
                     <div class="subtle">{{ token.createdAt | date: 'dd.MM.yyyy HH:mm' }}</div>
                   </td>
-                  <td><code>{{ token.tokenPrefix }}</code></td>
+                  <td>
+                    <code>{{ token.tokenPrefix }}</code>
+                  </td>
                   <td>
                     <div class="scope-tags">
                       @for (scope of token.scopes; track scope) {
@@ -193,7 +199,9 @@ const SCOPE_OPTIONS: ScopeOption[] = [
                       {{ statusLabel(token) }}
                     </span>
                   </td>
-                  <td>{{ token.expiresAt ? (token.expiresAt | date: 'dd.MM.yyyy HH:mm') : 'Nie' }}</td>
+                  <td>
+                    {{ token.expiresAt ? (token.expiresAt | date: 'dd.MM.yyyy HH:mm') : 'Nie' }}
+                  </td>
                   <td>
                     {{
                       token.lastUsedAt ? (token.lastUsedAt | date: 'dd.MM.yyyy HH:mm') : 'Noch nie'
@@ -415,19 +423,21 @@ export class AcpApplicationTokensComponent implements OnInit {
     this.loading = true;
     this.error = '';
 
-    this.api.getAcpApplicationTokens(this.acpId, { limit: this.limit, offset: this.offset }).subscribe({
-      next: (result) => {
-        this.tokens = result.items;
-        this.total = result.total;
-        this.limit = result.limit;
-        this.offset = result.offset;
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err.error?.message || 'Fehler beim Laden der Applikationstoken';
-        this.loading = false;
-      },
-    });
+    this.api
+      .getAcpApplicationTokens(this.acpId, { limit: this.limit, offset: this.offset })
+      .subscribe({
+        next: (result) => {
+          this.tokens = result.items;
+          this.total = result.total;
+          this.limit = result.limit;
+          this.offset = result.offset;
+          this.loading = false;
+        },
+        error: (err) => {
+          this.error = err.error?.message || 'Fehler beim Laden der Applikationstoken';
+          this.loading = false;
+        },
+      });
   }
 
   openCreateForm() {

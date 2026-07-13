@@ -148,7 +148,8 @@ the external application.
 
 Create and revoke actions are written to the audit log as admin security events.
 The audit details include the token ID, name and display prefix, but never the
-clear-text token.
+clear-text token. Events triggered through the ACP manager endpoints are assigned
+to that ACP and are therefore visible to ACP-limited tokens with `audit.read`.
 
 ## Server API Scopes
 

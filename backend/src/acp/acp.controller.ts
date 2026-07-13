@@ -280,6 +280,7 @@ export class AcpController {
       req?.user?.sub,
       {
         allowedAcpIds: [id],
+        auditAcpId: id,
         auditPath: `/api/acp/${id}/application-tokens`,
       },
     );
@@ -299,6 +300,7 @@ export class AcpController {
     return this.adminService.revokeApplicationToken(tokenId, req?.user?.sub, {
       allowedAcpIds: [id],
       requireExclusiveAcp: true,
+      auditAcpId: id,
       auditPath: `/api/acp/${id}/application-tokens/${tokenId}/revoke`,
     });
   }

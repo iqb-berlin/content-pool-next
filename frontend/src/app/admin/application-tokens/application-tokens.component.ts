@@ -115,9 +115,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
               <button type="button" class="btn btn-outline btn-sm" (click)="clearAcpLimits()">
                 Global
               </button>
-              <span class="subtle">
-                Ohne Auswahl gilt der Token für alle ACPs.
-              </span>
+              <span class="subtle"> Ohne Auswahl gilt der Token für alle ACPs. </span>
             </div>
             <div class="acp-grid">
               @for (acp of acps; track acp.id) {
@@ -514,7 +512,9 @@ export class ApplicationTokensComponent implements OnInit {
       return;
     }
     if (!checked) {
-      this.newToken.allowedAcpIds = this.newToken.allowedAcpIds.filter((selected) => selected !== acpId);
+      this.newToken.allowedAcpIds = this.newToken.allowedAcpIds.filter(
+        (selected) => selected !== acpId,
+      );
     }
   }
 

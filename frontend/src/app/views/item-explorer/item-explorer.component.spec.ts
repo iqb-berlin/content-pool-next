@@ -240,6 +240,51 @@ describe('ItemExplorerComponent', () => {
     expect(component.selectedIndex).toBe(1);
   });
 
+  it('lets a partial-credit row clear inherited tags, exclusion and preview target', () => {
+    const component = createComponent();
+    const item = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1::1',
+      subId: '1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: '',
+      variableId: '',
+      metadata: {},
+      tags: ['base'],
+      excluded: true,
+      previewTargetId: 'BASE_A',
+    } as any;
+    component.items = [item];
+    component.filteredItems = [item];
+
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.tags = {
+      'uuid-1': ['base'],
+      'uuid-1::1': [],
+    };
+    envelope.draftState.itemProperties = {
+      'uuid-1': {
+        tags: ['base'],
+        excluded: true,
+        previewTargetId: 'BASE_A',
+      },
+      'uuid-1::1': {
+        tags: [],
+        excluded: false,
+        previewTargetId: '',
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.itemTags['uuid-1::1']).toEqual([]);
+    expect(item.tags).toEqual([]);
+    expect(item.excluded).toBeUndefined();
+    expect(item.previewTargetId).toBeUndefined();
+  });
+
   it('does not persist fullscreen mode in the shared ui preferences', () => {
     const component = createComponent();
     component.isFullscreen = true;

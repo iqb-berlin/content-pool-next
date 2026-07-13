@@ -20,6 +20,7 @@ export class ItemResponseStateService {
     unitId: string,
     responseData: Record<string, any>,
     userIsManager: boolean,
+    rowKey?: string,
   ): Promise<ItemResponseState> {
     if (!userIsManager) {
       throw new ForbiddenException(
@@ -28,12 +29,12 @@ export class ItemResponseStateService {
     }
 
     // Check if state already exists
-    let state = await this.stateRepository.findOne({
-      where: { acpId, itemId, unitId },
-    });
+    const resolvedRowKey = this.resolveRowKey(rowKey, unitId, itemId);
+    let state = await this.findState(acpId, itemId, unitId, resolvedRowKey);
 
     if (state) {
       // Update existing
+      state.rowKey = resolvedRowKey;
       state.responseData = responseData;
     } else {
       // Create new
@@ -41,6 +42,7 @@ export class ItemResponseStateService {
         acpId,
         itemId,
         unitId,
+        rowKey: resolvedRowKey,
         responseData,
       });
     }
@@ -55,10 +57,14 @@ export class ItemResponseStateService {
     acpId: string,
     itemId: string,
     unitId: string,
+    rowKey?: string,
   ): Promise<ItemResponseState | null> {
-    return this.stateRepository.findOne({
-      where: { acpId, itemId, unitId },
-    });
+    return this.findState(
+      acpId,
+      itemId,
+      unitId,
+      this.resolveRowKey(rowKey, unitId, itemId),
+    );
   }
 
   /**
@@ -69,21 +75,30 @@ export class ItemResponseStateService {
     acpId: string,
     itemId: string,
     unitId: string,
-    itemList: { itemId: string; unitId: string }[],
+    itemList: { itemId: string; unitId: string; rowKey?: string }[],
+    rowKey?: string,
   ): Promise<{
     state: ItemResponseState | null;
     isFallback: boolean;
     fallbackItemId?: string;
   }> {
     // First try to get direct state
-    const directState = await this.getResponseState(acpId, itemId, unitId);
+    const directState = await this.getResponseState(
+      acpId,
+      itemId,
+      unitId,
+      rowKey,
+    );
     if (directState) {
       return { state: directState, isFallback: false };
     }
 
     // Find position of current item in the list
     const currentIndex = itemList.findIndex(
-      (i) => i.itemId === itemId && i.unitId === unitId,
+      (i) =>
+        i.itemId === itemId &&
+        i.unitId === unitId &&
+        (!rowKey || i.rowKey === rowKey),
     );
     if (currentIndex <= 0) {
       return { state: null, isFallback: false };
@@ -97,6 +112,7 @@ export class ItemResponseStateService {
           acpId,
           prevItem.itemId,
           prevItem.unitId,
+          prevItem.rowKey,
         );
         if (prevState) {
           return {
@@ -120,6 +136,7 @@ export class ItemResponseStateService {
     itemId: string,
     unitId: string,
     userIsManager: boolean,
+    rowKey?: string,
   ): Promise<{ success: boolean }> {
     if (!userIsManager) {
       throw new ForbiddenException(
@@ -127,7 +144,11 @@ export class ItemResponseStateService {
       );
     }
 
-    const result = await this.stateRepository.delete({ acpId, itemId, unitId });
+    const resolvedRowKey = this.resolveRowKey(rowKey, unitId, itemId);
+    const state = await this.findState(acpId, itemId, unitId, resolvedRowKey);
+    const result = state
+      ? await this.stateRepository.delete({ id: state.id })
+      : { affected: 0 };
     return {
       success:
         result.affected !== undefined &&
@@ -152,7 +173,7 @@ export class ItemResponseStateService {
 
     return this.stateRepository.find({
       where: { acpId },
-      order: { unitId: "ASC", itemId: "ASC" },
+      order: { unitId: "ASC", itemId: "ASC", rowKey: "ASC" },
     });
   }
 
@@ -163,5 +184,37 @@ export class ItemResponseStateService {
     // This is a placeholder - actual role checking should be done via AcpUserRole entity
     // The controller will handle the actual authorization check
     return false;
+  }
+
+  private resolveRowKey(
+    rowKey: string | undefined,
+    unitId: string,
+    itemId: string,
+  ): string {
+    return String(rowKey || "").trim() || `${unitId}::${itemId}`;
+  }
+
+  private async findState(
+    acpId: string,
+    itemId: string,
+    unitId: string,
+    rowKey: string,
+  ): Promise<ItemResponseState | null> {
+    const direct = await this.stateRepository.findOne({
+      where: { acpId, itemId, unitId, rowKey },
+    });
+    if (direct || rowKey.includes("::")) {
+      return direct;
+    }
+
+    const legacyRowKey = `${unitId}::${itemId}`;
+    const legacy = await this.stateRepository.findOne({
+      where: { acpId, itemId, unitId, rowKey: legacyRowKey },
+    });
+    if (legacy) {
+      legacy.rowKey = rowKey;
+      return this.stateRepository.save(legacy);
+    }
+    return null;
   }
 }

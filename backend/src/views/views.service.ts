@@ -21,6 +21,7 @@ export interface ItemPreferencesPayload {
   [key: string]: unknown;
   ui: Record<string, unknown>;
   tags: Record<string, string[]>;
+  rowData: Record<string, Record<string, unknown>>;
 }
 
 interface PreferenceIdentity {
@@ -341,7 +342,7 @@ export class ViewsService {
   ): Promise<ItemPreferencesPayload> {
     const identity = this.resolvePreferenceIdentity(user);
     if (!identity) {
-      return { ui: {}, tags: {} };
+      return { ui: {}, tags: {}, rowData: {} };
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
@@ -460,7 +461,25 @@ export class ViewsService {
     return {
       ui,
       tags: this.normalizeTags(payload.tags),
+      rowData: this.normalizeRowData(payload.rowData),
     };
+  }
+
+  private normalizeRowData(
+    rawRowData: unknown,
+  ): Record<string, Record<string, unknown>> {
+    if (!this.isRecord(rawRowData)) {
+      return {};
+    }
+
+    const normalized: Record<string, Record<string, unknown>> = {};
+    for (const [rawRowKey, value] of Object.entries(rawRowData)) {
+      const rowKey = rawRowKey.trim();
+      if (rowKey && this.isRecord(value)) {
+        normalized[rowKey] = { ...value };
+      }
+    }
+    return normalized;
   }
 
   private normalizeTags(rawTags: unknown): Record<string, string[]> {

@@ -565,22 +565,36 @@ export class ApiService {
     itemId: string,
     unitId: string,
     responseData: Record<string, any>,
+    rowKey?: string,
   ): Observable<any> {
     return this.http.post(`${this.API}/acp/${acpId}/items/${itemId}/response-state`, {
       unitId,
       responseData,
+      ...(rowKey ? { rowKey } : {}),
     });
   }
 
-  getResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
+  getResponseState(
+    acpId: string,
+    itemId: string,
+    unitId: string,
+    rowKey?: string,
+  ): Observable<any> {
+    const rowKeyQuery = rowKey ? `&rowKey=${encodeURIComponent(rowKey)}` : '';
     return this.http.get(
-      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}${rowKeyQuery}`,
     );
   }
 
-  deleteResponseState(acpId: string, itemId: string, unitId: string): Observable<any> {
+  deleteResponseState(
+    acpId: string,
+    itemId: string,
+    unitId: string,
+    rowKey?: string,
+  ): Observable<any> {
+    const rowKeyQuery = rowKey ? `&rowKey=${encodeURIComponent(rowKey)}` : '';
     return this.http.delete(
-      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}`,
+      `${this.API}/acp/${acpId}/items/${itemId}/response-state?unitId=${encodeURIComponent(unitId)}${rowKeyQuery}`,
     );
   }
 
@@ -588,11 +602,12 @@ export class ApiService {
     acpId: string,
     itemId: string,
     unitId: string,
-    itemList: { itemId: string; unitId: string }[],
+    itemList: { itemId: string; unitId: string; rowKey?: string }[],
+    rowKey?: string,
   ): Observable<{ state: any; isFallback: boolean; fallbackItemId?: string }> {
     return this.http.post<{ state: any; isFallback: boolean; fallbackItemId?: string }>(
       `${this.API}/acp/${acpId}/items/${itemId}/response-state/with-fallback`,
-      { unitId, itemList },
+      { unitId, itemList, ...(rowKey ? { rowKey } : {}) },
     );
   }
 

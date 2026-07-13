@@ -8,11 +8,9 @@ import {
 } from "typeorm";
 
 @Entity("item_response_states")
-@Index(
-  "IDX_item_response_states_acp_unit_item_unique",
-  ["acpId", "unitId", "itemId"],
-  { unique: true },
-)
+@Index("IDX_item_response_states_acp_row_key_unique", ["acpId", "rowKey"], {
+  unique: true,
+})
 @Index("IDX_item_response_states_acp_unit", ["acpId", "unitId"])
 export class ItemResponseState {
   @PrimaryGeneratedColumn("uuid")
@@ -26,6 +24,9 @@ export class ItemResponseState {
 
   @Column({ name: "unit_id" })
   unitId!: string;
+
+  @Column({ name: "row_key" })
+  rowKey!: string;
 
   @Column({ name: "response_data", type: "jsonb", default: {} })
   responseData!: Record<string, any>;

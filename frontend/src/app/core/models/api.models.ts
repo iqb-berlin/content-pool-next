@@ -392,6 +392,8 @@ export interface FeatureConfig {
   enablePlayerFocusHighlight?: boolean;
   showItemExplorerPlayerTargetInfo?: boolean;
   itemIdFormat?: ItemIdFormat;
+  itemSubIdLabel?: string;
+  itemSubIdLabels?: Record<string, string>;
   availableTags?: string[];
   persistUserPreferences?: boolean;
 }
@@ -458,6 +460,7 @@ export interface FileDependency {
 export interface ItemViewPreferences {
   ui?: Record<string, unknown>;
   tags?: Record<string, string[]>;
+  rowData?: Record<string, Record<string, unknown>>;
 }
 
 export interface ItemExplorerMetadataColumns {

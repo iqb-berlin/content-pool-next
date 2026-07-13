@@ -541,12 +541,28 @@ describe("FilesService", () => {
   describe("cleanupOrphanedResponseStates", () => {
     it("deletes response states that no longer match any file-backed item", async () => {
       stateRepo.find.mockResolvedValueOnce([
-        { id: "state-1", unitId: "unit-1", itemId: "item-a" },
-        { id: "state-2", unitId: "unit-1", itemId: "item-b" },
+        {
+          id: "state-1",
+          unitId: "unit-1",
+          itemId: "item-a",
+          rowKey: "unit-1::item-a",
+        },
+        {
+          id: "state-2",
+          unitId: "unit-1",
+          itemId: "item-b",
+          rowKey: "unit-1::item-b",
+        },
       ]);
       unitParserService.getItemListFromFiles.mockResolvedValueOnce({
         columns: [],
-        items: [{ itemId: "item-a", unitId: "unit-1" }],
+        items: [
+          {
+            itemId: "item-a",
+            unitId: "unit-1",
+            rowKey: "uuid-a",
+          },
+        ],
         unitMetadata: {},
         codingSchemes: {},
       });
@@ -572,6 +588,45 @@ describe("FilesService", () => {
         totalStates: 0,
         deletedStates: 0,
         keptStates: 0,
+      });
+    });
+
+    it("keeps draft partial-credit states while their underlying item still exists", async () => {
+      stateRepo.find.mockResolvedValueOnce([
+        {
+          id: "state-valid-partial",
+          unitId: "unit-1",
+          itemId: "item-a",
+          rowKey: "uuid-a::1",
+        },
+        {
+          id: "state-orphaned-partial",
+          unitId: "unit-1",
+          itemId: "item-missing",
+          rowKey: "uuid-missing::1",
+        },
+      ]);
+      unitParserService.getItemListFromFiles.mockResolvedValueOnce({
+        columns: [],
+        items: [
+          {
+            itemId: "item-a",
+            unitId: "unit-1",
+            uuid: "uuid-a",
+            rowKey: "uuid-a",
+          },
+        ],
+        unitMetadata: {},
+        codingSchemes: {},
+      });
+
+      const result = await service.cleanupOrphanedResponseStates("acp-1");
+
+      expect(stateRepo.delete).toHaveBeenCalledWith(["state-orphaned-partial"]);
+      expect(result).toEqual({
+        totalStates: 2,
+        deletedStates: 1,
+        keptStates: 1,
       });
     });
   });

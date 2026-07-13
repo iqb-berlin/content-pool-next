@@ -141,6 +141,105 @@ describe('ItemExplorerComponent', () => {
     expect(component.sortIsMeta).toBe(false);
   });
 
+  it('filters and sorts partial-credit rows independently by Sub-ID label', () => {
+    const component = createComponent();
+    component.hasPartialCredit = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::2',
+        subId: '2',
+        subIdDisplay: 'vollständig richtig',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+        empiricalDifficulty: 0.8,
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::1',
+        subId: '1',
+        subIdDisplay: 'teilweise richtig',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+        empiricalDifficulty: 0.2,
+      },
+    ];
+    component.filteredItems = [...component.items];
+
+    component.sortBy('subIdDisplay');
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1::1', 'uuid-1::2']);
+
+    component.columnFilters['subId'] = 'vollständig';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1::2']);
+    expect(component.filteredItems[0].empiricalDifficulty).toBe(0.8);
+  });
+
+  it('sorts partial-credit rows manually by stable row key', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::1',
+        subId: '1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::2',
+        subId: '2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.filteredItems = [...component.items];
+    component.itemOrder = ['uuid-1::2', 'uuid-1::1'];
+    component.sortField = '__manual__';
+
+    (component as any).applySort(false);
+
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1::2', 'uuid-1::1']);
+  });
+
+  it('selects partial-credit rows with the same item UUID by stable row key', () => {
+    const component = createComponent();
+    const first = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1::1',
+      subId: '1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: '',
+      variableId: '',
+      metadata: {},
+    } as any;
+    const second = { ...first, rowKey: 'uuid-1::2', subId: '2' };
+
+    component.selectItem(first, 0);
+    component.selectItem(second, 1);
+
+    expect(component.selectedItem?.rowKey).toBe('uuid-1::2');
+    expect(component.selectedIndex).toBe(1);
+  });
+
   it('does not persist fullscreen mode in the shared ui preferences', () => {
     const component = createComponent();
     component.isFullscreen = true;
@@ -952,6 +1051,66 @@ describe('ItemExplorerComponent', () => {
     expect(getFileItemList).toHaveBeenLastCalledWith('acp-1', {
       perspective: 'editor',
     });
+  });
+
+  it('restores a partial-credit manual order only after editor rows are loaded', async () => {
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.ui = {
+      filterText: '',
+      sortField: '__manual__',
+      sortDir: 'asc',
+      sortIsMeta: false,
+    };
+    envelope.draftState.itemOrder = ['uuid-1::2', 'uuid-1::1'];
+    const editorRows = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::1',
+        subId: '1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::2',
+        subId: '2',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    const component = createComponent({
+      api: {
+        getItemExplorerState: vi.fn(() => of(envelope)),
+        getFileItemList: vi.fn(() =>
+          of({ columns: [], items: editorRows, unitMetadata: {}, codingSchemes: {} }),
+        ),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.hasExplorerEditPermission = true;
+    component.viewPerspective = 'read-only';
+    component.items = [
+      {
+        ...editorRows[0],
+        rowKey: 'uuid-1',
+        subId: undefined,
+      },
+    ];
+    component.filteredItems = [...component.items];
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    await component.toggleReadOnlyPreview();
+
+    expect(component.itemOrder).toEqual(['uuid-1::2', 'uuid-1::1']);
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1::2', 'uuid-1::1']);
   });
 
   it('does not enter read-only preview when the pending draft patch cannot be flushed', async () => {

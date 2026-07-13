@@ -2,7 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import * as fs from "fs/promises";
 import { UnitParserService } from "./unit-parser.service";
-import { Acp, AcpFile } from "../database/entities";
+import { Acp, AcpAccessConfig, AcpFile } from "../database/entities";
 
 jest.mock("fs/promises", () => ({
   readFile: jest.fn(),
@@ -12,6 +12,7 @@ describe("UnitParserService", () => {
   let service: UnitParserService;
   let fileRepo: any;
   let acpRepo: any;
+  let accessConfigRepo: any;
 
   const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Unit>
@@ -96,6 +97,13 @@ describe("UnitParserService", () => {
       save: jest.fn().mockImplementation(async (entity) => entity),
     };
 
+    accessConfigRepo = {
+      findOne: jest.fn().mockResolvedValue({
+        acpId: "acp-1",
+        featureConfig: {},
+      }),
+    };
+
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
       if (path === "/tmp/u1.xml") return xmlContent;
       if (path === "/tmp/u1.vomd") return vomdContent;
@@ -107,6 +115,10 @@ describe("UnitParserService", () => {
         UnitParserService,
         { provide: getRepositoryToken(AcpFile), useValue: fileRepo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
+        {
+          provide: getRepositoryToken(AcpAccessConfig),
+          useValue: accessConfigRepo,
+        },
       ],
     }).compile();
 
@@ -354,4 +366,90 @@ describe("UnitParserService", () => {
       }),
     );
   });
+
+  it("merges item properties across legacy, resolved and UUID aliases", async () => {
+    const vomdWithUuid = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: "i1",
+          uuid: "uuid-1",
+          description: "Item 1",
+          variableId: "V1",
+          useUnitAliasAsPrefix: true,
+          profiles: [],
+        },
+      ],
+    });
+
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return vomdWithUuid;
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1", {
+      itemPropertiesOverride: {
+        i1: { tags: ["legacy"], empiricalDifficulty: 0.25 },
+        u1_i1: { tags: ["resolved"] },
+        "uuid-1": { empiricalDifficulty: 0.75 },
+      },
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        uuid: "uuid-1",
+        rowKey: "uuid-1",
+        empiricalDifficulty: 0.75,
+        tags: ["resolved"],
+      }),
+    ]);
+  });
+
+  it("expands one VOMD item into labeled partial-credit rows", async () => {
+    accessConfigRepo.findOne.mockResolvedValueOnce({
+      acpId: "acp-1",
+      featureConfig: {
+        itemSubIdLabel: "Kategorie",
+        itemSubIdLabels: {
+          "1": "teilweise richtig",
+          "2": "vollständig richtig",
+        },
+      },
+    });
+
+    const result = await service.getItemListFromFiles("acp-1", {
+      itemPropertiesOverride: {
+        "u1_i1::1": {
+          itemUuid: "u1_i1",
+          subId: "1",
+          empiricalDifficulty: 0,
+        },
+        "u1_i1::2": {
+          itemUuid: "u1_i1",
+          subId: "2",
+          empiricalDifficulty: 0.75,
+        },
+      },
+    });
+
+    expect(result.subIdLabel).toBe("Kategorie");
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        uuid: "u1_i1",
+        rowKey: "u1_i1::1",
+        subId: "1",
+        subIdDisplay: "teilweise richtig",
+        empiricalDifficulty: 0,
+      }),
+      expect.objectContaining({
+        uuid: "u1_i1",
+        rowKey: "u1_i1::2",
+        subId: "2",
+        subIdDisplay: "vollständig richtig",
+        empiricalDifficulty: 0.75,
+      }),
+    ]);
+  });
+
 });

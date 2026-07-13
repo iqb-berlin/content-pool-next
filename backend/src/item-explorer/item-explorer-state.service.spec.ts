@@ -338,6 +338,62 @@ describe("ItemExplorerStateService", () => {
     );
   });
 
+  it("preserves explicit empty overrides for partial-credit rows", async () => {
+    const record = buildStateRecord({
+      draftState: {
+        ...baseSharedState,
+        tags: { "uuid-1": ["base"] },
+        itemProperties: {
+          "uuid-1": {
+            tags: ["base"],
+            excluded: true,
+            previewTargetId: "BASE_A",
+          },
+          "uuid-1::1": {
+            itemUuid: "uuid-1",
+            subId: "1",
+          },
+        },
+      } as any,
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:15:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        tags: {
+          "uuid-1": ["base"],
+          "uuid-1::1": [],
+        },
+        itemPropertiesPatch: {
+          "uuid-1::1": {
+            tags: [],
+            excluded: false,
+            previewTargetId: "",
+          },
+        },
+      },
+      {
+        baseVersion: 1,
+        changeType: "PARTIAL_ROW_OVERRIDES_CLEARED",
+      },
+    );
+
+    expect(envelope.draftState.tags["uuid-1::1"]).toEqual([]);
+    expect(envelope.draftState.itemProperties["uuid-1::1"]).toEqual(
+      expect.objectContaining({
+        tags: [],
+        excluded: false,
+        previewTargetId: "",
+      }),
+    );
+  });
+
   it("publishes draft atomically into ACP domain data and feature config", async () => {
     const draftState = {
       ...baseSharedState,

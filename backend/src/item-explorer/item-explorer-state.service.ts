@@ -13,6 +13,7 @@ import {
   ItemExplorerDraftStatus,
 } from "../database/entities";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
+import { parseItemRowKeyParts } from "../items/item-row-key.util";
 
 export interface ExplorerActor {
   userId?: string;
@@ -694,7 +695,10 @@ export class ItemExplorerStateService {
         continue;
       }
       const normalizedValues = this.normalizeTagArray(value);
-      if (normalizedValues.length) {
+      if (
+        normalizedValues.length ||
+        parseItemRowKeyParts(normalizedItemKey) !== null
+      ) {
         tags[normalizedItemKey] = normalizedValues;
       }
     }
@@ -725,6 +729,7 @@ export class ItemExplorerStateService {
       if (!normalizedKey || !this.isRecord(value)) {
         continue;
       }
+      const isPartialRow = parseItemRowKeyParts(normalizedKey) !== null;
 
       const itemValue = this.asRecord(value);
       const nextItemValue: Record<string, unknown> = { ...itemValue };
@@ -733,6 +738,8 @@ export class ItemExplorerStateService {
         const tags = this.normalizeTagArray(itemValue.tags);
         if (tags.length) {
           nextItemValue.tags = tags;
+        } else if (isPartialRow) {
+          nextItemValue.tags = [];
         } else {
           delete nextItemValue.tags;
         }
@@ -756,6 +763,8 @@ export class ItemExplorerStateService {
         const normalizedPreviewTargetId = previewTargetIdRaw.trim();
         if (normalizedPreviewTargetId.length > 0) {
           nextItemValue.previewTargetId = normalizedPreviewTargetId;
+        } else if (isPartialRow) {
+          nextItemValue.previewTargetId = "";
         } else {
           delete nextItemValue.previewTargetId;
         }
@@ -766,6 +775,8 @@ export class ItemExplorerStateService {
       if (typeof itemValue.excluded === "boolean") {
         if (itemValue.excluded) {
           nextItemValue.excluded = true;
+        } else if (isPartialRow) {
+          nextItemValue.excluded = false;
         } else {
           delete nextItemValue.excluded;
         }

@@ -12,6 +12,7 @@ import {
 } from "../database/entities";
 import { AuthModule } from "../auth/auth.module";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
+import { FilesModule } from "../files/files.module";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
     ]),
     AuthModule,
     ItemExplorerModule,
+    FilesModule,
   ],
   controllers: [ViewsController],
   providers: [ViewsService],

@@ -649,7 +649,7 @@ describe("ViewsService", () => {
     );
     expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /jsonb_build_object\(\$8, \$7::jsonb\)[\s\S]*RETURNING 1 AS "updated"/,
+        /\("acp_item_preferences"\."preferences"->'rowData'\) - \$8::text[\s\S]*jsonb_build_object\(\$8::text, \$7::jsonb\)[\s\S]*\? \$8::text[\s\S]*RETURNING 1 AS "updated"/,
       ),
       expect.arrayContaining([
         "acp-1",

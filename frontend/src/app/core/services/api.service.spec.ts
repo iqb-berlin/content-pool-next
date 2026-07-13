@@ -891,6 +891,22 @@ describe('ApiService', () => {
       });
     });
 
+    it('should patch one personal item preference row', () => {
+      const rowData = { category: 'II', note: 'Persönlich' };
+      httpClientMock.patch.mockReturnValue(of({ rowData: { 'uuid::1': rowData } }));
+
+      service
+        .patchViewItemPreferenceRow('acp1', 'uuid::1', rowData, 'read-only')
+        .subscribe((result) => {
+          expect(result.rowData).toEqual({ 'uuid::1': rowData });
+        });
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/preferences/row-data',
+        { rowKey: 'uuid::1', rowData, perspective: 'read-only' },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

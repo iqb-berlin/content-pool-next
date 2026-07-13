@@ -451,4 +451,36 @@ describe("UnitParserService", () => {
       }),
     ]);
   });
+
+  it("caches valid row keys and invalidates them when source files change", async () => {
+    const getItemList = jest
+      .spyOn(service, "getItemListFromFiles")
+      .mockResolvedValue({
+        columns: [],
+        items: [{ rowKey: "uuid-1::1" } as any],
+        subIdLabel: "Sub-ID",
+        subIdLabels: {},
+        unitMetadata: {},
+        codingSchemes: {},
+      });
+    const options = {
+      itemPropertiesOverride: {
+        "uuid-1::1": { subId: "1" },
+      },
+    };
+
+    await expect(
+      service.getItemRowKeysFromFiles("acp-1", options),
+    ).resolves.toEqual(new Set(["uuid-1::1"]));
+    await service.getItemRowKeysFromFiles("acp-1", options);
+    expect(getItemList).toHaveBeenCalledTimes(1);
+
+    fileRepo.find.mockResolvedValue(
+      files.map((file, index) =>
+        index === 0 ? { ...file, checksum: "changed" } : file,
+      ),
+    );
+    await service.getItemRowKeysFromFiles("acp-1", options);
+    expect(getItemList).toHaveBeenCalledTimes(2);
+  });
 });

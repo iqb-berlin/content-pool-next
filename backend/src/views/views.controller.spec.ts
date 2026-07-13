@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { ViewsController } from "./views.controller";
 
 describe("ViewsController", () => {
@@ -32,6 +32,9 @@ describe("ViewsController", () => {
       saveItemPreferences: jest
         .fn()
         .mockResolvedValue({ ui: { q: 2 }, tags: { item1: ["B"] } }),
+      patchPersonalItemPreferenceRow: jest.fn().mockResolvedValue({
+        rowData: { "uuid::1": { note: "mine" } },
+      }),
       getTaskSequence: jest
         .fn()
         .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
@@ -205,6 +208,171 @@ describe("ViewsController", () => {
       ),
     ).resolves.toEqual({ ui: { q: 2 }, tags: { item1: ["B"] } });
   });
+
+  it("rejects full-map personal Explorer saves", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        persistUserPreferences: false,
+        enablePersonalItemData: true,
+      },
+    });
+
+    await expect(
+      controller.saveItemPreferences(
+        "acp-1",
+        { viewId: "item-explorer", rowData: { "uuid::1": { note: "mine" } } },
+        { user: { sub: "u-1" } },
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(viewsService.saveItemPreferences).not.toHaveBeenCalled();
+  });
+
+  it.each(["item-explorer", " item-explorer "])(
+    "rejects generic %s saves even when row data is omitted",
+    async (viewId) => {
+      viewsService.getAcpStartPage.mockResolvedValue({
+        featureConfig: {
+          persistUserPreferences: true,
+          enablePersonalItemData: true,
+        },
+      });
+
+      await expect(
+        controller.saveItemPreferences(
+          "acp-1",
+          { viewId, ui: { filter: "mine" } },
+          { user: { sub: "u-1" } },
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(viewsService.saveItemPreferences).not.toHaveBeenCalled();
+    },
+  );
+
+  it("patches one personal Explorer row when the feature is enabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        persistUserPreferences: false,
+        enablePersonalItemData: true,
+      },
+    });
+
+    await controller.patchPersonalItemRow(
+      "acp-1",
+      {
+        rowKey: "uuid::1",
+        rowData: { note: "mine" },
+        perspective: "read-only",
+      },
+      { user: { sub: "u-1" } },
+    );
+
+    expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "u-1" },
+      "uuid::1",
+      { note: "mine" },
+      "item-explorer",
+      false,
+    );
+  });
+
+  it("uses the manager draft when validating personal item rows", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: { enablePersonalItemData: true },
+    });
+
+    await controller.patchPersonalItemRow(
+      "acp-1",
+      {
+        rowKey: "uuid::draft",
+        rowData: { note: "mine" },
+        perspective: "editor",
+      },
+      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+    );
+
+    expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "u-1" },
+      "uuid::draft",
+      { note: "mine" },
+      "item-explorer",
+      true,
+    );
+  });
+
+  it("uses published state for a manager read-only preview", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: { enablePersonalItemData: true },
+    });
+
+    await controller.patchPersonalItemRow(
+      "acp-1",
+      {
+        rowKey: "uuid::published",
+        rowData: { note: "mine" },
+        perspective: "read-only",
+      },
+      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+    );
+
+    expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "u-1" },
+      "uuid::published",
+      { note: "mine" },
+      "item-explorer",
+      false,
+    );
+  });
+
+  it("does not allow credentials to select the editor state", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: { enablePersonalItemData: true },
+    });
+
+    await controller.patchPersonalItemRow(
+      "acp-1",
+      {
+        rowKey: "uuid::published",
+        rowData: { note: "mine" },
+        perspective: "editor",
+      },
+      { user: { sub: "credential-1" }, acpAccessLevel: "CREDENTIAL" },
+    );
+
+    expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "credential-1" },
+      "uuid::published",
+      { note: "mine" },
+      "item-explorer",
+      false,
+    );
+  });
+
+  it.each([true, false])(
+    "rejects personal row patches when only general persistence is %s",
+    async (persistUserPreferences) => {
+      viewsService.getAcpStartPage.mockResolvedValue({
+        featureConfig: {
+          persistUserPreferences,
+          enablePersonalItemData: false,
+        },
+      });
+
+      await expect(
+        controller.patchPersonalItemRow(
+          "acp-1",
+          { rowKey: "uuid::1", rowData: { note: "mine" } },
+          { user: { sub: "u-1" } },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        viewsService.patchPersonalItemPreferenceRow,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it("returns empty preferences on save when persistence is disabled", async () => {
     viewsService.getAcpStartPage.mockResolvedValueOnce({

@@ -66,4 +66,59 @@ describe("prepareSchemaForSynchronization", () => {
     );
     expect(queryRunner.release).toHaveBeenCalledTimes(1);
   });
+
+  it("backfills stable credential preference ids before synchronization", async () => {
+    const { dataSource, queryRunner } = createDataSource(false);
+    (queryRunner.hasTable as jest.Mock).mockImplementation(
+      async (table: string) =>
+        table === "acp_item_preferences" ||
+        table === "acp_credentials" ||
+        table === "acp_access_configs",
+    );
+
+    await prepareSchemaForSynchronization(dataSource);
+
+    const statements = (queryRunner.query as jest.Mock).mock.calls.map(
+      ([statement]) => statement as string,
+    );
+    expect(
+      statements.some((statement) =>
+        statement.includes('ADD COLUMN IF NOT EXISTS "credential_id"'),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some(
+        (statement) =>
+          statement.includes('SET "credential_id" = credential."id"') &&
+          statement.includes(
+            'preference."credential_username" = credential."username"',
+          ),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some(
+        (statement) =>
+          statement.includes('DELETE FROM "acp_item_preferences"') &&
+          statement.includes('"credential_id" IS NULL') &&
+          statement.includes('"credential_username" IS NOT NULL'),
+      ),
+    ).toBe(true);
+    expect(
+      statements.some((statement) =>
+        statement.includes(
+          'CREATE UNIQUE INDEX IF NOT EXISTS "IDX_acp_credentials_unique_username"',
+        ),
+      ),
+    ).toBe(true);
+    const createTemporaryTableIndex = statements.findIndex((statement) =>
+      statement.includes(
+        'CREATE TEMPORARY TABLE "acp_credential_dedup_map_1783903000000"',
+      ),
+    );
+    const dropTemporaryTableIndex = statements.findIndex((statement) =>
+      statement.includes('DROP TABLE "acp_credential_dedup_map_1783903000000"'),
+    );
+    expect(createTemporaryTableIndex).toBeGreaterThanOrEqual(0);
+    expect(dropTemporaryTableIndex).toBeGreaterThan(createTemporaryTableIndex);
+  });
 });

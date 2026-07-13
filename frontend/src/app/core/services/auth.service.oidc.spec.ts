@@ -3,6 +3,7 @@ import { firstValueFrom, of, throwError } from 'rxjs';
 import type { LoginResponse, OidcConfig, UserProfile } from '../models/api.models';
 import { AuthService } from './auth.service';
 import { BYPASS_APP_AUTH } from '../interceptors/auth-context.tokens';
+import { PendingPersonalSessionStorageService } from './pending-personal-session-storage.service';
 
 describe('AuthService OIDC and Crypto Paths', () => {
   let service: AuthService;
@@ -95,7 +96,7 @@ describe('AuthService OIDC and Crypto Paths', () => {
       }),
     };
 
-    service = new AuthService(httpClientMock as any);
+    service = new AuthService(httpClientMock as any, new PendingPersonalSessionStorageService());
   });
 
   afterEach(() => {

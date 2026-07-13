@@ -2,6 +2,22 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { of, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
 import type { LoginResponse, CredentialLoginResponse, UserProfile } from '../models/api.models';
+import { PendingPersonalSessionStorageService } from './pending-personal-session-storage.service';
+
+function createJwt(sub: string, type = 'user', acpId = ''): string {
+  const payload = btoa(
+    JSON.stringify({
+      sub,
+      type,
+      acpId,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  )
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return `header.${payload}.signature`;
+}
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -13,6 +29,7 @@ describe('AuthService', () => {
     postMessage: ReturnType<typeof vi.fn>;
     onmessage: ((event: MessageEvent) => void) | null;
   };
+  let pendingPersonalSessionStorage: PendingPersonalSessionStorageService;
 
   const mockUserProfile: UserProfile = {
     id: '1',
@@ -47,7 +64,8 @@ describe('AuthService', () => {
       post: vi.fn().mockReturnValue(of({})),
       get: vi.fn().mockReturnValue(of(mockUserProfile)),
     };
-    service = new AuthService(httpClientMock as any);
+    pendingPersonalSessionStorage = new PendingPersonalSessionStorageService();
+    service = new AuthService(httpClientMock as any, pendingPersonalSessionStorage);
   });
 
   afterEach(() => {
@@ -68,7 +86,10 @@ describe('AuthService', () => {
         get: vi.fn().mockReturnValue(of(mockUserProfile)),
       };
 
-      const constructedService = new AuthService(localHttpMock as any);
+      const constructedService = new AuthService(
+        localHttpMock as any,
+        pendingPersonalSessionStorage,
+      );
 
       expect(localHttpMock.get).not.toHaveBeenCalled();
       expect(constructedService.currentUser).toBeNull();
@@ -207,6 +228,29 @@ describe('AuthService', () => {
         username: 'user',
         password: 'pass',
       });
+    });
+
+    it('discards snapshots owned by another identity without an active explorer', () => {
+      const userAToken = createJwt('user-a');
+      const credentialBToken = createJwt('credential-b', 'credential', 'acp2');
+      const userAIdentity = pendingPersonalSessionStorage.resolveIdentityFromToken(userAToken);
+      pendingPersonalSessionStorage.set(
+        'cp_item_explorer_pending_personal:acp1',
+        JSON.stringify({ identity: userAIdentity, updates: [] }),
+      );
+      httpClientMock.post.mockReturnValue(
+        of({
+          accessToken: credentialBToken,
+          acpId: 'acp2',
+          username: 'reader-b',
+        } satisfies CredentialLoginResponse),
+      );
+
+      service.credentialLogin('acp2', 'reader-b', 'pass').subscribe();
+
+      expect(
+        pendingPersonalSessionStorage.get('cp_item_explorer_pending_personal:acp1'),
+      ).toBeNull();
     });
   });
 

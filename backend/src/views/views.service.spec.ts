@@ -1,6 +1,9 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { ViewsService } from "./views.service";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { UnitParserService } from "../files/unit-parser.service";
 import {
   Acp,
   AcpAccessConfig,
@@ -19,7 +22,10 @@ describe("ViewsService", () => {
     findOne: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
+    query: jest.Mock;
   };
+  let itemExplorerStateService: { getStateForViewer: jest.Mock };
+  let unitParserService: { getItemRowKeysFromFiles: jest.Mock };
 
   beforeEach(async () => {
     acpRepository = { findOne: jest.fn() };
@@ -30,6 +36,17 @@ describe("ViewsService", () => {
       findOne: jest.fn(),
       create: jest.fn().mockImplementation((value) => value),
       save: jest.fn().mockImplementation(async (value) => value),
+      query: jest.fn(),
+    };
+    itemExplorerStateService = {
+      getStateForViewer: jest.fn().mockResolvedValue({
+        activeState: { itemProperties: {} },
+      }),
+    };
+    unitParserService = {
+      getItemRowKeysFromFiles: jest
+        .fn()
+        .mockResolvedValue(new Set(["uuid-1::1", "uuid-2::1"])),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -49,6 +66,11 @@ describe("ViewsService", () => {
           provide: getRepositoryToken(AcpItemPreference),
           useValue: itemPreferenceRepository,
         },
+        {
+          provide: ItemExplorerStateService,
+          useValue: itemExplorerStateService,
+        },
+        { provide: UnitParserService, useValue: unitParserService },
       ],
     }).compile();
 
@@ -211,12 +233,52 @@ describe("ViewsService", () => {
     });
   });
 
-  it("saves preferences scoped by credential username", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue(null);
+  it("requires a stable identity for personal item preferences", async () => {
+    await expect(
+      service.getItemPreferences("acp-1", null, "item-explorer"),
+    ).rejects.toThrow(UnauthorizedException);
+    await expect(
+      service.patchPersonalItemPreferenceRow(
+        "acp-1",
+        { type: "credential", username: "legacy-reader" },
+        "uuid::1",
+        { note: "not saved" },
+      ),
+    ).rejects.toThrow(UnauthorizedException);
+    expect(itemPreferenceRepository.query).not.toHaveBeenCalled();
+  });
 
+  it("does not fall back to an orphaned username for stable credentials", async () => {
+    itemPreferenceRepository.findOne.mockImplementation(async ({ where }) =>
+      where.credentialId
+        ? null
+        : {
+            credentialUsername: "reader-a",
+            preferences: { rowData: { "uuid::1": { note: "old secret" } } },
+          },
+    );
+
+    await expect(
+      service.getItemPreferences(
+        "acp-1",
+        { type: "credential", sub: "credential-new", username: "reader-a" },
+        "item-explorer",
+      ),
+    ).resolves.toEqual({ ui: {}, tags: {}, rowData: {} });
+    expect(itemPreferenceRepository.findOne).toHaveBeenCalledTimes(1);
+    expect(itemPreferenceRepository.findOne).toHaveBeenCalledWith({
+      where: {
+        acpId: "acp-1",
+        viewId: "item-explorer",
+        credentialId: "credential-new",
+      },
+    });
+  });
+
+  it("saves preferences scoped by stable credential id", async () => {
     const saved = await service.saveItemPreferences(
       "acp-1",
-      { type: "credential", username: "reader-a" },
+      { type: "credential", sub: "credential-1", username: "reader-a" },
       {
         ui: {
           filterText: "xyz",
@@ -237,14 +299,21 @@ describe("ViewsService", () => {
       },
       rowData: {},
     });
-    expect(itemPreferenceRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        acpId: "acp-1",
-        viewId: "item-explorer",
-        userId: null,
-        credentialUsername: "reader-a",
-      }),
+    expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'ON CONFLICT ("acp_id", "view_id", "credential_id")',
+      ),
+      [
+        "acp-1",
+        "item-explorer",
+        null,
+        "credential-1",
+        "reader-a",
+        JSON.stringify(saved),
+      ],
     );
+    expect(itemPreferenceRepository.findOne).not.toHaveBeenCalled();
+    expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
   });
 
   it("returns default public settings when app settings are missing", async () => {
@@ -510,16 +579,8 @@ describe("ViewsService", () => {
     expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
   });
 
-  it("updates existing preference records for authenticated users", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue({
-      id: "pref-1",
-      acpId: "acp-1",
-      viewId: "item-list",
-      userId: "user-1",
-      preferences: {},
-    });
-
-    await service.saveItemPreferences(
+  it("upserts preference records atomically for authenticated users", async () => {
+    const saved = await service.saveItemPreferences(
       "acp-1",
       { sub: "user-1", type: "oidc" },
       {
@@ -529,28 +590,27 @@ describe("ViewsService", () => {
       "item-list",
     );
 
-    expect(itemPreferenceRepository.create).not.toHaveBeenCalled();
-    expect(itemPreferenceRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: "pref-1",
-        preferences: {
-          ui: { sortBy: "name" },
-          tags: { itemA: ["A", "B"] },
-          rowData: {},
-        },
-      }),
+    expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
+      expect.stringContaining('ON CONFLICT ("acp_id", "view_id", "user_id")'),
+      ["acp-1", "item-list", "user-1", null, null, JSON.stringify(saved)],
     );
+    expect(itemPreferenceRepository.findOne).not.toHaveBeenCalled();
+    expect(itemPreferenceRepository.create).not.toHaveBeenCalled();
+    expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
   });
 
   it("persists personal working data by stable row key", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue(null);
-
     const saved = await service.saveItemPreferences(
       "acp-1",
       { sub: "user-1", type: "oidc" },
       {
         rowData: {
-          "uuid-1::1": { category: "A", note: "Notiz" },
+          "uuid-1::1": {
+            category: " A ",
+            tags: ["Prüfen", " Prüfen ", ""],
+            note: "Notiz\r\nzweite Zeile",
+            formatted: "<strong>ignored</strong>",
+          },
           "  ": { category: "ignored" },
         },
       },
@@ -558,7 +618,94 @@ describe("ViewsService", () => {
     );
 
     expect(saved.rowData).toEqual({
-      "uuid-1::1": { category: "A", note: "Notiz" },
+      "uuid-1::1": {
+        category: "A",
+        tags: ["Prüfen"],
+        note: "Notiz\nzweite Zeile",
+      },
     });
+  });
+
+  it("patches one personal row atomically without replacing other rows", async () => {
+    itemPreferenceRepository.query.mockResolvedValue([{ updated: 1 }]);
+
+    const result = await service.patchPersonalItemPreferenceRow(
+      "acp-1",
+      { sub: "user-1", type: "oidc" },
+      "uuid-2::1",
+      { category: " II ", formatted: "ignored" },
+    );
+
+    expect(result.rowData).toEqual({
+      "uuid-2::1": { category: "II" },
+    });
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      false,
+    );
+    expect(unitParserService.getItemRowKeysFromFiles).toHaveBeenCalledWith(
+      "acp-1",
+      { itemPropertiesOverride: {} },
+    );
+    expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /jsonb_build_object\(\$8, \$7::jsonb\)[\s\S]*RETURNING 1 AS "updated"/,
+      ),
+      expect.arrayContaining([
+        "acp-1",
+        "item-explorer",
+        "user-1",
+        null,
+        null,
+        expect.any(String),
+        JSON.stringify({ category: "II" }),
+        "uuid-2::1",
+        10_000,
+      ]),
+    );
+  });
+
+  it("rejects personal data for a row that does not exist in the ACP", async () => {
+    unitParserService.getItemRowKeysFromFiles.mockResolvedValue(
+      new Set(["uuid-1::1"]),
+    );
+
+    await expect(
+      service.patchPersonalItemPreferenceRow(
+        "acp-1",
+        { sub: "user-1", type: "oidc" },
+        "invented-row",
+        { note: "unbounded" },
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(itemPreferenceRepository.query).not.toHaveBeenCalled();
+  });
+
+  it("allows deleting a stale row without resolving the current item list", async () => {
+    itemPreferenceRepository.query.mockResolvedValue([{ updated: 1 }]);
+
+    await expect(
+      service.patchPersonalItemPreferenceRow(
+        "acp-1",
+        { sub: "user-1", type: "oidc" },
+        "removed-row",
+        null,
+      ),
+    ).resolves.toEqual({ rowData: {} });
+    expect(itemExplorerStateService.getStateForViewer).not.toHaveBeenCalled();
+    expect(unitParserService.getItemRowKeysFromFiles).not.toHaveBeenCalled();
+  });
+
+  it("rejects adding a new row after the personal row limit is reached", async () => {
+    itemPreferenceRepository.query.mockResolvedValue([]);
+
+    await expect(
+      service.patchPersonalItemPreferenceRow(
+        "acp-1",
+        { sub: "user-1", type: "oidc" },
+        "uuid-1::1",
+        { note: "one too many" },
+      ),
+    ).rejects.toThrow("Personal item data is limited to 10000 rows");
   });
 });

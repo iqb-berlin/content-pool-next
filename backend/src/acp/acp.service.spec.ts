@@ -70,6 +70,11 @@ describe("AcpService", () => {
       findOne: jest.fn().mockResolvedValue(null),
       remove: jest.fn().mockResolvedValue(undefined),
     };
+    credentialRepo.manager = {
+      transaction: jest.fn(async (callback) =>
+        callback({ getRepository: () => credentialRepo }),
+      ),
+    };
     settingsRepo = {
       findOne: jest.fn().mockResolvedValue(null),
     };
@@ -354,6 +359,54 @@ describe("AcpService", () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it("retains credential access dates during feature-only updates", async () => {
+      const validFrom = new Date("2026-01-01T00:00:00.000Z");
+      const validUntil = new Date("2026-02-01T00:00:00.000Z");
+      accessConfigRepo.findOne.mockResolvedValue({
+        acpId: "acp-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+        allowRegistered: false,
+        featureConfig: {},
+        validFrom,
+        validUntil,
+      });
+
+      await service.updateAccessConfig("acp-1", {
+        accessModel: "CREDENTIALS_LIST",
+        featureConfig: { enablePersonalItemData: true },
+      });
+
+      expect(accessConfigRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accessModel: AccessModel.CREDENTIALS_LIST,
+          validFrom,
+          validUntil,
+          featureConfig: expect.objectContaining({
+            enablePersonalItemData: true,
+          }),
+        }),
+      );
+    });
+
+    it("requires a new validity window when switching to credential access", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        acpId: "acp-1",
+        accessModel: AccessModel.PUBLIC,
+        allowRegistered: false,
+        featureConfig: {},
+        validFrom: new Date("2025-01-01T00:00:00.000Z"),
+        validUntil: new Date("2025-02-01T00:00:00.000Z"),
+      });
+
+      await expect(
+        service.updateAccessConfig("acp-1", {
+          accessModel: "CREDENTIALS_LIST",
+        }),
+      ).rejects.toThrow(
+        "Credential-based access requires validFrom and validUntil",
+      );
+    });
+
     it("updates existing access config values", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValue({
@@ -372,8 +425,8 @@ describe("AcpService", () => {
         expect.objectContaining({
           accessModel: "PUBLIC",
           allowRegistered: true,
-          validFrom: undefined,
-          validUntil: undefined,
+          validFrom: null,
+          validUntil: null,
         }),
       );
     });
@@ -607,9 +660,9 @@ describe("AcpService", () => {
         skipped: 0,
         duplicates: [],
       });
-      expect(credentialRepo.delete).toHaveBeenCalledWith({
-        accessConfigId: "cfg-1",
-      });
+      expect(credentialRepo.remove).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "cred-1", username: "existing" }),
+      ]);
 
       const append = await service.uploadCredentials(
         "acp-1",
@@ -633,6 +686,96 @@ describe("AcpService", () => {
       );
       expect(upsert.updated).toBe(1);
       expect(upsert.added).toBe(1);
+    });
+
+    it("preserves stable credential ids during replace uploads", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
+      credentialRepo.find.mockResolvedValue([
+        { id: "cred-1", username: "existing", passwordHash: "old" },
+      ]);
+
+      const result = await service.uploadCredentials(
+        "acp-1",
+        [{ username: "existing", password: "new-password" }],
+        "replace",
+      );
+
+      expect(result).toEqual({
+        added: 0,
+        updated: 1,
+        skipped: 0,
+        duplicates: [],
+      });
+      expect(credentialRepo.save).toHaveBeenCalledWith([
+        expect.objectContaining({
+          id: "cred-1",
+          username: "existing",
+          passwordHash: "hashed",
+        }),
+      ]);
+      expect(credentialRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it("removes duplicate existing usernames during replace uploads", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
+      credentialRepo.find.mockResolvedValue([
+        { id: "cred-1", username: "existing", passwordHash: "old-a" },
+        { id: "cred-2", username: "existing", passwordHash: "old-b" },
+      ]);
+
+      const result = await service.uploadCredentials(
+        "acp-1",
+        [{ username: "existing", password: "new-password" }],
+        "replace",
+      );
+
+      expect(result).toEqual({
+        added: 0,
+        updated: 1,
+        skipped: 0,
+        duplicates: [],
+      });
+      expect(credentialRepo.save).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "cred-1", passwordHash: "hashed" }),
+      ]);
+      expect(credentialRepo.remove).toHaveBeenCalledWith([
+        expect.objectContaining({ id: "cred-2" }),
+      ]);
+    });
+
+    it("does not hash credentials skipped by append uploads", async () => {
+      accessConfigRepo.findOne.mockResolvedValue({
+        id: "cfg-1",
+        accessModel: AccessModel.CREDENTIALS_LIST,
+      });
+      credentialRepo.find.mockResolvedValue([
+        { id: "cred-1", username: "existing", passwordHash: "old" },
+      ]);
+      const hash = jest.mocked(bcrypt.hash);
+
+      const result = await service.uploadCredentials(
+        "acp-1",
+        [
+          { username: "existing", password: "must-not-be-hashed" },
+          { username: "new-user", password: "new-password" },
+        ],
+        "append",
+      );
+
+      expect(result).toEqual({
+        added: 1,
+        updated: 0,
+        skipped: 1,
+        duplicates: [],
+      });
+      expect(hash).toHaveBeenCalledTimes(1);
+      expect(hash).toHaveBeenCalledWith("new-password", 12);
     });
 
     it("handles duplicate usernames within upload payload", async () => {

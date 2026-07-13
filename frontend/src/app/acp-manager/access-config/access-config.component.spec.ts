@@ -281,4 +281,55 @@ describe('AccessConfigComponent', () => {
       }),
     );
   });
+
+  it('persists personal item categories and colored tags', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enablePersonalItemData: true,
+      personalItemCategoryLabel: 'Kompetenzstufe',
+      personalItemTagLabel: 'Sichtung',
+    };
+    component.personalItemCategoryValues = [' I ', 'II', 'I'];
+    component.personalItemTags = [
+      { label: ' Prüfen ', color: '#ff0000' },
+      { label: '', color: '#000000' },
+    ];
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enablePersonalItemData: true,
+          personalItemCategoryLabel: 'Kompetenzstufe',
+          personalItemCategoryValues: ['I', 'II'],
+          personalItemTagLabel: 'Sichtung',
+          personalItemTags: [{ label: 'Prüfen', color: '#ff0000' }],
+        }),
+      }),
+    );
+  });
+
+  it('includes the existing validity window when saving credential features', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.accessModel = 'CREDENTIALS_LIST';
+    component.validFrom = '2026-07-13T10:00';
+    component.validUntil = '2026-08-13T10:00';
+    component.featureConfig = { enablePersonalItemData: true };
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        accessModel: 'CREDENTIALS_LIST',
+        validFrom: new Date(2026, 6, 13, 10, 0).toISOString(),
+        validUntil: new Date(2026, 7, 13, 10, 0).toISOString(),
+        featureConfig: expect.objectContaining({ enablePersonalItemData: true }),
+      }),
+    );
+  });
 });

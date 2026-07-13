@@ -81,6 +81,9 @@ Key fields:
 - `passwordHash`
 
 These credentials are not normal application users and are not stored in the `users` table.
+The pair of `accessConfigId` and `username` is unique. Legacy duplicate rows are reconciled before
+the constraint is created, retaining one stable credential ID and the newest personal preference
+per view.
 
 ### `AcpFile`
 
@@ -143,9 +146,15 @@ need to persist answer-like data while browsing.
 This table stores persisted viewer preferences for item-oriented pages. It supports both:
 
 - authenticated user IDs,
-- credential-based usernames.
+- stable credential IDs (with the username retained for legacy compatibility and diagnostics).
 
-The payload is JSONB and can hold UI state and item tags per view.
+The payload is JSONB and can hold UI state, item tags, and personal row data per view. Personal row
+data is restricted to a category, a string-array of tags, and a plain-text note. Partial-credit item
+rows use their full stable row key, including the Sub-ID component.
+
+Personal rows are updated atomically inside the JSONB document. Credential-list replacement keeps
+the IDs of credentials whose usernames remain present, preserving their personal preferences while
+still deleting preferences for credentials that are actually removed.
 
 ### `AcpItemExplorerState`
 

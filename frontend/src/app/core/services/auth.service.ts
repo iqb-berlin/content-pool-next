@@ -9,6 +9,7 @@ import {
   AuthContext,
 } from '../models/api.models';
 import { BYPASS_APP_AUTH } from '../interceptors/auth-context.tokens';
+import { PendingPersonalSessionStorageService } from './pending-personal-session-storage.service';
 
 interface OidcTokenResponse {
   access_token: string;
@@ -16,7 +17,10 @@ interface OidcTokenResponse {
   refresh_token?: string;
 }
 
-type AuthChannelMessage = { type: 'logout' } | { type: 'oidc_session_updated' };
+type AuthChannelMessage =
+  | { type: 'logout' }
+  | { type: 'oidc_session_updated' }
+  | { type: 'app_session_updated' };
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -35,14 +39,24 @@ export class AuthService {
   private oidcRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
   private oidcRefreshPromise: Promise<void> | null = null;
   private currentUserSubject = new BehaviorSubject<UserProfile | null>(null);
+  private readonly tokenStorageListener = (event: StorageEvent) => {
+    if (event.key === this.tokenKey && event.newValue) {
+      this.pendingPersonalSessionStorage.activateIdentityFromToken(event.newValue);
+    }
+  };
 
   currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private http: HttpClient) {
+  constructor(
+    private http: HttpClient,
+    private pendingPersonalSessionStorage: PendingPersonalSessionStorageService,
+  ) {
     this.initBroadcastChannel();
+    window.addEventListener('storage', this.tokenStorageListener);
   }
 
   initFromStorage(): void {
+    this.pendingPersonalSessionStorage.activateIdentityFromToken(this.getToken());
     if (this.isOidcUser && this.hasStoredOidcSession()) {
       void this.restoreOidcSession();
       return;
@@ -64,6 +78,11 @@ export class AuthService {
 
         if (event.data?.type === 'oidc_session_updated') {
           this.scheduleOidcTokenRefresh();
+          return;
+        }
+
+        if (event.data?.type === 'app_session_updated') {
+          this.pendingPersonalSessionStorage.activateIdentityFromToken(this.getToken());
         }
       };
     }
@@ -211,7 +230,7 @@ export class AuthService {
       .post<LoginResponse>(`${this.API}/oidc-callback`, { idToken: tokenForBackend })
       .pipe(
         tap((res) => {
-          localStorage.setItem(this.tokenKey, res.accessToken);
+          this.storeApplicationToken(res.accessToken);
           if (accessToken) {
             localStorage.setItem(this.ACCESS_TOKEN_KEY, accessToken);
           } else {
@@ -266,7 +285,7 @@ export class AuthService {
   login(username: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${this.API}/login`, { username, password }).pipe(
       tap((res) => {
-        localStorage.setItem(this.tokenKey, res.accessToken);
+        this.storeApplicationToken(res.accessToken);
         this.loadProfile();
       }),
     );
@@ -281,7 +300,7 @@ export class AuthService {
       .post<CredentialLoginResponse>(`${this.API}/credential-login`, { acpId, username, password })
       .pipe(
         tap((res) => {
-          localStorage.setItem(this.tokenKey, res.accessToken);
+          this.storeApplicationToken(res.accessToken);
         }),
       );
   }
@@ -358,7 +377,7 @@ export class AuthService {
   syncOidcRoles(idToken: string): Observable<UserProfile> {
     return this.http.post<LoginResponse>(`${this.API}/sync-oidc-roles`, { idToken }).pipe(
       tap((res) => {
-        localStorage.setItem(this.tokenKey, res.accessToken);
+        this.storeApplicationToken(res.accessToken);
       }),
       map((res) => this.normalizeUserProfile(res.user)),
     );
@@ -544,6 +563,12 @@ export class AuthService {
       clearTimeout(this.oidcRefreshTimeout);
       this.oidcRefreshTimeout = null;
     }
+  }
+
+  private storeApplicationToken(token: string): void {
+    localStorage.setItem(this.tokenKey, token);
+    this.pendingPersonalSessionStorage.activateIdentityFromToken(token);
+    this.broadcastAuthEvent({ type: 'app_session_updated' });
   }
 
   private getPrimaryOidcToken(): string | null {

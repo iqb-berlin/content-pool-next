@@ -184,9 +184,11 @@ export class AppComponent implements OnInit, OnDestroy {
     document.removeEventListener('visibilitychange', this.visibilityChangeListener);
   }
 
-  logout() {
-    this.auth.logout();
-    this.router.navigate(['/login']);
+  async logout() {
+    const navigated = await this.router.navigate(['/login']);
+    if (navigated) {
+      this.auth.logout();
+    }
   }
 
   changePassword() {

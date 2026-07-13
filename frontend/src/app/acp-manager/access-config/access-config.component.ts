@@ -495,6 +495,94 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         }
 
         <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[enablePersonalItemDataKey]" />
+          <span>Persönliche Arbeitsdaten im Item-Explorer aktivieren</span>
+        </label>
+        @if (featureConfig[enablePersonalItemDataKey]) {
+          <div class="indent-section personal-data-config">
+            <label class="help-text" for="personal-item-category-label">
+              Bezeichnung der Kategorie
+            </label>
+            <input
+              id="personal-item-category-label"
+              class="tag-input"
+              type="text"
+              [(ngModel)]="featureConfig[personalItemCategoryLabelKey]"
+              placeholder="Kompetenzstufe"
+            />
+
+            <label class="help-text" style="margin-top: 10px;">Mögliche Kategorien</label>
+            <div class="tags-editor">
+              @for (value of personalItemCategoryValues; track $index) {
+                <div class="tag-add">
+                  <input
+                    class="tag-input"
+                    type="text"
+                    [(ngModel)]="personalItemCategoryValues[$index]"
+                    placeholder="z. B. Stufe I"
+                  />
+                  <button
+                    class="tag-remove"
+                    type="button"
+                    (click)="removePersonalItemCategoryValue($index)"
+                  >
+                    ✕
+                  </button>
+                </div>
+              }
+              <button
+                class="btn btn-outline btn-sm"
+                type="button"
+                (click)="addPersonalItemCategoryValue()"
+              >
+                + Kategorie
+              </button>
+            </div>
+
+            <label class="help-text" for="personal-item-tag-label" style="margin-top: 10px;">
+              Bezeichnung der Markierungen
+            </label>
+            <input
+              id="personal-item-tag-label"
+              class="tag-input"
+              type="text"
+              [(ngModel)]="featureConfig[personalItemTagLabelKey]"
+              placeholder="Markierungen"
+            />
+
+            <label class="help-text" style="margin-top: 10px;">Markierungen und Farben</label>
+            <div class="tags-editor">
+              @for (tag of personalItemTags; track $index) {
+                <div class="tag-add personal-tag-config-row">
+                  <input
+                    class="tag-color-input"
+                    type="color"
+                    [(ngModel)]="tag.color"
+                    [attr.aria-label]="'Farbe für ' + (tag.label || 'Markierung')"
+                  />
+                  <input
+                    class="tag-input"
+                    type="text"
+                    [(ngModel)]="tag.label"
+                    placeholder="z. B. Rückfrage"
+                  />
+                  <button class="tag-remove" type="button" (click)="removePersonalItemTag($index)">
+                    ✕
+                  </button>
+                </div>
+              }
+              <button class="btn btn-outline btn-sm" type="button" (click)="addPersonalItemTag()">
+                + Markierung
+              </button>
+            </div>
+            <span class="help-text">
+              Kategorien, Markierungen und Notizen sind immer persönlich und werden nicht im
+              ACP-Entwurf veröffentlicht.
+            </span>
+          </div>
+        }
+
+        <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig['persistUserPreferences']" />
           <span>Nutzer-Einstellungen speichern (nur bei Anmeldung)</span>
         </label>
@@ -651,6 +739,26 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         align-items: center;
         margin: 8px 0;
       }
+      .personal-data-config {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .personal-data-config > .tag-input,
+      .personal-data-config > .tags-editor {
+        width: 100%;
+      }
+      .personal-tag-config-row {
+        align-items: center;
+      }
+      .tag-color-input {
+        width: 42px;
+        height: 32px;
+        padding: 2px;
+        border: 1px solid var(--color-border);
+        border-radius: 4px;
+        background: var(--color-surface);
+      }
       .tag-item {
         display: flex;
         align-items: center;
@@ -741,6 +849,11 @@ export class AccessConfigComponent implements OnInit {
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
   readonly itemSubIdLabelKey = 'itemSubIdLabel';
   readonly itemSubIdLabelsKey = 'itemSubIdLabels';
+  readonly enablePersonalItemDataKey = 'enablePersonalItemData';
+  readonly personalItemCategoryLabelKey = 'personalItemCategoryLabel';
+  readonly personalItemCategoryValuesKey = 'personalItemCategoryValues';
+  readonly personalItemTagLabelKey = 'personalItemTagLabel';
+  readonly personalItemTagsKey = 'personalItemTags';
 
   acpId = '';
   accessModel: AccessModel = 'PRIVATE';
@@ -755,6 +868,8 @@ export class AccessConfigComponent implements OnInit {
   availableTags: string[] = [];
   newTag = '';
   itemSubIdLabelEntries: Array<{ value: string; label: string }> = [];
+  personalItemCategoryValues: string[] = [];
+  personalItemTags: Array<{ label: string; color: string }> = [];
   accessSaved = false;
   featuresSaved = false;
   credentials: Credential[] = [];
@@ -880,6 +995,19 @@ export class AccessConfigComponent implements OnInit {
         this.itemSubIdLabelEntries = Object.entries(
           (this.featureConfig[this.itemSubIdLabelsKey] as Record<string, string>) || {},
         ).map(([value, label]) => ({ value, label }));
+        this.personalItemCategoryValues = Array.isArray(
+          this.featureConfig[this.personalItemCategoryValuesKey],
+        )
+          ? [...this.featureConfig[this.personalItemCategoryValuesKey]]
+          : [];
+        this.personalItemTags = Array.isArray(this.featureConfig[this.personalItemTagsKey])
+          ? this.featureConfig[this.personalItemTagsKey].map((tag: any) => ({
+              label: String(tag?.label || ''),
+              color: /^#[0-9a-f]{6}$/i.test(String(tag?.color || ''))
+                ? String(tag.color)
+                : '#3498db',
+            }))
+          : [];
       },
     });
   }
@@ -965,25 +1093,44 @@ export class AccessConfigComponent implements OnInit {
         .filter((entry) => entry.value && entry.label)
         .map((entry) => [entry.value, entry.label]),
     );
+    this.featureConfig[this.personalItemCategoryValuesKey] = Array.from(
+      new Set(this.personalItemCategoryValues.map((value) => value.trim()).filter(Boolean)),
+    );
+    this.featureConfig[this.personalItemTagsKey] = this.personalItemTags
+      .map((tag) => ({ label: tag.label.trim(), color: tag.color }))
+      .filter((tag) => tag.label);
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
-    this.api
-      .updateAccessConfig(this.acpId, {
-        accessModel: this.accessModel,
-        allowRegistered: this.allowRegistered,
-        featureConfig: this.featureConfig,
-      })
-      .subscribe({
-        next: () => {
-          this.featuresSaved = true;
-          setTimeout(() => (this.featuresSaved = false), 3000);
-        },
-      });
+    const data: any = {
+      accessModel: this.accessModel,
+      allowRegistered: this.allowRegistered,
+      featureConfig: this.featureConfig,
+    };
+    if (this.accessModel === 'CREDENTIALS_LIST' && this.validFrom && this.validUntil) {
+      data.validFrom = this.dateTimeLocalToIso(this.validFrom);
+      data.validUntil = this.dateTimeLocalToIso(this.validUntil);
+    }
+    this.api.updateAccessConfig(this.acpId, data).subscribe({
+      next: () => {
+        this.featuresSaved = true;
+        setTimeout(() => (this.featuresSaved = false), 3000);
+      },
+    });
   }
 
   private applyFeatureConfigDefaults() {
     const itemSubIdLabel = String(this.featureConfig[this.itemSubIdLabelKey] || '').trim();
     this.featureConfig[this.itemSubIdLabelKey] = itemSubIdLabel || 'Sub-ID';
+    this.featureConfig[this.enablePersonalItemDataKey] =
+      this.featureConfig[this.enablePersonalItemDataKey] === true;
+    const personalCategoryLabel = String(
+      this.featureConfig[this.personalItemCategoryLabelKey] || '',
+    ).trim();
+    this.featureConfig[this.personalItemCategoryLabelKey] =
+      personalCategoryLabel || 'Kompetenzstufe';
+    const personalTagLabel = String(this.featureConfig[this.personalItemTagLabelKey] || '').trim();
+    this.featureConfig[this.personalItemTagLabelKey] = personalTagLabel || 'Markierungen';
+
     const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
     this.featureConfig[this.showAudioVideoCodingVariablesKey] =
       showAudioVideoCodingVariables !== false;
@@ -1004,6 +1151,22 @@ export class AccessConfigComponent implements OnInit {
     } else {
       this.commentTargets.push(target);
     }
+  }
+
+  addPersonalItemCategoryValue() {
+    this.personalItemCategoryValues.push('');
+  }
+
+  removePersonalItemCategoryValue(index: number) {
+    this.personalItemCategoryValues.splice(index, 1);
+  }
+
+  addPersonalItemTag() {
+    this.personalItemTags.push({ label: '', color: '#3498db' });
+  }
+
+  removePersonalItemTag(index: number) {
+    this.personalItemTags.splice(index, 1);
   }
 
   addTag() {

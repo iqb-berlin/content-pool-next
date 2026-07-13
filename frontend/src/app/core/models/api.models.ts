@@ -377,6 +377,11 @@ export interface FeatureConfig {
   showItemExplorerPlayerTargetInfo?: boolean;
   itemSubIdLabel?: string;
   itemSubIdLabels?: Record<string, string>;
+  enablePersonalItemData?: boolean;
+  personalItemCategoryLabel?: string;
+  personalItemCategoryValues?: string[];
+  personalItemTagLabel?: string;
+  personalItemTags?: Array<{ label: string; color: string }>;
   availableTags?: string[];
   persistUserPreferences?: boolean;
 }

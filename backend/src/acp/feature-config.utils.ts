@@ -20,6 +20,28 @@ function asStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function normalizePersonalItemTags(
+  value: unknown,
+): Array<{ label: string; color: string }> {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const tags: Array<{ label: string; color: string }> = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const label =
+      typeof record.label === "string" ? record.label.trim().slice(0, 100) : "";
+    if (!label || seen.has(label)) continue;
+    const color =
+      typeof record.color === "string" &&
+      /^#[0-9a-f]{6}$/i.test(record.color.trim())
+        ? record.color.trim().toLowerCase()
+        : "#3498db";
+    seen.add(label);
+    tags.push({ label, color });
+  }
+  return tags.slice(0, 50);
+}
+
 function normalizeStringMap(value: unknown): Record<string, string> {
   const source = asRecord(value);
   const normalized: Record<string, string> = {};
@@ -73,6 +95,28 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
 
   normalized.enablePlayerFocusHighlight =
     source.enablePlayerFocusHighlight === true;
+
+  normalized.enablePersonalItemData = source.enablePersonalItemData === true;
+  normalized.personalItemCategoryLabel =
+    typeof source.personalItemCategoryLabel === "string" &&
+    source.personalItemCategoryLabel.trim()
+      ? source.personalItemCategoryLabel.trim().slice(0, 100)
+      : "Kompetenzstufe";
+  normalized.personalItemCategoryValues = Array.from(
+    new Set(
+      asStringArray(source.personalItemCategoryValues).map((value) =>
+        value.slice(0, 200),
+      ),
+    ),
+  ).slice(0, 50);
+  normalized.personalItemTagLabel =
+    typeof source.personalItemTagLabel === "string" &&
+    source.personalItemTagLabel.trim()
+      ? source.personalItemTagLabel.trim().slice(0, 100)
+      : "Markierungen";
+  normalized.personalItemTags = normalizePersonalItemTags(
+    source.personalItemTags,
+  );
 
   normalized.itemSubIdLabel =
     typeof source.itemSubIdLabel === "string" &&

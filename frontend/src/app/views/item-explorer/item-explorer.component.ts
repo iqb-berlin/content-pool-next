@@ -5225,7 +5225,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       }
 
       const tagsFromState = this.getTagsForKeys(stateTags, keys);
-      if (tagsFromState.length) {
+      if (tagsFromState !== null) {
         item.tags = tagsFromState;
       } else if (Array.isArray(itemProps?.['tags'])) {
         item.tags = this.normalizeTagValues(itemProps['tags']);
@@ -5286,14 +5286,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return found ? merged : null;
   }
 
-  private getTagsForKeys(tagsMap: Record<string, string[]>, keys: string[]): string[] {
+  private getTagsForKeys(tagsMap: Record<string, string[]>, keys: string[]): string[] | null {
     for (const key of keys) {
       const tags = tagsMap[key];
-      if (Array.isArray(tags) && tags.length) {
+      if (Array.isArray(tags)) {
         return this.normalizeTagValues(tags);
       }
     }
-    return [];
+    return null;
   }
 
   private normalizeTagValues(values: unknown[]): string[] {
@@ -6000,7 +6000,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         ),
       );
 
-      if (normalizedValues.length) {
+      if (normalizedValues.length || normalizedItemId.includes('::')) {
         tags[normalizedItemId] = normalizedValues;
       }
     }

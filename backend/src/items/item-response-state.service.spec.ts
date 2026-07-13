@@ -57,7 +57,12 @@ describe("ItemResponseStateService", () => {
     );
     expect(result).toEqual(expect.objectContaining({ id: "state-1" }));
     expect(stateRepository.findOne).toHaveBeenCalledWith({
-      where: { acpId: "acp-1", itemId: "item-1", unitId: "unit-1" },
+      where: {
+        acpId: "acp-1",
+        itemId: "item-1",
+        unitId: "unit-1",
+        rowKey: "unit-1::item-1",
+      },
     });
   });
 
@@ -76,6 +81,7 @@ describe("ItemResponseStateService", () => {
       acpId: "acp-1",
       itemId: "item-2",
       unitId: "unit-2",
+      rowKey: "unit-2::item-2",
       responseData: { answer: 2 },
     });
     expect(stateRepository.save).toHaveBeenCalled();
@@ -170,7 +176,58 @@ describe("ItemResponseStateService", () => {
     ]);
     expect(stateRepository.find).toHaveBeenCalledWith({
       where: { acpId: "acp-1" },
-      order: { unitId: "ASC", itemId: "ASC" },
+      order: { unitId: "ASC", itemId: "ASC", rowKey: "ASC" },
+    });
+  });
+
+  it("stores response states independently for partial-credit row keys", async () => {
+    stateRepository.findOne.mockResolvedValue(null);
+
+    await service.saveResponseState(
+      "acp-1",
+      "item-1",
+      "unit-1",
+      { answer: 1 },
+      true,
+      "uuid-1::1",
+    );
+    await service.saveResponseState(
+      "acp-1",
+      "item-1",
+      "unit-1",
+      { answer: 2 },
+      true,
+      "uuid-1::2",
+    );
+
+    expect(stateRepository.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        rowKey: "uuid-1::1",
+        responseData: { answer: 1 },
+      }),
+    );
+    expect(stateRepository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        rowKey: "uuid-1::2",
+        responseData: { answer: 2 },
+      }),
+    );
+  });
+
+  it("does not resolve a row key through a different item route", async () => {
+    stateRepository.findOne.mockResolvedValue(null);
+
+    await service.getResponseState("acp-1", "item-b", "unit-b", "uuid-a::1");
+
+    expect(stateRepository.findOne).toHaveBeenCalledWith({
+      where: {
+        acpId: "acp-1",
+        itemId: "item-b",
+        unitId: "unit-b",
+        rowKey: "uuid-a::1",
+      },
     });
   });
 

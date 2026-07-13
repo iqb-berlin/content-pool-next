@@ -286,4 +286,29 @@ describe('AccessConfigComponent', () => {
       }),
     );
   });
+
+  it('persists the configured Sub-ID label and value labels', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = { enableItemList: true, itemSubIdLabel: 'Kategorie' };
+    component.itemSubIdLabelEntries = [
+      { value: '1', label: 'teilweise richtig' },
+      { value: '2', label: 'vollständig richtig' },
+    ];
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          itemSubIdLabel: 'Kategorie',
+          itemSubIdLabels: {
+            '1': 'teilweise richtig',
+            '2': 'vollständig richtig',
+          },
+        }),
+      }),
+    );
+  });
 });

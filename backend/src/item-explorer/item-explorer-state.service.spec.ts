@@ -15,6 +15,7 @@ describe("ItemExplorerStateService", () => {
   let accessConfigRepo: any;
   let stateRepo: any;
   let changeLogRepo: any;
+  let transactionManager: any;
 
   const baseSharedState = {
     ui: {},
@@ -63,6 +64,18 @@ describe("ItemExplorerStateService", () => {
       find: jest.fn(),
       create: jest.fn().mockImplementation((payload) => payload),
       save: jest.fn(),
+    };
+    transactionManager = {
+      getRepository: jest.fn((entity) => {
+        if (entity === Acp) return acpRepo;
+        if (entity === AcpAccessConfig) return accessConfigRepo;
+        if (entity === AcpItemExplorerState) return stateRepo;
+        if (entity === AcpItemExplorerChangeLog) return changeLogRepo;
+        throw new Error(`Unexpected repository: ${String(entity)}`);
+      }),
+    };
+    stateRepo.manager = {
+      transaction: jest.fn((callback) => callback(transactionManager)),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -150,6 +163,28 @@ describe("ItemExplorerStateService", () => {
     expect(changeLogRepo.save).not.toHaveBeenCalled();
   });
 
+  it("rechecks the draft version after acquiring the transaction lock", async () => {
+    stateRepo.findOne
+      .mockResolvedValueOnce(buildStateRecord({ version: 4 }))
+      .mockResolvedValueOnce(buildStateRecord({ version: 5 }));
+
+    await expect(
+      service.patchDraft(
+        "acp-1",
+        { ui: { filterText: "new" } },
+        { baseVersion: 4 },
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(stateRepo.findOne).toHaveBeenLastCalledWith({
+      where: { acpId: "acp-1" },
+      lock: { mode: "pessimistic_write" },
+    });
+    expect(stateRepo.save).not.toHaveBeenCalled();
+    expect(changeLogRepo.save).not.toHaveBeenCalled();
+  });
+
   it("patches draft, increments version and writes audit log entry", async () => {
     const record = buildStateRecord();
     stateRepo.findOne.mockResolvedValue(record);
@@ -175,6 +210,7 @@ describe("ItemExplorerStateService", () => {
 
     expect(envelope.status).toBe("DIRTY");
     expect(envelope.version).toBe(2);
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(changeLogRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         acpId: "acp-1",
@@ -354,12 +390,95 @@ describe("ItemExplorerStateService", () => {
     expect(envelope.status).toBe("CLEAN");
     expect(envelope.version).toBe(4);
     expect(envelope.publishedVersion).toBe(3);
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(changeLogRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         changeType: "SAVE_DRAFT",
         publishedVersion: 3,
       }),
     );
+  });
+
+  it("publishes immediate item properties in one locked transaction", async () => {
+    const record = buildStateRecord({
+      publishedState: {
+        ...baseSharedState,
+        itemProperties: { item1: { empiricalDifficulty: 0.2 } },
+      },
+      draftState: {
+        ...baseSharedState,
+        itemProperties: { item1: { empiricalDifficulty: 0.2 } },
+      },
+      version: 4,
+      publishedVersion: 2,
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T12:30:00.000Z"),
+    }));
+    acpRepo.findOne.mockResolvedValue({ id: "acp-1", itemProperties: {} });
+    acpRepo.save.mockImplementation(async (entity: any) => entity);
+    accessConfigRepo.findOne.mockResolvedValue(null);
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.publishItemPropertiesImmediately(
+      "acp-1",
+      { item1: { empiricalDifficulty: 0.8 } },
+      {
+        actor: { username: "alice", role: "ACP_MANAGER" },
+        changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
+        baseVersion: 4,
+      },
+    );
+
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(stateRepo.findOne).toHaveBeenCalledWith({
+      where: { acpId: "acp-1" },
+      lock: { mode: "pessimistic_write" },
+    });
+    expect(acpRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: { item1: { empiricalDifficulty: 0.8 } },
+      }),
+    );
+    expect(envelope.status).toBe("CLEAN");
+    expect(envelope.version).toBe(5);
+    expect(envelope.publishedVersion).toBe(3);
+    expect(envelope.publishedState.itemProperties).toEqual({
+      item1: { empiricalDifficulty: 0.8 },
+    });
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
+        draftVersion: 5,
+        publishedVersion: 3,
+      }),
+    );
+  });
+
+  it("keeps audit logging inside the immediate publish transaction", async () => {
+    const record = buildStateRecord({ version: 4, publishedVersion: 2 });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => entity);
+    acpRepo.findOne.mockResolvedValue({ id: "acp-1", itemProperties: {} });
+    acpRepo.save.mockImplementation(async (entity: any) => entity);
+    accessConfigRepo.findOne.mockResolvedValue(null);
+    changeLogRepo.save.mockRejectedValue(new Error("audit write failed"));
+
+    await expect(
+      service.publishItemPropertiesImmediately(
+        "acp-1",
+        { item1: { empiricalDifficulty: 0.8 } },
+        {
+          changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
+          baseVersion: 4,
+        },
+      ),
+    ).rejects.toThrow("audit write failed");
+
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(changeLogRepo.save).toHaveBeenCalledTimes(1);
   });
 
   it("discard resets draft to published and logs change", async () => {
@@ -391,6 +510,7 @@ describe("ItemExplorerStateService", () => {
 
     expect(envelope.status).toBe("CLEAN");
     expect(envelope.version).toBe(6);
+    expect(stateRepo.manager.transaction).toHaveBeenCalledTimes(1);
     expect(envelope.draftState.ui).toEqual(publishedState.ui);
     expect(changeLogRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({

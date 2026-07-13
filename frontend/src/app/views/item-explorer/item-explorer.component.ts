@@ -32,6 +32,9 @@ interface MetadataColumn {
 interface ExplorerItem {
   itemId: string;
   uuid: string;
+  rowKey: string;
+  subId?: string;
+  subIdDisplay?: string;
   unitId: string;
   unitLabel: string;
   description: string;
@@ -133,7 +136,7 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
         </div>
         <div class="header-actions">
           <span class="item-count"
-            >{{ filteredItems.length }} von {{ visibleItemsCount }} Items</span
+            >{{ filteredItems.length }} von {{ visibleItemsCount }} Zeilen</span
           >
           <button
             class="btn btn-outline btn-sm"
@@ -463,6 +466,11 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                   <th (click)="sortBy('unitLabel')" class="sortable">
                     Aufgabe {{ getSortIndicator('unitLabel') }}
                   </th>
+                  @if (hasPartialCredit) {
+                    <th (click)="sortBy('subIdDisplay')" class="sortable">
+                      {{ itemSubIdLabel }} {{ getSortIndicator('subIdDisplay') }}
+                    </th>
+                  }
                   @if (hasEmpiricalDifficulty) {
                     <th (click)="sortBy('empiricalDifficulty')" class="sortable">
                       Empirische Itemschwierigkeit {{ getSortIndicator('empiricalDifficulty') }}
@@ -494,6 +502,16 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                       (input)="applyFilter()"
                     />
                   </th>
+                  @if (hasPartialCredit) {
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="columnFilters['subId']"
+                        [placeholder]="'🔍 ' + itemSubIdLabel + '...'"
+                        (input)="applyFilter()"
+                      />
+                    </th>
+                  }
                   @if (hasEmpiricalDifficulty) {
                     <th>
                       <input
@@ -528,17 +546,13 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                 </tr>
               </thead>
               <tbody>
-                @for (
-                  item of filteredItems;
-                  track item.unitId + '_' + item.itemId;
-                  let i = $index
-                ) {
+                @for (item of filteredItems; track item.rowKey; let i = $index) {
                   <tr
                     [id]="getItemRowId(item)"
-                    [class.active]="selectedItem?.uuid === item.uuid"
+                    [class.active]="selectedItem?.rowKey === item.rowKey"
                     [class.excluded]="isItemExcluded(item)"
                     [class.no-preview]="!canPreviewItem(item)"
-                    [attr.aria-selected]="selectedItem?.uuid === item.uuid"
+                    [attr.aria-selected]="selectedItem?.rowKey === item.rowKey"
                     (click)="selectItem(item, i)"
                   >
                     <td class="sticky-col">
@@ -562,6 +576,11 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                       </div>
                     </td>
                     <td>{{ item.unitLabel }}</td>
+                    @if (hasPartialCredit) {
+                      <td>
+                        <span [title]="item.subId || ''">{{ item.subIdDisplay || '–' }}</span>
+                      </td>
+                    }
                     @if (hasEmpiricalDifficulty) {
                       <td>
                         {{
@@ -577,13 +596,10 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                     }
                     @if (enableTags) {
                       <td class="tags-cell" (click)="$event.stopPropagation()">
-                        @for (
-                          tag of itemTags[item.uuid || item.unitId + '_' + item.itemId] || [];
-                          track tag
-                        ) {
+                        @for (tag of itemTags[item.rowKey] || []; track tag) {
                           <span
                             class="badge badge-info tag-badge"
-                            (click)="removeItemTag(item.uuid, tag)"
+                            (click)="removeItemTag(item.rowKey, tag)"
                             >{{ tag }}
                             @if (canEditExplorer) {
                               ✕
@@ -593,7 +609,7 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                         @if (canEditExplorer) {
                           <div class="tag-add-container">
                             @if (availableTags.length > 0) {
-                              <select class="tag-select" (change)="addItemTag(item.uuid, $event)">
+                              <select class="tag-select" (change)="addItemTag(item.rowKey, $event)">
                                 <option value="">+Tag</option>
                                 @for (tag of availableTags; track tag) {
                                   <option [value]="tag">{{ tag }}</option>
@@ -604,8 +620,8 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                               type="text"
                               class="tag-input-inline"
                               placeholder="Neu..."
-                              (keydown.enter)="addCustomTag(item.uuid, $event)"
-                              (blur)="addCustomTag(item.uuid, $event)"
+                              (keydown.enter)="addCustomTag(item.rowKey, $event)"
+                              (blur)="addCustomTag(item.rowKey, $event)"
                             />
                           </div>
                         }
@@ -629,6 +645,11 @@ const ALL_STRUCTURE_FILTER_KEYS: StructureFilterKey[] = [
                 <div class="preview-target-header">
                   <strong>Explorer-Item</strong>
                   <code>{{ selectedItem.unitId }}{{ selectedItem.itemId }}</code>
+                  @if (selectedItem.subId) {
+                    <span class="player-target-badge secondary">
+                      {{ itemSubIdLabel }}: {{ selectedItem.subIdDisplay || selectedItem.subId }}
+                    </span>
+                  }
                   @if (isItemExcluded(selectedItem)) {
                     <span class="excluded-item-badge">Ausgeschlossen</span>
                   }
@@ -2677,6 +2698,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   items: ExplorerItem[] = [];
   filteredItems: ExplorerItem[] = [];
   hasEmpiricalDifficulty = false;
+  hasPartialCredit = false;
+  itemSubIdLabel = 'Sub-ID';
   filterText = '';
   isFullscreen = false;
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
@@ -3170,6 +3193,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       this.showOnlyItemsWithEmpiricalDifficulty = fc.showOnlyItemsWithEmpiricalDifficulty === true;
+      this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
@@ -3185,7 +3209,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   // --- Reload Items ---
-  reloadItems() {
+  reloadItems(onSettled?: () => void) {
     this.itemListError = '';
 
     // Load item list from .vomd files
@@ -3197,7 +3221,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         next: (result) => {
           this.allColumns = result.columns || [];
           this.columns = this.filterVisibleColumns(this.allColumns);
-          this.items = result.items || [];
+          this.items = (result.items || []).map((item: ExplorerItem) => ({
+            ...item,
+            rowKey: item.rowKey || item.uuid || `${item.unitId}_${item.itemId}`,
+          }));
+          this.itemSubIdLabel = String(result.subIdLabel || this.itemSubIdLabel).trim() || 'Sub-ID';
+          this.hasPartialCredit = this.items.some((item) => !!item.subId);
           this.hydrateItemTagsFromItems();
           this.applyExplorerStateToItems();
           this.structureFilterOptions = this.buildStructureFilterOptions(this.items);
@@ -3209,6 +3238,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
           this.applyFilter(false); // re-apply current filters and sort
+          onSettled?.();
         },
         error: (error) => {
           console.error('Failed to load explorer item list', error);
@@ -3223,9 +3253,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.itemTags = {};
           this.structureFilterOptions = {};
           this.hasEmpiricalDifficulty = false;
+          this.hasPartialCredit = false;
           this.unitMetadataCache = {};
           this.codingSchemeCache = {};
           this.clearSelectedItem();
+          onSettled?.();
         },
       });
   }
@@ -3357,6 +3389,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     if (term) {
       const matchesGlobal =
         (item.unitId + item.itemId).toLowerCase().includes(term) ||
+        String(item.subId || '')
+          .toLowerCase()
+          .includes(term) ||
+        String(item.subIdDisplay || '')
+          .toLowerCase()
+          .includes(term) ||
         item.unitLabel.toLowerCase().includes(term) ||
         item.description.toLowerCase().includes(term) ||
         Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term));
@@ -3373,8 +3411,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         if (!combined.includes(subTerm)) return false;
       } else if (colId === 'unitLabel') {
         if (!item.unitLabel.toLowerCase().includes(subTerm)) return false;
+      } else if (colId === 'subId') {
+        const subIdValue = `${item.subId || ''} ${item.subIdDisplay || ''}`.toLowerCase();
+        if (!subIdValue.includes(subTerm)) return false;
       } else if (colId === 'tags') {
-        const tags = this.itemTags[item.uuid] || [];
+        const tags = this.itemTags[item.rowKey] || [];
         if (!tags.some((t) => t.toLowerCase().includes(subTerm))) return false;
       } else if (colId === 'empiricalDifficulty') {
         if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
@@ -3510,8 +3551,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const rank = new Map<string, number>();
       this.itemOrder.forEach((entry, idx) => rank.set(entry, idx));
       this.filteredItems.sort((a, b) => {
-        const posA = rank.has(a.uuid) ? (rank.get(a.uuid) as number) : Number.MAX_SAFE_INTEGER;
-        const posB = rank.has(b.uuid) ? (rank.get(b.uuid) as number) : Number.MAX_SAFE_INTEGER;
+        const posA = rank.get(this.getStableRowKey(a)) ?? Number.MAX_SAFE_INTEGER;
+        const posB = rank.get(this.getStableRowKey(b)) ?? Number.MAX_SAFE_INTEGER;
         return posA - posB;
       });
       this.syncSelectionAfterListMutation();
@@ -3546,7 +3587,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         if (unitCmp !== 0) {
           return unitCmp;
         }
-        return this.compareSortText(a.itemId, b.itemId);
+        const itemCmp = this.compareSortText(a.itemId, b.itemId);
+        if (itemCmp !== 0) {
+          return itemCmp;
+        }
+        return this.compareSortText(a.subIdDisplay, b.subIdDisplay);
       }
 
       return 0;
@@ -3695,7 +3740,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Item Selection ---
   selectItem(item: ExplorerItem, index: number) {
-    if (this.selectedItem?.uuid === item.uuid) {
+    item.rowKey = this.getStableRowKey(item);
+    if (
+      this.selectedItem &&
+      this.getStableRowKey(this.selectedItem) === this.getStableRowKey(item)
+    ) {
       this.selectedIndex = index;
       return;
     }
@@ -3800,40 +3849,51 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   private loadResponseStateForItem(item: ExplorerItem, token: number) {
     // Build item list from filteredItems for fallback lookup
-    const itemList = this.filteredItems.map((i) => ({ itemId: i.itemId, unitId: i.unitId }));
+    const itemList = this.filteredItems.map((i) => ({
+      itemId: i.itemId,
+      unitId: i.unitId,
+      rowKey: this.getStableRowKey(i),
+    }));
+    const responseStateRequest = item.rowKey
+      ? this.api.getResponseStateWithFallback(
+          this.acpId,
+          item.itemId,
+          item.unitId,
+          itemList,
+          item.rowKey,
+        )
+      : this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList);
 
-    this.api
-      .getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList)
-      .subscribe({
-        next: (result) => {
-          if (token !== this.unitLoadToken) return;
-          if (
-            result.state &&
-            result.state.responseData &&
-            Object.keys(result.state.responseData).length > 0
-          ) {
-            this.currentResponseData = result.state.responseData;
-            this.hasResponseState = true;
-            this.isFallbackState = result.isFallback;
-          } else {
-            // No state available (direct or fallback)
-            this.currentResponseData = null;
-            this.hasResponseState = false;
-            this.isFallbackState = false;
-          }
-          this.responseStateReady = true;
-          this.startPlayerIfReady();
-        },
-        error: () => {
-          if (token !== this.unitLoadToken) return;
-          // On error, continue without state
+    responseStateRequest.subscribe({
+      next: (result) => {
+        if (token !== this.unitLoadToken) return;
+        if (
+          result.state &&
+          result.state.responseData &&
+          Object.keys(result.state.responseData).length > 0
+        ) {
+          this.currentResponseData = result.state.responseData;
+          this.hasResponseState = true;
+          this.isFallbackState = result.isFallback;
+        } else {
+          // No state available (direct or fallback)
           this.currentResponseData = null;
           this.hasResponseState = false;
           this.isFallbackState = false;
-          this.responseStateReady = true;
-          this.startPlayerIfReady();
-        },
-      });
+        }
+        this.responseStateReady = true;
+        this.startPlayerIfReady();
+      },
+      error: () => {
+        if (token !== this.unitLoadToken) return;
+        // On error, continue without state
+        this.currentResponseData = null;
+        this.hasResponseState = false;
+        this.isFallbackState = false;
+        this.responseStateReady = true;
+        this.startPlayerIfReady();
+      },
+    });
   }
 
   saveCurrentResponseState() {
@@ -3859,6 +3919,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         this.selectedItem.itemId,
         this.selectedItem.unitId,
         this.currentResponseData,
+        this.selectedItem.rowKey,
       )
       .subscribe({
         next: () => {
@@ -3888,7 +3949,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.confirmDialogState = 'deleting';
 
     this.api
-      .deleteResponseState(this.acpId, this.selectedItem.itemId, this.selectedItem.unitId)
+      .deleteResponseState(
+        this.acpId,
+        this.selectedItem.itemId,
+        this.selectedItem.unitId,
+        this.selectedItem.rowKey,
+      )
       .subscribe({
         next: () => {
           this.hasResponseState = false;
@@ -4168,7 +4234,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
     const startPage = targetLocation.scrollPageIndex;
     this.previewUnavailableReason = '';
-    const sessionId = `explorer-${selectedItem.uuid || 'none'}-${this.startSessionCounter + 1}`;
+    const sessionId = `explorer-${this.getStableRowKey(selectedItem) || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
 
@@ -4304,7 +4370,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   private getEffectivePlayerTarget(item?: ExplorerItem | null): string {
     if (!item) return '';
-    if (this.selectedItem?.uuid === item.uuid) {
+    if (
+      this.selectedItem &&
+      this.getStableRowKey(this.selectedItem) === this.getStableRowKey(item)
+    ) {
       return this.selectedPreviewTarget;
     }
     return this.getPersistedOrDefaultPlayerTarget(item);
@@ -4623,7 +4692,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       ? item.itemId
       : `${item.unitId}_${item.itemId}`;
 
-    for (const candidate of [item.uuid, resolvedItemId, item.itemId]) {
+    for (const candidate of [item.rowKey, item.uuid, resolvedItemId, item.itemId]) {
       const key = String(candidate || '').trim();
       if (key) {
         return key;
@@ -4843,8 +4912,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private hydrateItemTagsFromItems() {
     const tagsFromItems: Record<string, string[]> = {};
     for (const item of this.items) {
-      if (item.uuid && Array.isArray(item.tags) && item.tags.length) {
-        tagsFromItems[item.uuid] = [...item.tags];
+      if (item.rowKey && Array.isArray(item.tags) && item.tags.length) {
+        tagsFromItems[item.rowKey] = [...item.tags];
       }
     }
     this.itemTags = tagsFromItems;
@@ -4968,12 +5037,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.syncEffectiveExplorerPermissions();
     this.itemListError = '';
 
-    if (this.latestExplorerState) {
-      this.applySharedExplorerEnvelope(this.latestExplorerState);
-    }
-
+    await new Promise<void>((resolve) => this.reloadItems(resolve));
     await this.loadSharedExplorerState();
-    this.reloadItems();
     this.perspectiveSwitchBusy = false;
   }
 
@@ -5089,7 +5154,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.sortIsMeta = false;
     this.sortDir = 'asc';
     if (!this.itemOrder.length) {
-      this.itemOrder = this.items.map((item) => item.uuid);
+      this.itemOrder = this.items.map((item) => item.rowKey);
     }
     this.applySort();
   }
@@ -5099,9 +5164,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return;
     }
     if (!this.itemOrder.length) {
-      this.itemOrder = this.items.map((item) => item.uuid);
+      this.itemOrder = this.items.map((item) => item.rowKey);
     }
-    const currentIndex = this.itemOrder.indexOf(this.selectedItem.uuid);
+    const currentIndex = this.itemOrder.indexOf(this.selectedItem.rowKey);
     if (currentIndex === -1) {
       return;
     }
@@ -5420,16 +5485,16 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.hydrateItemTagsFromItems();
     if (Object.keys(stateTags).length) {
-      this.itemTags = stateTags;
+      this.itemTags = { ...this.itemTags, ...stateTags };
     }
 
     if (!this.itemOrder.length) {
-      this.itemOrder = this.items.map((item) => item.uuid);
+      this.itemOrder = this.items.map((item) => item.rowKey);
     } else {
-      const existing = new Set(this.items.map((item) => item.uuid));
+      const existing = new Set(this.items.map((item) => item.rowKey));
       const filteredOrder = this.itemOrder.filter((entry) => existing.has(entry));
       const missing = this.items
-        .map((item) => item.uuid)
+        .map((item) => item.rowKey)
         .filter((entry) => !filteredOrder.includes(entry));
       this.itemOrder = [...filteredOrder, ...missing];
     }
@@ -5446,7 +5511,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       ? item.itemId
       : `${item.unitId}_${item.itemId}`;
 
-    for (const candidate of [item.uuid, resolvedItemId, item.itemId]) {
+    for (const candidate of [item.rowKey, item.uuid, resolvedItemId, item.itemId]) {
       const key = String(candidate || '').trim();
       if (key) {
         keys.add(key);
@@ -5459,12 +5524,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     itemProperties: Record<string, Record<string, unknown>>,
     keys: string[],
   ): Record<string, unknown> | null {
-    for (const key of keys) {
+    const merged: Record<string, unknown> = {};
+    let found = false;
+    for (const key of [...keys].reverse()) {
       if (this.isRecord(itemProperties[key])) {
-        return itemProperties[key];
+        Object.assign(merged, itemProperties[key]);
+        found = true;
       }
     }
-    return null;
+    return found ? merged : null;
   }
 
   private getTagsForKeys(tagsMap: Record<string, string[]>, keys: string[]): string[] {
@@ -5715,7 +5783,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   getItemRowId(item: ExplorerItem): string {
-    const rawId = item.uuid || `${item.unitId}_${item.itemId}`;
+    const rawId = this.getStableRowKey(item);
     return `item-explorer-row-${String(rawId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
   }
 
@@ -5828,7 +5896,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private getSelectedFilteredIndex(): number {
     if (this.selectedIndex >= 0 && this.selectedIndex < this.filteredItems.length) {
       const itemAtIndex = this.filteredItems[this.selectedIndex];
-      if (itemAtIndex?.uuid === this.selectedItem?.uuid) {
+      if (
+        itemAtIndex &&
+        this.selectedItem &&
+        this.getStableRowKey(itemAtIndex) === this.getStableRowKey(this.selectedItem)
+      ) {
         return this.selectedIndex;
       }
     }
@@ -5837,7 +5909,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       return -1;
     }
 
-    return this.filteredItems.findIndex((item) => item.uuid === this.selectedItem?.uuid);
+    return this.filteredItems.findIndex(
+      (item) => this.getStableRowKey(item) === this.getStableRowKey(this.selectedItem),
+    );
   }
 
   private scrollActiveRowIntoView() {
@@ -5859,7 +5933,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
 
     const selectedIndex = this.filteredItems.findIndex(
-      (item) => item.uuid === this.selectedItem?.uuid,
+      (item) => this.getStableRowKey(item) === this.getStableRowKey(this.selectedItem),
     );
     if (selectedIndex >= 0) {
       this.selectItem(this.filteredItems[selectedIndex], selectedIndex);
@@ -5887,6 +5961,11 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);
     this.resetPlayer();
+  }
+
+  private getStableRowKey(item?: ExplorerItem | null): string {
+    if (!item) return '';
+    return String(item.rowKey || item.uuid || `${item.unitId}_${item.itemId}`).trim();
   }
 
   private focusGlobalFilter() {

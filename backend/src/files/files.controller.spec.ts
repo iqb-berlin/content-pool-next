@@ -8,6 +8,7 @@ describe("FilesController", () => {
   let unitParserService: any;
   let validationService: any;
   let fileProcessingJobsService: any;
+  let itemExplorerStateService: any;
 
   const baseFile = {
     id: "file-1",
@@ -125,11 +126,18 @@ describe("FilesController", () => {
       ),
     };
 
+    itemExplorerStateService = {
+      getStateForViewer: jest.fn().mockResolvedValue({
+        activeState: { itemProperties: {} },
+      }),
+    };
+
     controller = new FilesController(
       filesService,
       unitParserService,
       validationService,
       fileProcessingJobsService,
+      itemExplorerStateService,
     );
   });
 
@@ -408,6 +416,10 @@ describe("FilesController", () => {
 
     expect(result).toEqual([{ itemId: "item-1" }]);
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
+      "acp-1",
+      { itemPropertiesOverride: {} },
+    );
   });
 
   it("applies read-only perspective checks for managers in item list", async () => {

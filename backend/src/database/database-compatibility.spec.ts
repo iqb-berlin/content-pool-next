@@ -51,4 +51,19 @@ describe("prepareSchemaForSynchronization", () => {
     ).toBe(true);
     expect(queryRunner.release).toHaveBeenCalledTimes(1);
   });
+
+  it("reconciles existing item explorer state before synchronization", async () => {
+    const { dataSource, queryRunner } = createDataSource(false);
+    (queryRunner.hasTable as jest.Mock).mockImplementation(
+      async (table: string) =>
+        table === "acp" || table === "acp_item_explorer_state",
+    );
+
+    await prepareSchemaForSynchronization(dataSource);
+
+    expect(queryRunner.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM "acp_item_explorer_state" state'),
+    );
+    expect(queryRunner.release).toHaveBeenCalledTimes(1);
+  });
 });

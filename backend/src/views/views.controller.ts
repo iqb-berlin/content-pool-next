@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
   Get,
   Param,
+  Patch,
   Put,
   Query,
   Request,
@@ -13,10 +15,11 @@ import {
 import {
   ApiBody,
   ApiOperation,
+  ApiProperty,
   ApiPropertyOptional,
   ApiTags,
 } from "@nestjs/swagger";
-import { IsObject, IsOptional, IsString } from "class-validator";
+import { IsIn, IsObject, IsOptional, IsString } from "class-validator";
 import { Response } from "express";
 import { ViewsService } from "./views.service";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
@@ -60,6 +63,34 @@ class SaveItemPreferencesDto {
   @IsOptional()
   @IsObject()
   rowData?: Record<string, Record<string, unknown>>;
+}
+
+class PatchPersonalItemRowDto {
+  @ApiProperty({
+    description: "Stable item row key",
+    example: "item-uuid::1",
+  })
+  @IsString()
+  rowKey!: string;
+
+  @ApiPropertyOptional({
+    description: "Personal row data, or null to remove the row",
+    type: "object",
+    nullable: true,
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  rowData?: Record<string, unknown> | null;
+
+  @ApiPropertyOptional({
+    description: "Explorer state used to render the item row",
+    enum: ["editor", "read-only"],
+    default: "read-only",
+  })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
 }
 
 @ApiTags("Public Views")
@@ -175,11 +206,16 @@ export class ViewsController {
     @Request() req: any,
     @Query("viewId") viewId?: string,
   ) {
-    if (!(await this.isPreferencePersistenceEnabled(acpId))) {
+    const normalizedViewId = this.normalizePreferenceViewId(viewId);
+    if (!(await this.isPreferencePersistenceEnabled(acpId, normalizedViewId))) {
       return { ui: {}, tags: {}, rowData: {} };
     }
 
-    return this.viewsService.getItemPreferences(acpId, req?.user, viewId);
+    return this.viewsService.getItemPreferences(
+      acpId,
+      req?.user,
+      normalizedViewId,
+    );
   }
 
   @Put("acp/:acpId/items/preferences")
@@ -191,7 +227,13 @@ export class ViewsController {
     @Body() dto: SaveItemPreferencesDto,
     @Request() req: any,
   ) {
-    if (!(await this.isPreferencePersistenceEnabled(acpId))) {
+    const normalizedViewId = this.normalizePreferenceViewId(dto.viewId);
+    if (normalizedViewId === "item-explorer") {
+      throw new BadRequestException(
+        "Item Explorer preferences must be saved through their dedicated endpoints",
+      );
+    }
+    if (!(await this.isPreferencePersistenceEnabled(acpId, normalizedViewId))) {
       return { ui: {}, tags: {}, rowData: {} };
     }
 
@@ -203,7 +245,33 @@ export class ViewsController {
         tags: dto.tags,
         rowData: dto.rowData,
       },
-      dto.viewId,
+      normalizedViewId,
+    );
+  }
+
+  @Patch("acp/:acpId/items/preferences/row-data")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Patch personal working data for one item row" })
+  @ApiBody({ type: PatchPersonalItemRowDto })
+  async patchPersonalItemRow(
+    @Param("acpId") acpId: string,
+    @Body() dto: PatchPersonalItemRowDto,
+    @Request() req: any,
+  ) {
+    if (!(await this.isPersonalItemDataEnabled(acpId))) {
+      throw new ForbiddenException(
+        "Personal item data is not enabled for this ACP",
+      );
+    }
+
+    return this.viewsService.patchPersonalItemPreferenceRow(
+      acpId,
+      req?.user,
+      dto.rowKey,
+      dto.rowData ?? null,
+      "item-explorer",
+      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+        dto.perspective === "editor",
     );
   }
 
@@ -266,12 +334,31 @@ export class ViewsController {
 
   private async isPreferencePersistenceEnabled(
     acpId: string,
+    viewId?: string,
   ): Promise<boolean> {
     const data = await this.viewsService.getAcpStartPage(acpId);
     const featureConfig = (data?.featureConfig || {}) as Record<
       string,
       unknown
     >;
-    return Boolean(featureConfig.persistUserPreferences);
+    return (
+      Boolean(featureConfig.persistUserPreferences) ||
+      (viewId === "item-explorer" &&
+        Boolean(featureConfig.enablePersonalItemData))
+    );
+  }
+
+  private async isPersonalItemDataEnabled(acpId: string): Promise<boolean> {
+    const data = await this.viewsService.getAcpStartPage(acpId);
+    const featureConfig = (data?.featureConfig || {}) as Record<
+      string,
+      unknown
+    >;
+    return featureConfig.enablePersonalItemData === true;
+  }
+
+  private normalizePreferenceViewId(viewId?: string): string {
+    const normalized = String(viewId || "").trim();
+    return normalized ? normalized.slice(0, 120) : "item-list";
   }
 }

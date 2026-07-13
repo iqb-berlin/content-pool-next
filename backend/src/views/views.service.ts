@@ -1,4 +1,8 @@
-import { Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import {
@@ -16,6 +20,10 @@ import {
   toRuntimeAcpIndex,
 } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { UnitParserService } from "../files/unit-parser.service";
+
+const MAX_PERSONAL_ITEM_ROWS = 10_000;
 
 export interface ItemPreferencesPayload {
   [key: string]: unknown;
@@ -26,6 +34,7 @@ export interface ItemPreferencesPayload {
 
 interface PreferenceIdentity {
   userId?: string;
+  credentialId?: string;
   credentialUsername?: string;
 }
 
@@ -42,6 +51,8 @@ export class ViewsService {
     private readonly settingsRepository: Repository<AppSettings>,
     @InjectRepository(AcpItemPreference)
     private readonly itemPreferenceRepository: Repository<AcpItemPreference>,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
+    private readonly unitParserService: UnitParserService,
   ) {}
 
   /**
@@ -340,12 +351,26 @@ export class ViewsService {
     user: any,
     viewId?: string,
   ): Promise<ItemPreferencesPayload> {
+    const normalizedViewId = this.normalizeViewId(viewId);
     const identity = this.resolvePreferenceIdentity(user);
     if (!identity) {
+      if (normalizedViewId === "item-explorer") {
+        throw new UnauthorizedException(
+          "Authentication is required for personal item data",
+        );
+      }
       return { ui: {}, tags: {}, rowData: {} };
     }
+    if (
+      normalizedViewId === "item-explorer" &&
+      !identity.userId &&
+      !identity.credentialId
+    ) {
+      throw new UnauthorizedException(
+        "A stable identity is required for personal item data",
+      );
+    }
 
-    const normalizedViewId = this.normalizeViewId(viewId);
     const record = await this.findPreferenceRecord(
       acpId,
       normalizedViewId,
@@ -367,6 +392,16 @@ export class ViewsService {
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
+    if (identity.userId || identity.credentialId) {
+      await this.upsertItemPreferences(
+        acpId,
+        normalizedViewId,
+        identity,
+        normalized,
+      );
+      return normalized;
+    }
+
     let record = await this.findPreferenceRecord(
       acpId,
       normalizedViewId,
@@ -378,6 +413,7 @@ export class ViewsService {
         acpId,
         viewId: normalizedViewId,
         userId: identity.userId || null,
+        credentialId: identity.credentialId || null,
         credentialUsername: identity.credentialUsername || null,
       });
     }
@@ -385,6 +421,194 @@ export class ViewsService {
     record.preferences = normalized;
     await this.itemPreferenceRepository.save(record);
     return normalized;
+  }
+
+  async patchPersonalItemPreferenceRow(
+    acpId: string,
+    user: any,
+    rawRowKey: string,
+    rawRowData: Record<string, unknown> | null,
+    viewId = "item-explorer",
+    canEditExplorerState = false,
+  ): Promise<Pick<ItemPreferencesPayload, "rowData">> {
+    const rowKey = String(rawRowKey || "").trim();
+    if (!rowKey || rowKey.length > 500) {
+      throw new BadRequestException("A valid item row key is required");
+    }
+
+    const normalizedRow = rawRowData
+      ? this.normalizeRowData({ [rowKey]: rawRowData })[rowKey] || null
+      : null;
+    const identity = this.resolvePreferenceIdentity(user);
+    if (!identity || (!identity.userId && !identity.credentialId)) {
+      throw new UnauthorizedException(
+        "A stable identity is required for personal item data",
+      );
+    }
+
+    if (normalizedRow) {
+      await this.assertKnownPersonalItemRow(
+        acpId,
+        rowKey,
+        canEditExplorerState,
+      );
+    }
+
+    const normalizedViewId = this.normalizeViewId(viewId);
+    const identityColumn = identity.userId ? "user_id" : "credential_id";
+    const identityPredicate = identity.userId
+      ? '"user_id" IS NOT NULL'
+      : '"credential_id" IS NOT NULL';
+    const initialPreferences: ItemPreferencesPayload = {
+      ui: {},
+      tags: {},
+      rowData: normalizedRow ? { [rowKey]: normalizedRow } : {},
+    };
+    const rowDataJson = normalizedRow ? JSON.stringify(normalizedRow) : null;
+
+    const rows = await this.itemPreferenceRepository.query(
+      `
+        INSERT INTO "acp_item_preferences" (
+          "id", "acp_id", "view_id", "user_id", "credential_id",
+          "credential_username", "preferences", "created_at", "updated_at"
+        )
+        VALUES (
+          uuid_generate_v4(), $1, $2, $3, $4, $5, $6::jsonb, now(), now()
+        )
+        ON CONFLICT ("acp_id", "view_id", "${identityColumn}")
+          WHERE ${identityPredicate}
+        DO UPDATE SET
+          "preferences" = jsonb_set(
+            COALESCE("acp_item_preferences"."preferences", '{}'::jsonb),
+            '{rowData}',
+            CASE
+              WHEN $7::jsonb IS NULL THEN
+                CASE
+                  WHEN jsonb_typeof("acp_item_preferences"."preferences"->'rowData') = 'object'
+                    THEN "acp_item_preferences"."preferences"->'rowData' - $8
+                  ELSE '{}'::jsonb
+                END
+              ELSE
+                CASE
+                  WHEN jsonb_typeof("acp_item_preferences"."preferences"->'rowData') = 'object'
+                    THEN "acp_item_preferences"."preferences"->'rowData'
+                  ELSE '{}'::jsonb
+                END || jsonb_build_object($8, $7::jsonb)
+            END,
+            true
+          ),
+          "credential_username" = CASE
+            WHEN EXCLUDED."credential_id" IS NOT NULL
+              THEN EXCLUDED."credential_username"
+            ELSE "acp_item_preferences"."credential_username"
+          END,
+          "updated_at" = now()
+        WHERE $7::jsonb IS NULL
+          OR (
+            CASE
+              WHEN jsonb_typeof("acp_item_preferences"."preferences"->'rowData') = 'object'
+                THEN "acp_item_preferences"."preferences"->'rowData'
+              ELSE '{}'::jsonb
+            END
+          ) ? $8
+          OR (
+            SELECT count(*)
+            FROM jsonb_object_keys(
+              CASE
+                WHEN jsonb_typeof("acp_item_preferences"."preferences"->'rowData') = 'object'
+                  THEN "acp_item_preferences"."preferences"->'rowData'
+                ELSE '{}'::jsonb
+              END
+            )
+          ) < $9
+        RETURNING 1 AS "updated"
+      `,
+      [
+        acpId,
+        normalizedViewId,
+        identity.userId || null,
+        identity.credentialId || null,
+        identity.credentialUsername || null,
+        JSON.stringify(initialPreferences),
+        rowDataJson,
+        rowKey,
+        MAX_PERSONAL_ITEM_ROWS,
+      ],
+    );
+
+    if (!rows[0]) {
+      throw new BadRequestException(
+        `Personal item data is limited to ${MAX_PERSONAL_ITEM_ROWS} rows`,
+      );
+    }
+
+    return {
+      rowData: normalizedRow ? { [rowKey]: normalizedRow } : {},
+    };
+  }
+
+  private async upsertItemPreferences(
+    acpId: string,
+    viewId: string,
+    identity: PreferenceIdentity,
+    preferences: ItemPreferencesPayload,
+  ): Promise<void> {
+    const identityColumn = identity.userId ? "user_id" : "credential_id";
+    const identityPredicate = identity.userId
+      ? '"user_id" IS NOT NULL'
+      : '"credential_id" IS NOT NULL';
+
+    await this.itemPreferenceRepository.query(
+      `
+        INSERT INTO "acp_item_preferences" (
+          "id", "acp_id", "view_id", "user_id", "credential_id",
+          "credential_username", "preferences", "created_at", "updated_at"
+        )
+        VALUES (
+          uuid_generate_v4(), $1, $2, $3, $4, $5, $6::jsonb, now(), now()
+        )
+        ON CONFLICT ("acp_id", "view_id", "${identityColumn}")
+          WHERE ${identityPredicate}
+        DO UPDATE SET
+          "preferences" = EXCLUDED."preferences",
+          "credential_username" = CASE
+            WHEN EXCLUDED."credential_id" IS NOT NULL
+              THEN EXCLUDED."credential_username"
+            ELSE "acp_item_preferences"."credential_username"
+          END,
+          "updated_at" = now()
+      `,
+      [
+        acpId,
+        viewId,
+        identity.userId || null,
+        identity.credentialId || null,
+        identity.credentialUsername || null,
+        JSON.stringify(preferences),
+      ],
+    );
+  }
+
+  private async assertKnownPersonalItemRow(
+    acpId: string,
+    rowKey: string,
+    canEditExplorerState: boolean,
+  ): Promise<void> {
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const validRowKeys = await this.unitParserService.getItemRowKeysFromFiles(
+      acpId,
+      {
+        itemPropertiesOverride: explorerState.activeState.itemProperties,
+      },
+    );
+    if (!validRowKeys.has(rowKey)) {
+      throw new BadRequestException(
+        "Personal item data can only be saved for an existing item row",
+      );
+    }
   }
 
   private getModuleReferenceId(moduleRef: unknown): string | null {
@@ -415,6 +639,10 @@ export class ViewsService {
 
     if (user.type === "credential" && typeof user.username === "string") {
       const credentialUsername = user.username.trim();
+      const credentialId = typeof user.sub === "string" ? user.sub.trim() : "";
+      if (credentialId.length > 0) {
+        return { credentialId, credentialUsername };
+      }
       if (credentialUsername.length > 0) {
         return { credentialUsername };
       }
@@ -438,6 +666,16 @@ export class ViewsService {
           acpId,
           viewId,
           userId: identity.userId,
+        },
+      });
+    }
+
+    if (identity.credentialId) {
+      return this.itemPreferenceRepository.findOne({
+        where: {
+          acpId,
+          viewId,
+          credentialId: identity.credentialId,
         },
       });
     }
@@ -475,11 +713,40 @@ export class ViewsService {
     const normalized: Record<string, Record<string, unknown>> = {};
     for (const [rawRowKey, value] of Object.entries(rawRowData)) {
       const rowKey = rawRowKey.trim();
-      if (rowKey && this.isRecord(value)) {
-        normalized[rowKey] = { ...value };
-      }
+      if (!rowKey || !this.isRecord(value)) continue;
+
+      const category = this.normalizePlainText(value.category, 200);
+      const note = this.normalizePlainText(value.note, 10_000, true);
+      const tags = Array.isArray(value.tags)
+        ? Array.from(
+            new Set(
+              value.tags
+                .map((tag) => this.normalizePlainText(tag, 100))
+                .filter((tag): tag is string => Boolean(tag)),
+            ),
+          ).slice(0, 50)
+        : [];
+
+      const row: Record<string, unknown> = {};
+      if (category) row.category = category;
+      if (tags.length) row.tags = tags;
+      if (note) row.note = note;
+      if (Object.keys(row).length) normalized[rowKey] = row;
     }
     return normalized;
+  }
+
+  private normalizePlainText(
+    value: unknown,
+    maxLength: number,
+    multiline = false,
+  ): string | null {
+    if (typeof value !== "string") return null;
+    const normalized = value
+      .replace(/\r\n?/g, "\n")
+      .replace(multiline ? /[\t\f\v]+/g : /\s+/g, " ")
+      .trim();
+    return normalized ? normalized.slice(0, maxLength) : null;
   }
 
   private normalizeTags(rawTags: unknown): Record<string, string[]> {

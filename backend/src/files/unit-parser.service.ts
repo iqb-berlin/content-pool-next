@@ -78,6 +78,11 @@ interface PartialCreditRow {
   properties: Record<string, unknown>;
 }
 
+interface ItemRowKeyCacheEntry {
+  signature: string;
+  rowKeys: ReadonlySet<string>;
+}
+
 export interface IndexSyncReport {
   unitsAdded: number;
   unitsUpdated: number;
@@ -97,6 +102,8 @@ export interface IndexDependencyCleanupReport {
 @Injectable()
 export class UnitParserService {
   private readonly logger = new Logger(UnitParserService.name);
+  private readonly itemRowKeyCache = new Map<string, ItemRowKeyCacheEntry>();
+  private readonly maxItemRowKeyCacheEntries = 100;
 
   constructor(
     @InjectRepository(AcpFile)
@@ -755,6 +762,59 @@ export class UnitParserService {
       unitMetadata,
       codingSchemes,
     };
+  }
+
+  /**
+   * Resolve the row keys that can currently be shown in the Item Explorer.
+   * The cache signature follows both uploaded file revisions and the active
+   * Explorer item-property keys, which are what create partial-credit rows.
+   */
+  async getItemRowKeysFromFiles(
+    acpId: string,
+    options: {
+      itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+    } = {},
+  ): Promise<ReadonlySet<string>> {
+    const [files, acp] = await Promise.all([
+      this.fileRepository.find({ where: { acpId } }),
+      this.acpRepository.findOne({ where: { id: acpId } }),
+    ]);
+    const itemProperties =
+      options.itemPropertiesOverride || acp?.itemProperties || {};
+    const signature = JSON.stringify({
+      files: files
+        .map((file) => [
+          file.id,
+          file.originalName,
+          file.checksum || "",
+          String(file.fileSize || ""),
+          file.uploadedAt instanceof Date
+            ? file.uploadedAt.toISOString()
+            : String(file.uploadedAt || ""),
+        ])
+        .sort(([left], [right]) => String(left).localeCompare(String(right))),
+      itemPropertyKeys: Object.keys(itemProperties).sort(),
+    });
+    const cacheKey = `${acpId}:${signature}`;
+    const cached = this.itemRowKeyCache.get(cacheKey);
+    if (cached?.signature === signature) {
+      return cached.rowKeys;
+    }
+
+    const itemList = await this.getItemListFromFiles(acpId, options);
+    const rowKeys = new Set(
+      itemList.items
+        .map((item) => String(item.rowKey || "").trim())
+        .filter(Boolean),
+    );
+    if (this.itemRowKeyCache.size >= this.maxItemRowKeyCacheEntries) {
+      const oldestKey = this.itemRowKeyCache.keys().next().value as
+        | string
+        | undefined;
+      if (oldestKey) this.itemRowKeyCache.delete(oldestKey);
+    }
+    this.itemRowKeyCache.set(cacheKey, { signature, rowKeys });
+    return rowKeys;
   }
 
   private resolveItemProperties(

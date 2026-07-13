@@ -458,31 +458,53 @@ export class ItemExplorerStateService {
   private async ensureStateRecord(
     acpId: string,
   ): Promise<AcpItemExplorerState> {
-    let record = await this.stateRepository.findOne({ where: { acpId } });
+    const record = await this.stateRepository.findOne({ where: { acpId } });
     if (record) {
       return record;
     }
 
-    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
-    if (!acp) {
-      throw new NotFoundException("ACP not found");
-    }
+    return this.stateRepository.manager.transaction(async (manager) => {
+      const stateRepository = manager.getRepository(AcpItemExplorerState);
+      const acpRepository = manager.getRepository(Acp);
+      const accessConfigRepository = manager.getRepository(AcpAccessConfig);
 
-    const accessConfig = await this.accessConfigRepository.findOne({
-      where: { acpId },
+      // Serialize first-time initialization on the ACP row. The Item Explorer
+      // loads its item list and shared state concurrently, so both requests may
+      // observe a missing state before either one inserts it.
+      const acp = await acpRepository.findOne({
+        where: { id: acpId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!acp) {
+        throw new NotFoundException("ACP not found");
+      }
+
+      const concurrentlyCreated = await stateRepository.findOne({
+        where: { acpId },
+      });
+      if (concurrentlyCreated) {
+        return concurrentlyCreated;
+      }
+
+      const accessConfig = await accessConfigRepository.findOne({
+        where: { acpId },
+      });
+      const defaultState = this.buildDefaultState(
+        acp,
+        accessConfig || undefined,
+      );
+
+      const newRecord = stateRepository.create({
+        acpId,
+        publishedState: defaultState as unknown as Record<string, unknown>,
+        draftState: defaultState as unknown as Record<string, unknown>,
+        status: "CLEAN",
+        version: 1,
+        publishedVersion: 1,
+      } as DeepPartial<AcpItemExplorerState>);
+
+      return stateRepository.save(newRecord);
     });
-    const defaultState = this.buildDefaultState(acp, accessConfig || undefined);
-
-    record = this.stateRepository.create({
-      acpId,
-      publishedState: defaultState as unknown as Record<string, unknown>,
-      draftState: defaultState as unknown as Record<string, unknown>,
-      status: "CLEAN",
-      version: 1,
-      publishedVersion: 1,
-    } as DeepPartial<AcpItemExplorerState>);
-
-    return this.stateRepository.save(record);
   }
 
   private buildDefaultState(

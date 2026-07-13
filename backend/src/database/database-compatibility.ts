@@ -1,5 +1,6 @@
 import { DataSource, DataSourceOptions } from "typeorm";
 import { AddItemResponseStateRowKey1783900000000 } from "./migrations/1783900000000-AddItemResponseStateRowKey";
+import { ReconcileItemExplorerState1783901000000 } from "./migrations/1783901000000-ReconcileItemExplorerState";
 
 /**
  * Prepare schemas that were previously maintained through TypeORM synchronize.
@@ -17,6 +18,12 @@ export async function prepareSchemaForSynchronization(
   try {
     if (await queryRunner.hasTable("item_response_states")) {
       await new AddItemResponseStateRowKey1783900000000().up(queryRunner);
+    }
+    if (
+      (await queryRunner.hasTable("acp")) &&
+      (await queryRunner.hasTable("acp_item_explorer_state"))
+    ) {
+      await new ReconcileItemExplorerState1783901000000().up(queryRunner);
     }
   } finally {
     await queryRunner.release();

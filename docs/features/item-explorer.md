@@ -160,6 +160,41 @@ The explorer normalizes tags and exposes them in the UI so managers can:
 
 Read-only tag availability still depends on feature flags.
 
+## Personal Working Data
+
+When `enablePersonalItemData` is enabled, every authenticated user and every credential login can
+maintain three private fields for each Explorer row:
+
+- one category (commonly a competence level),
+- zero or more configured colored markers,
+- one plain-text note.
+
+ACP managers configure the category label and allowed values as well as marker labels and colors in
+the access configuration. Notes use a plain textarea and are never interpreted as Markdown or HTML.
+Clearing a field removes it from the stored row data.
+
+Personal working data is stored separately from the shared draft/published Explorer state in
+`acp_item_preferences`, under the `item-explorer` view. Normal users are scoped by user ID and
+credential logins by their stable credential ID. Consequently, publishing, discarding, or previewing
+the shared Explorer draft never exposes or modifies another person's working data. The personal
+controls remain usable from both manager and read-only perspectives.
+
+Personal column filters are local to the current browser view and are excluded from the shared
+Explorer UI state. Row edits use an atomic row-level endpoint, so saves from different browser tabs
+cannot replace unrelated rows. The Explorer keeps failed edits pending, exposes the save error, and
+blocks navigation until the pending personal changes have been saved successfully. If the session
+expires during a save, pending rows are suspended in session storage with an application-session
+memory fallback and hidden. They are merged back after the same stable identity signs in again, but
+discarded when a different identity signs in.
+
+The backend accepts non-empty personal data only for row keys that exist in the active Explorer
+item list. Managers are validated against the draft and read-only or credential viewers against the
+published state. Stale rows can still be deleted after their source item disappears. Each personal
+preference record is additionally limited to 10,000 rows.
+
+The map is keyed by the stable row key, so partial-credit rows of the same item keep independent
+categories, markers, and notes.
+
 ## Empirical Difficulty Import
 
 Managers can upload empirical difficulty CSV data through item endpoints.

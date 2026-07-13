@@ -1,6 +1,41 @@
 import { normalizeFeatureConfig } from "./feature-config.utils";
 
 describe("normalizeFeatureConfig", () => {
+  it("normalizes personal item working-data configuration", () => {
+    expect(
+      normalizeFeatureConfig({
+        enablePersonalItemData: true,
+        personalItemCategoryLabel: " Stufe ",
+        personalItemCategoryValues: ["I", " I ", "II", ""],
+        personalItemTagLabel: " Sichtung ",
+        personalItemTags: [
+          { label: "Prüfen", color: "#ABCDEF" },
+          { label: "Prüfen", color: "#000000" },
+          { label: "Offen", color: "invalid" },
+        ],
+      }),
+    ).toMatchObject({
+      enablePersonalItemData: true,
+      personalItemCategoryLabel: "Stufe",
+      personalItemCategoryValues: ["I", "II"],
+      personalItemTagLabel: "Sichtung",
+      personalItemTags: [
+        { label: "Prüfen", color: "#abcdef" },
+        { label: "Offen", color: "#3498db" },
+      ],
+    });
+  });
+
+  it("limits every personal item category value", () => {
+    const longValue = "x".repeat(250);
+
+    const normalized = normalizeFeatureConfig({
+      personalItemCategoryValues: [longValue, `${"x".repeat(200)}duplicate`],
+    });
+
+    expect(normalized.personalItemCategoryValues).toEqual(["x".repeat(200)]);
+  });
+
   it("defaults player focus highlight to disabled when the flag is missing", () => {
     const normalized = normalizeFeatureConfig({
       enableItemList: true,

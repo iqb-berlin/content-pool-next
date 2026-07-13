@@ -1,7 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
-import { of } from 'rxjs';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { of, Subject, throwError } from 'rxjs';
 import { ItemExplorerComponent } from './item-explorer.component';
 import { VoudService } from '../../core/services/voud.service';
+import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
+
+function createJwt(sub: string, type = 'user', acpId = ''): string {
+  const payload = btoa(
+    JSON.stringify({
+      sub,
+      type,
+      acpId,
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  )
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return `header.${payload}.signature`;
+}
 
 function createComponent(options?: {
   getStartPage?: (definition: string, variableId: string) => number | undefined;
@@ -19,6 +35,7 @@ function createComponent(options?: {
   stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
   authService?: Record<string, unknown>;
+  pendingPersonalSessionStorage?: PendingPersonalSessionStorageService;
 }) {
   const route = { snapshot: { paramMap: { get: () => 'acp-1' } } };
   const router = { navigate: () => Promise.resolve(true) };
@@ -44,20 +61,30 @@ function createComponent(options?: {
     stripConditionalVisibility:
       options?.stripConditionalVisibility || ((definition: string) => definition),
   };
+  const authOverrides = options?.authService || {};
+  const defaultToken = authOverrides['isLoggedIn'] === true ? createJwt('test-user') : null;
   const authService = {
     hasAcpRole: () => false,
     isAdmin: false,
-    ...(options?.authService || {}),
+    isLoggedIn: false,
+    currentUser$: of(null),
+    getToken: () => defaultToken,
+    ...authOverrides,
   };
 
-  return new ItemExplorerComponent(
+  const component = new ItemExplorerComponent(
     route as any,
     router as any,
     api as any,
     sanitizer as any,
     voudService as any,
     authService as any,
+    options?.pendingPersonalSessionStorage || new PendingPersonalSessionStorageService(),
   );
+  (component as any).personalDataSessionIdentity = (
+    component as any
+  ).resolvePersonalItemDataSessionIdentity();
+  return component;
 }
 
 function createExplorerEnvelope(
@@ -109,6 +136,378 @@ function createExplorerEnvelope(
 }
 
 describe('ItemExplorerComponent', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('stores personal category, colored tags and plain-text notes by row key', () => {
+    const patchViewItemPreferenceRow = vi.fn().mockReturnValue(
+      of({
+        rowData: {
+          'uuid-1::2': {
+            category: 'II',
+            tags: ['Prüfen'],
+            note: 'Nur Text',
+          },
+        },
+      }),
+    );
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.personalItemTags = [{ label: 'Prüfen', color: '#ff0000' }];
+
+    component.setPersonalItemCategory('uuid-1::2', 'II');
+    component.addPersonalItemTagToRow('uuid-1::2', {
+      target: { value: 'Prüfen' },
+    } as any);
+    component.setPersonalItemNote('uuid-1::2', 'Nur Text');
+    component.flushPersonalItemDataSave();
+
+    expect(patchViewItemPreferenceRow).toHaveBeenCalledWith(
+      'acp-1',
+      'uuid-1::2',
+      {
+        category: 'II',
+        tags: ['Prüfen'],
+        note: 'Nur Text',
+      },
+      'read-only',
+    );
+    expect(component.getPersonalTagColor('Prüfen')).toBe('#ff0000');
+  });
+
+  it('does not expose personal working-data controls to anonymous visitors', () => {
+    const component = createComponent({ authService: { isLoggedIn: false } });
+    component.enablePersonalItemData = true;
+
+    expect(component.showPersonalItemData).toBe(false);
+  });
+
+  it('saves manager personal data against the current editor perspective', () => {
+    const patchViewItemPreferenceRow = vi.fn().mockReturnValue(of({ rowData: {} }));
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.hasExplorerEditPermission = true;
+    component.viewPerspective = 'editor';
+
+    component.setPersonalItemNote('uuid-1', 'Draft-Notiz');
+    component.flushPersonalItemDataSave();
+
+    expect(patchViewItemPreferenceRow).toHaveBeenCalledWith(
+      'acp-1',
+      'uuid-1',
+      { note: 'Draft-Notiz' },
+      'editor',
+    );
+  });
+
+  it('keeps the queued perspective when it changes before the debounce is flushed', () => {
+    const patchViewItemPreferenceRow = vi.fn().mockReturnValue(of({ rowData: {} }));
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.hasExplorerEditPermission = true;
+    component.viewPerspective = 'editor';
+
+    component.setPersonalItemNote('uuid-draft', 'Draft-Notiz');
+    component.viewPerspective = 'read-only';
+    component.flushPersonalItemDataSave();
+
+    expect(patchViewItemPreferenceRow).toHaveBeenCalledWith(
+      'acp-1',
+      'uuid-draft',
+      { note: 'Draft-Notiz' },
+      'editor',
+    );
+  });
+
+  it('blocks personal edits while the perspective is switching', () => {
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
+      authService: { isLoggedIn: true },
+    });
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.perspectiveSwitchBusy = true;
+
+    component.setPersonalItemNote('uuid-1', 'Nicht übernehmen');
+
+    expect(component.canChangePersonalItemData).toBe(false);
+    expect(component.personalItemData).toEqual({});
+    expect((component as any).pendingPersonalRowUpdates.size).toBe(0);
+  });
+
+  it('keeps personal filters out of the shared Explorer UI state', () => {
+    const component = createComponent({ authService: { isLoggedIn: true } });
+    component.columnFilters = {
+      unitLabel: 'Mathematik',
+      personalNote: 'vertraulich',
+    };
+    component.personalColumnFilters = { personalNote: 'vertraulich' };
+
+    expect((component as any).buildUiPreferences().columnFilters).toEqual({
+      unitLabel: 'Mathematik',
+    });
+
+    (component as any).applyUiPreferences({
+      columnFilters: { unitLabel: 'Deutsch', personalCategory: 'III' },
+    });
+    expect(component.columnFilters).toEqual({ unitLabel: 'Deutsch' });
+    expect(component.personalColumnFilters).toEqual({ personalNote: 'vertraulich' });
+  });
+
+  it('disables personal edits after a load failure without clearing known data', () => {
+    const patchViewItemPreferenceRow = vi.fn();
+    const component = createComponent({
+      api: {
+        getViewItemPreferences: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+        patchViewItemPreferenceRow,
+      },
+      authService: { isLoggedIn: true },
+    });
+    component.enablePersonalItemData = true;
+    component.personalItemData = { 'uuid::1': { note: 'bestehend' } };
+
+    (component as any).loadPersonalItemData();
+    component.setPersonalItemNote('uuid::1', 'überschrieben');
+
+    expect(component.personalDataLoadState).toBe('error');
+    expect(component.personalItemData).toEqual({ 'uuid::1': { note: 'bestehend' } });
+    expect(patchViewItemPreferenceRow).not.toHaveBeenCalled();
+  });
+
+  it('blocks navigation while a personal autosave keeps failing', async () => {
+    const component = createComponent({
+      api: {
+        patchViewItemPreferenceRow: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+      },
+      authService: { isLoggedIn: true },
+    });
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.setPersonalItemNote('uuid::1', 'ungespeichert');
+    component.flushPersonalItemDataSave();
+
+    expect(component.personalDataSaveState).toBe('error');
+    await expect(component.canDeactivate()).resolves.toBe(false);
+  });
+
+  it('does not wait indefinitely when pending personal data can no longer be saved', async () => {
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
+      authService: { isLoggedIn: true },
+    });
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.setPersonalItemNote('uuid::1', 'ungespeichert');
+    (component as any).personalDataSessionIdentity = null;
+
+    await expect(component.canDeactivate()).resolves.toBe(false);
+    component.ngOnDestroy();
+  });
+
+  it('clears personal data before loading a different session identity', () => {
+    let token = createJwt('user-a');
+    const secondLoad = new Subject<any>();
+    const getViewItemPreferences = vi
+      .fn()
+      .mockReturnValueOnce(of({ rowData: { 'uuid::1': { note: 'Nur A' } } }))
+      .mockReturnValueOnce(secondLoad);
+    const component = createComponent({
+      api: { getViewItemPreferences },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.enablePersonalItemData = true;
+    (component as any).syncPersonalItemDataSession();
+    expect(component.personalItemData).toEqual({ 'uuid::1': { note: 'Nur A' } });
+
+    token = createJwt('user-b');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.personalItemData).toEqual({});
+    expect(component.personalDataLoadState).toBe('loading');
+
+    secondLoad.next({ rowData: { 'uuid::1': { note: 'Nur B' } } });
+    secondLoad.complete();
+    expect(component.personalItemData).toEqual({ 'uuid::1': { note: 'Nur B' } });
+  });
+
+  it('restores pending personal changes after the same identity logs in again', () => {
+    let token: string | null = createJwt('user-a');
+    const patchViewItemPreferenceRow = vi.fn().mockReturnValue(of({ rowData: {} }));
+    const component = createComponent({
+      api: {
+        getViewItemPreferences: vi
+          .fn()
+          .mockReturnValue(of({ rowData: { 'uuid::1': { note: 'Serverwert' } } })),
+        patchViewItemPreferenceRow,
+      },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.hasExplorerEditPermission = true;
+    component.viewPerspective = 'read-only';
+    component.setPersonalItemNote('uuid::1', 'Noch nicht gespeichert');
+
+    token = null;
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+    expect(component.personalItemData).toEqual({});
+
+    token = createJwt('user-a');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.personalItemData).toEqual({
+      'uuid::1': { note: 'Noch nicht gespeichert' },
+    });
+    expect((component as any).pendingPersonalRowUpdates.size).toBe(1);
+    expect(component.personalDataSaveState).toBe('pending');
+    component.viewPerspective = 'editor';
+    component.flushPersonalItemDataSave();
+    expect(patchViewItemPreferenceRow).toHaveBeenCalledWith(
+      'acp-1',
+      'uuid::1',
+      { note: 'Noch nicht gespeichert' },
+      'read-only',
+    );
+    component.ngOnDestroy();
+  });
+
+  it('restores pending changes from memory when session storage is unavailable', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'QuotaExceededError');
+    });
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError');
+    });
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError');
+    });
+    const pendingStorage = new PendingPersonalSessionStorageService();
+    let firstToken: string | null = createJwt('user-a');
+    const firstComponent = createComponent({
+      api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => firstToken,
+      },
+      pendingPersonalSessionStorage: pendingStorage,
+    });
+    firstComponent.acpId = 'acp-1';
+    firstComponent.enablePersonalItemData = true;
+    firstComponent.personalDataLoadState = 'loaded';
+    firstComponent.setPersonalItemNote('uuid::1', 'Fallback-Notiz');
+    firstToken = null;
+    (firstComponent as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+    firstComponent.ngOnDestroy();
+
+    const secondComponent = createComponent({
+      api: {
+        getViewItemPreferences: vi.fn().mockReturnValue(of({ rowData: {} })),
+        patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })),
+      },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => createJwt('user-a'),
+      },
+      pendingPersonalSessionStorage: pendingStorage,
+    });
+    secondComponent.acpId = 'acp-1';
+    secondComponent.enablePersonalItemData = true;
+    (secondComponent as any).syncPersonalItemDataSession();
+
+    expect(secondComponent.personalItemData).toEqual({
+      'uuid::1': { note: 'Fallback-Notiz' },
+    });
+    expect((secondComponent as any).pendingPersonalRowUpdates.size).toBe(1);
+    secondComponent.ngOnDestroy();
+    setItem.mockRestore();
+    getItem.mockRestore();
+    removeItem.mockRestore();
+  });
+
+  it('discards suspended personal changes when a different identity logs in', () => {
+    let token: string | null = createJwt('user-a');
+    const component = createComponent({
+      api: {
+        getViewItemPreferences: vi
+          .fn()
+          .mockReturnValue(of({ rowData: { 'uuid::1': { note: 'Nur B' } } })),
+        patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })),
+      },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.setPersonalItemNote('uuid::1', 'Nur A');
+
+    token = null;
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+    token = createJwt('user-b');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.personalItemData).toEqual({ 'uuid::1': { note: 'Nur B' } });
+    expect((component as any).pendingPersonalRowUpdates.size).toBe(0);
+    expect(sessionStorage.getItem('cp_item_explorer_pending_personal:acp-1')).toBeNull();
+    component.ngOnDestroy();
+  });
+
+  it('reapplies an active personal note filter when a note changes', () => {
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
+      authService: { isLoggedIn: true },
+    });
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.personalColumnFilters = { personalNote: 'prüfen' };
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid',
+        rowKey: 'uuid::1',
+        subId: '1',
+        subIdDisplay: '',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
+
+    component.setPersonalItemNote('uuid::1', 'Später prüfen');
+
+    expect(component.filteredItems).toEqual(component.items);
+    component.flushPersonalItemDataSave();
+  });
+
   it('defaults to sorting by task label', () => {
     const component = createComponent();
 

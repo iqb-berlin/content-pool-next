@@ -105,6 +105,26 @@ describe('AuthService', () => {
       expect(service.currentUser).toEqual(mockUserProfile);
     });
 
+    it('should restore credential tokens without loading a user profile', () => {
+      const credentialToken = createJwt('credential-1', 'credential', 'acp1');
+      localStorage.setItem('cp_token', credentialToken);
+      localStorage.setItem('cp_auth_type', 'oidc');
+      localStorage.setItem('cp_oidc_id_token', 'stale-id-token');
+      localStorage.setItem('cp_oidc_access_token', 'stale-access-token');
+      localStorage.setItem('cp_oidc_refresh_token', 'stale-refresh-token');
+
+      service.initFromStorage();
+
+      expect(httpClientMock.get).not.toHaveBeenCalled();
+      expect(localStorage.getItem('cp_token')).toBe(credentialToken);
+      expect(localStorage.getItem('cp_auth_type')).toBe('credential');
+      expect(localStorage.getItem('cp_oidc_id_token')).toBeNull();
+      expect(localStorage.getItem('cp_oidc_access_token')).toBeNull();
+      expect(localStorage.getItem('cp_oidc_refresh_token')).toBeNull();
+      expect(service.isLoggedIn).toBe(true);
+      expect(service.currentUser).toBeNull();
+    });
+
     it('should skip profile load when no token exists in storage', () => {
       localStorage.removeItem('cp_token');
 
@@ -221,6 +241,7 @@ describe('AuthService', () => {
       service.credentialLogin('acp1', 'user', 'pass').subscribe((res) => {
         expect(res).toEqual(response);
         expect(localStorage.getItem('cp_token')).toBe('cred-token');
+        expect(localStorage.getItem('cp_auth_type')).toBe('credential');
       });
 
       expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/credential-login', {
@@ -228,6 +249,28 @@ describe('AuthService', () => {
         username: 'user',
         password: 'pass',
       });
+    });
+
+    it('should replace a previous OIDC session on credential login', () => {
+      const credentialToken = createJwt('credential-1', 'credential', 'acp1');
+      localStorage.setItem('cp_auth_type', 'oidc');
+      localStorage.setItem('cp_oidc_id_token', 'id-token');
+      localStorage.setItem('cp_oidc_access_token', 'access-token');
+      localStorage.setItem('cp_oidc_refresh_token', 'refresh-token');
+      httpClientMock.post.mockReturnValue(
+        of({
+          accessToken: credentialToken,
+          acpId: 'acp1',
+          username: 'reader',
+        } satisfies CredentialLoginResponse),
+      );
+
+      service.credentialLogin('acp1', 'reader', 'pass').subscribe();
+
+      expect(localStorage.getItem('cp_auth_type')).toBe('credential');
+      expect(localStorage.getItem('cp_oidc_id_token')).toBeNull();
+      expect(localStorage.getItem('cp_oidc_access_token')).toBeNull();
+      expect(localStorage.getItem('cp_oidc_refresh_token')).toBeNull();
     });
 
     it('discards snapshots owned by another identity without an active explorer', () => {

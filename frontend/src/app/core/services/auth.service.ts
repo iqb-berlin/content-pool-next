@@ -56,13 +56,20 @@ export class AuthService {
   }
 
   initFromStorage(): void {
-    this.pendingPersonalSessionStorage.activateIdentityFromToken(this.getToken());
+    const token = this.getToken();
+    this.pendingPersonalSessionStorage.activateIdentityFromToken(token);
+
+    if (this.isCredentialToken(token)) {
+      this.switchApplicationSession('credential');
+      return;
+    }
+
     if (this.isOidcUser && this.hasStoredOidcSession()) {
       void this.restoreOidcSession();
       return;
     }
 
-    if (this.getToken()) {
+    if (token) {
       this.loadProfile();
     }
   }
@@ -285,6 +292,7 @@ export class AuthService {
   login(username: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${this.API}/login`, { username, password }).pipe(
       tap((res) => {
+        this.switchApplicationSession('local');
         this.storeApplicationToken(res.accessToken);
         this.loadProfile();
       }),
@@ -300,6 +308,7 @@ export class AuthService {
       .post<CredentialLoginResponse>(`${this.API}/credential-login`, { acpId, username, password })
       .pipe(
         tap((res) => {
+          this.switchApplicationSession('credential');
           this.storeApplicationToken(res.accessToken);
         }),
       );
@@ -571,6 +580,26 @@ export class AuthService {
     this.broadcastAuthEvent({ type: 'app_session_updated' });
   }
 
+  private switchApplicationSession(authType: 'local' | 'credential'): void {
+    this.clearOidcRefreshTimer();
+    this.clearStoredOidcSession();
+    localStorage.setItem(this.AUTH_TYPE_KEY, authType);
+    this.currentUserSubject.next(null);
+  }
+
+  private clearStoredOidcSession(): void {
+    localStorage.removeItem(this.ID_TOKEN_KEY);
+    localStorage.removeItem(this.ACCESS_TOKEN_KEY);
+    localStorage.removeItem(this.REFRESH_TOKEN_KEY);
+    sessionStorage.removeItem(this.OIDC_REDIRECT_KEY);
+    sessionStorage.removeItem(this.OIDC_STATE_KEY);
+    sessionStorage.removeItem(this.OIDC_CODE_VERIFIER_KEY);
+  }
+
+  private isCredentialToken(token: string | null): boolean {
+    return this.getTokenPayload(token)?.['type'] === 'credential';
+  }
+
   private getPrimaryOidcToken(): string | null {
     return localStorage.getItem(this.ACCESS_TOKEN_KEY) || localStorage.getItem(this.ID_TOKEN_KEY);
   }
@@ -593,6 +622,15 @@ export class AuthService {
   }
 
   private getTokenExpiry(token: string | null): number | null {
+    const payload = this.getTokenPayload(token);
+    if (typeof payload?.['exp'] !== 'number') {
+      return null;
+    }
+
+    return payload['exp'] * 1000;
+  }
+
+  private getTokenPayload(token: string | null): Record<string, unknown> | null {
     if (!token) {
       return null;
     }
@@ -603,12 +641,7 @@ export class AuthService {
     }
 
     try {
-      const payload = JSON.parse(this.base64UrlDecode(parts[1])) as { exp?: number };
-      if (typeof payload.exp !== 'number') {
-        return null;
-      }
-
-      return payload.exp * 1000;
+      return JSON.parse(this.base64UrlDecode(parts[1])) as Record<string, unknown>;
     } catch {
       return null;
     }

@@ -5,7 +5,8 @@ import { getRepositoryToken } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import * as request from "supertest";
-import { User } from "../src/database/entities";
+import { AcpItemPreference, User } from "../src/database/entities";
+import { buildPatchPersonalItemPreferenceRowQuery } from "../src/views/personal-item-preferences.query";
 
 if (!process.env.DB_HOST) process.env.DB_HOST = "localhost";
 if (!process.env.DB_PORT) process.env.DB_PORT = "5433";
@@ -29,6 +30,8 @@ describe("ContentPool API (e2e)", () => {
   let server: any;
   let authToken: string;
   let credentialToken: string;
+  let credentialId: string;
+  let itemPreferenceRepository: Repository<AcpItemPreference>;
 
   let acpId: string;
   let snapshotId: string;
@@ -112,6 +115,9 @@ describe("ContentPool API (e2e)", () => {
     // Create an app-admin test user directly, then issue a valid JWT for stable e2e auth.
     const userRepo = moduleFixture.get<Repository<User>>(
       getRepositoryToken(User),
+    );
+    itemPreferenceRepository = moduleFixture.get<Repository<AcpItemPreference>>(
+      getRepositoryToken(AcpItemPreference),
     );
     const jwtService = moduleFixture.get<JwtService>(JwtService);
 
@@ -230,7 +236,7 @@ describe("ContentPool API (e2e)", () => {
       })
       .expect(200);
 
-    await request(server)
+    const credentialRes = await request(server)
       .post(`/api/acp/${acpId}/access/credentials/single`)
       .set("Authorization", `Bearer ${authToken}`)
       .send({
@@ -238,6 +244,7 @@ describe("ContentPool API (e2e)", () => {
         password: credentialPassword,
       })
       .expect(201);
+    credentialId = credentialRes.body.id;
 
     const loginRes = await request(server)
       .post("/api/auth/credential-login")
@@ -260,6 +267,64 @@ describe("ContentPool API (e2e)", () => {
       .get(`/api/view/acp/${acpId}/items`)
       .set("Authorization", `Bearer ${credentialToken}`)
       .expect(200);
+  });
+
+  it("executes personal row insert, conflict update, and delete in PostgreSQL", async () => {
+    const rowKey = "e2e-row-1";
+    const query = buildPatchPersonalItemPreferenceRowQuery("credential_id");
+    const executePatch = async (rowData: Record<string, unknown> | null) =>
+      itemPreferenceRepository.query(query, [
+        acpId,
+        "item-explorer",
+        null,
+        credentialId,
+        credentialUsername,
+        JSON.stringify({
+          ui: {},
+          tags: {},
+          rowData: rowData ? { [rowKey]: rowData } : {},
+        }),
+        rowData ? JSON.stringify(rowData) : null,
+        rowKey,
+        10_000,
+      ]);
+
+    const insertedRow = { category: "Offen", note: "erste Fassung" };
+    await executePatch(insertedRow);
+
+    let record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId: "item-explorer",
+      credentialId,
+    });
+    expect(record.preferences).toEqual({
+      ui: {},
+      tags: {},
+      rowData: { [rowKey]: insertedRow },
+    });
+
+    const updatedRow = { category: "Erledigt", note: "zweite Fassung" };
+    await executePatch(updatedRow);
+
+    record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId: "item-explorer",
+      credentialId,
+    });
+    expect(record.preferences).toEqual({
+      ui: {},
+      tags: {},
+      rowData: { [rowKey]: updatedRow },
+    });
+
+    await executePatch(null);
+
+    record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId: "item-explorer",
+      credentialId,
+    });
+    expect(record.preferences).toEqual({ ui: {}, tags: {}, rowData: {} });
   });
 
   it("covers comment export", async () => {

@@ -299,6 +299,20 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         (cancelled)="closeDiscardDraftDialog()"
       />
 
+      <app-confirm-dialog
+        [open]="showDiscardPersonalItemDataDialog"
+        title="Persönliche Änderungen verwerfen"
+        message="Die nicht gespeicherten persönlichen Änderungen werden verworfen."
+        [details]="[
+          'Nicht gespeicherte Kategorien, Markierungen und Notizen gehen verloren.',
+          'Anschließend wird der zuletzt gespeicherte Stand neu geladen.',
+        ]"
+        confirmLabel="Änderungen verwerfen"
+        confirmVariant="danger"
+        (confirmed)="confirmDiscardPersonalItemDataChanges()"
+        (cancelled)="closeDiscardPersonalItemDataDialog()"
+      />
+
       @if (showLeaveWithChangesDialog) {
         <div
           class="overlay-backdrop"
@@ -418,6 +432,13 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                     (click)="retryPersonalItemDataSave()"
                   >
                     Erneut speichern
+                  </button>
+                  <button
+                    class="btn btn-outline btn-sm"
+                    type="button"
+                    (click)="openDiscardPersonalItemDataDialog()"
+                  >
+                    Änderungen verwerfen
                   </button>
                 } @else if (personalDataSaveState === 'saved') {
                   Persönliche Änderungen gespeichert
@@ -2752,6 +2773,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   personalDataLoadState: PersonalDataLoadState = 'idle';
   personalDataSaveState: PersonalDataSaveState = 'idle';
   personalDataError = '';
+  showDiscardPersonalItemDataDialog = false;
   private readonly personalPreferenceViewId = 'item-explorer';
   private readonly personalSaveDebounceMs = 350;
   private personalSaveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -4925,6 +4947,51 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.saveNextPersonalItemRow();
   }
 
+  openDiscardPersonalItemDataDialog() {
+    if (
+      this.personalDataSaveState !== 'error' ||
+      this.personalSaveInFlight ||
+      !this.pendingPersonalRowUpdates.size
+    ) {
+      return;
+    }
+    this.rememberFocusBeforeOverlay();
+    this.showDiscardPersonalItemDataDialog = true;
+  }
+
+  closeDiscardPersonalItemDataDialog() {
+    this.showDiscardPersonalItemDataDialog = false;
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  confirmDiscardPersonalItemDataChanges() {
+    if (
+      this.personalDataSaveState !== 'error' ||
+      this.personalSaveInFlight ||
+      !this.pendingPersonalRowUpdates.size
+    ) {
+      this.closeDiscardPersonalItemDataDialog();
+      return;
+    }
+
+    const sessionIdentity = this.personalDataSessionIdentity;
+    const sessionVersion = this.personalDataSessionVersion;
+    this.showDiscardPersonalItemDataDialog = false;
+    this.clearPersonalSaveTimeout();
+    this.pendingPersonalRowUpdates.clear();
+    this.removePendingPersonalSession();
+    this.personalItemData = {};
+    this.personalDataSaveState = 'idle';
+    this.personalDataError = '';
+    this.resolvePersonalSaveWaiters(false);
+    this.applyFilter(false);
+
+    if (sessionIdentity) {
+      this.loadPersonalItemData(sessionIdentity, sessionVersion);
+    }
+    this.restoreFocusAfterOverlayClose();
+  }
+
   private queuePersonalItemRowSave(rowKey: string) {
     if (!this.canChangePersonalItemData) return;
     const normalizedRow = this.normalizePersonalItemRowData({
@@ -5044,6 +5111,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.personalDataLoadState = 'idle';
     this.personalDataSaveState = 'idle';
     this.personalDataError = '';
+    this.showDiscardPersonalItemDataDialog = false;
     this.personalSaveInFlight = false;
     this.pendingPersonalRowUpdates.clear();
     this.resolvePersonalSaveWaiters(false);
@@ -6463,6 +6531,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showHistoryOverlay ||
       this.showSavePreviewDialog ||
       this.showDiscardDraftDialog ||
+      this.showDiscardPersonalItemDataDialog ||
       this.showClearEmpiricalDifficultiesDialog ||
       this.showLeaveWithChangesDialog
     );
@@ -6479,6 +6548,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
     if (this.showDiscardDraftDialog) {
       this.closeDiscardDraftDialog();
+      return true;
+    }
+    if (this.showDiscardPersonalItemDataDialog) {
+      this.closeDiscardPersonalItemDataDialog();
       return true;
     }
     if (this.showSavePreviewDialog) {

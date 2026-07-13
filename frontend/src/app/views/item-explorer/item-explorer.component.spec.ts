@@ -306,6 +306,40 @@ describe('ItemExplorerComponent', () => {
     await expect(component.canDeactivate()).resolves.toBe(false);
   });
 
+  it('allows navigation after failed personal changes are explicitly discarded', () => {
+    const getViewItemPreferences = vi.fn().mockReturnValue(
+      of({
+        rowData: {
+          'uuid::1': { note: 'Gespeicherter Stand' },
+        },
+      }),
+    );
+    const component = createComponent({
+      api: {
+        getViewItemPreferences,
+        patchViewItemPreferenceRow: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+      },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.setPersonalItemNote('uuid::1', 'Ungespeicherter Stand');
+    component.flushPersonalItemDataSave();
+
+    component.openDiscardPersonalItemDataDialog();
+    expect(component.showDiscardPersonalItemDataDialog).toBe(true);
+
+    component.confirmDiscardPersonalItemDataChanges();
+
+    expect((component as any).pendingPersonalRowUpdates.size).toBe(0);
+    expect(component.personalItemData).toEqual({
+      'uuid::1': { note: 'Gespeicherter Stand' },
+    });
+    expect(getViewItemPreferences).toHaveBeenCalledWith('acp-1', 'item-explorer');
+    expect(component.canDeactivate()).toBe(true);
+  });
+
   it('does not wait indefinitely when pending personal data can no longer be saved', async () => {
     const component = createComponent({
       api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },

@@ -20,6 +20,19 @@ function asStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function normalizeStringMap(value: unknown): Record<string, string> {
+  const source = asRecord(value);
+  const normalized: Record<string, string> = {};
+  for (const [rawKey, rawLabel] of Object.entries(source)) {
+    const key = rawKey.trim();
+    const label = typeof rawLabel === "string" ? rawLabel.trim() : "";
+    if (key && label) {
+      normalized[key] = label;
+    }
+  }
+  return normalized;
+}
+
 function normalizeMetadataColumns(
   metadataColumnsRaw: unknown,
   legacyItemListColumnsRaw: unknown,
@@ -60,6 +73,19 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
 
   normalized.enablePlayerFocusHighlight =
     source.enablePlayerFocusHighlight === true;
+
+  normalized.itemSubIdLabel =
+    typeof source.itemSubIdLabel === "string" &&
+    source.itemSubIdLabel.trim().length > 0
+      ? source.itemSubIdLabel.trim()
+      : "Sub-ID";
+
+  const itemSubIdLabels = normalizeStringMap(source.itemSubIdLabels);
+  if (Object.keys(itemSubIdLabels).length > 0) {
+    normalized.itemSubIdLabels = itemSubIdLabels;
+  } else {
+    delete normalized.itemSubIdLabels;
+  }
 
   const metadataColumns = normalizeMetadataColumns(
     source.metadataColumns,

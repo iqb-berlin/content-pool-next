@@ -396,6 +396,45 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <span>{{ feat.label }}</span>
           </label>
         }
+        <div class="indent-section">
+          <label class="help-text" for="item-sub-id-label">Bezeichnung der Sub-ID-Spalte</label>
+          <input
+            id="item-sub-id-label"
+            class="tag-input"
+            type="text"
+            [(ngModel)]="featureConfig[itemSubIdLabelKey]"
+            placeholder="Sub-ID"
+          />
+          <span class="help-text">
+            Die zweite Spalte einer Itemschwierigkeits-CSV wird als Sub-ID/Kategorie/Stufe
+            verwendet.
+          </span>
+          <label class="help-text" style="margin-top: 10px;">Labels der Ausprägungen</label>
+          <div class="tags-editor">
+            @for (entry of itemSubIdLabelEntries; track $index) {
+              <div class="tag-add">
+                <input
+                  class="tag-input"
+                  type="text"
+                  [(ngModel)]="entry.value"
+                  placeholder="Wert, z. B. 1"
+                />
+                <input
+                  class="tag-input"
+                  type="text"
+                  [(ngModel)]="entry.label"
+                  placeholder="Label, z. B. teilweise richtig"
+                />
+                <button class="tag-remove" type="button" (click)="removeItemSubIdLabel($index)">
+                  ✕
+                </button>
+              </div>
+            }
+            <button class="btn btn-outline btn-sm" type="button" (click)="addItemSubIdLabel()">
+              + Ausprägung
+            </button>
+          </div>
+        </div>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]" />
           <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
@@ -700,6 +739,8 @@ export class AccessConfigComponent implements OnInit {
   readonly showOnlyItemsWithEmpiricalDifficultyKey = 'showOnlyItemsWithEmpiricalDifficulty';
   readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
   readonly showItemExplorerPlayerTargetInfoKey = 'showItemExplorerPlayerTargetInfo';
+  readonly itemSubIdLabelKey = 'itemSubIdLabel';
+  readonly itemSubIdLabelsKey = 'itemSubIdLabels';
 
   acpId = '';
   accessModel: AccessModel = 'PRIVATE';
@@ -713,6 +754,7 @@ export class AccessConfigComponent implements OnInit {
   commentTargets: string[] = [];
   availableTags: string[] = [];
   newTag = '';
+  itemSubIdLabelEntries: Array<{ value: string; label: string }> = [];
   accessSaved = false;
   featuresSaved = false;
   credentials: Credential[] = [];
@@ -835,6 +877,9 @@ export class AccessConfigComponent implements OnInit {
         this.validUntil = this.toDateTimeLocalString(config.validUntil);
         this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
         this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
+        this.itemSubIdLabelEntries = Object.entries(
+          (this.featureConfig[this.itemSubIdLabelsKey] as Record<string, string>) || {},
+        ).map(([value, label]) => ({ value, label }));
       },
     });
   }
@@ -914,6 +959,12 @@ export class AccessConfigComponent implements OnInit {
 
   saveFeatures() {
     this.applyFeatureConfigDefaults();
+    this.featureConfig[this.itemSubIdLabelsKey] = Object.fromEntries(
+      this.itemSubIdLabelEntries
+        .map((entry) => ({ value: entry.value.trim(), label: entry.label.trim() }))
+        .filter((entry) => entry.value && entry.label)
+        .map((entry) => [entry.value, entry.label]),
+    );
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
     this.api
@@ -931,6 +982,8 @@ export class AccessConfigComponent implements OnInit {
   }
 
   private applyFeatureConfigDefaults() {
+    const itemSubIdLabel = String(this.featureConfig[this.itemSubIdLabelKey] || '').trim();
+    this.featureConfig[this.itemSubIdLabelKey] = itemSubIdLabel || 'Sub-ID';
     const showAudioVideoCodingVariables = this.featureConfig[this.showAudioVideoCodingVariablesKey];
     this.featureConfig[this.showAudioVideoCodingVariablesKey] =
       showAudioVideoCodingVariables !== false;
@@ -963,6 +1016,14 @@ export class AccessConfigComponent implements OnInit {
 
   removeTag(index: number) {
     this.availableTags.splice(index, 1);
+  }
+
+  addItemSubIdLabel() {
+    this.itemSubIdLabelEntries.push({ value: '', label: '' });
+  }
+
+  removeItemSubIdLabel(index: number) {
+    this.itemSubIdLabelEntries.splice(index, 1);
   }
 
   // Manual credential management

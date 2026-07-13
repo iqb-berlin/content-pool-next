@@ -1089,6 +1089,29 @@ describe('ApiService', () => {
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/items/response-state/all');
     });
 
+    it('should scope response state requests to a stable partial-credit row key', () => {
+      httpClientMock.post.mockReturnValue(of({}));
+      httpClientMock.get.mockReturnValue(of({}));
+      httpClientMock.delete.mockReturnValue(of({}));
+
+      service.saveResponseState('acp1', 'item1', 'unit1', { answer: 1 }, 'uuid-1::1').subscribe();
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/items/item1/response-state', {
+        unitId: 'unit1',
+        responseData: { answer: 1 },
+        rowKey: 'uuid-1::1',
+      });
+
+      service.getResponseState('acp1', 'item1', 'unit1', 'uuid-1::1').subscribe();
+      expect(httpClientMock.get).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/item1/response-state?unitId=unit1&rowKey=uuid-1%3A%3A1',
+      );
+
+      service.deleteResponseState('acp1', 'item1', 'unit1', 'uuid-1::1').subscribe();
+      expect(httpClientMock.delete).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/item1/response-state?unitId=unit1&rowKey=uuid-1%3A%3A1',
+      );
+    });
+
     it('should get and save item tags', () => {
       httpClientMock.get.mockReturnValue(of({ item1: ['A'] }));
       httpClientMock.put.mockReturnValue(of({ item1: ['A', 'B'] }));

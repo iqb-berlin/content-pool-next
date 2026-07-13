@@ -89,92 +89,196 @@ export class ItemExplorerStateService {
       baseVersion?: number;
     } = {},
   ): Promise<ExplorerStateEnvelope> {
-    const record = await this.ensureStateRecord(acpId);
-    this.assertVersion(record, options.baseVersion);
-
-    const before = this.normalizeStatePayload(record.draftState);
-    const after = this.mergeDraftPatch(before, patch);
-    const published = this.normalizeStatePayload(record.publishedState);
-
-    record.draftState = after as unknown as Record<string, unknown>;
-    record.status = this.statesEqual(after, published) ? "CLEAN" : "DIRTY";
-    record.version += 1;
-    this.applyActor(record, options.actor);
-    const saved = await this.stateRepository.save(record);
-
-    await this.logChange({
+    return this.withLockedState(
       acpId,
-      changeType: options.changeType || "PATCH_DRAFT",
-      before,
-      after,
-      draftVersion: saved.version,
-      publishedVersion: saved.publishedVersion,
-      actor: options.actor,
-    });
+      async ({ stateRepository, changeLogRepository }, record) => {
+        this.assertVersion(record, options.baseVersion);
 
-    return this.toEnvelope(saved, true);
+        const before = this.normalizeStatePayload(record.draftState);
+        const after = this.mergeDraftPatch(before, patch);
+        const published = this.normalizeStatePayload(record.publishedState);
+
+        record.draftState = after as unknown as Record<string, unknown>;
+        record.status = this.statesEqual(after, published) ? "CLEAN" : "DIRTY";
+        record.version += 1;
+        this.applyActor(record, options.actor);
+        const saved = await stateRepository.save(record);
+
+        await this.logChange(
+          {
+            acpId,
+            changeType: options.changeType || "PATCH_DRAFT",
+            before,
+            after,
+            draftVersion: saved.version,
+            publishedVersion: saved.publishedVersion,
+            actor: options.actor,
+          },
+          changeLogRepository,
+        );
+
+        return this.toEnvelope(saved, true);
+      },
+    );
   }
 
   async saveDraft(
     acpId: string,
     options: { actor?: ExplorerActor; baseVersion?: number } = {},
   ): Promise<ExplorerStateEnvelope> {
-    const record = await this.ensureStateRecord(acpId);
-    this.assertVersion(record, options.baseVersion);
-
-    const beforePublished = this.normalizeStatePayload(record.publishedState);
-    const nextPublished = this.normalizeStatePayload(record.draftState);
-
-    await this.applyPublishedStateToDomain(acpId, nextPublished);
-
-    record.publishedState = nextPublished as unknown as Record<string, unknown>;
-    record.draftState = nextPublished as unknown as Record<string, unknown>;
-    record.status = "CLEAN";
-    record.version += 1;
-    record.publishedVersion += 1;
-    this.applyActor(record, options.actor);
-    const saved = await this.stateRepository.save(record);
-
-    await this.logChange({
+    return this.withLockedState(
       acpId,
-      changeType: "SAVE_DRAFT",
-      before: beforePublished,
-      after: nextPublished,
-      draftVersion: saved.version,
-      publishedVersion: saved.publishedVersion,
-      actor: options.actor,
-    });
+      async (
+        {
+          stateRepository,
+          acpRepository,
+          accessConfigRepository,
+          changeLogRepository,
+        },
+        record,
+      ) => {
+        this.assertVersion(record, options.baseVersion);
 
-    return this.toEnvelope(saved, true);
+        const beforePublished = this.normalizeStatePayload(
+          record.publishedState,
+        );
+        const nextPublished = this.normalizeStatePayload(record.draftState);
+
+        await this.applyPublishedStateToDomain(acpId, nextPublished, {
+          acpRepository,
+          accessConfigRepository,
+        });
+
+        record.publishedState = nextPublished as unknown as Record<
+          string,
+          unknown
+        >;
+        record.draftState = nextPublished as unknown as Record<string, unknown>;
+        record.status = "CLEAN";
+        record.version += 1;
+        record.publishedVersion += 1;
+        this.applyActor(record, options.actor);
+        const saved = await stateRepository.save(record);
+
+        await this.logChange(
+          {
+            acpId,
+            changeType: "SAVE_DRAFT",
+            before: beforePublished,
+            after: nextPublished,
+            draftVersion: saved.version,
+            publishedVersion: saved.publishedVersion,
+            actor: options.actor,
+          },
+          changeLogRepository,
+        );
+
+        return this.toEnvelope(saved, true);
+      },
+    );
+  }
+
+  async publishItemPropertiesImmediately(
+    acpId: string,
+    itemProperties: Record<string, Record<string, unknown>>,
+    options: {
+      actor?: ExplorerActor;
+      changeType: string;
+      baseVersion: number;
+    },
+  ): Promise<ExplorerStateEnvelope> {
+    return this.withLockedState(
+      acpId,
+      async (
+        {
+          stateRepository,
+          acpRepository,
+          accessConfigRepository,
+          changeLogRepository,
+        },
+        record,
+      ) => {
+        if (record.status === "DIRTY") {
+          throw new ConflictException(
+            "Direct item-property changes are not allowed while an Item Explorer draft is pending.",
+          );
+        }
+        this.assertVersion(record, options.baseVersion);
+
+        const before = this.normalizeStatePayload(record.publishedState);
+        const nextPublished: ExplorerSharedStatePayload = {
+          ...before,
+          itemProperties: this.normalizeItemProperties(itemProperties),
+        };
+
+        await this.applyPublishedStateToDomain(acpId, nextPublished, {
+          acpRepository,
+          accessConfigRepository,
+        });
+
+        record.publishedState = nextPublished as unknown as Record<
+          string,
+          unknown
+        >;
+        record.draftState = nextPublished as unknown as Record<string, unknown>;
+        record.status = "CLEAN";
+        record.version += 1;
+        record.publishedVersion += 1;
+        this.applyActor(record, options.actor);
+        const saved = await stateRepository.save(record);
+
+        await this.logChange(
+          {
+            acpId,
+            changeType: options.changeType,
+            before,
+            after: nextPublished,
+            draftVersion: saved.version,
+            publishedVersion: saved.publishedVersion,
+            actor: options.actor,
+          },
+          changeLogRepository,
+        );
+
+        return this.toEnvelope(saved, true);
+      },
+    );
   }
 
   async discardDraft(
     acpId: string,
     options: { actor?: ExplorerActor; baseVersion?: number } = {},
   ): Promise<ExplorerStateEnvelope> {
-    const record = await this.ensureStateRecord(acpId);
-    this.assertVersion(record, options.baseVersion);
-
-    const before = this.normalizeStatePayload(record.draftState);
-    const published = this.normalizeStatePayload(record.publishedState);
-
-    record.draftState = published as unknown as Record<string, unknown>;
-    record.status = "CLEAN";
-    record.version += 1;
-    this.applyActor(record, options.actor);
-    const saved = await this.stateRepository.save(record);
-
-    await this.logChange({
+    return this.withLockedState(
       acpId,
-      changeType: "DISCARD_DRAFT",
-      before,
-      after: published,
-      draftVersion: saved.version,
-      publishedVersion: saved.publishedVersion,
-      actor: options.actor,
-    });
+      async ({ stateRepository, changeLogRepository }, record) => {
+        this.assertVersion(record, options.baseVersion);
 
-    return this.toEnvelope(saved, true);
+        const before = this.normalizeStatePayload(record.draftState);
+        const published = this.normalizeStatePayload(record.publishedState);
+
+        record.draftState = published as unknown as Record<string, unknown>;
+        record.status = "CLEAN";
+        record.version += 1;
+        this.applyActor(record, options.actor);
+        const saved = await stateRepository.save(record);
+
+        await this.logChange(
+          {
+            acpId,
+            changeType: "DISCARD_DRAFT",
+            before,
+            after: published,
+            draftVersion: saved.version,
+            publishedVersion: saved.publishedVersion,
+            actor: options.actor,
+          },
+          changeLogRepository,
+        );
+
+        return this.toEnvelope(saved, true);
+      },
+    );
   }
 
   async listChanges(
@@ -217,6 +321,39 @@ export class ItemExplorerStateService {
       username,
       role,
     };
+  }
+
+  private async withLockedState<T>(
+    acpId: string,
+    operation: (
+      repositories: {
+        stateRepository: Repository<AcpItemExplorerState>;
+        acpRepository: Repository<Acp>;
+        accessConfigRepository: Repository<AcpAccessConfig>;
+        changeLogRepository: Repository<AcpItemExplorerChangeLog>;
+      },
+      record: AcpItemExplorerState,
+    ) => Promise<T>,
+  ): Promise<T> {
+    await this.ensureStateRecord(acpId);
+
+    return this.stateRepository.manager.transaction(async (manager) => {
+      const repositories = {
+        stateRepository: manager.getRepository(AcpItemExplorerState),
+        acpRepository: manager.getRepository(Acp),
+        accessConfigRepository: manager.getRepository(AcpAccessConfig),
+        changeLogRepository: manager.getRepository(AcpItemExplorerChangeLog),
+      };
+      const record = await repositories.stateRepository.findOne({
+        where: { acpId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!record) {
+        throw new NotFoundException("Item Explorer state not found");
+      }
+
+      return operation(repositories, record);
+    });
   }
 
   private async ensureStateRecord(
@@ -288,16 +425,25 @@ export class ItemExplorerStateService {
   private async applyPublishedStateToDomain(
     acpId: string,
     state: ExplorerSharedStatePayload,
+    repositories: {
+      acpRepository: Repository<Acp>;
+      accessConfigRepository: Repository<AcpAccessConfig>;
+    } = {
+      acpRepository: this.acpRepository,
+      accessConfigRepository: this.accessConfigRepository,
+    },
   ): Promise<void> {
-    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    const acp = await repositories.acpRepository.findOne({
+      where: { id: acpId },
+    });
     if (!acp) {
       throw new NotFoundException("ACP not found");
     }
 
     acp.itemProperties = this.normalizeItemProperties(state.itemProperties);
-    await this.acpRepository.save(acp);
+    await repositories.acpRepository.save(acp);
 
-    const config = await this.accessConfigRepository.findOne({
+    const config = await repositories.accessConfigRepository.findOne({
       where: { acpId },
     });
     if (!config) {
@@ -320,7 +466,7 @@ export class ItemExplorerStateService {
     }
 
     config.featureConfig = normalizedFeatureConfig;
-    await this.accessConfigRepository.save(config);
+    await repositories.accessConfigRepository.save(config);
   }
 
   private toEnvelope(
@@ -443,21 +589,24 @@ export class ItemExplorerStateService {
     return merged;
   }
 
-  private async logChange(params: {
-    acpId: string;
-    changeType: string;
-    before: ExplorerSharedStatePayload;
-    after: ExplorerSharedStatePayload;
-    draftVersion?: number | null;
-    publishedVersion?: number | null;
-    actor?: ExplorerActor;
-  }): Promise<void> {
+  private async logChange(
+    params: {
+      acpId: string;
+      changeType: string;
+      before: ExplorerSharedStatePayload;
+      after: ExplorerSharedStatePayload;
+      draftVersion?: number | null;
+      publishedVersion?: number | null;
+      actor?: ExplorerActor;
+    },
+    repository = this.changeLogRepository,
+  ): Promise<void> {
     const diff = this.buildTopLevelDiff(params.before, params.after);
     const actorUserId = this.isUuid(params.actor?.userId)
       ? params.actor?.userId
       : null;
 
-    const entry = this.changeLogRepository.create({
+    const entry = repository.create({
       acpId: params.acpId,
       changeType: params.changeType,
       beforeState: params.before as unknown as Record<string, unknown>,
@@ -470,7 +619,7 @@ export class ItemExplorerStateService {
       actorRole: params.actor?.role || null,
     } as DeepPartial<AcpItemExplorerChangeLog>);
 
-    await this.changeLogRepository.save(entry);
+    await repository.save(entry);
   }
 
   private buildTopLevelDiff(

@@ -225,7 +225,14 @@ describe("ItemsService", () => {
       { csvRow: "unknown-item", reason: "Kein passendes Item gefunden" },
     ]);
     expect(result.successes).toEqual([
-      { itemId: "I-1", unitId: "U-1", value: 0.75 },
+      {
+        itemId: "I-1",
+        unitId: "U-1",
+        rowKey: "uuid-1",
+        affectedRowKeys: ["uuid-1"],
+        subId: undefined,
+        value: 0.75,
+      },
     ]);
     expect(result.nextItemProperties).toEqual({
       existing: { unchanged: true },
@@ -263,6 +270,186 @@ describe("ItemsService", () => {
     await expect(
       service.uploadEmpiricalDifficulties("acp-1", Buffer.from(csv)),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it("imports multiple partial-credit rows for the same item by second-column Sub-ID", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    const csv = ["item;category;est", "I1;1;0.2", 'I1;"2";0.8'].join("\n");
+    const result = await service.uploadEmpiricalDifficulties(
+      "acp-1",
+      Buffer.from(csv),
+    );
+
+    expect(result.updated).toBe(2);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1::1": {
+        itemUuid: "uuid-1",
+        subId: "1",
+        empiricalDifficulty: 0.2,
+      },
+      "uuid-1::2": {
+        itemUuid: "uuid-1",
+        subId: "2",
+        empiricalDifficulty: 0.8,
+      },
+    });
+    expect(result.successes).toEqual([
+      expect.objectContaining({
+        rowKey: "uuid-1::1",
+        affectedRowKeys: ["uuid-1::1"],
+        subId: "1",
+        value: 0.2,
+      }),
+      expect.objectContaining({
+        rowKey: "uuid-1::2",
+        affectedRowKeys: ["uuid-1::2"],
+        subId: "2",
+        value: 0.8,
+      }),
+    ]);
+  });
+
+  it("applies a standard difficulty to existing partial-credit rows without discarding their properties", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": { tags: ["base"], empiricalDifficulty: 0.1 },
+        "uuid-1::1": {
+          itemUuid: "uuid-1",
+          subId: "1",
+          empiricalDifficulty: 0.2,
+          tags: ["partial"],
+          excluded: true,
+        },
+        "uuid-1::2": {
+          itemUuid: "uuid-1",
+          subId: "2",
+          empiricalDifficulty: 0.8,
+          previewTargetId: "score-2",
+        },
+        unrelated: { unchanged: true },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    const result = await service.uploadEmpiricalDifficulties(
+      "acp-1",
+      Buffer.from("item;est\nI1;0.5"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { tags: ["base"] },
+      "uuid-1::1": {
+        itemUuid: "uuid-1",
+        subId: "1",
+        empiricalDifficulty: 0.5,
+        tags: ["partial"],
+        excluded: true,
+      },
+      "uuid-1::2": {
+        itemUuid: "uuid-1",
+        subId: "2",
+        empiricalDifficulty: 0.5,
+        previewTargetId: "score-2",
+      },
+      unrelated: { unchanged: true },
+    });
+    expect(result.successes).toEqual([
+      {
+        itemId: "I-1",
+        unitId: "U-1",
+        affectedRowKeys: ["uuid-1::1", "uuid-1::2"],
+        subId: undefined,
+        value: 0.5,
+      },
+    ]);
+  });
+
+  it("removes a hidden standard difficulty when importing partial-credit rows", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": { tags: ["base"], empiricalDifficulty: 0.5 },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    const result = await service.uploadEmpiricalDifficulties(
+      "acp-1",
+      Buffer.from("item;level;est\nI1;1;0.2\nI1;2;0.8"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { tags: ["base"] },
+      "uuid-1::1": {
+        itemUuid: "uuid-1",
+        subId: "1",
+        empiricalDifficulty: 0.2,
+      },
+      "uuid-1::2": {
+        itemUuid: "uuid-1",
+        subId: "2",
+        empiricalDifficulty: 0.8,
+      },
+    });
+  });
+
+  it("rejects mixing standard and partial-credit rows for one item", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    await expect(
+      service.uploadEmpiricalDifficulties(
+        "acp-1",
+        Buffer.from("item;level;est\nI1;;0.5\nI1;1;0.2"),
+      ),
+    ).rejects.toThrow(/sowohl mit als auch ohne Sub-ID/);
+
+    expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
   it("supports dry-run upload mode without persistence", async () => {

@@ -32,6 +32,7 @@ import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
@@ -41,6 +42,7 @@ export class FilesController {
     private readonly unitParserService: UnitParserService,
     private readonly validationService: ValidationService,
     private readonly fileProcessingJobsService: FileProcessingJobsService,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
   ) {}
 
   @Get()
@@ -146,7 +148,13 @@ export class FilesController {
         throw new ForbiddenException("Item list is not enabled for this ACP");
       }
     }
-    return this.unitParserService.getItemListFromFiles(acpId);
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      isManager,
+    );
+    return this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+    });
   }
 
   @Get("unit-view/:unitId")

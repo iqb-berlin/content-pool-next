@@ -2,12 +2,17 @@ import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as fs from "fs/promises";
-import { AcpFile, Acp } from "../database/entities";
+import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
 import {
   getAssessmentParts,
   normalizeIndexForStorage,
 } from "../acp/acp-index.utils";
 import { FileProcessingProgressReporter } from "./file-processing-progress";
+import { normalizeFeatureConfig } from "../acp/feature-config.utils";
+import {
+  buildItemRowKey,
+  parseItemRowKeyParts,
+} from "../items/item-row-key.util";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -44,6 +49,9 @@ export interface MetadataColumn {
 export interface VomdItemData {
   itemId: string;
   uuid: string;
+  rowKey: string;
+  subId?: string;
+  subIdDisplay?: string;
   unitId: string;
   unitLabel: string;
   description: string;
@@ -58,8 +66,16 @@ export interface VomdItemData {
 export interface ItemListResult {
   columns: MetadataColumn[];
   items: VomdItemData[];
+  subIdLabel: string;
+  subIdLabels: Record<string, string>;
   unitMetadata: Record<string, any[]>; // unitId → unit-level profile entries
   codingSchemes: Record<string, any>; // unitId → coding scheme JSON
+}
+
+interface PartialCreditRow {
+  rowKey: string;
+  subId: string;
+  properties: Record<string, unknown>;
 }
 
 export interface IndexSyncReport {
@@ -87,6 +103,8 @@ export class UnitParserService {
     private readonly fileRepository: Repository<AcpFile>,
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
+    @InjectRepository(AcpAccessConfig)
+    private readonly accessConfigRepository: Repository<AcpAccessConfig>,
   ) {}
 
   /**
@@ -552,10 +570,29 @@ export class UnitParserService {
    * Read all .vomd files for an ACP, extract items with profile metadata,
    * and determine dynamic columns.
    */
-  async getItemListFromFiles(acpId: string): Promise<ItemListResult> {
+  async getItemListFromFiles(
+    acpId: string,
+    options: {
+      itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+    } = {},
+  ): Promise<ItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
-    const itemProps = acp?.itemProperties || {};
+    const accessConfig = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
+    const itemProps =
+      options.itemPropertiesOverride || acp?.itemProperties || {};
+    const normalizedFeatureConfig = normalizeFeatureConfig(
+      accessConfig?.featureConfig || {},
+    ) as Record<string, unknown>;
+    const subIdLabel = String(
+      normalizedFeatureConfig.itemSubIdLabel || "Sub-ID",
+    );
+    const subIdLabels = this.asStringMap(
+      normalizedFeatureConfig.itemSubIdLabels,
+    );
+    const partialRowsByItemUuid = this.indexPartialCreditRows(itemProps);
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label
@@ -648,31 +685,57 @@ export class UnitParserService {
             item.variableReadOnlyId ||
             "";
 
-          items.push({
-            itemId: item.id,
-            uuid: item.uuid || `${parsed.unitId}_${item.id}`,
-            unitId: parsed.unitId,
-            unitLabel: parsed.unitLabel,
-            description: item.description || "",
-            variableId: sourceVariable,
-            sourceVariable: sourceVariable || undefined,
-            metadata,
-            empiricalDifficulty:
-              (item.uuid && itemProps[item.uuid]?.empiricalDifficulty) ||
-              itemProps[resolvedItemId]?.empiricalDifficulty ||
-              itemProps[item.id]?.empiricalDifficulty,
-            tags:
-              (item.uuid && Array.isArray(itemProps[item.uuid]?.tags)
-                ? itemProps[item.uuid].tags
-                : undefined) ||
-              (Array.isArray(itemProps[resolvedItemId]?.tags)
-                ? itemProps[resolvedItemId].tags
-                : undefined) ||
-              (Array.isArray(itemProps[item.id]?.tags)
-                ? itemProps[item.id].tags
-                : undefined) ||
-              [],
-          });
+          const itemUuid = item.uuid || `${parsed.unitId}_${item.id}`;
+          const baseProperties = this.resolveItemProperties(itemProps, [
+            itemUuid,
+            resolvedItemId,
+            item.id,
+          ]);
+          const partialRows = partialRowsByItemUuid.get(itemUuid) || [];
+
+          const explorerRows = partialRows.length
+            ? partialRows
+            : [
+                {
+                  rowKey: buildItemRowKey(itemUuid),
+                  subId: "",
+                  properties: baseProperties,
+                },
+              ];
+
+          for (const explorerRow of explorerRows) {
+            const rowProperties = {
+              ...baseProperties,
+              ...explorerRow.properties,
+            };
+            const empiricalDifficultyRaw = rowProperties.empiricalDifficulty;
+            const empiricalDifficulty =
+              empiricalDifficultyRaw === undefined ||
+              empiricalDifficultyRaw === null ||
+              !Number.isFinite(Number(empiricalDifficultyRaw))
+                ? undefined
+                : Number(empiricalDifficultyRaw);
+
+            items.push({
+              itemId: item.id,
+              uuid: itemUuid,
+              rowKey: explorerRow.rowKey,
+              subId: explorerRow.subId || undefined,
+              subIdDisplay: explorerRow.subId
+                ? subIdLabels[explorerRow.subId] || explorerRow.subId
+                : undefined,
+              unitId: parsed.unitId,
+              unitLabel: parsed.unitLabel,
+              description: item.description || "",
+              variableId: sourceVariable,
+              sourceVariable: sourceVariable || undefined,
+              metadata: { ...metadata },
+              empiricalDifficulty,
+              tags: Array.isArray(rowProperties.tags)
+                ? rowProperties.tags.map((tag) => String(tag))
+                : [],
+            });
+          }
         }
       } catch (e) {
         this.logger.error(`Error processing ${xmlFile.originalName}: ${e}`);
@@ -684,7 +747,67 @@ export class UnitParserService {
       ([id, label]) => ({ id, label }),
     );
 
-    return { columns, items, unitMetadata, codingSchemes };
+    return {
+      columns,
+      items,
+      subIdLabel,
+      subIdLabels,
+      unitMetadata,
+      codingSchemes,
+    };
+  }
+
+  private resolveItemProperties(
+    itemProperties: Record<string, Record<string, unknown>>,
+    keys: string[],
+  ): Record<string, unknown> {
+    const merged: Record<string, unknown> = {};
+    for (const key of [...keys].reverse()) {
+      const value = itemProperties[key];
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        Object.assign(merged, value);
+      }
+    }
+    return merged;
+  }
+
+  private indexPartialCreditRows(
+    itemProperties: Record<string, Record<string, unknown>>,
+  ): Map<string, PartialCreditRow[]> {
+    const indexed = new Map<string, PartialCreditRow[]>();
+    for (const [rowKey, rawProperties] of Object.entries(itemProperties)) {
+      const parts = parseItemRowKeyParts(rowKey);
+      if (
+        !parts ||
+        !rawProperties ||
+        typeof rawProperties !== "object" ||
+        Array.isArray(rawProperties)
+      ) {
+        continue;
+      }
+
+      const rows = indexed.get(parts.itemUuid) || [];
+      rows.push({
+        rowKey,
+        subId: parts.subId,
+        properties: rawProperties,
+      });
+      indexed.set(parts.itemUuid, rows);
+    }
+    return indexed;
+  }
+
+  private asStringMap(value: unknown): Record<string, string> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    const normalized: Record<string, string> = {};
+    for (const [key, label] of Object.entries(value)) {
+      if (typeof label === "string" && key.trim() && label.trim()) {
+        normalized[key.trim()] = label.trim();
+      }
+    }
+    return normalized;
   }
 
   /**

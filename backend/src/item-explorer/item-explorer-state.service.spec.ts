@@ -141,6 +141,25 @@ describe("ItemExplorerStateService", () => {
     expect(stateRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("returns state created by a concurrent initializer after locking the ACP", async () => {
+    const concurrentlyCreated = buildStateRecord();
+    stateRepo.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(concurrentlyCreated);
+    acpRepo.findOne.mockResolvedValue({ id: "acp-1", itemProperties: {} });
+
+    const envelope = await service.getStateForViewer("acp-1", false);
+
+    expect(acpRepo.findOne).toHaveBeenCalledWith({
+      where: { id: "acp-1" },
+      lock: { mode: "pessimistic_write" },
+    });
+    expect(envelope.version).toBe(1);
+    expect(stateRepo.create).not.toHaveBeenCalled();
+    expect(stateRepo.save).not.toHaveBeenCalled();
+    expect(accessConfigRepo.findOne).not.toHaveBeenCalled();
+  });
+
   it("returns conflict on outdated draft version", async () => {
     stateRepo.findOne.mockResolvedValue(buildStateRecord({ version: 7 }));
 

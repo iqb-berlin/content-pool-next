@@ -246,6 +246,104 @@ export class ItemExplorerStateService {
     );
   }
 
+  async publishTagsImmediately(
+    acpId: string,
+    tags: Record<string, string[]>,
+    options: {
+      actor?: ExplorerActor;
+      changeType?: string;
+      baseVersion?: number;
+    } = {},
+  ): Promise<{
+    tags: Record<string, string[]>;
+    state: ExplorerStateEnvelope;
+  }> {
+    return this.withLockedState(
+      acpId,
+      async (
+        {
+          stateRepository,
+          acpRepository,
+          accessConfigRepository,
+          changeLogRepository,
+        },
+        record,
+      ) => {
+        if (record.status === "DIRTY") {
+          throw new ConflictException(
+            "Direct item-tag changes are not allowed while an Item Explorer draft is pending.",
+          );
+        }
+        this.assertVersion(record, options.baseVersion);
+
+        const before = this.normalizeStatePayload(record.publishedState);
+        const normalizedTags = this.normalizeTags(tags);
+        const itemProperties = this.normalizeItemProperties(
+          before.itemProperties,
+        );
+
+        for (const [itemKey, currentProperties] of Object.entries(
+          itemProperties,
+        )) {
+          const nextProperties = { ...currentProperties };
+          delete nextProperties.tags;
+          if (Object.keys(nextProperties).length > 0) {
+            itemProperties[itemKey] = nextProperties;
+          } else {
+            delete itemProperties[itemKey];
+          }
+        }
+
+        for (const [itemKey, tagValues] of Object.entries(normalizedTags)) {
+          itemProperties[itemKey] = {
+            ...(itemProperties[itemKey] || {}),
+            tags: tagValues,
+          };
+        }
+
+        const nextPublished: ExplorerSharedStatePayload = {
+          ...before,
+          tags: normalizedTags,
+          itemProperties: this.normalizeItemProperties(itemProperties),
+        };
+
+        await this.applyPublishedStateToDomain(acpId, nextPublished, {
+          acpRepository,
+          accessConfigRepository,
+        });
+
+        record.publishedState = nextPublished as unknown as Record<
+          string,
+          unknown
+        >;
+        record.draftState = nextPublished as unknown as Record<string, unknown>;
+        record.status = "CLEAN";
+        record.version += 1;
+        record.publishedVersion += 1;
+        this.applyActor(record, options.actor);
+        const saved = await stateRepository.save(record);
+
+        await this.logChange(
+          {
+            acpId,
+            changeType: options.changeType || "REPLACE_ITEM_TAGS",
+            before,
+            after: nextPublished,
+            draftVersion: saved.version,
+            publishedVersion: saved.publishedVersion,
+            actor: options.actor,
+          },
+          changeLogRepository,
+        );
+
+        return {
+          tags: normalizedTags,
+          state: this.toEnvelope(saved, true),
+        };
+      },
+    );
+  }
+
   async discardDraft(
     acpId: string,
     options: { actor?: ExplorerActor; baseVersion?: number } = {},

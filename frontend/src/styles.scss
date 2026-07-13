@@ -316,3 +316,119 @@ a:hover {
   gap: 12px;
   margin-bottom: 16px;
 }
+
+/* Item Explorer tags and personal row data. Kept global so the already large Explorer
+   component stylesheet stays below Angular's per-component budget. */
+app-item-explorer {
+  .item-count {
+    color: var(--color-text-secondary);
+    font-size: 0.85rem;
+  }
+
+  .tags-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+  }
+
+  .tag-badge {
+    cursor: pointer;
+    font-size: 0.7rem;
+
+    &:hover {
+      opacity: 0.7;
+    }
+  }
+
+  .tag-select {
+    max-width: 80px;
+    padding: 2px 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: white;
+    font-size: 0.75rem;
+  }
+
+  .tag-add-container {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .tag-input-inline {
+    width: 60px;
+    padding: 2px 6px;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    transition: width 0.2s;
+
+    &:focus {
+      width: 100px;
+      outline: none;
+      border-color: var(--color-primary-light);
+    }
+  }
+
+  .personal-data-cell {
+    min-width: 150px;
+    max-width: 260px !important;
+    white-space: normal !important;
+    overflow: visible !important;
+  }
+
+  .personal-data-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--color-text-secondary);
+    font-size: 0.78rem;
+  }
+
+  .personal-data-error {
+    color: var(--color-danger, #b42318);
+  }
+
+  .personal-category-select,
+  .personal-note-input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    background: var(--color-surface);
+    color: var(--color-text);
+    font: inherit;
+  }
+
+  .personal-category-select {
+    padding: 5px 7px;
+  }
+
+  .personal-note-input {
+    min-width: 190px;
+    padding: 6px 8px;
+    resize: vertical;
+    line-height: 1.3;
+  }
+
+  .personal-tag-list {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .personal-tag-badge {
+    border: 0;
+    border-radius: 999px;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 3px 8px;
+
+    &:hover {
+      filter: brightness(0.9);
+    }
+  }
+}

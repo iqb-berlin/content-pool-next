@@ -10,11 +10,12 @@ import {
   rewriteGeoGebraAssetUrls,
 } from '../../core/utils/geogebra-player-html.util';
 import { AuthService } from '../../core/services/auth.service';
+import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import { firstValueFrom } from 'rxjs';
+import { finalize, firstValueFrom, Subscription } from 'rxjs';
 import {
   ItemExplorerChangeLogEntry,
   ItemExplorerSharedState,
@@ -49,6 +50,32 @@ interface MetadataSettings {
   visible: string[];
   order: string[];
 }
+
+interface PersonalItemTagConfig {
+  label: string;
+  color: string;
+}
+
+interface PersonalItemRowData {
+  [key: string]: unknown;
+  category?: string;
+  tags?: string[];
+  note?: string;
+}
+
+interface PendingPersonalRowUpdate {
+  version: number;
+  rowData: PersonalItemRowData | null;
+  perspective: ItemExplorerPerspective;
+}
+
+interface SuspendedPersonalSession {
+  identity: string;
+  updates: Array<[string, PendingPersonalRowUpdate]>;
+}
+
+type PersonalDataLoadState = 'idle' | 'loading' | 'loaded' | 'error';
+type PersonalDataSaveState = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 interface PreviewTargetOption {
   id: string;
@@ -366,6 +393,37 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                 <kbd>Pos1</kbd>/<kbd>Ende</kbd> Sprung, <kbd>Strg/Cmd + S</kbd> speichern
               </div>
             }
+            @if (showPersonalItemData) {
+              <div class="personal-data-status" aria-live="polite">
+                @if (personalDataLoadState === 'loading') {
+                  Persönliche Arbeitsdaten werden geladen …
+                } @else if (personalDataLoadState === 'error') {
+                  <span class="personal-data-error">{{ personalDataError }}</span>
+                  <button
+                    class="btn btn-outline btn-sm"
+                    type="button"
+                    (click)="retryPersonalItemDataLoad()"
+                  >
+                    Erneut laden
+                  </button>
+                } @else if (
+                  personalDataSaveState === 'saving' || personalDataSaveState === 'pending'
+                ) {
+                  Persönliche Änderungen werden gespeichert …
+                } @else if (personalDataSaveState === 'error') {
+                  <span class="personal-data-error">{{ personalDataError }}</span>
+                  <button
+                    class="btn btn-outline btn-sm"
+                    type="button"
+                    (click)="retryPersonalItemDataSave()"
+                  >
+                    Erneut speichern
+                  </button>
+                } @else if (personalDataSaveState === 'saved') {
+                  Persönliche Änderungen gespeichert
+                }
+              </div>
+            }
           </div>
 
           <div
@@ -402,6 +460,11 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                   }
                   @if (enableTags) {
                     <th>Tags</th>
+                  }
+                  @if (showPersonalItemData) {
+                    <th>{{ personalItemCategoryLabel }}</th>
+                    <th>{{ personalItemTagLabel }}</th>
+                    <th>Notiz</th>
                   }
                 </tr>
                 <tr class="filter-row">
@@ -459,6 +522,35 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                         [(ngModel)]="columnFilters['tags']"
                         placeholder="🔍 Tags..."
                         (input)="applyFilter()"
+                      />
+                    </th>
+                  }
+                  @if (showPersonalItemData) {
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="personalColumnFilters['personalCategory']"
+                        [placeholder]="'🔍 ' + personalItemCategoryLabel + '...'"
+                        [disabled]="personalDataLoadState !== 'loaded'"
+                        (input)="applyFilter(false)"
+                      />
+                    </th>
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="personalColumnFilters['personalTags']"
+                        [placeholder]="'🔍 ' + personalItemTagLabel + '...'"
+                        [disabled]="personalDataLoadState !== 'loaded'"
+                        (input)="applyFilter(false)"
+                      />
+                    </th>
+                    <th>
+                      <input
+                        class="col-filter-input"
+                        [(ngModel)]="personalColumnFilters['personalNote']"
+                        placeholder="🔍 Notiz..."
+                        [disabled]="personalDataLoadState !== 'loaded'"
+                        (input)="applyFilter(false)"
                       />
                     </th>
                   }
@@ -544,6 +636,65 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                             />
                           </div>
                         }
+                      </td>
+                    }
+                    @if (showPersonalItemData) {
+                      <td class="personal-data-cell" (click)="$event.stopPropagation()">
+                        <select
+                          class="personal-category-select"
+                          [ngModel]="personalItemData[item.rowKey]?.category || ''"
+                          [disabled]="!canChangePersonalItemData"
+                          (ngModelChange)="setPersonalItemCategory(item.rowKey, $event)"
+                        >
+                          <option value="">–</option>
+                          @for (category of personalItemCategoryValues; track category) {
+                            <option [value]="category">{{ category }}</option>
+                          }
+                        </select>
+                      </td>
+                      <td class="personal-data-cell" (click)="$event.stopPropagation()">
+                        <div class="personal-tag-list">
+                          @for (tag of personalItemData[item.rowKey]?.tags || []; track tag) {
+                            <button
+                              type="button"
+                              class="personal-tag-badge"
+                              [style.backgroundColor]="getPersonalTagColor(tag)"
+                              [title]="tag + ' entfernen'"
+                              [disabled]="!canChangePersonalItemData"
+                              (click)="removePersonalItemTagFromRow(item.rowKey, tag)"
+                            >
+                              {{ tag }} ×
+                            </button>
+                          }
+                          @if (availablePersonalTagsForRow(item.rowKey).length > 0) {
+                            <select
+                              class="tag-select"
+                              (change)="addPersonalItemTagToRow(item.rowKey, $event)"
+                              [attr.aria-label]="personalItemTagLabel + ' hinzufügen'"
+                              [disabled]="!canChangePersonalItemData"
+                            >
+                              <option value="">+ Hinzufügen</option>
+                              @for (
+                                tag of availablePersonalTagsForRow(item.rowKey);
+                                track tag.label
+                              ) {
+                                <option [value]="tag.label">{{ tag.label }}</option>
+                              }
+                            </select>
+                          }
+                        </div>
+                      </td>
+                      <td class="personal-data-cell note-cell" (click)="$event.stopPropagation()">
+                        <textarea
+                          class="personal-note-input"
+                          rows="2"
+                          maxlength="10000"
+                          placeholder="Persönliche Notiz..."
+                          [ngModel]="personalItemData[item.rowKey]?.note || ''"
+                          [disabled]="!canChangePersonalItemData"
+                          (ngModelChange)="setPersonalItemNote(item.rowKey, $event)"
+                          (blur)="flushPersonalItemDataSave()"
+                        ></textarea>
                       </td>
                     }
                   </tr>
@@ -1560,10 +1711,6 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         gap: 16px;
         flex-wrap: wrap;
       }
-      .item-count {
-        font-size: 0.85rem;
-        color: var(--color-text-secondary);
-      }
       .explorer-status-bar {
         margin-bottom: 12px;
         padding: 10px 14px;
@@ -1781,47 +1928,6 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         outline: none;
         border-color: var(--color-primary-light);
         box-shadow: 0 0 0 2px rgba(41, 128, 185, 0.1);
-      }
-
-      /* Tags */
-      .tags-cell {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        align-items: center;
-      }
-      .tag-badge {
-        cursor: pointer;
-        font-size: 0.7rem;
-      }
-      .tag-badge:hover {
-        opacity: 0.7;
-      }
-      .tag-select {
-        padding: 2px 4px;
-        border: 1px solid var(--color-border);
-        border-radius: 4px;
-        font-size: 0.75rem;
-        background: white;
-        max-width: 80px;
-      }
-      .tag-add-container {
-        display: flex;
-        gap: 4px;
-        align-items: center;
-      }
-      .tag-input-inline {
-        width: 60px;
-        padding: 2px 6px;
-        border: 1px solid var(--color-border);
-        border-radius: 4px;
-        font-size: 0.75rem;
-        transition: width 0.2s;
-      }
-      .tag-input-inline:focus {
-        width: 100px;
-        outline: none;
-        border-color: var(--color-primary-light);
       }
 
       /* Combined ID styling */
@@ -2635,6 +2741,33 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   persistUserPreferences = false;
   useServerPreferences = false;
 
+  // Personal row-level working data (never part of the shared Explorer state)
+  enablePersonalItemData = false;
+  personalItemCategoryLabel = 'Kompetenzstufe';
+  personalItemCategoryValues: string[] = [];
+  personalItemTagLabel = 'Markierungen';
+  personalItemTags: PersonalItemTagConfig[] = [];
+  personalItemData: Record<string, PersonalItemRowData> = {};
+  personalColumnFilters: Record<string, string> = {};
+  personalDataLoadState: PersonalDataLoadState = 'idle';
+  personalDataSaveState: PersonalDataSaveState = 'idle';
+  personalDataError = '';
+  private readonly personalPreferenceViewId = 'item-explorer';
+  private readonly personalSaveDebounceMs = 350;
+  private personalSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private personalSaveInFlight = false;
+  private personalRowUpdateVersion = 0;
+  private readonly pendingPersonalRowUpdates = new Map<string, PendingPersonalRowUpdate>();
+  private personalSaveWaiters: Array<(saved: boolean) => void> = [];
+  private personalDataSessionIdentity: string | null = null;
+  private personalDataSessionVersion = 0;
+  private authSessionSubscription: Subscription | null = null;
+  private readonly authStorageListener = (event: StorageEvent) => {
+    if (!event.key || event.key === 'cp_token') {
+      this.syncPersonalItemDataSession();
+    }
+  };
+
   private readonly draftPatchDebounceMs = 250;
   private draftPatchTimeout: ReturnType<typeof setTimeout> | null = null;
   private pendingDraftPatch: Record<string, unknown> | null = null;
@@ -2961,6 +3094,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     public sanitizer: DomSanitizer,
     private voudService: VoudService,
     private authService: AuthService,
+    private pendingPersonalSessionStorage: PendingPersonalSessionStorageService,
   ) {}
 
   ngOnInit() {
@@ -2972,6 +3106,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     ];
 
     window.addEventListener('message', this.messageHandler);
+    window.addEventListener('storage', this.authStorageListener);
+    this.authSessionSubscription = this.authService.currentUser$.subscribe(() => {
+      this.syncPersonalItemDataSession();
+    });
 
     // Check if user is ACP Manager
     this.checkUserRole();
@@ -2988,6 +3126,13 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
       this.showOnlyItemsWithEmpiricalDifficulty = fc.showOnlyItemsWithEmpiricalDifficulty === true;
       this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
+      this.enablePersonalItemData = fc.enablePersonalItemData === true;
+      this.personalItemCategoryLabel =
+        String(fc.personalItemCategoryLabel || 'Kompetenzstufe').trim() || 'Kompetenzstufe';
+      this.personalItemCategoryValues = this.normalizeStringList(fc.personalItemCategoryValues);
+      this.personalItemTagLabel =
+        String(fc.personalItemTagLabel || 'Markierungen').trim() || 'Markierungen';
+      this.personalItemTags = this.normalizePersonalItemTagConfig(fc.personalItemTags);
       // Explorer uses ACP-shared draft/published state instead of per-user preferences.
       this.persistUserPreferences = false;
       this.useServerPreferences = false;
@@ -2995,6 +3140,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       // Load metadata column settings
       this.metadataSettings = this.resolveMetadataSettings(fc);
       this.loadSharedExplorerState();
+      this.syncPersonalItemDataSession();
       this.startPlayerIfReady();
     });
 
@@ -3055,9 +3201,17 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   ngOnDestroy() {
     window.removeEventListener('message', this.messageHandler);
+    window.removeEventListener('storage', this.authStorageListener);
+    this.authSessionSubscription?.unsubscribe();
+    this.authSessionSubscription = null;
     this.stopAutoResize();
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
+    if (this.personalSaveTimeout) {
+      clearTimeout(this.personalSaveTimeout);
+      this.personalSaveTimeout = null;
+      this.saveNextPersonalItemRow();
+    }
     if (this.draftPatchTimeout) {
       clearTimeout(this.draftPatchTimeout);
       this.draftPatchTimeout = null;
@@ -3070,7 +3224,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   @HostListener('window:beforeunload', ['$event'])
   handleBeforeUnload(event: BeforeUnloadEvent) {
-    if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
+    const hasPendingSharedDraft = this.canPublishExplorer && this.hasPendingDraftChanges();
+    if (!hasPendingSharedDraft && !this.hasPendingPersonalItemDataChanges()) {
       return;
     }
     event.preventDefault();
@@ -3117,6 +3272,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   canDeactivate(): boolean | Promise<boolean> {
+    if (this.hasPendingPersonalItemDataChanges()) {
+      return this.savePersonalChangesBeforeLeaving();
+    }
+    return this.canDeactivateSharedExplorer();
+  }
+
+  private async savePersonalChangesBeforeLeaving(): Promise<boolean> {
+    const saved = await this.flushPersonalItemDataSaveAndWait();
+    if (!saved) return false;
+    return this.canDeactivateSharedExplorer();
+  }
+
+  private canDeactivateSharedExplorer(): boolean | Promise<boolean> {
     if (!this.canPublishExplorer || !this.hasPendingDraftChanges()) {
       return true;
     }
@@ -3202,6 +3370,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         // Metadata column
         const val = item.metadata[colId] || '';
         if (!val.toLowerCase().includes(subTerm)) return false;
+      }
+    }
+
+    if (this.showPersonalItemData) {
+      const categoryFilter = (this.personalColumnFilters['personalCategory'] || '').toLowerCase();
+      const tagFilter = (this.personalColumnFilters['personalTags'] || '').toLowerCase();
+      const noteFilter = (this.personalColumnFilters['personalNote'] || '').toLowerCase();
+      const row = this.personalItemData[item.rowKey];
+      if (categoryFilter && !(row?.category || '').toLowerCase().includes(categoryFilter)) {
+        return false;
+      }
+      if (tagFilter && !(row?.tags || []).some((tag) => tag.toLowerCase().includes(tagFilter))) {
+        return false;
+      }
+      if (noteFilter && !(row?.note || '').toLowerCase().includes(noteFilter)) {
+        return false;
       }
     }
 
@@ -4620,7 +4804,461 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.playerFrame?.nativeElement?.contentWindow?.postMessage(msg, '*');
   }
 
-  // --- Tags ---
+  // --- Personal item working data ---
+  get showPersonalItemData(): boolean {
+    return this.enablePersonalItemData && this.personalDataSessionIdentity !== null;
+  }
+
+  get canEditPersonalItemData(): boolean {
+    return this.showPersonalItemData && this.personalDataLoadState === 'loaded';
+  }
+
+  get canChangePersonalItemData(): boolean {
+    return this.canEditPersonalItemData && !this.perspectiveSwitchBusy;
+  }
+
+  private loadPersonalItemData(
+    sessionIdentity = this.personalDataSessionIdentity,
+    sessionVersion = this.personalDataSessionVersion,
+  ) {
+    if (!sessionIdentity) return;
+    this.personalDataLoadState = 'loading';
+    this.personalDataError = '';
+    this.api.getViewItemPreferences(this.acpId, this.personalPreferenceViewId).subscribe({
+      next: (preferences) => {
+        if (
+          this.personalDataSessionIdentity !== sessionIdentity ||
+          this.personalDataSessionVersion !== sessionVersion
+        ) {
+          return;
+        }
+        this.personalItemData = this.normalizePersonalItemRowData(preferences?.rowData);
+        this.personalDataLoadState = 'loaded';
+        this.restorePendingPersonalSession(sessionIdentity);
+        this.applyFilter(false);
+      },
+      error: (error) => {
+        if (
+          this.personalDataSessionIdentity !== sessionIdentity ||
+          this.personalDataSessionVersion !== sessionVersion
+        ) {
+          return;
+        }
+        console.error('Failed to load personal item working data', error);
+        this.personalDataLoadState = 'error';
+        this.personalDataError =
+          'Persönliche Arbeitsdaten konnten nicht geladen werden. Bearbeitung ist deaktiviert.';
+      },
+    });
+  }
+
+  retryPersonalItemDataLoad() {
+    if (!this.showPersonalItemData || this.personalSaveInFlight) return;
+    this.loadPersonalItemData();
+  }
+
+  setPersonalItemCategory(rowKey: string, value: unknown) {
+    if (!this.canChangePersonalItemData) return;
+    const category = typeof value === 'string' ? value.trim().slice(0, 200) : '';
+    const row = this.getOrCreatePersonalItemRow(rowKey);
+    if (category) row.category = category;
+    else delete row.category;
+    this.compactPersonalItemRow(rowKey);
+    this.queuePersonalItemRowSave(rowKey);
+    this.applyFilter(false);
+  }
+
+  setPersonalItemNote(rowKey: string, value: unknown) {
+    if (!this.canChangePersonalItemData) return;
+    const note = typeof value === 'string' ? value.replace(/\r\n?/g, '\n').slice(0, 10_000) : '';
+    const row = this.getOrCreatePersonalItemRow(rowKey);
+    if (note) row.note = note;
+    else delete row.note;
+    this.compactPersonalItemRow(rowKey);
+    this.queuePersonalItemRowSave(rowKey);
+    this.applyFilter(false);
+  }
+
+  addPersonalItemTagToRow(rowKey: string, event: Event) {
+    if (!this.canChangePersonalItemData) return;
+    const select = event.target as HTMLSelectElement;
+    const tag = select.value.trim();
+    select.value = '';
+    if (!tag || !this.personalItemTags.some((entry) => entry.label === tag)) return;
+    const row = this.getOrCreatePersonalItemRow(rowKey);
+    const tags = row.tags || [];
+    if (!tags.includes(tag)) row.tags = [...tags, tag];
+    this.queuePersonalItemRowSave(rowKey);
+    this.applyFilter(false);
+  }
+
+  removePersonalItemTagFromRow(rowKey: string, tag: string) {
+    if (!this.canChangePersonalItemData) return;
+    const row = this.personalItemData[rowKey];
+    if (!row?.tags) return;
+    row.tags = row.tags.filter((entry) => entry !== tag);
+    if (!row.tags.length) delete row.tags;
+    this.compactPersonalItemRow(rowKey);
+    this.queuePersonalItemRowSave(rowKey);
+    this.applyFilter(false);
+  }
+
+  availablePersonalTagsForRow(rowKey: string): PersonalItemTagConfig[] {
+    const selected = new Set(this.personalItemData[rowKey]?.tags || []);
+    return this.personalItemTags.filter((tag) => !selected.has(tag.label));
+  }
+
+  getPersonalTagColor(label: string): string {
+    return this.personalItemTags.find((tag) => tag.label === label)?.color || '#6c757d';
+  }
+
+  flushPersonalItemDataSave() {
+    this.clearPersonalSaveTimeout();
+    this.saveNextPersonalItemRow();
+  }
+
+  retryPersonalItemDataSave() {
+    if (!this.canEditPersonalItemData || !this.pendingPersonalRowUpdates.size) return;
+    this.personalDataError = '';
+    this.personalDataSaveState = 'pending';
+    this.clearPersonalSaveTimeout();
+    this.saveNextPersonalItemRow();
+  }
+
+  private queuePersonalItemRowSave(rowKey: string) {
+    if (!this.canChangePersonalItemData) return;
+    const normalizedRow = this.normalizePersonalItemRowData({
+      [rowKey]: this.personalItemData[rowKey],
+    })[rowKey];
+    this.pendingPersonalRowUpdates.set(rowKey, {
+      version: ++this.personalRowUpdateVersion,
+      rowData: normalizedRow || null,
+      perspective: this.getPerspectiveForViewerRequests(),
+    });
+    this.personalDataSaveState = 'pending';
+    this.personalDataError = '';
+    this.clearPersonalSaveTimeout();
+    this.personalSaveTimeout = setTimeout(() => {
+      this.personalSaveTimeout = null;
+      this.saveNextPersonalItemRow();
+    }, this.personalSaveDebounceMs);
+  }
+
+  private saveNextPersonalItemRow() {
+    if (!this.canEditPersonalItemData || this.personalSaveInFlight) return;
+    const nextUpdate = this.pendingPersonalRowUpdates.entries().next().value as
+      | [string, PendingPersonalRowUpdate]
+      | undefined;
+    if (!nextUpdate) {
+      this.personalDataSaveState = 'saved';
+      this.resolvePersonalSaveWaiters(true);
+      return;
+    }
+
+    const [rowKey, update] = nextUpdate;
+    const saveSessionIdentity = this.personalDataSessionIdentity;
+    const saveSessionVersion = this.personalDataSessionVersion;
+    if (!saveSessionIdentity) return;
+    this.personalSaveInFlight = true;
+    this.personalDataSaveState = 'saving';
+    this.api
+      .patchViewItemPreferenceRow(this.acpId, rowKey, update.rowData, update.perspective)
+      .pipe(
+        finalize(() => {
+          if (
+            this.personalDataSessionIdentity !== saveSessionIdentity ||
+            this.personalDataSessionVersion !== saveSessionVersion
+          ) {
+            return;
+          }
+          this.personalSaveInFlight = false;
+          if (this.personalDataSaveState === 'error') {
+            this.resolvePersonalSaveWaiters(false);
+          } else if (this.pendingPersonalRowUpdates.size) {
+            this.saveNextPersonalItemRow();
+          } else {
+            this.personalDataSaveState = 'saved';
+            this.resolvePersonalSaveWaiters(true);
+          }
+        }),
+      )
+      .subscribe({
+        next: () => {
+          if (
+            this.personalDataSessionIdentity !== saveSessionIdentity ||
+            this.personalDataSessionVersion !== saveSessionVersion
+          ) {
+            return;
+          }
+          const current = this.pendingPersonalRowUpdates.get(rowKey);
+          if (current?.version === update.version) {
+            this.pendingPersonalRowUpdates.delete(rowKey);
+          }
+        },
+        error: (error) => {
+          if (
+            this.personalDataSessionIdentity !== saveSessionIdentity ||
+            this.personalDataSessionVersion !== saveSessionVersion
+          ) {
+            return;
+          }
+          console.error('Failed to save personal item working data', error);
+          this.personalDataSaveState = 'error';
+          this.personalDataError =
+            'Persönliche Änderungen konnten nicht gespeichert werden. Bitte erneut versuchen.';
+        },
+      });
+  }
+
+  private syncPersonalItemDataSession() {
+    const nextIdentity = this.enablePersonalItemData
+      ? this.resolvePersonalItemDataSessionIdentity()
+      : null;
+    if (nextIdentity === this.personalDataSessionIdentity) {
+      if (nextIdentity && this.personalDataLoadState === 'idle') {
+        this.loadPersonalItemData(nextIdentity);
+      }
+      return;
+    }
+
+    const previousIdentity = this.personalDataSessionIdentity;
+    if (previousIdentity && !nextIdentity) {
+      this.suspendPendingPersonalSession(previousIdentity);
+    } else if (nextIdentity && nextIdentity !== previousIdentity) {
+      this.discardPendingPersonalSessionUnlessOwnedBy(nextIdentity);
+    }
+
+    this.resetPersonalItemDataSession();
+    this.personalDataSessionIdentity = nextIdentity;
+    if (nextIdentity) {
+      this.loadPersonalItemData(nextIdentity);
+    }
+  }
+
+  private resetPersonalItemDataSession() {
+    this.personalDataSessionIdentity = null;
+    this.personalDataSessionVersion += 1;
+    this.clearPersonalSaveTimeout();
+    this.personalItemData = {};
+    this.personalColumnFilters = {};
+    this.personalDataLoadState = 'idle';
+    this.personalDataSaveState = 'idle';
+    this.personalDataError = '';
+    this.personalSaveInFlight = false;
+    this.pendingPersonalRowUpdates.clear();
+    this.resolvePersonalSaveWaiters(false);
+    this.applyFilter(false);
+  }
+
+  private suspendPendingPersonalSession(identity: string) {
+    if (!this.pendingPersonalRowUpdates.size) return;
+    const snapshot: SuspendedPersonalSession = {
+      identity,
+      updates: Array.from(this.pendingPersonalRowUpdates.entries()).map(([rowKey, update]) => [
+        rowKey,
+        {
+          version: update.version,
+          rowData: update.rowData ? structuredClone(update.rowData) : null,
+          perspective: update.perspective,
+        },
+      ]),
+    };
+    this.pendingPersonalSessionStorage.set(
+      this.personalPendingStorageKey(),
+      JSON.stringify(snapshot),
+    );
+  }
+
+  private restorePendingPersonalSession(identity: string) {
+    const snapshot = this.readPendingPersonalSession();
+    if (!snapshot) return;
+    if (snapshot.identity !== identity) {
+      this.removePendingPersonalSession();
+      return;
+    }
+
+    this.pendingPersonalRowUpdates.clear();
+    for (const [rowKey, update] of snapshot.updates) {
+      this.pendingPersonalRowUpdates.set(rowKey, update);
+      this.personalRowUpdateVersion = Math.max(this.personalRowUpdateVersion, update.version);
+      if (update.rowData) {
+        this.personalItemData[rowKey] = structuredClone(update.rowData);
+      } else {
+        delete this.personalItemData[rowKey];
+      }
+    }
+    this.removePendingPersonalSession();
+    if (this.pendingPersonalRowUpdates.size) {
+      this.personalDataSaveState = 'pending';
+      this.personalDataError = '';
+      this.clearPersonalSaveTimeout();
+      this.personalSaveTimeout = setTimeout(() => {
+        this.personalSaveTimeout = null;
+        this.saveNextPersonalItemRow();
+      }, this.personalSaveDebounceMs);
+    }
+  }
+
+  private discardPendingPersonalSessionUnlessOwnedBy(identity: string) {
+    const snapshot = this.readPendingPersonalSession();
+    if (snapshot && snapshot.identity !== identity) {
+      this.removePendingPersonalSession();
+    }
+  }
+
+  private readPendingPersonalSession(): SuspendedPersonalSession | null {
+    const raw = this.pendingPersonalSessionStorage.get(this.personalPendingStorageKey());
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<SuspendedPersonalSession>;
+      if (typeof parsed.identity !== 'string' || !Array.isArray(parsed.updates)) {
+        throw new Error('Invalid pending personal session');
+      }
+      const updates: Array<[string, PendingPersonalRowUpdate]> = [];
+      for (const entry of parsed.updates) {
+        if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') continue;
+        const rawUpdate = entry[1] as Partial<PendingPersonalRowUpdate> | null;
+        if (!rawUpdate || !Number.isFinite(rawUpdate.version)) continue;
+        const rowData =
+          rawUpdate.rowData === null
+            ? null
+            : this.normalizePersonalItemRowData({ [entry[0]]: rawUpdate.rowData })[entry[0]] ||
+              null;
+        const perspective =
+          rawUpdate.perspective === 'editor' || rawUpdate.perspective === 'read-only'
+            ? rawUpdate.perspective
+            : 'read-only';
+        updates.push([entry[0], { version: Number(rawUpdate.version), rowData, perspective }]);
+      }
+      return { identity: parsed.identity, updates };
+    } catch {
+      this.removePendingPersonalSession();
+      return null;
+    }
+  }
+
+  private removePendingPersonalSession() {
+    this.pendingPersonalSessionStorage.remove(this.personalPendingStorageKey());
+  }
+
+  private personalPendingStorageKey(): string {
+    return `cp_item_explorer_pending_personal:${this.acpId}`;
+  }
+
+  private resolvePersonalItemDataSessionIdentity(): string | null {
+    return this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken());
+  }
+
+  private flushPersonalItemDataSaveAndWait(): Promise<boolean> {
+    if (!this.hasPendingPersonalItemDataChanges()) {
+      return Promise.resolve(true);
+    }
+    if (!this.canEditPersonalItemData) {
+      return Promise.resolve(false);
+    }
+
+    const result = new Promise<boolean>((resolve) => {
+      this.personalSaveWaiters.push(resolve);
+    });
+    this.personalDataError = '';
+    if (this.pendingPersonalRowUpdates.size) {
+      this.personalDataSaveState = 'pending';
+    }
+    this.clearPersonalSaveTimeout();
+    this.saveNextPersonalItemRow();
+    return result;
+  }
+
+  private hasPendingPersonalItemDataChanges(): boolean {
+    return (
+      this.pendingPersonalRowUpdates.size > 0 ||
+      this.personalSaveInFlight ||
+      this.personalSaveTimeout !== null ||
+      this.personalDataSaveState === 'error'
+    );
+  }
+
+  private resolvePersonalSaveWaiters(saved: boolean) {
+    const waiters = this.personalSaveWaiters;
+    this.personalSaveWaiters = [];
+    waiters.forEach((resolve) => resolve(saved));
+  }
+
+  private clearPersonalSaveTimeout() {
+    if (!this.personalSaveTimeout) return;
+    clearTimeout(this.personalSaveTimeout);
+    this.personalSaveTimeout = null;
+  }
+
+  private getOrCreatePersonalItemRow(rowKey: string): PersonalItemRowData {
+    if (!this.personalItemData[rowKey]) this.personalItemData[rowKey] = {};
+    return this.personalItemData[rowKey];
+  }
+
+  private compactPersonalItemRow(rowKey: string) {
+    const row = this.personalItemData[rowKey];
+    if (row && !row.category && !row.note && !row.tags?.length) {
+      delete this.personalItemData[rowKey];
+    }
+  }
+
+  private normalizePersonalItemRowData(raw: unknown): Record<string, PersonalItemRowData> {
+    if (!this.isRecord(raw)) return {};
+    const normalized: Record<string, PersonalItemRowData> = {};
+    for (const [rawRowKey, rawValue] of Object.entries(raw)) {
+      const rowKey = rawRowKey.trim();
+      if (!rowKey || !this.isRecord(rawValue)) continue;
+      const category =
+        typeof rawValue['category'] === 'string' ? rawValue['category'].trim().slice(0, 200) : '';
+      const note =
+        typeof rawValue['note'] === 'string'
+          ? rawValue['note'].replace(/\r\n?/g, '\n').slice(0, 10_000)
+          : '';
+      const tags = this.normalizeStringList(rawValue['tags']).slice(0, 50);
+      const row: PersonalItemRowData = {};
+      if (category) row.category = category;
+      if (tags.length) row.tags = tags;
+      if (note) row.note = note;
+      if (Object.keys(row).length) normalized[rowKey] = row;
+    }
+    return normalized;
+  }
+
+  private normalizePersonalItemTagConfig(raw: unknown): PersonalItemTagConfig[] {
+    if (!Array.isArray(raw)) return [];
+    const seen = new Set<string>();
+    return raw
+      .map((entry) => {
+        const record = this.isRecord(entry) ? entry : {};
+        const label = typeof record['label'] === 'string' ? record['label'].trim() : '';
+        const colorRaw = typeof record['color'] === 'string' ? record['color'].trim() : '';
+        return {
+          label,
+          color: /^#[0-9a-f]{6}$/i.test(colorRaw) ? colorRaw : '#3498db',
+        };
+      })
+      .filter((tag) => {
+        if (!tag.label || seen.has(tag.label)) return false;
+        seen.add(tag.label);
+        return true;
+      })
+      .slice(0, 50);
+  }
+
+  private normalizeStringList(raw: unknown): string[] {
+    if (!Array.isArray(raw)) return [];
+    return Array.from(
+      new Set(
+        raw
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  // --- Shared ACP tags ---
   addItemTag(uuid: string, event: Event) {
     if (!this.canEditExplorer) return;
     const tag = (event.target as HTMLSelectElement).value;
@@ -4994,12 +5632,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private buildUiPreferences(): Record<string, unknown> {
+    const sharedColumnFilters = Object.fromEntries(
+      Object.entries(this.columnFilters).filter(([key]) => !this.isPersonalColumnFilterKey(key)),
+    );
     return {
       filterText: this.filterText,
       sortField: this.sortField,
       sortIsMeta: this.sortIsMeta,
       sortDir: this.sortDir,
-      columnFilters: this.columnFilters,
+      columnFilters: sharedColumnFilters,
     };
   }
 
@@ -5027,12 +5668,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
     this.columnFilters = this.isRecord(columnFilters)
       ? Object.fromEntries(
-          Object.entries(columnFilters).map(([key, value]) => [
-            key,
-            typeof value === 'string' ? value : '',
-          ]),
+          Object.entries(columnFilters)
+            .filter(([key]) => !this.isPersonalColumnFilterKey(key))
+            .map(([key, value]) => [key, typeof value === 'string' ? value : '']),
         )
       : {};
+  }
+
+  private isPersonalColumnFilterKey(key: string): boolean {
+    return key === 'personalCategory' || key === 'personalTags' || key === 'personalNote';
   }
 
   private saveUiPreferences() {

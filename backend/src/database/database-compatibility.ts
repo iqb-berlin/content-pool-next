@@ -1,6 +1,8 @@
 import { DataSource, DataSourceOptions } from "typeorm";
 import { AddItemResponseStateRowKey1783900000000 } from "./migrations/1783900000000-AddItemResponseStateRowKey";
 import { ReconcileItemExplorerState1783901000000 } from "./migrations/1783901000000-ReconcileItemExplorerState";
+import { ScopeItemPreferencesToCredentialId1783902000000 } from "./migrations/1783902000000-ScopeItemPreferencesToCredentialId";
+import { DeduplicateAcpCredentials1783903000000 } from "./migrations/1783903000000-DeduplicateAcpCredentials";
 
 /**
  * Prepare schemas that were previously maintained through TypeORM synchronize.
@@ -24,6 +26,16 @@ export async function prepareSchemaForSynchronization(
       (await queryRunner.hasTable("acp_item_explorer_state"))
     ) {
       await new ReconcileItemExplorerState1783901000000().up(queryRunner);
+    }
+    if (
+      (await queryRunner.hasTable("acp_item_preferences")) &&
+      (await queryRunner.hasTable("acp_credentials")) &&
+      (await queryRunner.hasTable("acp_access_configs"))
+    ) {
+      await new ScopeItemPreferencesToCredentialId1783902000000().up(
+        queryRunner,
+      );
+      await new DeduplicateAcpCredentials1783903000000().up(queryRunner);
     }
   } finally {
     await queryRunner.release();

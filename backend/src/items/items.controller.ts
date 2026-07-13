@@ -95,7 +95,16 @@ export class ItemsController {
     if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
       throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
-    return this.itemsService.saveItemTags(acpId, dto.tags || {});
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
+    const result = await this.itemExplorerStateService.publishTagsImmediately(
+      acpId,
+      dto.tags || {},
+      {
+        actor,
+        changeType: "REPLACE_ITEM_TAGS",
+      },
+    );
+    return result.tags;
   }
 
   @Get(":itemId")

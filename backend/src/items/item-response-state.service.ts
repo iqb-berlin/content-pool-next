@@ -235,10 +235,6 @@ export class ItemResponseStateService {
     const legacy = await this.stateRepository.findOne({
       where: { acpId, itemId, unitId, rowKey: legacyRowKey },
     });
-    if (legacy) {
-      legacy.rowKey = explicitRowKey;
-      return this.stateRepository.save(legacy);
-    }
-    return null;
+    return legacy;
   }
 }

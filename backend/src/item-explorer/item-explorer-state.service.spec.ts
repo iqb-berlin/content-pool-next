@@ -537,6 +537,90 @@ describe("ItemExplorerStateService", () => {
     expect(changeLogRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("replaces tags in domain and explorer state in one transaction", async () => {
+    const currentState = {
+      ...baseSharedState,
+      tags: {
+        item1: ["old"],
+        item2: ["stale"],
+        "uuid-1::1": ["inherited"],
+      },
+      itemProperties: {
+        item1: { empiricalDifficulty: 0.2, tags: ["old"] },
+        item2: { tags: ["stale"] },
+        "uuid-1::1": {
+          itemUuid: "uuid-1",
+          subId: "1",
+          tags: ["inherited"],
+        },
+      },
+    };
+    const record = buildStateRecord({
+      publishedState: JSON.parse(JSON.stringify(currentState)),
+      draftState: JSON.parse(JSON.stringify(currentState)),
+      version: 4,
+      publishedVersion: 2,
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T12:45:00.000Z"),
+    }));
+    acpRepo.findOne.mockResolvedValue({ id: "acp-1", itemProperties: {} });
+    acpRepo.save.mockImplementation(async (entity: any) => entity);
+    accessConfigRepo.findOne.mockResolvedValue(null);
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const result = await service.publishTagsImmediately(
+      "acp-1",
+      {
+        item1: [" new ", "new"],
+        "uuid-1::1": [],
+      },
+      {
+        actor: { username: "reader", role: "READ_ONLY" },
+        changeType: "REPLACE_ITEM_TAGS",
+      },
+    );
+
+    expect(result.tags).toEqual({
+      item1: ["new"],
+      "uuid-1::1": [],
+    });
+    expect(result.state.publishedState.tags).toEqual(result.tags);
+    expect(result.state.draftState.tags).toEqual(result.tags);
+    expect(result.state.publishedState.itemProperties).toEqual({
+      item1: { empiricalDifficulty: 0.2, tags: ["new"] },
+      "uuid-1::1": {
+        itemUuid: "uuid-1",
+        subId: "1",
+        tags: [],
+      },
+    });
+    expect(acpRepo.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: result.state.publishedState.itemProperties,
+      }),
+    );
+    expect(changeLogRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ changeType: "REPLACE_ITEM_TAGS" }),
+    );
+  });
+
+  it("rejects direct tag replacement while a draft is pending", async () => {
+    stateRepo.findOne.mockResolvedValue(
+      buildStateRecord({ status: "DIRTY", version: 3 }),
+    );
+
+    await expect(
+      service.publishTagsImmediately("acp-1", { item1: ["new"] }),
+    ).rejects.toThrow(ConflictException);
+
+    expect(acpRepo.save).not.toHaveBeenCalled();
+    expect(stateRepo.save).not.toHaveBeenCalled();
+    expect(changeLogRepo.save).not.toHaveBeenCalled();
+  });
+
   it("discard resets draft to published and logs change", async () => {
     const publishedState = {
       ...baseSharedState,

@@ -12,7 +12,6 @@ describe("ItemsController", () => {
       getFilteredItems: jest.fn().mockResolvedValue([{ itemId: "item-1" }]),
       canUseItemTags: jest.fn().mockResolvedValue(true),
       getItemTags: jest.fn().mockResolvedValue({ item1: ["A"] }),
-      saveItemTags: jest.fn().mockResolvedValue({ saved: true }),
       getItem: jest.fn().mockResolvedValue({ itemId: "item-1" }),
       uploadEmpiricalDifficulties: jest.fn().mockResolvedValue({
         updated: 2,
@@ -63,6 +62,10 @@ describe("ItemsController", () => {
       publishItemPropertiesImmediately: jest
         .fn()
         .mockResolvedValue({ status: "CLEAN", version: 5 }),
+      publishTagsImmediately: jest.fn().mockResolvedValue({
+        tags: { item1: ["A"] },
+        state: { status: "CLEAN", version: 5 },
+      }),
     };
 
     controller = new ItemsController(
@@ -120,9 +123,16 @@ describe("ItemsController", () => {
       req,
     );
 
-    expect(itemsService.saveItemTags).toHaveBeenCalledWith("acp-1", {
-      item1: ["A"],
-    });
+    expect(
+      itemExplorerStateService.publishTagsImmediately,
+    ).toHaveBeenCalledWith(
+      "acp-1",
+      { item1: ["A"] },
+      expect.objectContaining({
+        actor: { type: "user", id: "u-1" },
+        changeType: "REPLACE_ITEM_TAGS",
+      }),
+    );
   });
 
   it("uses empty map when save item tags payload has no tags", async () => {
@@ -130,7 +140,13 @@ describe("ItemsController", () => {
 
     await controller.saveItemTags("acp-1", {} as any, req);
 
-    expect(itemsService.saveItemTags).toHaveBeenCalledWith("acp-1", {});
+    expect(
+      itemExplorerStateService.publishTagsImmediately,
+    ).toHaveBeenCalledWith(
+      "acp-1",
+      {},
+      expect.objectContaining({ changeType: "REPLACE_ITEM_TAGS" }),
+    );
   });
 
   it("rejects save item tags for non-managers when feature disabled", async () => {

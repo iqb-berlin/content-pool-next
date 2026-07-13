@@ -605,11 +605,13 @@ describe("ItemsService", () => {
         itemA: { tags: ["tag-a", " tag-a ", "tag-b", ""] },
         itemB: { tags: [] },
         itemC: { tags: "invalid" },
+        "uuid-1::1": { tags: [] },
       },
     });
 
     await expect(service.getItemTags("acp-1")).resolves.toEqual({
       itemA: ["tag-a", "tag-b"],
+      "uuid-1::1": [],
     });
   });
 
@@ -626,43 +628,5 @@ describe("ItemsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValueOnce(null);
     await expect(service.canUseItemTags("acp-1")).resolves.toBe(false);
-  });
-
-  it("saves normalized tags and replaces previous tag state", async () => {
-    acpRepository.findOne.mockResolvedValueOnce(null);
-    await expect(service.saveItemTags("acp-1", {})).rejects.toThrow(
-      NotFoundException,
-    );
-
-    const acp = {
-      id: "acp-1",
-      itemProperties: {
-        itemA: { tags: ["old"], empiricalDifficulty: 0.4 },
-        itemB: { tags: ["to-remove"] },
-      },
-    };
-    acpRepository.findOne.mockResolvedValueOnce(acp);
-
-    const saved = await service.saveItemTags("acp-1", {
-      itemA: ["new", "new", "  keep  "],
-      itemB: [],
-      "   ": ["invalid-key"],
-      itemC: ["fresh"],
-    });
-
-    expect(saved).toEqual({
-      itemA: ["new", "keep"],
-      itemC: ["fresh"],
-    });
-
-    expect(acpRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({
-        itemProperties: {
-          itemA: { empiricalDifficulty: 0.4, tags: ["new", "keep"] },
-          itemB: {},
-          itemC: { tags: ["fresh"] },
-        },
-      }),
-    );
   });
 });

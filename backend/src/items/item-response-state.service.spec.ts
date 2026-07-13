@@ -154,6 +154,57 @@ describe("ItemResponseStateService", () => {
     );
   });
 
+  it("keeps legacy fallback reads side-effect free", async () => {
+    const legacyState = {
+      id: "state-legacy",
+      acpId: "acp-1",
+      itemId: "item-1",
+      unitId: "unit-1",
+      rowKey: "unit-1::item-1",
+      responseData: { answer: 1 },
+    };
+    stateRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(legacyState);
+
+    await expect(
+      service.getResponseState("acp-1", "item-1", "unit-1", "uuid-1"),
+    ).resolves.toEqual(legacyState);
+
+    expect(stateRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("migrates a legacy row key only during a manager save", async () => {
+    const legacyState = {
+      id: "state-legacy",
+      acpId: "acp-1",
+      itemId: "item-1",
+      unitId: "unit-1",
+      rowKey: "unit-1::item-1",
+      responseData: { answer: 1 },
+    };
+    stateRepository.findOne
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(legacyState);
+
+    await service.saveResponseState(
+      "acp-1",
+      "item-1",
+      "unit-1",
+      { answer: 2 },
+      true,
+      "uuid-1",
+    );
+
+    expect(stateRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "state-legacy",
+        rowKey: "uuid-1",
+        responseData: { answer: 2 },
+      }),
+    );
+  });
+
   it("returns direct response state when available", async () => {
     stateRepository.findOne.mockResolvedValueOnce({ id: "state-direct" });
 

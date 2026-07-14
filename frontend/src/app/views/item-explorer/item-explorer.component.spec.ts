@@ -771,6 +771,29 @@ describe('ItemExplorerComponent', () => {
     expect(reloadItems).toHaveBeenCalledTimes(1);
   });
 
+  it('blocks renumbering while draft changes are pending or being saved', () => {
+    const recalculateItemRowNumbers = vi.fn(() => of({ items: [] }));
+
+    for (const status of ['DIRTY', 'SAVING'] as const) {
+      const component = createComponent({ api: { recalculateItemRowNumbers } });
+      component.explorerUiStatus = status;
+
+      expect(component.isRenumberingBlocked()).toBe(true);
+      expect(component.getRenumberingActionTitle()).toMatch(
+        status === 'SAVING' ? /warten/i : /Entwurf/i,
+      );
+
+      component.openRenumberDialog();
+      expect(component.showRenumberDialog).toBe(false);
+
+      component.showRenumberDialog = true;
+      component.confirmRenumber();
+      expect(component.renumberError).toMatch(status === 'SAVING' ? /warten/i : /Entwurf/i);
+    }
+
+    expect(recalculateItemRowNumbers).not.toHaveBeenCalled();
+  });
+
   it('sorts partial-credit rows manually by stable row key', () => {
     const component = createComponent();
     component.items = [

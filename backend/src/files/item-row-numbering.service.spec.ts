@@ -76,6 +76,20 @@ describe("ItemRowNumberingService", () => {
     ]);
   });
 
+  it("sorts by Item-ID before using the Unit-ID as a tie-breaker", async () => {
+    const numbers = await service.assignNumbers("acp-1", [
+      row("unit-1-item-10", "UNIT_1", "ITEM_10"),
+      row("unit-2-item-2", "UNIT_2", "ITEM_2"),
+      row("unit-1-item-2", "UNIT_1", "ITEM_2"),
+    ]);
+
+    expect(Array.from(numbers.entries())).toEqual([
+      ["unit-1-item-2", 1],
+      ["unit-2-item-2", 2],
+      ["unit-1-item-10", 3],
+    ]);
+  });
+
   it("keeps deleted row numbers free and appends new rows above the previous maximum", async () => {
     persisted = [
       {

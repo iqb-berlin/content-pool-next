@@ -1,4 +1,8 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { lastValueFrom, of, take } from "rxjs";
 import { FilesController } from "./files.controller";
 
@@ -128,6 +132,7 @@ describe("FilesController", () => {
 
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
+        status: "CLEAN",
         activeState: { itemProperties: {} },
       }),
     };
@@ -437,6 +442,18 @@ describe("FilesController", () => {
         recalculateRowNumbers: true,
       },
     );
+  });
+
+  it("rejects row-number recalculation while an Explorer draft is pending", async () => {
+    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
+      status: "DIRTY",
+      activeState: { itemProperties: { draft: {} } },
+    });
+
+    await expect(
+      controller.recalculateItemRowNumbers("acp-1"),
+    ).rejects.toThrow(ConflictException);
+    expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
   });
 
   it("applies read-only perspective checks for managers in item list", async () => {

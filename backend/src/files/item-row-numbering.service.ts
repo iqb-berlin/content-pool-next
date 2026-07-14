@@ -122,8 +122,8 @@ export class ItemRowNumberingService {
     right: NumberableItemRow,
   ): number {
     const itemComparison = this.collator.compare(
-      `${left.unitId || ""}${left.itemId || ""}`,
-      `${right.unitId || ""}${right.itemId || ""}`,
+      left.itemId || "",
+      right.itemId || "",
     );
     if (itemComparison) {
       return itemComparison;
@@ -132,6 +132,13 @@ export class ItemRowNumberingService {
       left.subId || "",
       right.subId || "",
     );
-    return subIdComparison || this.collator.compare(left.rowKey, right.rowKey);
+    if (subIdComparison) {
+      return subIdComparison;
+    }
+    const unitComparison = this.collator.compare(
+      left.unitId || "",
+      right.unitId || "",
+    );
+    return unitComparison || this.collator.compare(left.rowKey, right.rowKey);
   }
 }

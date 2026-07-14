@@ -459,6 +459,16 @@ export class ApiService {
       { responseType: 'blob' },
     );
   }
+  exportAllViewPersonalItemDataCsv(
+    acpId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<Blob> {
+    return this.http.post(
+      `${this.API}/view/acp/${acpId}/items/preferences/export-all.csv`,
+      { perspective },
+      { responseType: 'blob' },
+    );
+  }
   getViewSequences(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`);
   }

@@ -202,6 +202,13 @@ marker colors, note, competence level, empirical item difficulty, and the mean e
 of the unit when at least one value is available. Missing personal or difficulty values remain empty
 cells.
 
+ACP managers and application admins can additionally download one ACP-wide CSV from the Explorer
+toolbar. The endpoint rejects read-only users, credential logins, and public access. It exports every
+stored personal row across participants, using a stable participant identifier and including unit,
+item, Sub-ID, stable row key, category, tags, note, empirical difficulty, and mean unit difficulty.
+Participants without stored rows are skipped without failing the export. Note line breaks are
+written as literal `\\n` sequences so every personal entry remains on one CSV row.
+
 ## Empirical Difficulty Import
 
 Managers can upload empirical difficulty CSV data through item endpoints.

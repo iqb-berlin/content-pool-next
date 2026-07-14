@@ -556,6 +556,81 @@ export class ViewsService {
     return this.buildPersonalItemDataXlsx(rows);
   }
 
+  async exportAllPersonalItemDataCsv(
+    acpId: string,
+    canEditExplorerState = false,
+  ): Promise<Buffer> {
+    const [preferenceRecords, explorerState] = await Promise.all([
+      this.itemPreferenceRepository.find({
+        where: { acpId, viewId: "item-explorer" },
+        relations: { user: true, credential: true },
+      }),
+      this.itemExplorerStateService.getStateForViewer(
+        acpId,
+        canEditExplorerState,
+      ),
+    ]);
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    const itemOrder = new Map(
+      itemList.items.map((item, index) => [item.rowKey, index] as const),
+    );
+    const meanDifficultyByUnit = this.calculateMeanDifficultyByUnit(
+      itemList.items,
+    );
+
+    const rows = preferenceRecords.flatMap((record) => {
+      const participant = this.getPreferenceParticipantIdentifier(record);
+      if (!participant) return [];
+
+      const preferences = this.normalizeItemPreferences(record.preferences);
+      return Object.entries(preferences.rowData).map(
+        ([rowKey, personalRow]) => {
+          const item = itemsByRowKey.get(rowKey);
+          const tags = Array.isArray(personalRow.tags)
+            ? personalRow.tags.map((tag) => String(tag)).join(", ")
+            : "";
+
+          return {
+            participant,
+            unitId: item?.unitId || "",
+            unitLabel: item?.unitLabel || "",
+            itemId: item?.itemId || "",
+            subId: item?.subId || "",
+            rowKey,
+            category:
+              typeof personalRow.category === "string"
+                ? personalRow.category
+                : "",
+            tags,
+            note:
+              typeof personalRow.note === "string"
+                ? personalRow.note.replace(/\n/g, "\\n")
+                : "",
+            empiricalDifficulty: item?.empiricalDifficulty ?? "",
+            meanTaskDifficulty: item
+              ? (meanDifficultyByUnit.get(item.unitId) ?? "")
+              : "",
+            itemOrder: itemOrder.get(rowKey) ?? Number.MAX_SAFE_INTEGER,
+          };
+        },
+      );
+    });
+
+    rows.sort(
+      (left, right) =>
+        left.participant.localeCompare(right.participant, "de") ||
+        left.itemOrder - right.itemOrder ||
+        left.rowKey.localeCompare(right.rowKey, "de"),
+    );
+
+    return this.buildAllPersonalItemDataCsv(rows);
+  }
+
   private async upsertItemPreferences(
     acpId: string,
     viewId: string,
@@ -776,6 +851,80 @@ export class ViewsService {
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
+  }
+
+  private buildAllPersonalItemDataCsv(
+    rows: Array<{
+      participant: string;
+      unitId: string;
+      unitLabel: string;
+      itemId: string;
+      subId: string;
+      rowKey: string;
+      category: string;
+      tags: string;
+      note: string;
+      empiricalDifficulty: number | string;
+      meanTaskDifficulty: number | string;
+    }>,
+  ): Buffer {
+    const headers = [
+      "Teilnehmerkennung",
+      "Unit-ID",
+      "Unit-Label",
+      "Item-ID",
+      "Sub-ID",
+      "Zeilenschlüssel",
+      "Kategorie",
+      "Tags",
+      "Notiz",
+      "Empirische Itemschwierigkeit",
+      "Mittlere Aufgabenschwierigkeit",
+    ];
+    const lines = [
+      headers,
+      ...rows.map((row) => [
+        row.participant,
+        row.unitId,
+        row.unitLabel,
+        row.itemId,
+        row.subId,
+        row.rowKey,
+        row.category,
+        row.tags,
+        row.note,
+        row.empiricalDifficulty,
+        row.meanTaskDifficulty,
+      ]),
+    ].map((row) => row.map((value) => this.escapeCsvCell(value)).join(";"));
+
+    return Buffer.from(`\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
+  }
+
+  private escapeCsvCell(value: string | number): string {
+    let normalized = String(value ?? "");
+    if (typeof value === "string" && /^[=+\-@]/.test(normalized)) {
+      normalized = `'${normalized}`;
+    }
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+
+  private getPreferenceParticipantIdentifier(
+    record: AcpItemPreference,
+  ): string | null {
+    const identifiers = [
+      record.credential?.username,
+      record.credentialUsername,
+      record.user?.username,
+      record.credentialId,
+      record.userId,
+    ];
+    for (const identifier of identifiers) {
+      if (typeof identifier === "string" && identifier.trim()) {
+        return identifier.trim();
+      }
+    }
+    return null;
   }
 
   private resolvePreferenceIdentity(user: any): PreferenceIdentity | null {

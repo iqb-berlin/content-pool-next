@@ -39,6 +39,9 @@ describe("ViewsController", () => {
       exportPersonalItemDataXlsx: jest
         .fn()
         .mockResolvedValue(Buffer.from("personal-xlsx")),
+      exportAllPersonalItemDataCsv: jest
+        .fn()
+        .mockResolvedValue(Buffer.from("all-personal-csv")),
       getTaskSequence: jest
         .fn()
         .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
@@ -445,6 +448,62 @@ describe("ViewsController", () => {
       ["uuid::1"],
       false,
     );
+  });
+
+  it("exports all participants' data as CSV for ACP managers", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.exportAllPersonalItemDataCsv(
+      "acp-1",
+      { perspective: "editor" },
+      { acpAccessLevel: "MANAGER" },
+      res,
+    );
+
+    expect(viewsService.exportAllPersonalItemDataCsv).toHaveBeenCalledWith(
+      "acp-1",
+      true,
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Type",
+      "text/csv; charset=utf-8",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'attachment; filename="all-participant-item-data-acp-1.csv"',
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("all-personal-csv"));
+  });
+
+  it.each(["READ_ONLY", "CREDENTIAL", "PUBLIC", undefined])(
+    "blocks all-participant exports for access level %s",
+    async (acpAccessLevel) => {
+      await expect(
+        controller.exportAllPersonalItemDataCsv(
+          "acp-1",
+          {},
+          { acpAccessLevel },
+          {} as any,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(viewsService.exportAllPersonalItemDataCsv).not.toHaveBeenCalled();
+    },
+  );
+
+  it("blocks all-participant exports when personal data is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValueOnce({
+      featureConfig: { enablePersonalItemData: false },
+    });
+
+    await expect(
+      controller.exportAllPersonalItemDataCsv(
+        "acp-1",
+        {},
+        { acpAccessLevel: "ADMIN" },
+        {} as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.exportAllPersonalItemDataCsv).not.toHaveBeenCalled();
   });
 
   it.each([true, false])(

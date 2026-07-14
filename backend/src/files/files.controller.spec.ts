@@ -450,9 +450,9 @@ describe("FilesController", () => {
       activeState: { itemProperties: { draft: {} } },
     });
 
-    await expect(
-      controller.recalculateItemRowNumbers("acp-1"),
-    ).rejects.toThrow(ConflictException);
+    await expect(controller.recalculateItemRowNumbers("acp-1")).rejects.toThrow(
+      ConflictException,
+    );
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
   });
 

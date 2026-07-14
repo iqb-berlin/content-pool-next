@@ -2904,6 +2904,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private playerFrameReady = false;
   private responseStateReady = false;
   private unitLoadToken = 0;
+  private itemListLoadToken = 0;
   private startSessionCounter = 0;
   private overlayReturnFocus: HTMLElement | null = null;
 
@@ -2935,6 +2936,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   lastExplorerChangeInfo = '';
   latestExplorerState: ItemExplorerStateEnvelope | null = null;
   itemListError = '';
+  itemListLoading = false;
 
   // History
   showHistoryOverlay = false;
@@ -3275,7 +3277,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // --- Reload Items ---
   reloadItems(onSettled?: () => void) {
+    const loadToken = ++this.itemListLoadToken;
     this.itemListError = '';
+    this.itemListLoading = true;
 
     // Load item list from .vomd files
     this.api
@@ -3284,6 +3288,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (result) => {
+          if (loadToken !== this.itemListLoadToken) {
+            onSettled?.();
+            return;
+          }
           this.allColumns = result.columns || [];
           this.columns = this.filterVisibleColumns(this.allColumns);
           this.items = (result.items || []).map((item: ExplorerItem) => ({
@@ -3302,9 +3310,14 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
           this.applyFilter(false); // re-apply current filters and sort
+          this.itemListLoading = false;
           onSettled?.();
         },
         error: (error) => {
+          if (loadToken !== this.itemListLoadToken) {
+            onSettled?.();
+            return;
+          }
           console.error('Failed to load explorer item list', error);
           this.itemListError =
             error?.status === 403
@@ -3320,6 +3333,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.unitMetadataCache = {};
           this.codingSchemeCache = {};
           this.clearSelectedItem();
+          this.itemListLoading = false;
           onSettled?.();
         },
       });
@@ -3837,6 +3851,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return (
       !this.latestExplorerState ||
       this.perspectiveSwitchBusy ||
+      this.itemListLoading ||
       this.hasPendingDraftChanges() ||
       this.explorerUiStatus === 'SAVING'
     );
@@ -3854,6 +3869,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
     if (this.perspectiveSwitchBusy) {
       return 'Bitte warten Sie, bis der Ansichtswechsel abgeschlossen wurde.';
+    }
+    if (this.itemListLoading) {
+      return 'Bitte warten Sie, bis die Item-Liste geladen wurde.';
     }
     return this.explorerUiStatus === 'SAVING'
       ? 'Bitte warten Sie, bis die Explorer-Änderungen gespeichert wurden.'

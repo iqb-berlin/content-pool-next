@@ -3831,7 +3831,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   isRenumberingBlocked(): boolean {
-    return this.hasPendingDraftChanges() || this.explorerUiStatus === 'SAVING';
+    return (
+      !this.latestExplorerState ||
+      this.perspectiveSwitchBusy ||
+      this.hasPendingDraftChanges() ||
+      this.explorerUiStatus === 'SAVING'
+    );
   }
 
   getRenumberingActionTitle(): string {
@@ -3841,6 +3846,12 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   private getRenumberingBlockedMessage(): string {
+    if (!this.latestExplorerState) {
+      return 'Bitte warten Sie, bis der Explorer-Status geladen wurde.';
+    }
+    if (this.perspectiveSwitchBusy) {
+      return 'Bitte warten Sie, bis der Ansichtswechsel abgeschlossen wurde.';
+    }
     return this.explorerUiStatus === 'SAVING'
       ? 'Bitte warten Sie, bis die Explorer-Änderungen gespeichert wurden.'
       : 'Bitte speichern oder verwerfen Sie den Entwurf, bevor Sie neu nummerieren.';

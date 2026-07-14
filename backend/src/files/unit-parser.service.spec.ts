@@ -3,6 +3,7 @@ import { getRepositoryToken } from "@nestjs/typeorm";
 import * as fs from "fs/promises";
 import { UnitParserService } from "./unit-parser.service";
 import { Acp, AcpAccessConfig, AcpFile } from "../database/entities";
+import { ItemRowNumberingService } from "./item-row-numbering.service";
 
 jest.mock("fs/promises", () => ({
   readFile: jest.fn(),
@@ -13,6 +14,7 @@ describe("UnitParserService", () => {
   let fileRepo: any;
   let acpRepo: any;
   let accessConfigRepo: any;
+  let itemRowNumberingService: any;
 
   const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Unit>
@@ -103,6 +105,16 @@ describe("UnitParserService", () => {
         featureConfig: {},
       }),
     };
+    itemRowNumberingService = {
+      assignNumbers: jest.fn(
+        async (_acpId: string, rows: any[]) =>
+          new Map(rows.map((row, index) => [row.rowKey, index + 1])),
+      ),
+      recalculateNumbers: jest.fn(
+        async (_acpId: string, rows: any[]) =>
+          new Map(rows.map((row, index) => [row.rowKey, index + 1])),
+      ),
+    };
 
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
       if (path === "/tmp/u1.xml") return xmlContent;
@@ -119,6 +131,7 @@ describe("UnitParserService", () => {
           provide: getRepositoryToken(AcpAccessConfig),
           useValue: accessConfigRepo,
         },
+        { provide: ItemRowNumberingService, useValue: itemRowNumberingService },
       ],
     }).compile();
 
@@ -450,6 +463,19 @@ describe("UnitParserService", () => {
         empiricalDifficulty: 0.75,
       }),
     ]);
+  });
+
+  it("recalculates and exposes stable row numbers when requested", async () => {
+    const result = await service.getItemListFromFiles("acp-1", {
+      recalculateRowNumbers: true,
+    });
+
+    expect(itemRowNumberingService.recalculateNumbers).toHaveBeenCalledWith(
+      "acp-1",
+      expect.arrayContaining([expect.objectContaining({ rowKey: "u1_i1" })]),
+    );
+    expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalled();
+    expect(result.items[0].rowNumber).toBe(1);
   });
 
   it("caches valid row keys and invalidates them when source files change", async () => {

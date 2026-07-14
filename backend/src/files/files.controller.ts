@@ -157,6 +157,24 @@ export class FilesController {
     });
   }
 
+  @Post("item-list/renumber")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Recalculate stable Item Explorer row numbers",
+  })
+  async recalculateItemRowNumbers(@Param("acpId") acpId: string) {
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      true,
+    );
+    return this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+      recalculateRowNumbers: true,
+    });
+  }
+
   @Get("unit-view/:unitId")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({

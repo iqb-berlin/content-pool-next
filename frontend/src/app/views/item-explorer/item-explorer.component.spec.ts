@@ -714,6 +714,63 @@ describe('ItemExplorerComponent', () => {
     expect(component.filteredItems[0].empiricalDifficulty).toBe(0.8);
   });
 
+  it('keeps persisted row numbers attached while filtering and sorting', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'ITEM_10',
+        uuid: 'uuid-10',
+        rowKey: 'uuid-10',
+        rowNumber: 8,
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        rowNumber: 3,
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.filteredItems = [...component.items];
+
+    component.sortBy('itemId');
+    expect(component.filteredItems.map((item) => [item.rowKey, item.rowNumber])).toEqual([
+      ['uuid-2', 3],
+      ['uuid-10', 8],
+    ]);
+
+    component.filterText = '10';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => [item.rowKey, item.rowNumber])).toEqual([
+      ['uuid-10', 8],
+    ]);
+  });
+
+  it('lets ACP managers recalculate the numbering and reloads the rows', () => {
+    const recalculateItemRowNumbers = vi.fn(() => of({ items: [{ rowNumber: 1 }] }));
+    const component = createComponent({ api: { recalculateItemRowNumbers } });
+    component.acpId = 'acp-1';
+    component.canEditExplorer = true;
+    const reloadItems = vi.spyOn(component, 'reloadItems').mockImplementation(() => undefined);
+
+    component.openRenumberDialog();
+    component.confirmRenumber();
+
+    expect(recalculateItemRowNumbers).toHaveBeenCalledWith('acp-1');
+    expect(component.showRenumberDialog).toBe(false);
+    expect(component.numberingSuccessMessage).toBe('Eine Zeile wurde neu nummeriert.');
+    expect(reloadItems).toHaveBeenCalledTimes(1);
+  });
+
   it('sorts partial-credit rows manually by stable row key', () => {
     const component = createComponent();
     component.items = [

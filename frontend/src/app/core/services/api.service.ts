@@ -333,6 +333,9 @@ export class ApiService {
     const query = this.buildPerspectiveQuery(options?.perspective);
     return this.http.get(`${this.API}/acp/${acpId}/files/item-list${query}`);
   }
+  recalculateItemRowNumbers(acpId: string): Observable<any> {
+    return this.http.post(`${this.API}/acp/${acpId}/files/item-list/renumber`, {});
+  }
   getFileUnitView(
     acpId: string,
     unitId: string,

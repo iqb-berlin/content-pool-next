@@ -13,6 +13,7 @@ import {
   buildItemRowKey,
   parseItemRowKeyParts,
 } from "../items/item-row-key.util";
+import { ItemRowNumberingService } from "./item-row-numbering.service";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -60,6 +61,7 @@ export interface VomdItemData {
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   tags?: string[];
+  rowNumber: number;
 }
 
 /** Full item list response */
@@ -112,6 +114,7 @@ export class UnitParserService {
     private readonly acpRepository: Repository<Acp>,
     @InjectRepository(AcpAccessConfig)
     private readonly accessConfigRepository: Repository<AcpAccessConfig>,
+    private readonly itemRowNumberingService: ItemRowNumberingService,
   ) {}
 
   /**
@@ -581,6 +584,7 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      recalculateRowNumbers?: boolean;
     } = {},
   ): Promise<ItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
@@ -727,6 +731,7 @@ export class UnitParserService {
               itemId: item.id,
               uuid: itemUuid,
               rowKey: explorerRow.rowKey,
+              rowNumber: 0,
               subId: explorerRow.subId || undefined,
               subIdDisplay: explorerRow.subId
                 ? subIdLabels[explorerRow.subId] || explorerRow.subId
@@ -753,6 +758,13 @@ export class UnitParserService {
     const columns: MetadataColumn[] = Array.from(columnMap.entries()).map(
       ([id, label]) => ({ id, label }),
     );
+
+    const rowNumbers = options.recalculateRowNumbers
+      ? await this.itemRowNumberingService.recalculateNumbers(acpId, items)
+      : await this.itemRowNumberingService.assignNumbers(acpId, items);
+    for (const item of items) {
+      item.rowNumber = rowNumbers.get(item.rowKey)!;
+    }
 
     return {
       columns,

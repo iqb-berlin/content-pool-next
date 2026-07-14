@@ -32,6 +32,7 @@ interface ExplorerItem {
   itemId: string;
   uuid: string;
   rowKey: string;
+  rowNumber?: number;
   subId?: string;
   subIdDisplay?: string;
   unitId: string;
@@ -203,6 +204,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             <button class="btn btn-outline btn-sm" (click)="openColumnManager()">
               👁️ Spalten verwalten
             </button>
+            <button class="btn btn-outline btn-sm" (click)="openRenumberDialog()">
+              🔢 Nummerierung neu
+            </button>
             <button
               class="btn btn-outline btn-sm"
               (click)="enableManualOrderMode()"
@@ -305,6 +309,29 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
           {{ allPersonalDataExportError }}
         </div>
       }
+
+      @if (numberingSuccessMessage) {
+        <div class="alert alert-success" style="margin-bottom: 12px;" aria-live="polite">
+          {{ numberingSuccessMessage }}
+        </div>
+      }
+
+      <app-confirm-dialog
+        [open]="showRenumberDialog"
+        title="Nummerierung neu berechnen"
+        message="Alle aktuell vorhandenen Zeilen werden nach Item-ID und Sub-ID neu nummeriert."
+        [details]="[
+          'Bisherige Nummernlücken können sich dadurch schließen.',
+          'Die Nummern bleiben anschließend bei Sortierung und Filterung unverändert.',
+        ]"
+        [error]="renumberError"
+        [busy]="renumberBusy"
+        busyLabel="Nummeriere Zeilen..."
+        confirmLabel="Nummerierung neu"
+        confirmVariant="primary"
+        (confirmed)="confirmRenumber()"
+        (cancelled)="closeRenumberDialog()"
+      />
 
       <app-confirm-dialog
         [open]="showClearEmpiricalDifficultiesDialog"
@@ -499,6 +526,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             <table class="table explorer-table">
               <thead>
                 <tr>
+                  <th (click)="sortBy('rowNumber')" class="sortable number-col">
+                    Nr. {{ getSortIndicator('rowNumber') }}
+                  </th>
                   <th (click)="sortBy('itemId')" class="sortable sticky-col">
                     Item-ID {{ getSortIndicator('itemId') }}
                   </th>
@@ -530,6 +560,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                   }
                 </tr>
                 <tr class="filter-row">
+                  <th class="number-col"></th>
                   <th class="sticky-col">
                     <input
                       class="col-filter-input"
@@ -628,6 +659,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                     [attr.aria-selected]="selectedItem?.rowKey === item.rowKey"
                     (click)="selectItem(item, i)"
                   >
+                    <td class="number-col">{{ item.rowNumber }}</td>
                     <td class="sticky-col">
                       <div class="item-id-cell">
                         <code
@@ -1935,7 +1967,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       }
       .sticky-col {
         position: sticky;
-        left: 0;
+        left: 72px;
         background-color: var(--color-surface) !important;
         z-index: 50;
         box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
@@ -1943,6 +1975,24 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       th.sticky-col {
         background-color: var(--color-bg) !important;
         z-index: 200; /* Highest priority */
+      }
+      .number-col {
+        position: sticky;
+        left: 0;
+        width: 72px;
+        min-width: 72px !important;
+        max-width: 72px;
+        text-align: right !important;
+        background-color: var(--color-surface) !important;
+        z-index: 55;
+        font-variant-numeric: tabular-nums;
+      }
+      th.number-col {
+        background-color: var(--color-bg) !important;
+        z-index: 210;
+      }
+      tr.active .number-col {
+        background: rgba(41, 128, 185, 0.1) !important;
       }
       tr.active .sticky-col {
         background: rgba(41, 128, 185, 0.1);
@@ -2903,6 +2953,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   showClearEmpiricalDifficultiesDialog = false;
   clearEmpiricalDifficultiesBusy = false;
   clearEmpiricalDifficultiesError = '';
+  showRenumberDialog = false;
+  renumberBusy = false;
+  renumberError = '';
+  numberingSuccessMessage = '';
 
   // Leave with pending changes dialog
   showLeaveWithChangesDialog = false;
@@ -3724,6 +3778,46 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
         },
       });
+  }
+
+  openRenumberDialog() {
+    this.rememberFocusBeforeOverlay();
+    this.showRenumberDialog = true;
+    this.renumberBusy = false;
+    this.renumberError = '';
+    this.numberingSuccessMessage = '';
+  }
+
+  closeRenumberDialog() {
+    if (this.renumberBusy) return;
+    this.showRenumberDialog = false;
+    this.renumberError = '';
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  confirmRenumber() {
+    if (this.renumberBusy) return;
+    this.renumberBusy = true;
+    this.renumberError = '';
+
+    this.api.recalculateItemRowNumbers(this.acpId).subscribe({
+      next: (result) => {
+        const count = Array.isArray(result?.items) ? result.items.length : 0;
+        this.renumberBusy = false;
+        this.closeRenumberDialog();
+        this.numberingSuccessMessage =
+          count === 1
+            ? 'Eine Zeile wurde neu nummeriert.'
+            : `${count} Zeilen wurden neu nummeriert.`;
+        this.reloadItems();
+      },
+      error: (error) => {
+        console.error('Failed to recalculate item row numbers', error);
+        this.renumberBusy = false;
+        this.renumberError =
+          error?.error?.message || 'Die Nummerierung konnte nicht neu berechnet werden.';
+      },
+    });
   }
 
   getSortIndicator(field: string): string {
@@ -6657,6 +6751,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showDiscardDraftDialog ||
       this.showDiscardPersonalItemDataDialog ||
       this.showClearEmpiricalDifficultiesDialog ||
+      this.showRenumberDialog ||
       this.showLeaveWithChangesDialog
     );
   }
@@ -6668,6 +6763,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     }
     if (this.showClearEmpiricalDifficultiesDialog) {
       this.closeClearEmpiricalDifficultiesDialog();
+      return true;
+    }
+    if (this.showRenumberDialog) {
+      this.closeRenumberDialog();
       return true;
     }
     if (this.showDiscardDraftDialog) {

@@ -438,13 +438,17 @@ describe("FilesController", () => {
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
-      { itemPropertiesOverride: {} },
+      {
+        itemPropertiesOverride: {},
+        publishedItemPropertiesOverride: {},
+      },
     );
   });
 
   it("passes the active manager draft to the centrally initialized item list", async () => {
     itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
       status: "DIRTY",
+      canEdit: true,
       activeState: { itemProperties: { draft: {} } },
       publishedState: { itemProperties: { published: {} } },
     });
@@ -459,6 +463,7 @@ describe("FilesController", () => {
       "acp-1",
       {
         itemPropertiesOverride: { draft: {} },
+        publishedItemPropertiesOverride: { published: {} },
       },
     );
   });

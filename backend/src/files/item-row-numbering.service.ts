@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { EntityManager, Repository } from "typeorm";
+import { EntityManager, In, Repository } from "typeorm";
 import * as crypto from "crypto";
 import { Acp, AcpItemRowNumber } from "../database/entities";
 
@@ -23,10 +27,6 @@ export class ItemRowNumberingService {
     private readonly rowNumberRepository: Repository<AcpItemRowNumber>,
   ) {}
 
-  async hasAssignedNumbers(acpId: string): Promise<boolean> {
-    return this.rowNumberRepository.exists({ where: { acpId } });
-  }
-
   async assignNumbers(
     acpId: string,
     rows: NumberableItemRow[],
@@ -36,36 +36,28 @@ export class ItemRowNumberingService {
       return new Map();
     }
 
-    const persistedWithoutLock = await this.rowNumberRepository.find({
-      where: { acpId },
-      order: { rowNumber: "ASC" },
-    });
-    const numbersWithoutLock = new Map(
-      persistedWithoutLock.map(
-        (entry) => [entry.rowKey, entry.rowNumber] as const,
-      ),
+    const numbersWithoutLock = await this.findAssignedNumbers(
+      this.rowNumberRepository,
+      acpId,
+      normalizedRows,
     );
     if (normalizedRows.every((row) => numbersWithoutLock.has(row.rowKey))) {
       return numbersWithoutLock;
     }
 
     return this.withAcpLock(acpId, async (repository) => {
-      const persisted = await repository.find({
-        where: { acpId },
-        order: { rowNumber: "ASC" },
-      });
-      const numbers = new Map(
-        persisted.map((entry) => [entry.rowKey, entry.rowNumber] as const),
-      );
-      let nextNumber = persisted.reduce(
-        (highest, entry) => Math.max(highest, entry.rowNumber),
-        0,
+      const numbers = await this.findAssignedNumbers(
+        repository,
+        acpId,
+        normalizedRows,
       );
       const missingRows = normalizedRows
         .filter((row) => !numbers.has(row.rowKey))
         .sort((left, right) => this.compareRows(left, right));
 
       if (missingRows.length) {
+        let nextNumber =
+          (await repository.maximum("rowNumber", { acpId })) || 0;
         const created = missingRows.map((row) => {
           nextNumber += 1;
           numbers.set(row.rowKey, nextNumber);
@@ -81,6 +73,36 @@ export class ItemRowNumberingService {
 
       return numbers;
     });
+  }
+
+  async assignProvisionalNumbers(
+    acpId: string,
+    rows: NumberableItemRow[],
+  ): Promise<Map<string, number>> {
+    const normalizedRows = this.normalizeRows(rows);
+    if (!normalizedRows.length) {
+      return new Map();
+    }
+
+    const numbers = await this.findAssignedNumbers(
+      this.rowNumberRepository,
+      acpId,
+      normalizedRows,
+    );
+    const missingRows = normalizedRows
+      .filter((row) => !numbers.has(row.rowKey))
+      .sort((left, right) => this.compareRows(left, right));
+    if (!missingRows.length) {
+      return numbers;
+    }
+
+    let nextNumber =
+      (await this.rowNumberRepository.maximum("rowNumber", { acpId })) || 0;
+    for (const row of missingRows) {
+      nextNumber += 1;
+      numbers.set(row.rowKey, nextNumber);
+    }
+    return numbers;
   }
 
   async recalculateNumbers(
@@ -155,6 +177,34 @@ export class ItemRowNumberingService {
 
   private hashRowKey(rowKey: string): string {
     return crypto.createHash("sha256").update(rowKey, "utf8").digest("hex");
+  }
+
+  private async findAssignedNumbers(
+    repository: Repository<AcpItemRowNumber>,
+    acpId: string,
+    rows: NumberableItemRow[],
+  ): Promise<Map<string, number>> {
+    const hashes = rows.map((row) => this.hashRowKey(row.rowKey));
+    const persisted = await repository.find({
+      where: { acpId, rowKeyHash: In(hashes) },
+    });
+    const persistedByHash = new Map(
+      persisted.map((entry) => [entry.rowKeyHash, entry] as const),
+    );
+    const numbers = new Map<string, number>();
+
+    for (const row of rows) {
+      const hash = this.hashRowKey(row.rowKey);
+      const entry = persistedByHash.get(hash);
+      if (!entry) {
+        continue;
+      }
+      if (entry.rowKey !== row.rowKey) {
+        throw new ConflictException("Item row identity hash collision");
+      }
+      numbers.set(row.rowKey, entry.rowNumber);
+    }
+    return numbers;
   }
 
   private compareRows(

@@ -755,6 +755,66 @@ describe('ItemExplorerComponent', () => {
     ]);
   });
 
+  it('ignores stale item-list responses after a newer reload completes', () => {
+    const firstLoad = new Subject<any>();
+    const secondLoad = new Subject<any>();
+    const getFileItemList = vi
+      .fn()
+      .mockReturnValueOnce(firstLoad.asObservable())
+      .mockReturnValueOnce(secondLoad.asObservable());
+    const component = createComponent({ api: { getFileItemList } });
+    component.acpId = 'acp-1';
+
+    component.reloadItems();
+    component.reloadItems();
+
+    expect(component.itemListLoading).toBe(true);
+
+    secondLoad.next({
+      columns: [],
+      items: [
+        {
+          itemId: 'ITEM_1',
+          uuid: 'uuid-1',
+          rowKey: 'uuid-1',
+          rowNumber: 1,
+          unitId: 'UNIT_1',
+          unitLabel: 'Unit 1',
+          description: '',
+          variableId: '',
+          metadata: {},
+        },
+      ],
+      unitMetadata: {},
+      codingSchemes: {},
+    });
+
+    expect(component.itemListLoading).toBe(false);
+    expect(component.items.map((item) => item.rowNumber)).toEqual([1]);
+
+    firstLoad.next({
+      columns: [],
+      items: [
+        {
+          itemId: 'ITEM_1',
+          uuid: 'uuid-1',
+          rowKey: 'uuid-1',
+          rowNumber: 9,
+          unitId: 'UNIT_1',
+          unitLabel: 'Unit 1',
+          description: '',
+          variableId: '',
+          metadata: {},
+        },
+      ],
+      unitMetadata: {},
+      codingSchemes: {},
+    });
+
+    expect(component.itemListLoading).toBe(false);
+    expect(component.items.map((item) => item.rowNumber)).toEqual([1]);
+  });
+
   it('lets ACP managers recalculate the numbering and reloads the rows', () => {
     const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 1 }));
     const component = createComponent({ api: { recalculateItemRowNumbers } });
@@ -827,6 +887,14 @@ describe('ItemExplorerComponent', () => {
     component.perspectiveSwitchBusy = true;
     expect(component.isRenumberingBlocked()).toBe(true);
     expect(component.getRenumberingActionTitle()).toMatch(/Ansichtswechsel/i);
+    component.openRenumberDialog();
+
+    expect(component.showRenumberDialog).toBe(false);
+
+    component.perspectiveSwitchBusy = false;
+    component.itemListLoading = true;
+    expect(component.isRenumberingBlocked()).toBe(true);
+    expect(component.getRenumberingActionTitle()).toMatch(/Item-Liste geladen/i);
     component.openRenumberDialog();
 
     expect(component.showRenumberDialog).toBe(false);

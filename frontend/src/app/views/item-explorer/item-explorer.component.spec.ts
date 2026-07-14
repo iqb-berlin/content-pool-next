@@ -760,6 +760,7 @@ describe('ItemExplorerComponent', () => {
     const component = createComponent({ api: { recalculateItemRowNumbers } });
     component.acpId = 'acp-1';
     component.canEditExplorer = true;
+    component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
     const reloadItems = vi.spyOn(component, 'reloadItems').mockImplementation(() => undefined);
 
     component.openRenumberDialog();
@@ -776,6 +777,7 @@ describe('ItemExplorerComponent', () => {
 
     for (const status of ['DIRTY', 'SAVING'] as const) {
       const component = createComponent({ api: { recalculateItemRowNumbers } });
+      component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
       component.explorerUiStatus = status;
 
       expect(component.isRenumberingBlocked()).toBe(true);
@@ -791,6 +793,25 @@ describe('ItemExplorerComponent', () => {
       expect(component.renumberError).toMatch(status === 'SAVING' ? /warten/i : /Entwurf/i);
     }
 
+    expect(recalculateItemRowNumbers).not.toHaveBeenCalled();
+  });
+
+  it('blocks renumbering until state loading and perspective switching settle', () => {
+    const recalculateItemRowNumbers = vi.fn(() => of({ items: [] }));
+    const component = createComponent({ api: { recalculateItemRowNumbers } });
+
+    expect(component.isRenumberingBlocked()).toBe(true);
+    expect(component.getRenumberingActionTitle()).toMatch(/Status geladen/i);
+    component.openRenumberDialog();
+    expect(component.showRenumberDialog).toBe(false);
+
+    component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
+    component.perspectiveSwitchBusy = true;
+    expect(component.isRenumberingBlocked()).toBe(true);
+    expect(component.getRenumberingActionTitle()).toMatch(/Ansichtswechsel/i);
+    component.openRenumberDialog();
+
+    expect(component.showRenumberDialog).toBe(false);
     expect(recalculateItemRowNumbers).not.toHaveBeenCalled();
   });
 

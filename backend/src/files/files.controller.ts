@@ -165,16 +165,7 @@ export class FilesController {
     summary: "Recalculate stable Item Explorer row numbers",
   })
   async recalculateItemRowNumbers(@Param("acpId") acpId: string) {
-    return this.itemExplorerStateService.runWithLockedCleanState(
-      acpId,
-      (explorerState, manager) =>
-        this.unitParserService.getItemListFromFiles(acpId, {
-          itemPropertiesOverride: explorerState.publishedState.itemProperties,
-          recalculateRowNumbers: true,
-          rowNumberingManager: manager,
-          skipPublishedRowNumberInitialization: true,
-        }),
-    );
+    return this.unitParserService.recalculatePublishedItemRowNumbers(acpId);
   }
 
   @Get("unit-view/:unitId")

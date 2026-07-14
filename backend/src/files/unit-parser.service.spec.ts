@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import * as fs from "fs/promises";
@@ -85,8 +86,15 @@ describe("UnitParserService", () => {
   ];
 
   beforeEach(async () => {
+    const lockedFileQueryBuilder = {
+      setLock: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(files),
+    };
     fileRepo = {
       find: jest.fn().mockResolvedValue(files),
+      createQueryBuilder: jest.fn(() => lockedFileQueryBuilder),
     };
 
     acpRepo = {
@@ -114,14 +122,40 @@ describe("UnitParserService", () => {
           new Map(rows.map((row, index) => [row.rowKey, index + 1])),
       ),
       recalculateNumbers: jest.fn(
-        async (_acpId: string, rows: any[]) =>
-          new Map(rows.map((row, index) => [row.rowKey, index + 1])),
+        async (
+          _acpId: string,
+          rows: any[],
+          manager: any,
+          validateBeforeReplace?: (lockedManager: any) => Promise<void>,
+        ) => {
+          await validateBeforeReplace?.(manager);
+          return new Map(rows.map((row, index) => [row.rowKey, index + 1]));
+        },
       ),
     };
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
         publishedState: { itemProperties: {} },
       }),
+      getCleanPublishedState: jest.fn().mockResolvedValue({
+        status: "CLEAN",
+        publishedVersion: 7,
+        publishedState: { itemProperties: {} },
+      }),
+      runWithLockedCleanState: jest.fn(
+        async (_acpId: string, operation: (state: any, manager: any) => any) =>
+          operation(
+            {
+              status: "CLEAN",
+              publishedVersion: 7,
+              publishedState: { itemProperties: {} },
+            },
+            {
+              id: "transaction-manager",
+              getRepository: jest.fn(() => fileRepo),
+            },
+          ),
+      ),
     };
 
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
@@ -392,6 +426,49 @@ describe("UnitParserService", () => {
     );
   });
 
+  it("numbers prefixed items by their resolved Item-ID", async () => {
+    const result = await service.getItemListFromFiles("acp-1");
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
+      "acp-1",
+      [
+        expect.objectContaining({
+          itemId: "u1_i1",
+          rowKey: "u1_i1",
+          unitId: "u1",
+        }),
+      ],
+    );
+    expect(result.items[0]).not.toHaveProperty("numberingItemId");
+  });
+
+  it("keeps an unprefixed Item-ID as the numbering sort key", async () => {
+    const unprefixedVomdContent = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: "i1",
+          description: "Item 1",
+          variableId: "V1",
+          useUnitAliasAsPrefix: false,
+          profiles: [],
+        },
+      ],
+    });
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return unprefixedVomdContent;
+      return "";
+    });
+
+    await service.getItemListFromFiles("acp-1");
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
+      "acp-1",
+      [expect.objectContaining({ itemId: "i1", rowKey: "u1_i1" })],
+    );
+  });
+
   it("merges item properties across legacy, resolved and UUID aliases", async () => {
     const vomdWithUuid = JSON.stringify({
       profiles: [],
@@ -477,18 +554,43 @@ describe("UnitParserService", () => {
     ]);
   });
 
-  it("recalculates and exposes stable row numbers when requested", async () => {
-    const result = await service.getItemListFromFiles("acp-1", {
-      recalculateRowNumbers: true,
-    });
+  it("parses published rows before taking the short recalculation lock", async () => {
+    const result = await service.recalculatePublishedItemRowNumbers("acp-1");
 
+    expect(
+      itemExplorerStateService.getCleanPublishedState,
+    ).toHaveBeenCalledWith("acp-1");
+    expect(
+      itemExplorerStateService.runWithLockedCleanState,
+    ).toHaveBeenCalledWith("acp-1", expect.any(Function), 7);
+    expect((fs.readFile as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      itemExplorerStateService.runWithLockedCleanState.mock
+        .invocationCallOrder[0],
+    );
     expect(itemRowNumberingService.recalculateNumbers).toHaveBeenCalledWith(
       "acp-1",
-      expect.arrayContaining([expect.objectContaining({ rowKey: "u1_i1" })]),
-      undefined,
+      [expect.objectContaining({ itemId: "u1_i1", rowKey: "u1_i1" })],
+      expect.objectContaining({ id: "transaction-manager" }),
+      expect.any(Function),
     );
-    expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalled();
-    expect(result.items[0].rowNumber).toBe(1);
+    expect(result).toEqual({ renumberedCount: 1 });
+  });
+
+  it("rejects recalculation when the source file snapshot changed", async () => {
+    const changedFiles = [
+      ...files,
+      {
+        id: "f-new",
+        acpId: "acp-1",
+        originalName: "u2.xml",
+        filePath: "/tmp/u2.xml",
+      },
+    ];
+    fileRepo.createQueryBuilder().getMany.mockResolvedValueOnce(changedFiles);
+
+    await expect(
+      service.recalculatePublishedItemRowNumbers("acp-1"),
+    ).rejects.toThrow(ConflictException);
   });
 
   it("initializes numbering from published rows before adding draft-only rows", async () => {
@@ -534,6 +636,20 @@ describe("UnitParserService", () => {
     );
     expect(result.items[0]).toEqual(
       expect.objectContaining({ rowKey: "u1_i1::2", rowNumber: 2 }),
+    );
+  });
+
+  it("does not recursively initialize numbering for an empty item list", async () => {
+    fileRepo.find.mockResolvedValueOnce([]);
+    itemRowNumberingService.hasAssignedNumbers.mockResolvedValueOnce(false);
+
+    const result = await service.getItemListFromFiles("acp-1");
+
+    expect(result.items).toEqual([]);
+    expect(itemExplorerStateService.getStateForViewer).not.toHaveBeenCalled();
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
+      "acp-1",
+      [],
     );
   });
 

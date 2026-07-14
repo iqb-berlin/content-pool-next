@@ -192,6 +192,26 @@ describe("ItemExplorerStateService", () => {
     expect(operation).not.toHaveBeenCalled();
   });
 
+  it("rejects an unlocked published-state snapshot while a draft is pending", async () => {
+    stateRepo.findOne.mockResolvedValue(buildStateRecord({ status: "DIRTY" }));
+
+    await expect(service.getCleanPublishedState("acp-1")).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it("rejects locked work when the published version changed after parsing", async () => {
+    stateRepo.findOne.mockResolvedValue(
+      buildStateRecord({ status: "CLEAN", publishedVersion: 8 }),
+    );
+    const operation = jest.fn();
+
+    await expect(
+      service.runWithLockedCleanState("acp-1", operation, 7),
+    ).rejects.toThrow(ConflictException);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
   it("returns conflict on outdated draft version", async () => {
     stateRepo.findOne.mockResolvedValue(buildStateRecord({ version: 7 }));
 

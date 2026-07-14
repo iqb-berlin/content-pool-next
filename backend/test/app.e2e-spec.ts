@@ -5,8 +5,14 @@ import { getRepositoryToken } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import * as request from "supertest";
-import { AcpItemPreference, User } from "../src/database/entities";
+import {
+  AcpFile,
+  AcpItemPreference,
+  AcpItemRowNumber,
+  User,
+} from "../src/database/entities";
 import { buildPatchPersonalItemPreferenceRowQuery } from "../src/views/personal-item-preferences.query";
+import { ItemRowNumberingService } from "../src/files/item-row-numbering.service";
 
 if (!process.env.DB_HOST) process.env.DB_HOST = "localhost";
 if (!process.env.DB_PORT) process.env.DB_PORT = "5433";
@@ -31,7 +37,10 @@ describe("ContentPool API (e2e)", () => {
   let authToken: string;
   let credentialToken: string;
   let credentialId: string;
+  let acpFileRepository: Repository<AcpFile>;
   let itemPreferenceRepository: Repository<AcpItemPreference>;
+  let itemRowNumberRepository: Repository<AcpItemRowNumber>;
+  let itemRowNumberingService: ItemRowNumberingService;
 
   let acpId: string;
   let snapshotId: string;
@@ -119,6 +128,15 @@ describe("ContentPool API (e2e)", () => {
     itemPreferenceRepository = moduleFixture.get<Repository<AcpItemPreference>>(
       getRepositoryToken(AcpItemPreference),
     );
+    acpFileRepository = moduleFixture.get<Repository<AcpFile>>(
+      getRepositoryToken(AcpFile),
+    );
+    itemRowNumberRepository = moduleFixture.get<Repository<AcpItemRowNumber>>(
+      getRepositoryToken(AcpItemRowNumber),
+    );
+    itemRowNumberingService = moduleFixture.get<ItemRowNumberingService>(
+      ItemRowNumberingService,
+    );
     const jwtService = moduleFixture.get<JwtService>(JwtService);
 
     const adminUser = await userRepo.save(
@@ -168,6 +186,157 @@ describe("ContentPool API (e2e)", () => {
       .set("Authorization", `Bearer ${authToken}`)
       .send(baseIndex)
       .expect(200);
+  });
+
+  it("serializes concurrent stable row-number assignments", async () => {
+    await itemRowNumberRepository.delete({ acpId });
+    const rowA = `${uniqueSuffix}-row-a`;
+    const rowB = `${uniqueSuffix}-row-b`;
+
+    await Promise.all([
+      itemRowNumberingService.assignNumbers(acpId, [
+        {
+          rowKey: rowA,
+          itemId: "UNIT_1_ITEM_2",
+          unitId: "UNIT_1",
+        },
+      ]),
+      itemRowNumberingService.assignNumbers(acpId, [
+        {
+          rowKey: rowB,
+          itemId: "UNIT_1_ITEM_1",
+          unitId: "UNIT_1",
+        },
+      ]),
+    ]);
+
+    const persisted = await itemRowNumberRepository.find({
+      where: { acpId },
+      order: { rowNumber: "ASC" },
+    });
+    expect(persisted.map((entry) => entry.rowKey).sort()).toEqual(
+      [rowA, rowB].sort(),
+    );
+    expect(new Set(persisted.map((entry) => entry.rowNumber)).size).toBe(2);
+    expect(persisted.map((entry) => entry.rowNumber)).toEqual([1, 2]);
+  });
+
+  it("enforces row-key and row-number uniqueness in PostgreSQL", async () => {
+    const [existing] = await itemRowNumberRepository.find({
+      where: { acpId },
+      order: { rowNumber: "ASC" },
+      take: 1,
+    });
+
+    await expect(
+      itemRowNumberRepository.insert({
+        acpId,
+        rowKey: `${uniqueSuffix}-duplicate-hash`,
+        rowKeyHash: existing.rowKeyHash,
+        rowNumber: 100,
+      }),
+    ).rejects.toThrow();
+    await expect(
+      itemRowNumberRepository.insert({
+        acpId,
+        rowKey: `${uniqueSuffix}-duplicate-number`,
+        rowKeyHash: "f".repeat(64),
+        rowNumber: existing.rowNumber,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rolls back recalculation when the caller transaction fails", async () => {
+    const before = await itemRowNumberRepository.find({
+      where: { acpId },
+      order: { rowNumber: "ASC" },
+    });
+
+    await expect(
+      itemRowNumberRepository.manager.transaction(async (manager) => {
+        await itemRowNumberingService.recalculateNumbers(
+          acpId,
+          [
+            {
+              rowKey: `${uniqueSuffix}-replacement`,
+              itemId: "UNIT_1_ITEM_3",
+              unitId: "UNIT_1",
+            },
+          ],
+          manager,
+        );
+        throw new Error("force rollback");
+      }),
+    ).rejects.toThrow("force rollback");
+
+    const after = await itemRowNumberRepository.find({
+      where: { acpId },
+      order: { rowNumber: "ASC" },
+    });
+    expect(
+      after.map(({ rowKey, rowNumber }) => ({ rowKey, rowNumber })),
+    ).toEqual(before.map(({ rowKey, rowNumber }) => ({ rowKey, rowNumber })));
+  });
+
+  it("holds ACP file rows against concurrent deletion during recalculation", async () => {
+    const sourceFile = await acpFileRepository.save(
+      acpFileRepository.create({
+        acpId,
+        filePath: `/tmp/${uniqueSuffix}-source.xml`,
+        originalName: `${uniqueSuffix}-source.xml`,
+        fileType: "application/xml",
+        fileSize: 1,
+        checksum: "a".repeat(64),
+      }),
+    );
+
+    let signalFileLockAcquired!: () => void;
+    const fileLockAcquired = new Promise<void>((resolve) => {
+      signalFileLockAcquired = resolve;
+    });
+    let releaseFileLock!: () => void;
+    const holdFileLock = new Promise<void>((resolve) => {
+      releaseFileLock = resolve;
+    });
+
+    const recalculation = itemRowNumberingService.recalculateNumbers(
+      acpId,
+      [
+        {
+          rowKey: `${uniqueSuffix}-locked-recalculation`,
+          itemId: "UNIT_1_ITEM_4",
+          unitId: "UNIT_1",
+        },
+      ],
+      undefined,
+      async (manager) => {
+        await manager
+          .getRepository(AcpFile)
+          .createQueryBuilder("file")
+          .setLock("pessimistic_read")
+          .where("file.acpId = :acpId", { acpId })
+          .getMany();
+        signalFileLockAcquired();
+        await holdFileLock;
+      },
+    );
+
+    await fileLockAcquired;
+    try {
+      await expect(
+        acpFileRepository.manager.transaction(async (manager) => {
+          await manager.query("SET LOCAL lock_timeout = '200ms'");
+          await manager.getRepository(AcpFile).delete({ id: sourceFile.id });
+        }),
+      ).rejects.toThrow(/lock timeout/i);
+    } finally {
+      releaseFileLock();
+      await recalculation;
+    }
+
+    await expect(
+      acpFileRepository.delete({ id: sourceFile.id }),
+    ).resolves.toEqual(expect.objectContaining({ affected: 1 }));
   });
 
   it("covers public access and core read-only views", async () => {

@@ -756,7 +756,7 @@ describe('ItemExplorerComponent', () => {
   });
 
   it('lets ACP managers recalculate the numbering and reloads the rows', () => {
-    const recalculateItemRowNumbers = vi.fn(() => of({ items: [{ rowNumber: 1 }] }));
+    const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 1 }));
     const component = createComponent({ api: { recalculateItemRowNumbers } });
     component.acpId = 'acp-1';
     component.canEditExplorer = true;
@@ -772,8 +772,26 @@ describe('ItemExplorerComponent', () => {
     expect(reloadItems).toHaveBeenCalledTimes(1);
   });
 
+  it('reloads shared state after a renumbering conflict', () => {
+    const recalculateItemRowNumbers = vi.fn(() =>
+      throwError(() => ({ status: 409, error: { message: 'Source files changed' } })),
+    );
+    const component = createComponent({ api: { recalculateItemRowNumbers } });
+    component.acpId = 'acp-1';
+    component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
+    component.showRenumberDialog = true;
+    const loadSharedExplorerState = vi
+      .spyOn(component as any, 'loadSharedExplorerState')
+      .mockResolvedValue(undefined);
+
+    component.confirmRenumber();
+
+    expect(component.renumberError).toBe('Source files changed');
+    expect(loadSharedExplorerState).toHaveBeenCalledTimes(1);
+  });
+
   it('blocks renumbering while draft changes are pending or being saved', () => {
-    const recalculateItemRowNumbers = vi.fn(() => of({ items: [] }));
+    const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 0 }));
 
     for (const status of ['DIRTY', 'SAVING'] as const) {
       const component = createComponent({ api: { recalculateItemRowNumbers } });
@@ -797,7 +815,7 @@ describe('ItemExplorerComponent', () => {
   });
 
   it('blocks renumbering until state loading and perspective switching settle', () => {
-    const recalculateItemRowNumbers = vi.fn(() => of({ items: [] }));
+    const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 0 }));
     const component = createComponent({ api: { recalculateItemRowNumbers } });
 
     expect(component.isRenumberingBlocked()).toBe(true);

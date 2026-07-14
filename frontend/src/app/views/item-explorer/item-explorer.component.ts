@@ -3812,7 +3812,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.api.recalculateItemRowNumbers(this.acpId).subscribe({
       next: (result) => {
-        const count = Array.isArray(result?.items) ? result.items.length : 0;
+        const count = Number(result?.renumberedCount) || 0;
         this.renumberBusy = false;
         this.closeRenumberDialog();
         this.numberingSuccessMessage =
@@ -3826,6 +3826,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         this.renumberBusy = false;
         this.renumberError =
           error?.error?.message || 'Die Nummerierung konnte nicht neu berechnet werden.';
+        if (error?.status === 409) {
+          void this.loadSharedExplorerState();
+        }
       },
     });
   }

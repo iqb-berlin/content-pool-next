@@ -570,10 +570,10 @@ describe('ApiService', () => {
     });
 
     it('should request a fresh Item Explorer row numbering', () => {
-      httpClientMock.post.mockReturnValue(of({ items: [] }));
+      httpClientMock.post.mockReturnValue(of({ renumberedCount: 4 }));
 
       service.recalculateItemRowNumbers('acp1').subscribe((result) => {
-        expect(result).toEqual({ items: [] });
+        expect(result).toEqual({ renumberedCount: 4 });
       });
 
       expect(httpClientMock.post).toHaveBeenCalledWith(

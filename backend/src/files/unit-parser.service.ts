@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, Repository } from "typeorm";
 import * as fs from "fs/promises";
@@ -73,6 +78,15 @@ export interface ItemListResult {
   subIdLabels: Record<string, string>;
   unitMetadata: Record<string, any[]>; // unitId → unit-level profile entries
   codingSchemes: Record<string, any>; // unitId → coding scheme JSON
+}
+
+interface InternalVomdItemData extends VomdItemData {
+  numberingItemId: string;
+}
+
+interface ParsedItemListResult {
+  itemList: ItemListResult;
+  sourceFileSignature: string;
 }
 
 interface PartialCreditRow {
@@ -586,30 +600,41 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
-      recalculateRowNumbers?: boolean;
-      rowNumberingManager?: EntityManager;
-      skipPublishedRowNumberInitialization?: boolean;
     } = {},
   ): Promise<ItemListResult> {
+    const { itemList } = await this.parseItemListFromFiles(
+      acpId,
+      options.itemPropertiesOverride,
+    );
+
     if (
-      !options.skipPublishedRowNumberInitialization &&
+      itemList.items.length > 0 &&
       !(await this.itemRowNumberingService.hasAssignedNumbers(acpId))
     ) {
       const publishedState =
         await this.itemExplorerStateService.getStateForViewer(acpId, false);
-      await this.getItemListFromFiles(acpId, {
-        itemPropertiesOverride: publishedState.publishedState.itemProperties,
-        skipPublishedRowNumberInitialization: true,
-      });
+      const { itemList: publishedItemList } = await this.parseItemListFromFiles(
+        acpId,
+        publishedState.publishedState.itemProperties,
+      );
+      await this.applyItemRowNumbers(acpId, publishedItemList, {});
     }
 
+    return this.applyItemRowNumbers(acpId, itemList, {});
+  }
+
+  private async parseItemListFromFiles(
+    acpId: string,
+    itemPropertiesOverride?: Record<string, Record<string, unknown>>,
+    strictSourceReads = false,
+  ): Promise<ParsedItemListResult> {
     const allFiles = await this.fileRepository.find({ where: { acpId } });
+    const sourceFileSignature = this.buildSourceFileSignature(allFiles);
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     const accessConfig = await this.accessConfigRepository.findOne({
       where: { acpId },
     });
-    const itemProps =
-      options.itemPropertiesOverride || acp?.itemProperties || {};
+    const itemProps = itemPropertiesOverride || acp?.itemProperties || {};
     const normalizedFeatureConfig = normalizeFeatureConfig(
       accessConfig?.featureConfig || {},
     ) as Record<string, unknown>;
@@ -623,7 +648,7 @@ export class UnitParserService {
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label
-    const items: VomdItemData[] = [];
+    const items: InternalVomdItemData[] = [];
     const unitMetadata: Record<string, any[]> = {};
     const codingSchemes: Record<string, any> = {};
 
@@ -745,6 +770,7 @@ export class UnitParserService {
 
             items.push({
               itemId: item.id,
+              numberingItemId: resolvedItemId,
               uuid: itemUuid,
               rowKey: explorerRow.rowKey,
               rowNumber: 0,
@@ -767,6 +793,11 @@ export class UnitParserService {
         }
       } catch (e) {
         this.logger.error(`Error processing ${xmlFile.originalName}: ${e}`);
+        if (strictSourceReads) {
+          throw new ConflictException(
+            "The ACP source files changed while row numbers were being recalculated",
+          );
+        }
       }
     }
 
@@ -775,18 +806,7 @@ export class UnitParserService {
       ([id, label]) => ({ id, label }),
     );
 
-    const rowNumbers = options.recalculateRowNumbers
-      ? await this.itemRowNumberingService.recalculateNumbers(
-          acpId,
-          items,
-          options.rowNumberingManager,
-        )
-      : await this.itemRowNumberingService.assignNumbers(acpId, items);
-    for (const item of items) {
-      item.rowNumber = rowNumbers.get(item.rowKey)!;
-    }
-
-    return {
+    const itemList: ItemListResult = {
       columns,
       items,
       subIdLabel,
@@ -794,6 +814,110 @@ export class UnitParserService {
       unitMetadata,
       codingSchemes,
     };
+
+    return { itemList, sourceFileSignature };
+  }
+
+  async recalculatePublishedItemRowNumbers(
+    acpId: string,
+  ): Promise<{ renumberedCount: number }> {
+    const publishedState =
+      await this.itemExplorerStateService.getCleanPublishedState(acpId);
+    const { itemList, sourceFileSignature } = await this.parseItemListFromFiles(
+      acpId,
+      publishedState.publishedState.itemProperties,
+      true,
+    );
+
+    return this.itemExplorerStateService.runWithLockedCleanState(
+      acpId,
+      async (_explorerState, manager) => {
+        const result = await this.applyItemRowNumbers(acpId, itemList, {
+          recalculateRowNumbers: true,
+          rowNumberingManager: manager,
+          validateSourceFiles: (lockedManager) =>
+            this.assertSourceFilesUnchanged(
+              acpId,
+              sourceFileSignature,
+              lockedManager,
+            ),
+        });
+        return { renumberedCount: result.items.length };
+      },
+      publishedState.publishedVersion,
+    );
+  }
+
+  private async applyItemRowNumbers(
+    acpId: string,
+    itemList: ItemListResult,
+    options: {
+      recalculateRowNumbers?: boolean;
+      rowNumberingManager?: EntityManager;
+      validateSourceFiles?: (manager: EntityManager) => Promise<void>;
+    },
+  ): Promise<ItemListResult> {
+    const numberableRows = itemList.items.map((item) => {
+      const internalItem = item as InternalVomdItemData;
+      return {
+        rowKey: item.rowKey,
+        itemId: internalItem.numberingItemId,
+        unitId: item.unitId,
+        subId: item.subId,
+      };
+    });
+
+    const rowNumbers = options.recalculateRowNumbers
+      ? await this.itemRowNumberingService.recalculateNumbers(
+          acpId,
+          numberableRows,
+          options.rowNumberingManager,
+          options.validateSourceFiles,
+        )
+      : await this.itemRowNumberingService.assignNumbers(acpId, numberableRows);
+    for (const item of itemList.items) {
+      item.rowNumber = rowNumbers.get(item.rowKey)!;
+      delete (item as Partial<InternalVomdItemData>).numberingItemId;
+    }
+
+    return itemList;
+  }
+
+  private async assertSourceFilesUnchanged(
+    acpId: string,
+    expectedSignature: string,
+    manager: EntityManager,
+  ): Promise<void> {
+    const currentFiles = await manager
+      .getRepository(AcpFile)
+      .createQueryBuilder("file")
+      .setLock("pessimistic_read")
+      .where("file.acpId = :acpId", { acpId })
+      .orderBy("file.id", "ASC")
+      .getMany();
+
+    if (this.buildSourceFileSignature(currentFiles) !== expectedSignature) {
+      throw new ConflictException(
+        "The ACP source files changed while row numbers were being recalculated",
+      );
+    }
+  }
+
+  private buildSourceFileSignature(files: AcpFile[]): string {
+    return JSON.stringify(
+      files
+        .map((file) => [
+          file.id,
+          file.originalName,
+          file.filePath,
+          file.checksum || "",
+          String(file.fileSize || ""),
+          file.uploadedAt instanceof Date
+            ? file.uploadedAt.toISOString()
+            : String(file.uploadedAt || ""),
+        ])
+        .sort(([left], [right]) => String(left).localeCompare(String(right))),
+    );
   }
 
   /**

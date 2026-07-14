@@ -21,13 +21,14 @@ import {
 } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
-import { UnitParserService } from "../files/unit-parser.service";
+import { UnitParserService, VomdItemData } from "../files/unit-parser.service";
 import {
   buildPatchPersonalItemPreferenceRowQuery,
   PreferenceIdentityColumn,
 } from "./personal-item-preferences.query";
 
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
+const MAX_EXPORT_ROW_KEY_LENGTH = 500;
 
 export interface ItemPreferencesPayload {
   [key: string]: unknown;
@@ -495,6 +496,68 @@ export class ViewsService {
     };
   }
 
+  async exportPersonalItemDataXlsx(
+    acpId: string,
+    user: any,
+    rawRowKeys?: string[],
+    canEditExplorerState = false,
+  ): Promise<Buffer> {
+    const rowKeys = this.normalizeExportRowKeys(rawRowKeys);
+    const [preferences, explorerState, accessConfig] = await Promise.all([
+      this.getItemPreferences(acpId, user, "item-explorer"),
+      this.itemExplorerStateService.getStateForViewer(
+        acpId,
+        canEditExplorerState,
+      ),
+      this.accessConfigRepository.findOne({ where: { acpId } }),
+    ]);
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    const items = rowKeys
+      ? rowKeys
+          .map((rowKey) => itemsByRowKey.get(rowKey))
+          .filter((item): item is VomdItemData => Boolean(item))
+      : itemList.items;
+    const meanDifficultyByUnit = this.calculateMeanDifficultyByUnit(
+      itemList.items,
+    );
+    const personalTagColors = this.getPersonalTagColors(
+      accessConfig?.featureConfig,
+    );
+
+    const rows = items.map((item, index) => {
+      const personalRow = preferences.rowData[item.rowKey] || {};
+      const tags = Array.isArray(personalRow.tags)
+        ? personalRow.tags.map((tag) => String(tag))
+        : [];
+
+      return {
+        sequenceNumber: index + 1,
+        unitId: item.unitId,
+        unitLabel: item.unitLabel,
+        itemId: item.itemId,
+        itemUuid: item.uuid,
+        markers: this.formatPersonalMarkers(tags, personalTagColors),
+        note: typeof personalRow.note === "string" ? personalRow.note : null,
+        competenceLevel:
+          typeof personalRow.category === "string"
+            ? personalRow.category
+            : null,
+        empiricalDifficulty:
+          item.empiricalDifficulty === undefined
+            ? null
+            : item.empiricalDifficulty,
+        meanTaskDifficulty: meanDifficultyByUnit.get(item.unitId) ?? null,
+      };
+    });
+
+    return this.buildPersonalItemDataXlsx(rows);
+  }
+
   private async upsertItemPreferences(
     acpId: string,
     viewId: string,
@@ -578,6 +641,146 @@ export class ViewsService {
   private normalizeViewId(viewId?: string): string {
     const normalized = (viewId || "").trim();
     return normalized.length > 0 ? normalized.slice(0, 120) : "item-list";
+  }
+
+  private normalizeExportRowKeys(rawRowKeys?: string[]): string[] | null {
+    if (rawRowKeys === undefined) {
+      return null;
+    }
+    if (
+      !Array.isArray(rawRowKeys) ||
+      rawRowKeys.length > MAX_PERSONAL_ITEM_ROWS
+    ) {
+      throw new BadRequestException(
+        `At most ${MAX_PERSONAL_ITEM_ROWS} item rows can be exported`,
+      );
+    }
+
+    const rowKeys: string[] = [];
+    const seen = new Set<string>();
+    for (const rawRowKey of rawRowKeys) {
+      if (typeof rawRowKey !== "string") {
+        throw new BadRequestException("Export row keys must be strings");
+      }
+      const rowKey = rawRowKey.trim();
+      if (!rowKey || rowKey.length > MAX_EXPORT_ROW_KEY_LENGTH) {
+        throw new BadRequestException("A valid export row key is required");
+      }
+      if (!seen.has(rowKey)) {
+        seen.add(rowKey);
+        rowKeys.push(rowKey);
+      }
+    }
+    return rowKeys;
+  }
+
+  private calculateMeanDifficultyByUnit(
+    items: VomdItemData[],
+  ): Map<string, number> {
+    const totals = new Map<string, { sum: number; count: number }>();
+    for (const item of items) {
+      if (
+        item.empiricalDifficulty === undefined ||
+        !Number.isFinite(item.empiricalDifficulty)
+      ) {
+        continue;
+      }
+      const total = totals.get(item.unitId) || { sum: 0, count: 0 };
+      total.sum += item.empiricalDifficulty;
+      total.count += 1;
+      totals.set(item.unitId, total);
+    }
+
+    return new Map(
+      Array.from(totals.entries()).map(([unitId, total]) => [
+        unitId,
+        total.sum / total.count,
+      ]),
+    );
+  }
+
+  private getPersonalTagColors(rawFeatureConfig: unknown): Map<string, string> {
+    const featureConfig = normalizeFeatureConfig(
+      this.isRecord(rawFeatureConfig) ? rawFeatureConfig : {},
+    ) as Record<string, unknown>;
+    const tags = Array.isArray(featureConfig.personalItemTags)
+      ? featureConfig.personalItemTags
+      : [];
+    const colors = new Map<string, string>();
+
+    for (const rawTag of tags) {
+      if (!this.isRecord(rawTag)) continue;
+      const label = this.normalizePlainText(rawTag.label, 100);
+      const color = this.normalizePlainText(rawTag.color, 100);
+      if (label && color) colors.set(label, color);
+    }
+    return colors;
+  }
+
+  private formatPersonalMarkers(
+    tags: string[],
+    tagColors: Map<string, string>,
+  ): string | null {
+    if (!tags.length) return null;
+    return tags
+      .map((tag) => {
+        const color = tagColors.get(tag);
+        return color ? `${tag} (${color})` : tag;
+      })
+      .join("; ");
+  }
+
+  private async buildPersonalItemDataXlsx(
+    rows: Array<Record<string, string | number | null>>,
+  ): Promise<Buffer> {
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "IQB ContentPool";
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet("Persönliche Itemdaten");
+    sheet.columns = [
+      { header: "Laufende Nummer", key: "sequenceNumber", width: 18 },
+      { header: "Unit-ID", key: "unitId", width: 22 },
+      { header: "Unit-Label", key: "unitLabel", width: 30 },
+      { header: "Item-ID", key: "itemId", width: 22 },
+      { header: "Item-UUID", key: "itemUuid", width: 38 },
+      { header: "Markierung/Farbe", key: "markers", width: 32 },
+      { header: "Notiz", key: "note", width: 50 },
+      { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
+      {
+        header: "Empirische Itemschwierigkeit",
+        key: "empiricalDifficulty",
+        width: 30,
+      },
+      {
+        header: "Mittlere Aufgabenschwierigkeit",
+        key: "meanTaskDifficulty",
+        width: 32,
+      },
+    ];
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.autoFilter = { from: "A1", to: "J1" };
+
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1A5276" },
+    };
+
+    rows.forEach((row) => sheet.addRow(row));
+    sheet.getColumn("note").alignment = { vertical: "top", wrapText: true };
+    sheet.getColumn("markers").alignment = {
+      vertical: "top",
+      wrapText: true,
+    };
+    sheet.getColumn("empiricalDifficulty").numFmt = "0.############";
+    sheet.getColumn("meanTaskDifficulty").numFmt = "0.############";
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   private resolvePreferenceIdentity(user: any): PreferenceIdentity | null {

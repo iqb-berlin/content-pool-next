@@ -6,6 +6,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Put,
   Query,
   Request,
@@ -19,7 +20,14 @@ import {
   ApiPropertyOptional,
   ApiTags,
 } from "@nestjs/swagger";
-import { IsIn, IsObject, IsOptional, IsString } from "class-validator";
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsObject,
+  IsOptional,
+  IsString,
+} from "class-validator";
 import { Response } from "express";
 import { ViewsService } from "./views.service";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
@@ -85,6 +93,29 @@ class PatchPersonalItemRowDto {
 
   @ApiPropertyOptional({
     description: "Explorer state used to render the item row",
+    enum: ["editor", "read-only"],
+    default: "read-only",
+  })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class ExportPersonalItemDataDto {
+  @ApiPropertyOptional({
+    description:
+      "Stable item row keys in the current filtered and sorted list order",
+    type: [String],
+    maxItems: 10_000,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  rowKeys?: string[];
+
+  @ApiPropertyOptional({
+    description: "Explorer state used to render the exported item rows",
     enum: ["editor", "read-only"],
     default: "read-only",
   })
@@ -273,6 +304,43 @@ export class ViewsController {
       (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
         dto.perspective === "editor",
     );
+  }
+
+  @Post("acp/:acpId/items/preferences/export.xlsx")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Export personal Item Explorer working data" })
+  @ApiBody({ type: ExportPersonalItemDataDto })
+  async exportPersonalItemDataXlsx(
+    @Param("acpId") acpId: string,
+    @Body() dto: ExportPersonalItemDataDto,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    if (!(await this.isPersonalItemDataEnabled(acpId))) {
+      throw new ForbiddenException(
+        "Personal item data is not enabled for this ACP",
+      );
+    }
+
+    const canEditExplorerState =
+      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+      dto.perspective === "editor";
+    const buffer = await this.viewsService.exportPersonalItemDataXlsx(
+      acpId,
+      req?.user,
+      dto.rowKeys,
+      canEditExplorerState,
+    );
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="personal-item-data-${acpId}.xlsx"`,
+    );
+    res.send(buffer);
   }
 
   @Get("acp/:acpId/sequences")

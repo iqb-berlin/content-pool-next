@@ -195,6 +195,13 @@ preference record is additionally limited to 10,000 rows.
 The map is keyed by the stable row key, so partial-credit rows of the same item keep independent
 categories, markers, and notes.
 
+Authenticated users can export their currently filtered and sorted Explorer list as XLSX. The
+backend resolves only the caller's own personal preference record and combines it with the active
+Explorer perspective. The export includes the visible order, unit and item identifiers, configured
+marker colors, note, competence level, empirical item difficulty, and the mean empirical difficulty
+of the unit when at least one value is available. Missing personal or difficulty values remain empty
+cells.
+
 ## Empirical Difficulty Import
 
 Managers can upload empirical difficulty CSV data through item endpoints.

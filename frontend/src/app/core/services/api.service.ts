@@ -448,6 +448,17 @@ export class ApiService {
       { rowKey, rowData, perspective },
     );
   }
+  exportViewPersonalItemDataXlsx(
+    acpId: string,
+    rowKeys: string[],
+    perspective: ItemExplorerPerspective,
+  ): Observable<Blob> {
+    return this.http.post(
+      `${this.API}/view/acp/${acpId}/items/preferences/export.xlsx`,
+      { rowKeys, perspective },
+      { responseType: 'blob' },
+    );
+  }
   getViewSequences(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`);
   }

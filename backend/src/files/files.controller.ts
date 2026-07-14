@@ -154,6 +154,8 @@ export class FilesController {
     );
     return this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
     });
   }
 

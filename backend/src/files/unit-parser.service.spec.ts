@@ -116,8 +116,11 @@ describe("UnitParserService", () => {
       }),
     };
     itemRowNumberingService = {
-      hasAssignedNumbers: jest.fn().mockResolvedValue(true),
       assignNumbers: jest.fn(
+        async (_acpId: string, rows: any[]) =>
+          new Map(rows.map((row, index) => [row.rowKey, index + 1])),
+      ),
+      assignProvisionalNumbers: jest.fn(
         async (_acpId: string, rows: any[]) =>
           new Map(rows.map((row, index) => [row.rowKey, index + 1])),
       ),
@@ -213,6 +216,37 @@ describe("UnitParserService", () => {
         }),
       ]),
     );
+  });
+
+  it("keeps valid sibling items when synchronizing a partially invalid VOMD", async () => {
+    const partiallyInvalidVomd = JSON.stringify({
+      profiles: [],
+      items: [
+        { profiles: [] },
+        {
+          id: "i2",
+          description: "Item 2",
+          variableId: "V2",
+          profiles: [],
+        },
+      ],
+    });
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return partiallyInvalidVomd;
+      return "";
+    });
+
+    const report = await service.syncIndexFromFiles("acp-1");
+
+    expect(report.itemsAdded).toBe(1);
+    expect(report.warnings).toEqual([
+      expect.stringContaining("enthält ein Item ohne ID"),
+    ]);
+    const saved = acpRepo.save.mock.calls[0][0];
+    expect(saved.acpIndex.assessmentParts[0].units[0].items).toEqual([
+      expect.objectContaining({ id: "i2", name: "Item 2" }),
+    ]);
   });
 
   it("preserves existing manual unit fields when syncing", async () => {
@@ -426,20 +460,20 @@ describe("UnitParserService", () => {
     );
   });
 
-  it("numbers prefixed items by their resolved Item-ID", async () => {
+  it("numbers prefixed items by the source Item-ID shown in the Explorer", async () => {
     const result = await service.getItemListFromFiles("acp-1");
 
     expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
       "acp-1",
       [
         expect.objectContaining({
-          itemId: "u1_i1",
+          itemId: "i1",
           rowKey: "u1_i1",
           unitId: "u1",
         }),
       ],
     );
-    expect(result.items[0]).not.toHaveProperty("numberingItemId");
+    expect(result.items[0].itemId).toBe("i1");
   });
 
   it("keeps an unprefixed Item-ID as the numbering sort key", async () => {
@@ -569,7 +603,7 @@ describe("UnitParserService", () => {
     );
     expect(itemRowNumberingService.recalculateNumbers).toHaveBeenCalledWith(
       "acp-1",
-      [expect.objectContaining({ itemId: "u1_i1", rowKey: "u1_i1" })],
+      [expect.objectContaining({ itemId: "i1", rowKey: "u1_i1" })],
       expect.objectContaining({ id: "transaction-manager" }),
       expect.any(Function),
     );
@@ -593,44 +627,124 @@ describe("UnitParserService", () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it("initializes numbering from published rows before adding draft-only rows", async () => {
-    const assignedNumbers = new Map<string, number>();
-    itemRowNumberingService.hasAssignedNumbers.mockResolvedValueOnce(false);
-    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
-      publishedState: {
-        itemProperties: {
-          "u1_i1::1": { itemUuid: "u1_i1", subId: "1" },
-        },
-      },
+  it("rejects recalculation for a Unit XML without an ID", async () => {
+    const invalidUnitXml = xmlContent.replace("  <Id>u1</Id>\n", "");
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return invalidUnitXml;
+      if (path === "/tmp/u1.vomd") return vomdContent;
+      return "";
     });
+
+    await expect(
+      service.recalculatePublishedItemRowNumbers("acp-1"),
+    ).rejects.toThrow("Invalid unit XML file: u1.xml");
+
+    expect(
+      itemExplorerStateService.runWithLockedCleanState,
+    ).not.toHaveBeenCalled();
+    expect(itemRowNumberingService.recalculateNumbers).not.toHaveBeenCalled();
+  });
+
+  it("rejects recalculation without replacing numbers when VOMD parsing fails", async () => {
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return "{ invalid json";
+      return "";
+    });
+
+    await expect(
+      service.recalculatePublishedItemRowNumbers("acp-1"),
+    ).rejects.toThrow("Invalid item metadata file: u1.vomd");
+
+    expect(
+      itemExplorerStateService.runWithLockedCleanState,
+    ).not.toHaveBeenCalled();
+    expect(itemRowNumberingService.recalculateNumbers).not.toHaveBeenCalled();
+  });
+
+  it("preserves the specific error when a referenced VOMD is missing", async () => {
+    fileRepo.find.mockResolvedValueOnce(
+      files.filter((file) => file.originalName !== "u1.vomd"),
+    );
+
+    await expect(
+      service.recalculatePublishedItemRowNumbers("acp-1"),
+    ).rejects.toThrow("Referenced item metadata file is missing: u1.vomd");
+
+    expect(
+      itemExplorerStateService.runWithLockedCleanState,
+    ).not.toHaveBeenCalled();
+    expect(itemRowNumberingService.recalculateNumbers).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a non-array item list", { profiles: [], items: "broken" }],
+    ["a null item list", { profiles: [], items: null }],
+    ["a missing item list", { profiles: [] }],
+    ["an item without an ID", { profiles: [], items: [{ profiles: [] }] }],
+    [
+      "a non-array profile entry list",
+      {
+        profiles: [],
+        items: [{ id: "i1", profiles: [{ entries: "broken" }] }],
+      },
+    ],
+  ])(
+    "rejects recalculation without replacing numbers for %s",
+    async (_description, invalidVomd) => {
+      (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+        if (path === "/tmp/u1.xml") return xmlContent;
+        if (path === "/tmp/u1.vomd") return JSON.stringify(invalidVomd);
+        return "";
+      });
+
+      await expect(
+        service.recalculatePublishedItemRowNumbers("acp-1"),
+      ).rejects.toThrow("Invalid item metadata file: u1.vomd");
+
+      expect(
+        itemExplorerStateService.runWithLockedCleanState,
+      ).not.toHaveBeenCalled();
+      expect(itemRowNumberingService.recalculateNumbers).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps draft-only row numbers provisional", async () => {
+    const publishedNumbers = new Map<string, number>();
     itemRowNumberingService.assignNumbers.mockImplementation(
       async (_acpId: string, rows: any[]) => {
         for (const row of rows) {
-          if (!assignedNumbers.has(row.rowKey)) {
-            assignedNumbers.set(row.rowKey, assignedNumbers.size + 1);
+          if (!publishedNumbers.has(row.rowKey)) {
+            publishedNumbers.set(row.rowKey, publishedNumbers.size + 1);
           }
         }
-        return new Map(assignedNumbers);
+        return new Map(publishedNumbers);
       },
+    );
+    itemRowNumberingService.assignProvisionalNumbers.mockImplementation(
+      async (_acpId: string, rows: any[]) =>
+        new Map(rows.map((row: any, index: number) => [row.rowKey, index + 2])),
     );
 
     const result = await service.getItemListFromFiles("acp-1", {
       itemPropertiesOverride: {
         "u1_i1::2": { itemUuid: "u1_i1", subId: "2" },
       },
+      publishedItemPropertiesOverride: {
+        "u1_i1::1": { itemUuid: "u1_i1", subId: "1" },
+      },
     });
 
-    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
-      "acp-1",
-      false,
-    );
-    expect(itemRowNumberingService.assignNumbers).toHaveBeenNthCalledWith(
-      1,
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
       "acp-1",
       [expect.objectContaining({ rowKey: "u1_i1::1" })],
     );
-    expect(itemRowNumberingService.assignNumbers).toHaveBeenNthCalledWith(
-      2,
+    expect(
+      itemRowNumberingService.assignProvisionalNumbers,
+    ).toHaveBeenCalledWith("acp-1", [
+      expect.objectContaining({ rowKey: "u1_i1::2" }),
+    ]);
+    expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalledWith(
       "acp-1",
       [expect.objectContaining({ rowKey: "u1_i1::2" })],
     );
@@ -639,9 +753,8 @@ describe("UnitParserService", () => {
     );
   });
 
-  it("does not recursively initialize numbering for an empty item list", async () => {
+  it("handles an empty item list without loading Explorer state", async () => {
     fileRepo.find.mockResolvedValueOnce([]);
-    itemRowNumberingService.hasAssignedNumbers.mockResolvedValueOnce(false);
 
     const result = await service.getItemListFromFiles("acp-1");
 

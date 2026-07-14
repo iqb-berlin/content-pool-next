@@ -513,6 +513,8 @@ export class ViewsService {
     ]);
     const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
     });
     const itemsByRowKey = new Map(
       itemList.items.map((item) => [item.rowKey, item] as const),
@@ -572,6 +574,8 @@ export class ViewsService {
     ]);
     const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
     });
     const itemsByRowKey = new Map(
       itemList.items.map((item) => [item.rowKey, item] as const),
@@ -686,6 +690,8 @@ export class ViewsService {
       acpId,
       {
         itemPropertiesOverride: explorerState.activeState.itemProperties,
+        publishedItemPropertiesOverride:
+          explorerState.publishedState.itemProperties,
       },
     );
     if (!validRowKeys.has(rowKey)) {

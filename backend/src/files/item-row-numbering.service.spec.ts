@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import * as crypto from "crypto";
 import { Acp, AcpItemRowNumber } from "../database/entities";
 import {
   ItemRowNumberingService,
@@ -19,18 +20,30 @@ describe("ItemRowNumberingService", () => {
     itemId: string,
     subId?: string,
   ): NumberableItemRow => ({ rowKey, unitId, itemId, subId });
+  const hash = (rowKey: string) =>
+    crypto.createHash("sha256").update(rowKey, "utf8").digest("hex");
 
   beforeEach(() => {
     persisted = [];
     acpExists = true;
     repository = {
-      exists: jest.fn(async ({ where }: any) =>
-        persisted.some((entry) => entry.acpId === where.acpId),
-      ),
-      find: jest.fn(async ({ where }: any) =>
+      find: jest.fn(async ({ where }: any) => {
+        const requestedHashes = where.rowKeyHash?.value;
+        const hashSet = Array.isArray(requestedHashes)
+          ? new Set(requestedHashes)
+          : null;
+        return persisted.filter(
+          (entry) =>
+            entry.acpId === where.acpId &&
+            (!hashSet || hashSet.has(entry.rowKeyHash)),
+        );
+      }),
+      maximum: jest.fn(async (_column: string, { acpId }: any) =>
         persisted
-          .filter((entry) => entry.acpId === where.acpId)
-          .sort((left, right) => left.rowNumber - right.rowNumber),
+          .filter((entry) => entry.acpId === acpId)
+          .reduce<
+            number | null
+          >((maximum, entry) => (maximum === null ? entry.rowNumber : Math.max(maximum, entry.rowNumber)), null),
       ),
       create: jest.fn((entry: Partial<AcpItemRowNumber>) => ({
         id: `id-${entry.rowKey}`,
@@ -60,8 +73,8 @@ describe("ItemRowNumberingService", () => {
     repository.manager = transactionManager;
     rootTransaction = jest.fn(async (work) => work(transactionManager));
     const rootRepository = {
-      exists: repository.exists,
       find: repository.find,
+      maximum: repository.maximum,
       manager: {
         transaction: rootTransaction,
       },
@@ -85,17 +98,17 @@ describe("ItemRowNumberingService", () => {
     ]);
   });
 
-  it("sorts by the resolved Item-ID including the Unit-ID prefix", async () => {
+  it("sorts globally by Item-ID before using Unit-ID as a tie-breaker", async () => {
     const numbers = await service.assignNumbers("acp-1", [
-      row("unit-1-item-10", "UNIT_1", "UNIT_1_ITEM_10"),
-      row("unit-2-item-2", "UNIT_2", "UNIT_2_ITEM_2"),
-      row("unit-1-item-2", "UNIT_1", "UNIT_1_ITEM_2"),
+      row("unit-1-item-10", "UNIT_1", "ITEM_10"),
+      row("unit-2-item-2", "UNIT_2", "ITEM_2"),
+      row("unit-1-item-2", "UNIT_1", "ITEM_2"),
     ]);
 
     expect(Array.from(numbers.entries())).toEqual([
       ["unit-1-item-2", 1],
-      ["unit-1-item-10", 2],
-      ["unit-2-item-2", 3],
+      ["unit-2-item-2", 2],
+      ["unit-1-item-10", 3],
     ]);
   });
 
@@ -105,7 +118,7 @@ describe("ItemRowNumberingService", () => {
         id: "1",
         acpId: "acp-1",
         rowKey: "current",
-        rowKeyHash: "hash",
+        rowKeyHash: hash("current"),
         rowNumber: 4,
       } as AcpItemRowNumber,
     ];
@@ -125,7 +138,6 @@ describe("ItemRowNumberingService", () => {
     )}`;
 
     expect(longRowKey.length).toBeGreaterThan(500);
-    expect(await service.hasAssignedNumbers("acp-1")).toBe(false);
 
     await service.assignNumbers("acp-1", [
       row(longRowKey, "UNIT_1", "ITEM_1", "😀".repeat(39)),
@@ -137,7 +149,6 @@ describe("ItemRowNumberingService", () => {
         rowKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     );
-    expect(await service.hasAssignedNumbers("acp-1")).toBe(true);
   });
 
   it("keeps deleted row numbers free and appends new rows above the previous maximum", async () => {
@@ -146,18 +157,21 @@ describe("ItemRowNumberingService", () => {
         id: "1",
         acpId: "acp-1",
         rowKey: "current",
+        rowKeyHash: hash("current"),
         rowNumber: 1,
       } as AcpItemRowNumber,
       {
         id: "2",
         acpId: "acp-1",
         rowKey: "deleted",
+        rowKeyHash: hash("deleted"),
         rowNumber: 2,
       } as AcpItemRowNumber,
       {
         id: "3",
         acpId: "acp-1",
         rowKey: "current-2",
+        rowKeyHash: hash("current-2"),
         rowNumber: 4,
       } as AcpItemRowNumber,
     ];
@@ -169,8 +183,43 @@ describe("ItemRowNumberingService", () => {
     ]);
 
     expect(numbers.get("current")).toBe(1);
-    expect(numbers.has("deleted")).toBe(true);
+    expect(numbers.has("deleted")).toBe(false);
     expect(numbers.get("new")).toBe(5);
+    expect(repository.maximum).toHaveBeenCalledWith("rowNumber", {
+      acpId: "acp-1",
+    });
+  });
+
+  it("assigns draft-only rows provisionally without persisting them", async () => {
+    persisted = [
+      {
+        id: "1",
+        acpId: "acp-1",
+        rowKey: "current",
+        rowKeyHash: hash("current"),
+        rowNumber: 1,
+      } as AcpItemRowNumber,
+      {
+        id: "2",
+        acpId: "acp-1",
+        rowKey: "deleted",
+        rowKeyHash: hash("deleted"),
+        rowNumber: 4,
+      } as AcpItemRowNumber,
+    ];
+
+    const numbers = await service.assignProvisionalNumbers("acp-1", [
+      row("current", "UNIT_1", "ITEM_1"),
+      row("draft", "UNIT_1", "ITEM_2"),
+    ]);
+
+    expect(numbers.get("current")).toBe(1);
+    expect(numbers.get("draft")).toBe(5);
+    expect(repository.save).not.toHaveBeenCalled();
+    expect(persisted.map((entry) => entry.rowKey)).toEqual([
+      "current",
+      "deleted",
+    ]);
   });
 
   it("recalculates only current rows and closes previous gaps", async () => {

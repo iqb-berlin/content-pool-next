@@ -80,10 +80,6 @@ export interface ItemListResult {
   codingSchemes: Record<string, any>; // unitId → coding scheme JSON
 }
 
-interface InternalVomdItemData extends VomdItemData {
-  numberingItemId: string;
-}
-
 interface ParsedItemListResult {
   itemList: ItemListResult;
   sourceFileSignature: string;
@@ -190,20 +186,70 @@ export class UnitParserService {
   /**
    * Parse a .vomd JSON file and extract items with their profile entries.
    */
-  parseVomd(vomdContent: string): {
+  parseVomd(
+    vomdContent: string,
+    strictStructure = false,
+  ): {
     unitProfiles: any[];
     items: any[];
   } | null {
     try {
-      const data = JSON.parse(vomdContent);
+      const data: unknown = JSON.parse(vomdContent);
+      if (!this.isRecord(data)) {
+        throw new Error("VOMD root must be an object");
+      }
+
+      const unitProfiles = data.profiles === undefined ? [] : data.profiles;
+      const items = data.items === undefined ? [] : data.items;
+      if (
+        !Array.isArray(unitProfiles) ||
+        !Array.isArray(items) ||
+        (strictStructure &&
+          (!Object.prototype.hasOwnProperty.call(data, "items") ||
+            !unitProfiles.every((profile) =>
+              this.isValidVomdProfile(profile),
+            ) ||
+            !items.every((item) => this.isValidVomdItem(item))))
+      ) {
+        throw new Error("VOMD has an invalid structure");
+      }
+
       return {
-        unitProfiles: data.profiles || [],
-        items: data.items || [],
+        unitProfiles,
+        items,
       };
     } catch (e) {
       this.logger.error(`Failed to parse .vomd: ${e}`);
       return null;
     }
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  private isValidVomdProfile(value: unknown): boolean {
+    if (!this.isRecord(value)) return false;
+
+    const entries = value.entries === undefined ? [] : value.entries;
+    return (
+      Array.isArray(entries) && entries.every((entry) => this.isRecord(entry))
+    );
+  }
+
+  private isValidVomdItem(
+    value: unknown,
+  ): value is Record<string, any> & { id: string; profiles?: any[] } {
+    if (!this.isRecord(value)) return false;
+    if (typeof value.id !== "string" || value.id.trim().length === 0) {
+      return false;
+    }
+
+    const profiles = value.profiles === undefined ? [] : value.profiles;
+    return (
+      Array.isArray(profiles) &&
+      profiles.every((profile) => this.isValidVomdProfile(profile))
+    );
   }
 
   /**
@@ -600,6 +646,7 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      publishedItemPropertiesOverride?: Record<string, Record<string, unknown>>;
     } = {},
   ): Promise<ItemListResult> {
     const { itemList } = await this.parseItemListFromFiles(
@@ -608,16 +655,20 @@ export class UnitParserService {
     );
 
     if (
-      itemList.items.length > 0 &&
-      !(await this.itemRowNumberingService.hasAssignedNumbers(acpId))
+      options.publishedItemPropertiesOverride &&
+      !this.haveSamePartialCreditRows(
+        options.itemPropertiesOverride || {},
+        options.publishedItemPropertiesOverride,
+      )
     ) {
-      const publishedState =
-        await this.itemExplorerStateService.getStateForViewer(acpId, false);
       const { itemList: publishedItemList } = await this.parseItemListFromFiles(
         acpId,
-        publishedState.publishedState.itemProperties,
+        options.publishedItemPropertiesOverride,
       );
       await this.applyItemRowNumbers(acpId, publishedItemList, {});
+      return this.applyItemRowNumbers(acpId, itemList, {
+        persistMissingRowNumbers: false,
+      });
     }
 
     return this.applyItemRowNumbers(acpId, itemList, {});
@@ -648,7 +699,7 @@ export class UnitParserService {
 
     // Collect all columns and items
     const columnMap = new Map<string, string>(); // id → label
-    const items: InternalVomdItemData[] = [];
+    const items: VomdItemData[] = [];
     const unitMetadata: Record<string, any[]> = {};
     const codingSchemes: Record<string, any> = {};
 
@@ -666,7 +717,14 @@ export class UnitParserService {
         if (!xmlContent.includes("<Unit")) continue;
 
         const parsed = this.parseUnitXml(xmlContent, xmlFile.originalName);
-        if (!parsed) continue;
+        if (!parsed || !parsed.unitId.trim()) {
+          if (strictSourceReads) {
+            throw new ConflictException(
+              `Invalid unit XML file: ${xmlFile.originalName}`,
+            );
+          }
+          continue;
+        }
 
         // Find and parse .vomd file
         const vomdFileName = parsed.metadataRef;
@@ -678,15 +736,30 @@ export class UnitParserService {
             f.originalName === vomdFileName ||
             f.originalName === vomdFileName + ".json",
         );
-        if (!vomdFile) continue;
+        if (!vomdFile) {
+          if (strictSourceReads) {
+            throw new ConflictException(
+              `Referenced item metadata file is missing: ${vomdFileName}`,
+            );
+          }
+          continue;
+        }
 
         const vomdContent = await fs.readFile(vomdFile.filePath, "utf-8");
-        const vomdData = this.parseVomd(vomdContent);
-        if (!vomdData) continue;
+        const vomdData = this.parseVomd(vomdContent, strictSourceReads);
+        if (!vomdData) {
+          if (strictSourceReads) {
+            throw new ConflictException(
+              `Invalid item metadata file: ${vomdFile.originalName}`,
+            );
+          }
+          continue;
+        }
 
         // Extract unit-level metadata
         if (vomdData.unitProfiles.length > 0) {
-          unitMetadata[parsed.unitId] = vomdData.unitProfiles[0].entries || [];
+          const entries = vomdData.unitProfiles[0]?.entries;
+          unitMetadata[parsed.unitId] = Array.isArray(entries) ? entries : [];
         }
 
         // Find and read .vocs file for coding scheme
@@ -708,6 +781,12 @@ export class UnitParserService {
 
         // Extract items and their profile entries
         for (const item of vomdData.items) {
+          if (!this.isValidVomdItem(item)) {
+            this.logger.warn(
+              `Skipping invalid item metadata in ${vomdFile.originalName}`,
+            );
+            continue;
+          }
           const itemProfiles = item.profiles || [];
           const metadata: Record<string, string> = {};
 
@@ -770,7 +849,6 @@ export class UnitParserService {
 
             items.push({
               itemId: item.id,
-              numberingItemId: resolvedItemId,
               uuid: itemUuid,
               rowKey: explorerRow.rowKey,
               rowNumber: 0,
@@ -794,6 +872,9 @@ export class UnitParserService {
       } catch (e) {
         this.logger.error(`Error processing ${xmlFile.originalName}: ${e}`);
         if (strictSourceReads) {
+          if (e instanceof ConflictException) {
+            throw e;
+          }
           throw new ConflictException(
             "The ACP source files changed while row numbers were being recalculated",
           );
@@ -855,13 +936,13 @@ export class UnitParserService {
       recalculateRowNumbers?: boolean;
       rowNumberingManager?: EntityManager;
       validateSourceFiles?: (manager: EntityManager) => Promise<void>;
+      persistMissingRowNumbers?: boolean;
     },
   ): Promise<ItemListResult> {
     const numberableRows = itemList.items.map((item) => {
-      const internalItem = item as InternalVomdItemData;
       return {
         rowKey: item.rowKey,
-        itemId: internalItem.numberingItemId,
+        itemId: item.itemId,
         unitId: item.unitId,
         subId: item.subId,
       };
@@ -874,10 +955,17 @@ export class UnitParserService {
           options.rowNumberingManager,
           options.validateSourceFiles,
         )
-      : await this.itemRowNumberingService.assignNumbers(acpId, numberableRows);
+      : options.persistMissingRowNumbers === false
+        ? await this.itemRowNumberingService.assignProvisionalNumbers(
+            acpId,
+            numberableRows,
+          )
+        : await this.itemRowNumberingService.assignNumbers(
+            acpId,
+            numberableRows,
+          );
     for (const item of itemList.items) {
       item.rowNumber = rowNumbers.get(item.rowKey)!;
-      delete (item as Partial<InternalVomdItemData>).numberingItemId;
     }
 
     return itemList;
@@ -929,6 +1017,7 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      publishedItemPropertiesOverride?: Record<string, Record<string, unknown>>;
     } = {},
   ): Promise<ReadonlySet<string>> {
     const [files, acp] = await Promise.all([
@@ -950,6 +1039,9 @@ export class UnitParserService {
         ])
         .sort(([left], [right]) => String(left).localeCompare(String(right))),
       itemPropertyKeys: Object.keys(itemProperties).sort(),
+      publishedItemPropertyKeys: Object.keys(
+        options.publishedItemPropertiesOverride || {},
+      ).sort(),
     });
     const cacheKey = `${acpId}:${signature}`;
     const cached = this.itemRowKeyCache.get(cacheKey);
@@ -1011,6 +1103,23 @@ export class UnitParserService {
       indexed.set(parts.itemUuid, rows);
     }
     return indexed;
+  }
+
+  private haveSamePartialCreditRows(
+    left: Record<string, Record<string, unknown>>,
+    right: Record<string, Record<string, unknown>>,
+  ): boolean {
+    const leftKeys = Object.keys(left).filter(
+      (rowKey) => parseItemRowKeyParts(rowKey) !== null,
+    );
+    const rightKeys = Object.keys(right).filter(
+      (rowKey) => parseItemRowKeyParts(rowKey) !== null,
+    );
+    if (leftKeys.length !== rightKeys.length) {
+      return false;
+    }
+    const rightKeySet = new Set(rightKeys);
+    return leftKeys.every((rowKey) => rightKeySet.has(rowKey));
   }
 
   private asStringMap(value: unknown): Record<string, string> {
@@ -1386,7 +1495,7 @@ export class UnitParserService {
     const vomdData = this.parseVomd(vomdContent);
     if (!vomdData) {
       warningSet.add(
-        `VOMD für Unit "${parsedUnit.unitId}" ist kein valides JSON: ${vomdFile.originalName}`,
+        `VOMD für Unit "${parsedUnit.unitId}" ist ungültig: ${vomdFile.originalName}`,
       );
       return [];
     }
@@ -1399,9 +1508,19 @@ export class UnitParserService {
       useUnitAliasAsPrefix?: boolean;
     }> = [];
     for (const item of vomdData.items || []) {
-      if (!item?.id) {
+      if (
+        !this.isRecord(item) ||
+        typeof item.id !== "string" ||
+        item.id.trim().length === 0
+      ) {
         warningSet.add(
           `Unit "${parsedUnit.unitId}" enthält ein Item ohne ID in ${vomdFile.originalName}`,
+        );
+        continue;
+      }
+      if (!this.isValidVomdItem(item)) {
+        warningSet.add(
+          `Unit "${parsedUnit.unitId}" enthält ein Item mit ungültiger Profilstruktur in ${vomdFile.originalName}`,
         );
         continue;
       }

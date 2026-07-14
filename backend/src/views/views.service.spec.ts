@@ -46,6 +46,7 @@ describe("ViewsService", () => {
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
         activeState: { itemProperties: {} },
+        publishedState: { itemProperties: {} },
       }),
     };
     unitParserService = {
@@ -272,7 +273,12 @@ describe("ViewsService", () => {
       },
     });
     itemExplorerStateService.getStateForViewer.mockResolvedValue({
+      status: "DIRTY",
+      canEdit: true,
       activeState: { itemProperties: { "uuid-1::1": { draft: true } } },
+      publishedState: {
+        itemProperties: { "uuid-1::1": { published: true } },
+      },
     });
     unitParserService.getItemListFromFiles.mockResolvedValue({
       items: [
@@ -321,7 +327,12 @@ describe("ViewsService", () => {
     );
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
-      { itemPropertiesOverride: { "uuid-1::1": { draft: true } } },
+      {
+        itemPropertiesOverride: { "uuid-1::1": { draft: true } },
+        publishedItemPropertiesOverride: {
+          "uuid-1::1": { published: true },
+        },
+      },
     );
 
     const ExcelJS = await import("exceljs");
@@ -857,7 +868,10 @@ describe("ViewsService", () => {
     );
     expect(unitParserService.getItemRowKeysFromFiles).toHaveBeenCalledWith(
       "acp-1",
-      { itemPropertiesOverride: {} },
+      {
+        itemPropertiesOverride: {},
+        publishedItemPropertiesOverride: {},
+      },
     );
     expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
       expect.stringMatching(

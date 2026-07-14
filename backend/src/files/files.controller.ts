@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   ForbiddenException,
   Controller,
   Get,
@@ -169,6 +170,11 @@ export class FilesController {
       acpId,
       true,
     );
+    if (explorerState.status === "DIRTY") {
+      throw new ConflictException(
+        "Save or discard the pending Item Explorer draft before recalculating row numbers",
+      );
+    }
     return this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
       recalculateRowNumbers: true,

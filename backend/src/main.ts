@@ -11,9 +11,15 @@ import {
   getGeoGebraBundleCurrentDir,
 } from "./admin/geogebra-bundle.util";
 
+const MAX_JSON_BODY_SIZE = "6mb";
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const isProduction = process.env.NODE_ENV === "production";
+
+  // The personal Item Explorer export accepts up to 10,000 ordered row keys.
+  // The validated worst case is slightly above 5 MB (10,000 × 500 chars).
+  app.useBodyParser("json", { limit: MAX_JSON_BODY_SIZE });
 
   const geoGebraAssetsDir = getGeoGebraBundleCurrentDir();
   await fs.mkdir(geoGebraAssetsDir, { recursive: true });

@@ -204,7 +204,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             <button class="btn btn-outline btn-sm" (click)="openColumnManager()">
               👁️ Spalten verwalten
             </button>
-            <button class="btn btn-outline btn-sm" (click)="openRenumberDialog()">
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="openRenumberDialog()"
+              [disabled]="isRenumberingBlocked()"
+              [title]="getRenumberingActionTitle()"
+            >
               🔢 Nummerierung neu
             </button>
             <button
@@ -3781,6 +3786,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   openRenumberDialog() {
+    if (this.isRenumberingBlocked()) return;
     this.rememberFocusBeforeOverlay();
     this.showRenumberDialog = true;
     this.renumberBusy = false;
@@ -3797,6 +3803,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   confirmRenumber() {
     if (this.renumberBusy) return;
+    if (this.isRenumberingBlocked()) {
+      this.renumberError = this.getRenumberingBlockedMessage();
+      return;
+    }
     this.renumberBusy = true;
     this.renumberError = '';
 
@@ -3818,6 +3828,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           error?.error?.message || 'Die Nummerierung konnte nicht neu berechnet werden.';
       },
     });
+  }
+
+  isRenumberingBlocked(): boolean {
+    return this.hasPendingDraftChanges() || this.explorerUiStatus === 'SAVING';
+  }
+
+  getRenumberingActionTitle(): string {
+    return this.isRenumberingBlocked()
+      ? this.getRenumberingBlockedMessage()
+      : 'Stabile Zeilennummerierung neu berechnen';
+  }
+
+  private getRenumberingBlockedMessage(): string {
+    return this.explorerUiStatus === 'SAVING'
+      ? 'Bitte warten Sie, bis die Explorer-Änderungen gespeichert wurden.'
+      : 'Bitte speichern oder verwerfen Sie den Entwurf, bevor Sie neu nummerieren.';
   }
 
   getSortIndicator(field: string): string {

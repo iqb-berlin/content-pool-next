@@ -924,6 +924,21 @@ describe('ApiService', () => {
       );
     });
 
+    it('should export all participants personal item data as CSV', () => {
+      const blob = new Blob(['csv']);
+      httpClientMock.post.mockReturnValue(of(blob));
+
+      service.exportAllViewPersonalItemDataCsv('acp1', 'editor').subscribe((result) => {
+        expect(result).toBe(blob);
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/preferences/export-all.csv',
+        { perspective: 'editor' },
+        { responseType: 'blob' },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

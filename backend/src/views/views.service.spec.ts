@@ -19,6 +19,7 @@ describe("ViewsService", () => {
   let fileRepository: { find: jest.Mock; findOne: jest.Mock };
   let settingsRepository: { findOne: jest.Mock };
   let itemPreferenceRepository: {
+    find: jest.Mock;
     findOne: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -36,6 +37,7 @@ describe("ViewsService", () => {
     fileRepository = { find: jest.fn(), findOne: jest.fn() };
     settingsRepository = { findOne: jest.fn() };
     itemPreferenceRepository = {
+      find: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn().mockImplementation((value) => value),
       save: jest.fn().mockImplementation(async (value) => value),
@@ -360,6 +362,86 @@ describe("ViewsService", () => {
       ),
     ).rejects.toThrow(BadRequestException);
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
+  });
+
+  it("exports all stored participant rows as CSV with literal note line breaks", async () => {
+    itemPreferenceRepository.find.mockResolvedValue([
+      {
+        credential: { username: "teilnehmer-a" },
+        preferences: {
+          rowData: {
+            "uuid-1::A": {
+              category: "=II",
+              tags: ["Prüfen", "Sicher"],
+              note: "Erste Zeile\nZweite Zeile",
+            },
+          },
+        },
+      },
+      {
+        credential: { username: "ohne-eintrag" },
+        preferences: { rowData: {} },
+      },
+      {
+        user: { username: "teilnehmer-b" },
+        preferences: {
+          rowData: {
+            "uuid-2": { category: "III", tags: [], note: "Fertig" },
+          },
+        },
+      },
+    ]);
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          itemId: "item-1",
+          uuid: "uuid-1",
+          rowKey: "uuid-1::A",
+          subId: "A",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "",
+          variableId: "var-1",
+          metadata: {},
+          empiricalDifficulty: -0.25,
+        },
+        {
+          itemId: "item-2",
+          uuid: "uuid-2",
+          rowKey: "uuid-2",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "",
+          variableId: "var-2",
+          metadata: {},
+          empiricalDifficulty: 0.75,
+        },
+      ],
+    });
+
+    const csv = (
+      await service.exportAllPersonalItemDataCsv("acp-1", true)
+    ).toString("utf8");
+
+    expect(itemPreferenceRepository.find).toHaveBeenCalledWith({
+      where: { acpId: "acp-1", viewId: "item-explorer" },
+      relations: { user: true, credential: true },
+    });
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      true,
+    );
+    expect(csv.startsWith("\uFEFF")).toBe(true);
+    expect(csv).toContain(
+      '"Teilnehmerkennung";"Unit-ID";"Unit-Label";"Item-ID";"Sub-ID";"Zeilenschlüssel"',
+    );
+    expect(csv).toContain(
+      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"0.25"',
+    );
+    expect(csv).toContain(
+      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"0.25"',
+    );
+    expect(csv).not.toContain("ohne-eintrag");
   });
 
   it("limits personal data exports to 10,000 requested rows", async () => {

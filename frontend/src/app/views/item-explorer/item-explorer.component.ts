@@ -168,6 +168,19 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               {{ personalExportInProgress ? 'Export läuft …' : '📊 Persönliche Daten (XLSX)' }}
             </button>
           }
+          @if (canExportAllPersonalItemData) {
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              (click)="exportAllPersonalItemDataCsv()"
+              [disabled]="allPersonalDataExportInProgress || perspectiveSwitchBusy"
+              title="Persönliche Item-Arbeitsdaten aller Teilnehmenden exportieren"
+            >
+              {{
+                allPersonalDataExportInProgress ? 'Gesamtexport läuft …' : '📄 Gesamtdaten (CSV)'
+              }}
+            </button>
+          }
           @if (canEditExplorer) {
             <input
               type="file"
@@ -284,6 +297,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       @if (personalExportError) {
         <div class="alert alert-error" style="margin-bottom: 12px;" aria-live="polite">
           {{ personalExportError }}
+        </div>
+      }
+
+      @if (allPersonalDataExportError) {
+        <div class="alert alert-error" style="margin-bottom: 12px;" aria-live="polite">
+          {{ allPersonalDataExportError }}
         </div>
       }
 
@@ -2797,6 +2816,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   personalDataError = '';
   personalExportInProgress = false;
   personalExportError = '';
+  allPersonalDataExportInProgress = false;
+  allPersonalDataExportError = '';
   showDiscardPersonalItemDataDialog = false;
   private readonly personalPreferenceViewId = 'item-explorer';
   private readonly personalSaveDebounceMs = 350;
@@ -4863,6 +4884,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.canEditPersonalItemData && !this.perspectiveSwitchBusy;
   }
 
+  get canExportAllPersonalItemData(): boolean {
+    return this.enablePersonalItemData && this.hasExplorerEditPermission;
+  }
+
   private loadPersonalItemData(
     sessionIdentity = this.personalDataSessionIdentity,
     sessionVersion = this.personalDataSessionVersion,
@@ -5004,6 +5029,37 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.personalExportError = 'Persönliche Item-Arbeitsdaten konnten nicht exportiert werden.';
     } finally {
       this.personalExportInProgress = false;
+    }
+  }
+
+  async exportAllPersonalItemDataCsv() {
+    if (!this.canExportAllPersonalItemData || this.allPersonalDataExportInProgress) {
+      return;
+    }
+
+    this.allPersonalDataExportInProgress = true;
+    this.allPersonalDataExportError = '';
+    try {
+      const blob = await firstValueFrom(
+        this.api.exportAllViewPersonalItemDataCsv(
+          this.acpId,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `all-participant-item-data-${this.acpId}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export all personal item working data', error);
+      this.allPersonalDataExportError =
+        'Die persönlichen Item-Arbeitsdaten aller Teilnehmenden konnten nicht exportiert werden.';
+    } finally {
+      this.allPersonalDataExportInProgress = false;
     }
   }
 

@@ -123,6 +123,17 @@ class ExportPersonalItemDataDto {
   perspective?: "editor" | "read-only";
 }
 
+class ExportAllPersonalItemDataDto {
+  @ApiPropertyOptional({
+    description: "Explorer state used to resolve item metadata",
+    enum: ["editor", "read-only"],
+    default: "read-only",
+  })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
 @ApiTags("Public Views")
 @Controller("view")
 export class ViewsController {
@@ -341,6 +352,41 @@ export class ViewsController {
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="personal-item-data-${acpId}.xlsx"`,
+    );
+    res.send(buffer);
+  }
+
+  @Post("acp/:acpId/items/preferences/export-all.csv")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({
+    summary: "Export all participants' Item Explorer working data",
+  })
+  @ApiBody({ type: ExportAllPersonalItemDataDto })
+  async exportAllPersonalItemDataCsv(
+    @Param("acpId") acpId: string,
+    @Body() dto: ExportAllPersonalItemDataDto,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    if (req?.acpAccessLevel !== "MANAGER" && req?.acpAccessLevel !== "ADMIN") {
+      throw new ForbiddenException(
+        "Only ACP managers can export all participants' item data",
+      );
+    }
+    if (!(await this.isPersonalItemDataEnabled(acpId))) {
+      throw new ForbiddenException(
+        "Personal item data is not enabled for this ACP",
+      );
+    }
+
+    const buffer = await this.viewsService.exportAllPersonalItemDataCsv(
+      acpId,
+      dto.perspective === "editor",
+    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="all-participant-item-data-${acpId}.csv"`,
     );
     res.send(buffer);
   }

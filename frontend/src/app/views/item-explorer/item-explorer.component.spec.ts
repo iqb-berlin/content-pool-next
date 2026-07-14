@@ -248,6 +248,37 @@ describe('ItemExplorerComponent', () => {
     click.mockRestore();
   });
 
+  it('exports all participants personal data only for ACP managers', async () => {
+    const exportAllViewPersonalItemDataCsv = vi.fn().mockReturnValue(of(new Blob(['csv'])));
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:all-export');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const component = createComponent({ api: { exportAllViewPersonalItemDataCsv } });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.hasExplorerEditPermission = true;
+    component.viewPerspective = 'editor';
+
+    expect(component.canExportAllPersonalItemData).toBe(true);
+    await component.exportAllPersonalItemDataCsv();
+
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor');
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:all-export');
+    expect(component.allPersonalDataExportError).toBe('');
+    expect(component.allPersonalDataExportInProgress).toBe(false);
+
+    component.hasExplorerEditPermission = false;
+    expect(component.canExportAllPersonalItemData).toBe(false);
+    component.ngOnDestroy();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
+    click.mockRestore();
+  });
+
   it('does not expose personal working-data controls to anonymous visitors', () => {
     const component = createComponent({ authService: { isLoggedIn: false } });
     component.enablePersonalItemData = true;

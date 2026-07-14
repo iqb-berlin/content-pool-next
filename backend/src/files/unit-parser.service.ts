@@ -584,9 +584,23 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      initialRowNumberingItemPropertiesOverride?: Record<
+        string,
+        Record<string, unknown>
+      >;
       recalculateRowNumbers?: boolean;
     } = {},
   ): Promise<ItemListResult> {
+    if (
+      options.initialRowNumberingItemPropertiesOverride !== undefined &&
+      !(await this.itemRowNumberingService.hasAssignedNumbers(acpId))
+    ) {
+      await this.getItemListFromFiles(acpId, {
+        itemPropertiesOverride:
+          options.initialRowNumberingItemPropertiesOverride,
+      });
+    }
+
     const allFiles = await this.fileRepository.find({ where: { acpId } });
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     const accessConfig = await this.accessConfigRepository.findOne({

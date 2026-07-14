@@ -8,7 +8,8 @@ export class CreateAcpItemRowNumbers1783904000000 implements MigrationInterface 
       CREATE TABLE IF NOT EXISTS "acp_item_row_numbers" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "acp_id" uuid NOT NULL,
-        "row_key" character varying(500) NOT NULL,
+        "row_key" text NOT NULL,
+        "row_key_hash" character varying(64) NOT NULL,
         "row_number" integer NOT NULL,
         CONSTRAINT "PK_acp_item_row_numbers" PRIMARY KEY ("id"),
         CONSTRAINT "CHK_acp_item_row_numbers_positive" CHECK ("row_number" > 0),
@@ -18,8 +19,8 @@ export class CreateAcpItemRowNumbers1783904000000 implements MigrationInterface 
       )
     `);
     await queryRunner.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS "IDX_acp_item_row_numbers_acp_row_key_unique"
-      ON "acp_item_row_numbers" ("acp_id", "row_key")
+      CREATE UNIQUE INDEX IF NOT EXISTS "IDX_acp_item_row_numbers_acp_row_key_hash_unique"
+      ON "acp_item_row_numbers" ("acp_id", "row_key_hash")
     `);
     await queryRunner.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS "IDX_acp_item_row_numbers_acp_number_unique"

@@ -155,6 +155,12 @@ export class FilesController {
     );
     return this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
+      ...(isManager && explorerState.status === "DIRTY"
+        ? {
+            initialRowNumberingItemPropertiesOverride:
+              explorerState.publishedState.itemProperties,
+          }
+        : {}),
     });
   }
 

@@ -134,6 +134,7 @@ describe("FilesController", () => {
       getStateForViewer: jest.fn().mockResolvedValue({
         status: "CLEAN",
         activeState: { itemProperties: {} },
+        publishedState: { itemProperties: {} },
       }),
     };
 
@@ -424,6 +425,28 @@ describe("FilesController", () => {
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
       { itemPropertiesOverride: {} },
+    );
+  });
+
+  it("uses published rows to initialize numbering before a pending manager draft", async () => {
+    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
+      status: "DIRTY",
+      activeState: { itemProperties: { draft: {} } },
+      publishedState: { itemProperties: { published: {} } },
+    });
+
+    await controller.getItemList(
+      "acp-1",
+      { acpAccessLevel: "MANAGER" },
+      undefined,
+    );
+
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        itemPropertiesOverride: { draft: {} },
+        initialRowNumberingItemPropertiesOverride: { published: {} },
+      },
     );
   });
 

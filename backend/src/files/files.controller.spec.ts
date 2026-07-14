@@ -422,6 +422,23 @@ describe("FilesController", () => {
     );
   });
 
+  it("recalculates row numbers from the manager's active Explorer state", async () => {
+    const result = await controller.recalculateItemRowNumbers("acp-1");
+
+    expect(result).toEqual([{ itemId: "item-1" }]);
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      true,
+    );
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        itemPropertiesOverride: {},
+        recalculateRowNumbers: true,
+      },
+    );
+  });
+
   it("applies read-only perspective checks for managers in item list", async () => {
     filesService.getFeatureConfig.mockResolvedValueOnce({
       allowUnitDownload: true,

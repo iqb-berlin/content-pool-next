@@ -12,6 +12,7 @@ export { AppSettings } from "./app-settings.entity";
 export { ApplicationToken } from "./application-token.entity";
 export { ItemResponseState } from "./item-response-state.entity";
 export { AcpItemPreference } from "./acp-item-preference.entity";
+export { AcpItemRowNumber } from "./acp-item-row-number.entity";
 export { ServerApiAuditLog } from "./server-api-audit-log.entity";
 export {
   AcpItemExplorerState,

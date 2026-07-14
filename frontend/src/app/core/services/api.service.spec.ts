@@ -569,6 +569,19 @@ describe('ApiService', () => {
       );
     });
 
+    it('should request a fresh Item Explorer row numbering', () => {
+      httpClientMock.post.mockReturnValue(of({ items: [] }));
+
+      service.recalculateItemRowNumbers('acp1').subscribe((result) => {
+        expect(result).toEqual({ items: [] });
+      });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/files/item-list/renumber',
+        {},
+      );
+    });
+
     it('should request explorer unit view with read-only perspective when provided', () => {
       httpClientMock.get.mockReturnValue(of({ unitId: 'unit-1' }));
 

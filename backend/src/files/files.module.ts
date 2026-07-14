@@ -11,11 +11,13 @@ import {
   AcpUserRole,
   AcpAccessConfig,
   ItemResponseState,
+  AcpItemRowNumber,
 } from "../database/entities";
 import { AuthModule } from "../auth/auth.module";
 import { ValidationModule } from "../validation/validation.module";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
+import { ItemRowNumberingService } from "./item-row-numbering.service";
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
@@ -28,6 +30,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
       AcpUserRole,
       AcpAccessConfig,
       ItemResponseState,
+      AcpItemRowNumber,
     ]),
     MulterModule.register({
       limits: { fileSize: MAX_UPLOAD_FILE_SIZE_BYTES }, // 512MB
@@ -37,7 +40,17 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     ItemExplorerModule,
   ],
   controllers: [FilesController],
-  providers: [FilesService, UnitParserService, FileProcessingJobsService],
-  exports: [FilesService, UnitParserService, FileProcessingJobsService],
+  providers: [
+    FilesService,
+    UnitParserService,
+    FileProcessingJobsService,
+    ItemRowNumberingService,
+  ],
+  exports: [
+    FilesService,
+    UnitParserService,
+    FileProcessingJobsService,
+    ItemRowNumberingService,
+  ],
 })
 export class FilesModule {}

@@ -82,6 +82,9 @@ describe("FilesController", () => {
         .fn()
         .mockResolvedValue([{ unitId: "u-1", valid: true }]),
       getItemListFromFiles: jest.fn().mockResolvedValue([{ itemId: "item-1" }]),
+      recalculatePublishedItemRowNumbers: jest
+        .fn()
+        .mockResolvedValue({ renumberedCount: 1 }),
       getUnitViewFromFiles: jest.fn().mockResolvedValue({ unitId: "u-1" }),
       syncIndexFromFiles: jest.fn().mockResolvedValue({
         unitsAdded: 1,
@@ -460,26 +463,18 @@ describe("FilesController", () => {
     );
   });
 
-  it("recalculates row numbers from a transactionally locked published state", async () => {
+  it("delegates row-number recalculation to the published item-list workflow", async () => {
     const result = await controller.recalculateItemRowNumbers("acp-1");
 
-    expect(result).toEqual([{ itemId: "item-1" }]);
+    expect(result).toEqual({ renumberedCount: 1 });
     expect(
-      itemExplorerStateService.runWithLockedCleanState,
-    ).toHaveBeenCalledWith("acp-1", expect.any(Function));
-    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
-      "acp-1",
-      {
-        itemPropertiesOverride: {},
-        recalculateRowNumbers: true,
-        rowNumberingManager: { id: "transaction-manager" },
-        skipPublishedRowNumberInitialization: true,
-      },
-    );
+      unitParserService.recalculatePublishedItemRowNumbers,
+    ).toHaveBeenCalledWith("acp-1");
+    expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
   });
 
-  it("rejects row-number recalculation while an Explorer draft is pending", async () => {
-    itemExplorerStateService.runWithLockedCleanState.mockRejectedValueOnce(
+  it("propagates conflicts from the published row-number workflow", async () => {
+    unitParserService.recalculatePublishedItemRowNumbers.mockRejectedValueOnce(
       new ConflictException("Draft pending"),
     );
 

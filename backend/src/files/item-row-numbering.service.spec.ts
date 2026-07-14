@@ -57,9 +57,11 @@ describe("ItemRowNumberingService", () => {
           : repository,
       ),
     };
+    repository.manager = transactionManager;
     rootTransaction = jest.fn(async (work) => work(transactionManager));
     const rootRepository = {
       exists: repository.exists,
+      find: repository.find,
       manager: {
         transaction: rootTransaction,
       },
@@ -83,18 +85,38 @@ describe("ItemRowNumberingService", () => {
     ]);
   });
 
-  it("sorts by Item-ID before using the Unit-ID as a tie-breaker", async () => {
+  it("sorts by the resolved Item-ID including the Unit-ID prefix", async () => {
     const numbers = await service.assignNumbers("acp-1", [
-      row("unit-1-item-10", "UNIT_1", "ITEM_10"),
-      row("unit-2-item-2", "UNIT_2", "ITEM_2"),
-      row("unit-1-item-2", "UNIT_1", "ITEM_2"),
+      row("unit-1-item-10", "UNIT_1", "UNIT_1_ITEM_10"),
+      row("unit-2-item-2", "UNIT_2", "UNIT_2_ITEM_2"),
+      row("unit-1-item-2", "UNIT_1", "UNIT_1_ITEM_2"),
     ]);
 
     expect(Array.from(numbers.entries())).toEqual([
       ["unit-1-item-2", 1],
-      ["unit-2-item-2", 2],
-      ["unit-1-item-10", 3],
+      ["unit-1-item-10", 2],
+      ["unit-2-item-2", 3],
     ]);
+  });
+
+  it("returns existing assignments without taking the ACP write lock", async () => {
+    persisted = [
+      {
+        id: "1",
+        acpId: "acp-1",
+        rowKey: "current",
+        rowKeyHash: "hash",
+        rowNumber: 4,
+      } as AcpItemRowNumber,
+    ];
+
+    const numbers = await service.assignNumbers("acp-1", [
+      row("current", "UNIT_1", "UNIT_1_ITEM_1"),
+    ]);
+
+    expect(numbers.get("current")).toBe(4);
+    expect(rootTransaction).not.toHaveBeenCalled();
+    expect(repository.save).not.toHaveBeenCalled();
   });
 
   it("stores long row keys with a fixed-size hash identity", async () => {
@@ -193,6 +215,24 @@ describe("ItemRowNumberingService", () => {
     expect(repository.delete).toHaveBeenCalledWith({ acpId: "acp-1" });
     expect(persisted[0]).toEqual(
       expect.objectContaining({ rowKey: "item-1", rowNumber: 1 }),
+    );
+  });
+
+  it("validates the source snapshot after locking and before replacing rows", async () => {
+    const validateBeforeReplace = jest.fn(async (manager) => {
+      expect(manager).toBe(transactionManager);
+    });
+
+    await service.recalculateNumbers(
+      "acp-1",
+      [row("item-1", "UNIT_1", "ITEM_1")],
+      transactionManager,
+      validateBeforeReplace,
+    );
+
+    expect(validateBeforeReplace).toHaveBeenCalledTimes(1);
+    expect(validateBeforeReplace.mock.invocationCallOrder[0]).toBeLessThan(
+      repository.delete.mock.invocationCallOrder[0],
     );
   });
 

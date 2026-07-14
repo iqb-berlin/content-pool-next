@@ -36,6 +36,19 @@ export class ItemRowNumberingService {
       return new Map();
     }
 
+    const persistedWithoutLock = await this.rowNumberRepository.find({
+      where: { acpId },
+      order: { rowNumber: "ASC" },
+    });
+    const numbersWithoutLock = new Map(
+      persistedWithoutLock.map(
+        (entry) => [entry.rowKey, entry.rowNumber] as const,
+      ),
+    );
+    if (normalizedRows.every((row) => numbersWithoutLock.has(row.rowKey))) {
+      return numbersWithoutLock;
+    }
+
     return this.withAcpLock(acpId, async (repository) => {
       const persisted = await repository.find({
         where: { acpId },
@@ -74,6 +87,7 @@ export class ItemRowNumberingService {
     acpId: string,
     rows: NumberableItemRow[],
     transactionManager?: EntityManager,
+    validateBeforeReplace?: (manager: EntityManager) => Promise<void>,
   ): Promise<Map<string, number>> {
     const normalizedRows = this.normalizeRows(rows).sort((left, right) =>
       this.compareRows(left, right),
@@ -82,6 +96,7 @@ export class ItemRowNumberingService {
     return this.withAcpLock(
       acpId,
       async (repository) => {
+        await validateBeforeReplace?.(repository.manager);
         await repository.delete({ acpId });
         const numbers = new Map<string, number>();
         const created = normalizedRows.map((row, index) => {

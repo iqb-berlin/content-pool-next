@@ -81,17 +81,28 @@ export class ItemExplorerStateService {
     return this.toEnvelope(record, canEdit);
   }
 
+  async getCleanPublishedState(acpId: string): Promise<ExplorerStateEnvelope> {
+    const state = await this.getStateForViewer(acpId, false);
+    this.assertCleanState(state.status);
+    return state;
+  }
+
   async runWithLockedCleanState<T>(
     acpId: string,
     operation: (
       state: ExplorerStateEnvelope,
       manager: EntityManager,
     ) => Promise<T>,
+    expectedPublishedVersion?: number,
   ): Promise<T> {
     return this.withLockedState(acpId, async ({ manager }, record) => {
-      if (record.status === "DIRTY") {
+      this.assertCleanState(record.status);
+      if (
+        expectedPublishedVersion !== undefined &&
+        record.publishedVersion !== expectedPublishedVersion
+      ) {
         throw new ConflictException(
-          "Save or discard the pending Item Explorer draft before recalculating row numbers",
+          "The published Item Explorer state changed while row numbers were being recalculated",
         );
       }
       return operation(this.toEnvelope(record, true), manager);
@@ -472,6 +483,14 @@ export class ItemExplorerStateService {
 
       return operation(repositories, record);
     });
+  }
+
+  private assertCleanState(status: ItemExplorerDraftStatus): void {
+    if (status === "DIRTY") {
+      throw new ConflictException(
+        "Save or discard the pending Item Explorer draft before recalculating row numbers",
+      );
+    }
   }
 
   private async ensureStateRecord(

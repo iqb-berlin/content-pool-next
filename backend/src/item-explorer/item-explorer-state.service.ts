@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DeepPartial, Repository } from "typeorm";
+import { DeepPartial, EntityManager, Repository } from "typeorm";
 import {
   Acp,
   AcpAccessConfig,
@@ -79,6 +79,23 @@ export class ItemExplorerStateService {
   ): Promise<ExplorerStateEnvelope> {
     const record = await this.ensureStateRecord(acpId);
     return this.toEnvelope(record, canEdit);
+  }
+
+  async runWithLockedCleanState<T>(
+    acpId: string,
+    operation: (
+      state: ExplorerStateEnvelope,
+      manager: EntityManager,
+    ) => Promise<T>,
+  ): Promise<T> {
+    return this.withLockedState(acpId, async ({ manager }, record) => {
+      if (record.status === "DIRTY") {
+        throw new ConflictException(
+          "Save or discard the pending Item Explorer draft before recalculating row numbers",
+        );
+      }
+      return operation(this.toEnvelope(record, true), manager);
+    });
   }
 
   async patchDraft(
@@ -426,6 +443,7 @@ export class ItemExplorerStateService {
     acpId: string,
     operation: (
       repositories: {
+        manager: EntityManager;
         stateRepository: Repository<AcpItemExplorerState>;
         acpRepository: Repository<Acp>;
         accessConfigRepository: Repository<AcpAccessConfig>;
@@ -438,6 +456,7 @@ export class ItemExplorerStateService {
 
     return this.stateRepository.manager.transaction(async (manager) => {
       const repositories = {
+        manager,
         stateRepository: manager.getRepository(AcpItemExplorerState),
         acpRepository: manager.getRepository(Acp),
         accessConfigRepository: manager.getRepository(AcpAccessConfig),

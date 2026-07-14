@@ -10,6 +10,8 @@ describe("ItemRowNumberingService", () => {
   let persisted: AcpItemRowNumber[];
   let acpExists: boolean;
   let repository: any;
+  let transactionManager: any;
+  let rootTransaction: jest.Mock;
 
   const row = (
     rowKey: string,
@@ -48,17 +50,18 @@ describe("ItemRowNumberingService", () => {
       where: jest.fn().mockReturnThis(),
       getOne: jest.fn(async () => (acpExists ? { id: "acp-1" } : null)),
     };
-    const manager = {
+    transactionManager = {
       getRepository: jest.fn((entity) =>
         entity === Acp
           ? { createQueryBuilder: jest.fn(() => acpQueryBuilder) }
           : repository,
       ),
     };
+    rootTransaction = jest.fn(async (work) => work(transactionManager));
     const rootRepository = {
       exists: repository.exists,
       manager: {
-        transaction: jest.fn(async (work) => work(manager)),
+        transaction: rootTransaction,
       },
     };
     service = new ItemRowNumberingService(rootRepository as any);
@@ -177,6 +180,20 @@ describe("ItemRowNumberingService", () => {
       "item-2",
       "item-10",
     ]);
+  });
+
+  it("reuses a caller transaction for atomic recalculation", async () => {
+    await service.recalculateNumbers(
+      "acp-1",
+      [row("item-1", "UNIT_1", "ITEM_1")],
+      transactionManager,
+    );
+
+    expect(rootTransaction).not.toHaveBeenCalled();
+    expect(repository.delete).toHaveBeenCalledWith({ acpId: "acp-1" });
+    expect(persisted[0]).toEqual(
+      expect.objectContaining({ rowKey: "item-1", rowNumber: 1 }),
+    );
   });
 
   it("fails without mutating numbering when the ACP does not exist", async () => {

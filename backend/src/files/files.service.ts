@@ -829,8 +829,9 @@ export class FilesService {
     const items = (parsed.items || [])
       .slice(0, STRUCTURED_PREVIEW_MAX_ITEMS)
       .map((item: any) => {
+        const profiles = Array.isArray(item?.profiles) ? item.profiles : [];
         const entries = this.extractPreviewEntries(
-          (item?.profiles || []).flatMap((profile: any) =>
+          profiles.flatMap((profile: any) =>
             Array.isArray(profile?.entries) ? profile.entries : [],
           ),
         );

@@ -499,7 +499,7 @@ export class ViewsService {
   async exportPersonalItemDataXlsx(
     acpId: string,
     user: any,
-    rawRowKeys?: string[],
+    rawRowKeys: string[],
     canEditExplorerState = false,
   ): Promise<Buffer> {
     const rowKeys = this.normalizeExportRowKeys(rawRowKeys);
@@ -518,10 +518,8 @@ export class ViewsService {
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
     const items = rowKeys
-      ? rowKeys
-          .map((rowKey) => itemsByRowKey.get(rowKey))
-          .filter((item): item is VomdItemData => Boolean(item))
-      : itemList.items;
+      .map((rowKey) => itemsByRowKey.get(rowKey))
+      .filter((item): item is VomdItemData => Boolean(item));
     const meanDifficultyByUnit = this.calculateMeanDifficultyByUnit(
       itemList.items,
     );
@@ -643,10 +641,7 @@ export class ViewsService {
     return normalized.length > 0 ? normalized.slice(0, 120) : "item-list";
   }
 
-  private normalizeExportRowKeys(rawRowKeys?: string[]): string[] | null {
-    if (rawRowKeys === undefined) {
-      return null;
-    }
+  private normalizeExportRowKeys(rawRowKeys: unknown): string[] {
     if (
       !Array.isArray(rawRowKeys) ||
       rawRowKeys.length > MAX_PERSONAL_ITEM_ROWS

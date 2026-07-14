@@ -386,8 +386,11 @@ describe("ViewsController", () => {
   });
 
   it("blocks personal data exports when the feature is disabled", async () => {
-    viewsService.getAcpStartPage.mockResolvedValueOnce({
-      featureConfig: { enablePersonalItemData: false },
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        enableItemList: true,
+        enablePersonalItemData: false,
+      },
     });
 
     await expect(
@@ -399,6 +402,49 @@ describe("ViewsController", () => {
       ),
     ).rejects.toThrow(ForbiddenException);
     expect(viewsService.exportPersonalItemDataXlsx).not.toHaveBeenCalled();
+  });
+
+  it("blocks personal data exports when the item list is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        enableItemList: false,
+        enablePersonalItemData: true,
+      },
+    });
+
+    await expect(
+      controller.exportPersonalItemDataXlsx(
+        "acp-1",
+        { rowKeys: ["uuid::1"] },
+        { user: { sub: "u-1" }, acpAccessLevel: "READ_ONLY" },
+        {} as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.exportPersonalItemDataXlsx).not.toHaveBeenCalled();
+  });
+
+  it("allows managers to export when the public item list is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        enableItemList: false,
+        enablePersonalItemData: true,
+      },
+    });
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.exportPersonalItemDataXlsx(
+      "acp-1",
+      { rowKeys: ["uuid::1"] },
+      { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+      res,
+    );
+
+    expect(viewsService.exportPersonalItemDataXlsx).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "manager-1" },
+      ["uuid::1"],
+      false,
+    );
   });
 
   it.each([true, false])(

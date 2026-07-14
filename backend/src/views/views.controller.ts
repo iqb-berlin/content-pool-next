@@ -102,17 +102,16 @@ class PatchPersonalItemRowDto {
 }
 
 class ExportPersonalItemDataDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     description:
       "Stable item row keys in the current filtered and sorted list order",
     type: [String],
     maxItems: 10_000,
   })
-  @IsOptional()
   @IsArray()
   @ArrayMaxSize(10_000)
   @IsString({ each: true })
-  rowKeys?: string[];
+  rowKeys!: string[];
 
   @ApiPropertyOptional({
     description: "Explorer state used to render the exported item rows",
@@ -316,6 +315,9 @@ export class ViewsController {
     @Request() req: any,
     @Res() res: Response,
   ) {
+    if (!(await this.canUseFeature(acpId, req, "enableItemList", true))) {
+      throw new ForbiddenException("Item list is not enabled for this ACP");
+    }
     if (!(await this.isPersonalItemDataEnabled(acpId))) {
       throw new ForbiddenException(
         "Personal item data is not enabled for this ACP",

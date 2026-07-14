@@ -351,6 +351,33 @@ describe("ViewsService", () => {
     expect(sheet!.getCell("H3").value).toBe("II");
   });
 
+  it("requires an explicit filtered and sorted row order for exports", async () => {
+    await expect(
+      service.exportPersonalItemDataXlsx(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        undefined as unknown as string[],
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
+  });
+
+  it("limits personal data exports to 10,000 requested rows", async () => {
+    const rowKeys = Array.from(
+      { length: 10_001 },
+      (_, index) => `uuid-${index}`,
+    );
+
+    await expect(
+      service.exportPersonalItemDataXlsx(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        rowKeys,
+      ),
+    ).rejects.toThrow("At most 10000 item rows can be exported");
+    expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
+  });
+
   it("does not fall back to an orphaned username for stable credentials", async () => {
     itemPreferenceRepository.findOne.mockImplementation(async ({ where }) =>
       where.credentialId

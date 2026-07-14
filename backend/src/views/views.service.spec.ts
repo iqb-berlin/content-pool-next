@@ -25,7 +25,10 @@ describe("ViewsService", () => {
     query: jest.Mock;
   };
   let itemExplorerStateService: { getStateForViewer: jest.Mock };
-  let unitParserService: { getItemRowKeysFromFiles: jest.Mock };
+  let unitParserService: {
+    getItemRowKeysFromFiles: jest.Mock;
+    getItemListFromFiles: jest.Mock;
+  };
 
   beforeEach(async () => {
     acpRepository = { findOne: jest.fn() };
@@ -47,6 +50,7 @@ describe("ViewsService", () => {
       getItemRowKeysFromFiles: jest
         .fn()
         .mockResolvedValue(new Set(["uuid-1::1", "uuid-2::1"])),
+      getItemListFromFiles: jest.fn().mockResolvedValue({ items: [] }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -246,6 +250,105 @@ describe("ViewsService", () => {
       ),
     ).rejects.toThrow(UnauthorizedException);
     expect(itemPreferenceRepository.query).not.toHaveBeenCalled();
+  });
+
+  it("exports only the current user's personal data in requested list order", async () => {
+    itemPreferenceRepository.findOne.mockResolvedValue({
+      preferences: {
+        rowData: {
+          "uuid-1::1": {
+            category: "II",
+            tags: ["Prüfen"],
+            note: "Eigene Notiz",
+          },
+        },
+      },
+    });
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        personalItemTags: [{ label: "Prüfen", color: "#ff0000" }],
+      },
+    });
+    itemExplorerStateService.getStateForViewer.mockResolvedValue({
+      activeState: { itemProperties: { "uuid-1::1": { draft: true } } },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          itemId: "item-1",
+          uuid: "uuid-1",
+          rowKey: "uuid-1::1",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "",
+          variableId: "var-1",
+          metadata: {},
+          empiricalDifficulty: 0.25,
+        },
+        {
+          itemId: "item-2",
+          uuid: "uuid-2",
+          rowKey: "uuid-2::1",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "",
+          variableId: "var-2",
+          metadata: {},
+          empiricalDifficulty: 0.75,
+        },
+      ],
+    });
+
+    const buffer = await service.exportPersonalItemDataXlsx(
+      "acp-1",
+      { sub: "user-1", type: "user" },
+      ["uuid-2::1", "removed-row", "uuid-1::1"],
+      true,
+    );
+
+    expect(itemPreferenceRepository.findOne).toHaveBeenCalledWith({
+      where: {
+        acpId: "acp-1",
+        viewId: "item-explorer",
+        userId: "user-1",
+      },
+    });
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      true,
+    );
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
+      "acp-1",
+      { itemPropertiesOverride: { "uuid-1::1": { draft: true } } },
+    );
+
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer as any);
+    const sheet = workbook.getWorksheet("Persönliche Itemdaten");
+    expect(sheet).toBeDefined();
+    expect(sheet!.getRow(1).values).toEqual([
+      undefined,
+      "Laufende Nummer",
+      "Unit-ID",
+      "Unit-Label",
+      "Item-ID",
+      "Item-UUID",
+      "Markierung/Farbe",
+      "Notiz",
+      "Kompetenzstufe",
+      "Empirische Itemschwierigkeit",
+      "Mittlere Aufgabenschwierigkeit",
+    ]);
+    expect(sheet!.getCell("A2").value).toBe(1);
+    expect(sheet!.getCell("E2").value).toBe("uuid-2");
+    expect(sheet!.getCell("F2").value).toBeNull();
+    expect(sheet!.getCell("J2").value).toBe(0.5);
+    expect(sheet!.getCell("A3").value).toBe(2);
+    expect(sheet!.getCell("E3").value).toBe("uuid-1");
+    expect(sheet!.getCell("F3").value).toBe("Prüfen (#ff0000)");
+    expect(sheet!.getCell("G3").value).toBe("Eigene Notiz");
+    expect(sheet!.getCell("H3").value).toBe("II");
   });
 
   it("does not fall back to an orphaned username for stable credentials", async () => {

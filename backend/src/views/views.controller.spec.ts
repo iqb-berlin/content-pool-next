@@ -21,6 +21,7 @@ describe("ViewsController", () => {
           enableItemList: true,
           enableSequenceNavigation: true,
           persistUserPreferences: true,
+          enablePersonalItemData: true,
         },
       }),
       getAcpIndex: jest.fn().mockResolvedValue({ packageId: "pkg-1" }),
@@ -35,6 +36,9 @@ describe("ViewsController", () => {
       patchPersonalItemPreferenceRow: jest.fn().mockResolvedValue({
         rowData: { "uuid::1": { note: "mine" } },
       }),
+      exportPersonalItemDataXlsx: jest
+        .fn()
+        .mockResolvedValue(Buffer.from("personal-xlsx")),
       getTaskSequence: jest
         .fn()
         .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
@@ -349,6 +353,52 @@ describe("ViewsController", () => {
       "item-explorer",
       false,
     );
+  });
+
+  it("exports the caller's personal data using the requested Explorer order", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+
+    await controller.exportPersonalItemDataXlsx(
+      "acp-1",
+      {
+        rowKeys: ["uuid-2::1", "uuid-1::1"],
+        perspective: "editor",
+      },
+      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+      res,
+    );
+
+    expect(viewsService.exportPersonalItemDataXlsx).toHaveBeenCalledWith(
+      "acp-1",
+      { sub: "u-1" },
+      ["uuid-2::1", "uuid-1::1"],
+      true,
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'attachment; filename="personal-item-data-acp-1.xlsx"',
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("personal-xlsx"));
+  });
+
+  it("blocks personal data exports when the feature is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValueOnce({
+      featureConfig: { enablePersonalItemData: false },
+    });
+
+    await expect(
+      controller.exportPersonalItemDataXlsx(
+        "acp-1",
+        { rowKeys: [] },
+        { user: { sub: "u-1" } },
+        {} as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.exportPersonalItemDataXlsx).not.toHaveBeenCalled();
   });
 
   it.each([true, false])(

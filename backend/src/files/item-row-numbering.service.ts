@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
+import * as crypto from "crypto";
 import { Acp, AcpItemRowNumber } from "../database/entities";
 
 export interface NumberableItemRow {
@@ -21,6 +22,10 @@ export class ItemRowNumberingService {
     @InjectRepository(AcpItemRowNumber)
     private readonly rowNumberRepository: Repository<AcpItemRowNumber>,
   ) {}
+
+  async hasAssignedNumbers(acpId: string): Promise<boolean> {
+    return this.rowNumberRepository.exists({ where: { acpId } });
+  }
 
   async assignNumbers(
     acpId: string,
@@ -54,6 +59,7 @@ export class ItemRowNumberingService {
           return repository.create({
             acpId,
             rowKey: row.rowKey,
+            rowKeyHash: this.hashRowKey(row.rowKey),
             rowNumber: nextNumber,
           });
         });
@@ -78,7 +84,12 @@ export class ItemRowNumberingService {
       const created = normalizedRows.map((row, index) => {
         const rowNumber = index + 1;
         numbers.set(row.rowKey, rowNumber);
-        return repository.create({ acpId, rowKey: row.rowKey, rowNumber });
+        return repository.create({
+          acpId,
+          rowKey: row.rowKey,
+          rowKeyHash: this.hashRowKey(row.rowKey),
+          rowNumber,
+        });
       });
       if (created.length) {
         await repository.save(created);
@@ -115,6 +126,10 @@ export class ItemRowNumberingService {
       uniqueRows.set(rowKey, { ...row, rowKey });
     }
     return Array.from(uniqueRows.values());
+  }
+
+  private hashRowKey(rowKey: string): string {
+    return crypto.createHash("sha256").update(rowKey, "utf8").digest("hex");
   }
 
   private compareRows(

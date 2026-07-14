@@ -10,9 +10,11 @@ import {
 import { Acp } from "./acp.entity";
 
 @Entity("acp_item_row_numbers")
-@Index("IDX_acp_item_row_numbers_acp_row_key_unique", ["acpId", "rowKey"], {
-  unique: true,
-})
+@Index(
+  "IDX_acp_item_row_numbers_acp_row_key_hash_unique",
+  ["acpId", "rowKeyHash"],
+  { unique: true },
+)
 @Index("IDX_acp_item_row_numbers_acp_number_unique", ["acpId", "rowNumber"], {
   unique: true,
 })
@@ -24,8 +26,11 @@ export class AcpItemRowNumber {
   @Column({ name: "acp_id", type: "uuid" })
   acpId!: string;
 
-  @Column({ name: "row_key", type: "varchar", length: 500 })
+  @Column({ name: "row_key", type: "text" })
   rowKey!: string;
+
+  @Column({ name: "row_key_hash", type: "varchar", length: 64 })
+  rowKeyHash!: string;
 
   @Column({ name: "row_number", type: "integer" })
   rowNumber!: number;

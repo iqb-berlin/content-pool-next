@@ -22,6 +22,9 @@ describe("ItemRowNumberingService", () => {
     persisted = [];
     acpExists = true;
     repository = {
+      exists: jest.fn(async ({ where }: any) =>
+        persisted.some((entry) => entry.acpId === where.acpId),
+      ),
       find: jest.fn(async ({ where }: any) =>
         persisted
           .filter((entry) => entry.acpId === where.acpId)
@@ -53,6 +56,7 @@ describe("ItemRowNumberingService", () => {
       ),
     };
     const rootRepository = {
+      exists: repository.exists,
       manager: {
         transaction: jest.fn(async (work) => work(manager)),
       },
@@ -88,6 +92,27 @@ describe("ItemRowNumberingService", () => {
       ["unit-2-item-2", 2],
       ["unit-1-item-10", 3],
     ]);
+  });
+
+  it("stores long row keys with a fixed-size hash identity", async () => {
+    const longRowKey = `123e4567-e89b-12d3-a456-426614174000::${encodeURIComponent(
+      "😀".repeat(39),
+    )}`;
+
+    expect(longRowKey.length).toBeGreaterThan(500);
+    expect(await service.hasAssignedNumbers("acp-1")).toBe(false);
+
+    await service.assignNumbers("acp-1", [
+      row(longRowKey, "UNIT_1", "ITEM_1", "😀".repeat(39)),
+    ]);
+
+    expect(persisted[0]).toEqual(
+      expect.objectContaining({
+        rowKey: longRowKey,
+        rowKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+    expect(await service.hasAssignedNumbers("acp-1")).toBe(true);
   });
 
   it("keeps deleted row numbers free and appends new rows above the previous maximum", async () => {

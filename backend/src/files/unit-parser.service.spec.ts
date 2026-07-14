@@ -106,6 +106,7 @@ describe("UnitParserService", () => {
       }),
     };
     itemRowNumberingService = {
+      hasAssignedNumbers: jest.fn().mockResolvedValue(true),
       assignNumbers: jest.fn(
         async (_acpId: string, rows: any[]) =>
           new Map(rows.map((row, index) => [row.rowKey, index + 1])),
@@ -476,6 +477,44 @@ describe("UnitParserService", () => {
     );
     expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalled();
     expect(result.items[0].rowNumber).toBe(1);
+  });
+
+  it("initializes numbering from published rows before adding draft-only rows", async () => {
+    const assignedNumbers = new Map<string, number>();
+    itemRowNumberingService.hasAssignedNumbers.mockResolvedValueOnce(false);
+    itemRowNumberingService.assignNumbers.mockImplementation(
+      async (_acpId: string, rows: any[]) => {
+        for (const row of rows) {
+          if (!assignedNumbers.has(row.rowKey)) {
+            assignedNumbers.set(row.rowKey, assignedNumbers.size + 1);
+          }
+        }
+        return new Map(assignedNumbers);
+      },
+    );
+
+    const result = await service.getItemListFromFiles("acp-1", {
+      itemPropertiesOverride: {
+        "u1_i1::2": { itemUuid: "u1_i1", subId: "2" },
+      },
+      initialRowNumberingItemPropertiesOverride: {
+        "u1_i1::1": { itemUuid: "u1_i1", subId: "1" },
+      },
+    });
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenNthCalledWith(
+      1,
+      "acp-1",
+      [expect.objectContaining({ rowKey: "u1_i1::1" })],
+    );
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenNthCalledWith(
+      2,
+      "acp-1",
+      [expect.objectContaining({ rowKey: "u1_i1::2" })],
+    );
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({ rowKey: "u1_i1::2", rowNumber: 2 }),
+    );
   });
 
   it("caches valid row keys and invalidates them when source files change", async () => {

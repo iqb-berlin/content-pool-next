@@ -152,6 +152,22 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               {{ isReadOnlyPreview ? 'Bearbeitungsansicht' : 'READ ONLY-Vorschau' }}
             </button>
           }
+          @if (showPersonalItemData) {
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              (click)="exportPersonalItemDataXlsx()"
+              [disabled]="
+                personalExportInProgress ||
+                personalDataLoadState !== 'loaded' ||
+                filteredItems.length === 0 ||
+                perspectiveSwitchBusy
+              "
+              title="Aktuell gefilterte und sortierte persönliche Item-Arbeitsdaten exportieren"
+            >
+              {{ personalExportInProgress ? 'Export läuft …' : '📊 Persönliche Daten (XLSX)' }}
+            </button>
+          }
           @if (canEditExplorer) {
             <input
               type="file"
@@ -262,6 +278,12 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
       @if (itemListError) {
         <div class="alert alert-info" style="margin-bottom: 12px;">
           {{ itemListError }}
+        </div>
+      }
+
+      @if (personalExportError) {
+        <div class="alert alert-error" style="margin-bottom: 12px;" aria-live="polite">
+          {{ personalExportError }}
         </div>
       }
 
@@ -2773,6 +2795,8 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   personalDataLoadState: PersonalDataLoadState = 'idle';
   personalDataSaveState: PersonalDataSaveState = 'idle';
   personalDataError = '';
+  personalExportInProgress = false;
+  personalExportError = '';
   showDiscardPersonalItemDataDialog = false;
   private readonly personalPreferenceViewId = 'item-explorer';
   private readonly personalSaveDebounceMs = 350;
@@ -4937,6 +4961,50 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   flushPersonalItemDataSave() {
     this.clearPersonalSaveTimeout();
     this.saveNextPersonalItemRow();
+  }
+
+  async exportPersonalItemDataXlsx() {
+    if (
+      !this.showPersonalItemData ||
+      this.personalDataLoadState !== 'loaded' ||
+      !this.filteredItems.length ||
+      this.personalExportInProgress
+    ) {
+      return;
+    }
+
+    this.personalExportInProgress = true;
+    this.personalExportError = '';
+    try {
+      const saved = await this.flushPersonalItemDataSaveAndWait();
+      if (!saved) {
+        this.personalExportError =
+          'Persönliche Änderungen konnten vor dem Export nicht gespeichert werden.';
+        return;
+      }
+
+      const rowKeys = this.filteredItems.map((item) => this.getStableRowKey(item));
+      const blob = await firstValueFrom(
+        this.api.exportViewPersonalItemDataXlsx(
+          this.acpId,
+          rowKeys,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `personal-item-data-${this.acpId}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to export personal item working data', error);
+      this.personalExportError = 'Persönliche Item-Arbeitsdaten konnten nicht exportiert werden.';
+    } finally {
+      this.personalExportInProgress = false;
+    }
   }
 
   retryPersonalItemDataSave() {

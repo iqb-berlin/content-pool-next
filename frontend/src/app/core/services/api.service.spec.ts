@@ -907,6 +907,23 @@ describe('ApiService', () => {
       );
     });
 
+    it('should export personal item data in the current Explorer order', () => {
+      const blob = new Blob(['xlsx']);
+      httpClientMock.post.mockReturnValue(of(blob));
+
+      service
+        .exportViewPersonalItemDataXlsx('acp1', ['uuid-2::1', 'uuid-1::1'], 'read-only')
+        .subscribe((result) => {
+          expect(result).toBe(blob);
+        });
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/preferences/export.xlsx',
+        { rowKeys: ['uuid-2::1', 'uuid-1::1'], perspective: 'read-only' },
+        { responseType: 'blob' },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

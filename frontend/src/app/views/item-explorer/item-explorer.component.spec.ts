@@ -181,6 +181,73 @@ describe('ItemExplorerComponent', () => {
     expect(component.getPersonalTagColor('Prüfen')).toBe('#ff0000');
   });
 
+  it('exports the filtered item order after pending personal changes are saved', async () => {
+    const patchViewItemPreferenceRow = vi.fn().mockReturnValue(of({ rowData: {} }));
+    const exportViewPersonalItemDataXlsx = vi.fn().mockReturnValue(of(new Blob(['xlsx'])));
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:export');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const component = createComponent({
+      api: { patchViewItemPreferenceRow, exportViewPersonalItemDataXlsx },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    component.items = [
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2::1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'var-2',
+        metadata: {},
+      },
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'var-1',
+        metadata: {},
+      },
+    ];
+    component.sortField = '__manual__';
+    component.itemOrder = ['uuid-2::1', 'uuid-1::1'];
+    component.filteredItems = [...component.items];
+    component.setPersonalItemNote('uuid-1::1', 'Noch zu speichern');
+
+    await component.exportPersonalItemDataXlsx();
+
+    expect(patchViewItemPreferenceRow).toHaveBeenCalledWith(
+      'acp-1',
+      'uuid-1::1',
+      { note: 'Noch zu speichern' },
+      'read-only',
+    );
+    expect(exportViewPersonalItemDataXlsx).toHaveBeenCalledWith(
+      'acp-1',
+      ['uuid-2::1', 'uuid-1::1'],
+      'read-only',
+    );
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(click).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:export');
+    expect(component.personalExportError).toBe('');
+    expect(component.personalExportInProgress).toBe(false);
+
+    component.ngOnDestroy();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
+    click.mockRestore();
+  });
+
   it('does not expose personal working-data controls to anonymous visitors', () => {
     const component = createComponent({ authService: { isLoggedIn: false } });
     component.enablePersonalItemData = true;

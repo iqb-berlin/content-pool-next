@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { EntityManager, Repository } from "typeorm";
 import * as fs from "fs/promises";
 import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
 import {
@@ -14,6 +14,7 @@ import {
   parseItemRowKeyParts,
 } from "../items/item-row-key.util";
 import { ItemRowNumberingService } from "./item-row-numbering.service";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -115,6 +116,7 @@ export class UnitParserService {
     @InjectRepository(AcpAccessConfig)
     private readonly accessConfigRepository: Repository<AcpAccessConfig>,
     private readonly itemRowNumberingService: ItemRowNumberingService,
+    private readonly itemExplorerStateService: ItemExplorerStateService,
   ) {}
 
   /**
@@ -584,20 +586,20 @@ export class UnitParserService {
     acpId: string,
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
-      initialRowNumberingItemPropertiesOverride?: Record<
-        string,
-        Record<string, unknown>
-      >;
       recalculateRowNumbers?: boolean;
+      rowNumberingManager?: EntityManager;
+      skipPublishedRowNumberInitialization?: boolean;
     } = {},
   ): Promise<ItemListResult> {
     if (
-      options.initialRowNumberingItemPropertiesOverride !== undefined &&
+      !options.skipPublishedRowNumberInitialization &&
       !(await this.itemRowNumberingService.hasAssignedNumbers(acpId))
     ) {
+      const publishedState =
+        await this.itemExplorerStateService.getStateForViewer(acpId, false);
       await this.getItemListFromFiles(acpId, {
-        itemPropertiesOverride:
-          options.initialRowNumberingItemPropertiesOverride,
+        itemPropertiesOverride: publishedState.publishedState.itemProperties,
+        skipPublishedRowNumberInitialization: true,
       });
     }
 
@@ -774,7 +776,11 @@ export class UnitParserService {
     );
 
     const rowNumbers = options.recalculateRowNumbers
-      ? await this.itemRowNumberingService.recalculateNumbers(acpId, items)
+      ? await this.itemRowNumberingService.recalculateNumbers(
+          acpId,
+          items,
+          options.rowNumberingManager,
+        )
       : await this.itemRowNumberingService.assignNumbers(acpId, items);
     for (const item of items) {
       item.rowNumber = rowNumbers.get(item.rowKey)!;

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { EntityManager, Repository } from "typeorm";
 import * as crypto from "crypto";
 import { Acp, AcpItemRowNumber } from "../database/entities";
 
@@ -73,36 +73,42 @@ export class ItemRowNumberingService {
   async recalculateNumbers(
     acpId: string,
     rows: NumberableItemRow[],
+    transactionManager?: EntityManager,
   ): Promise<Map<string, number>> {
     const normalizedRows = this.normalizeRows(rows).sort((left, right) =>
       this.compareRows(left, right),
     );
 
-    return this.withAcpLock(acpId, async (repository) => {
-      await repository.delete({ acpId });
-      const numbers = new Map<string, number>();
-      const created = normalizedRows.map((row, index) => {
-        const rowNumber = index + 1;
-        numbers.set(row.rowKey, rowNumber);
-        return repository.create({
-          acpId,
-          rowKey: row.rowKey,
-          rowKeyHash: this.hashRowKey(row.rowKey),
-          rowNumber,
+    return this.withAcpLock(
+      acpId,
+      async (repository) => {
+        await repository.delete({ acpId });
+        const numbers = new Map<string, number>();
+        const created = normalizedRows.map((row, index) => {
+          const rowNumber = index + 1;
+          numbers.set(row.rowKey, rowNumber);
+          return repository.create({
+            acpId,
+            rowKey: row.rowKey,
+            rowKeyHash: this.hashRowKey(row.rowKey),
+            rowNumber,
+          });
         });
-      });
-      if (created.length) {
-        await repository.save(created);
-      }
-      return numbers;
-    });
+        if (created.length) {
+          await repository.save(created);
+        }
+        return numbers;
+      },
+      transactionManager,
+    );
   }
 
   private async withAcpLock<T>(
     acpId: string,
     work: (repository: Repository<AcpItemRowNumber>) => Promise<T>,
+    transactionManager?: EntityManager,
   ): Promise<T> {
-    return this.rowNumberRepository.manager.transaction(async (manager) => {
+    const runWithManager = async (manager: EntityManager) => {
       const acp = await manager
         .getRepository(Acp)
         .createQueryBuilder("acp")
@@ -113,7 +119,11 @@ export class ItemRowNumberingService {
         throw new NotFoundException("ACP not found");
       }
       return work(manager.getRepository(AcpItemRowNumber));
-    });
+    };
+
+    return transactionManager
+      ? runWithManager(transactionManager)
+      : this.rowNumberRepository.manager.transaction(runWithManager);
   }
 
   private normalizeRows(rows: NumberableItemRow[]): NumberableItemRow[] {

@@ -136,6 +136,17 @@ describe("FilesController", () => {
         activeState: { itemProperties: {} },
         publishedState: { itemProperties: {} },
       }),
+      runWithLockedCleanState: jest.fn(
+        async (_acpId: string, operation: (state: any, manager: any) => any) =>
+          operation(
+            {
+              status: "CLEAN",
+              activeState: { itemProperties: {} },
+              publishedState: { itemProperties: {} },
+            },
+            { id: "transaction-manager" },
+          ),
+      ),
     };
 
     controller = new FilesController(
@@ -428,7 +439,7 @@ describe("FilesController", () => {
     );
   });
 
-  it("uses published rows to initialize numbering before a pending manager draft", async () => {
+  it("passes the active manager draft to the centrally initialized item list", async () => {
     itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
       status: "DIRTY",
       activeState: { itemProperties: { draft: {} } },
@@ -445,33 +456,32 @@ describe("FilesController", () => {
       "acp-1",
       {
         itemPropertiesOverride: { draft: {} },
-        initialRowNumberingItemPropertiesOverride: { published: {} },
       },
     );
   });
 
-  it("recalculates row numbers from the manager's active Explorer state", async () => {
+  it("recalculates row numbers from a transactionally locked published state", async () => {
     const result = await controller.recalculateItemRowNumbers("acp-1");
 
     expect(result).toEqual([{ itemId: "item-1" }]);
-    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
-      "acp-1",
-      true,
-    );
+    expect(
+      itemExplorerStateService.runWithLockedCleanState,
+    ).toHaveBeenCalledWith("acp-1", expect.any(Function));
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
       {
         itemPropertiesOverride: {},
         recalculateRowNumbers: true,
+        rowNumberingManager: { id: "transaction-manager" },
+        skipPublishedRowNumberInitialization: true,
       },
     );
   });
 
   it("rejects row-number recalculation while an Explorer draft is pending", async () => {
-    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
-      status: "DIRTY",
-      activeState: { itemProperties: { draft: {} } },
-    });
+    itemExplorerStateService.runWithLockedCleanState.mockRejectedValueOnce(
+      new ConflictException("Draft pending"),
+    );
 
     await expect(controller.recalculateItemRowNumbers("acp-1")).rejects.toThrow(
       ConflictException,

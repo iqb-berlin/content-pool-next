@@ -4,6 +4,7 @@ import * as fs from "fs/promises";
 import { UnitParserService } from "./unit-parser.service";
 import { Acp, AcpAccessConfig, AcpFile } from "../database/entities";
 import { ItemRowNumberingService } from "./item-row-numbering.service";
+import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
 jest.mock("fs/promises", () => ({
   readFile: jest.fn(),
@@ -15,6 +16,7 @@ describe("UnitParserService", () => {
   let acpRepo: any;
   let accessConfigRepo: any;
   let itemRowNumberingService: any;
+  let itemExplorerStateService: any;
 
   const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
 <Unit>
@@ -116,6 +118,11 @@ describe("UnitParserService", () => {
           new Map(rows.map((row, index) => [row.rowKey, index + 1])),
       ),
     };
+    itemExplorerStateService = {
+      getStateForViewer: jest.fn().mockResolvedValue({
+        publishedState: { itemProperties: {} },
+      }),
+    };
 
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
       if (path === "/tmp/u1.xml") return xmlContent;
@@ -133,6 +140,10 @@ describe("UnitParserService", () => {
           useValue: accessConfigRepo,
         },
         { provide: ItemRowNumberingService, useValue: itemRowNumberingService },
+        {
+          provide: ItemExplorerStateService,
+          useValue: itemExplorerStateService,
+        },
       ],
     }).compile();
 
@@ -474,6 +485,7 @@ describe("UnitParserService", () => {
     expect(itemRowNumberingService.recalculateNumbers).toHaveBeenCalledWith(
       "acp-1",
       expect.arrayContaining([expect.objectContaining({ rowKey: "u1_i1" })]),
+      undefined,
     );
     expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalled();
     expect(result.items[0].rowNumber).toBe(1);
@@ -482,6 +494,13 @@ describe("UnitParserService", () => {
   it("initializes numbering from published rows before adding draft-only rows", async () => {
     const assignedNumbers = new Map<string, number>();
     itemRowNumberingService.hasAssignedNumbers.mockResolvedValueOnce(false);
+    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
+      publishedState: {
+        itemProperties: {
+          "u1_i1::1": { itemUuid: "u1_i1", subId: "1" },
+        },
+      },
+    });
     itemRowNumberingService.assignNumbers.mockImplementation(
       async (_acpId: string, rows: any[]) => {
         for (const row of rows) {
@@ -497,11 +516,12 @@ describe("UnitParserService", () => {
       itemPropertiesOverride: {
         "u1_i1::2": { itemUuid: "u1_i1", subId: "2" },
       },
-      initialRowNumberingItemPropertiesOverride: {
-        "u1_i1::1": { itemUuid: "u1_i1", subId: "1" },
-      },
     });
 
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      false,
+    );
     expect(itemRowNumberingService.assignNumbers).toHaveBeenNthCalledWith(
       1,
       "acp-1",

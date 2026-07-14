@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   Body,
-  ConflictException,
   ForbiddenException,
   Controller,
   Get,
@@ -155,12 +154,6 @@ export class FilesController {
     );
     return this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
-      ...(isManager && explorerState.status === "DIRTY"
-        ? {
-            initialRowNumberingItemPropertiesOverride:
-              explorerState.publishedState.itemProperties,
-          }
-        : {}),
     });
   }
 
@@ -172,19 +165,16 @@ export class FilesController {
     summary: "Recalculate stable Item Explorer row numbers",
   })
   async recalculateItemRowNumbers(@Param("acpId") acpId: string) {
-    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+    return this.itemExplorerStateService.runWithLockedCleanState(
       acpId,
-      true,
+      (explorerState, manager) =>
+        this.unitParserService.getItemListFromFiles(acpId, {
+          itemPropertiesOverride: explorerState.publishedState.itemProperties,
+          recalculateRowNumbers: true,
+          rowNumberingManager: manager,
+          skipPublishedRowNumberInitialization: true,
+        }),
     );
-    if (explorerState.status === "DIRTY") {
-      throw new ConflictException(
-        "Save or discard the pending Item Explorer draft before recalculating row numbers",
-      );
-    }
-    return this.unitParserService.getItemListFromFiles(acpId, {
-      itemPropertiesOverride: explorerState.activeState.itemProperties,
-      recalculateRowNumbers: true,
-    });
   }
 
   @Get("unit-view/:unitId")

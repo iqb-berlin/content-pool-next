@@ -160,6 +160,38 @@ describe("ItemExplorerStateService", () => {
     expect(accessConfigRepo.findOne).not.toHaveBeenCalled();
   });
 
+  it("runs clean-state work with the locked state transaction manager", async () => {
+    const state = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(state);
+    const operation = jest.fn().mockResolvedValue("done");
+
+    await expect(
+      service.runWithLockedCleanState("acp-1", operation),
+    ).resolves.toBe("done");
+
+    expect(operation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "CLEAN",
+        publishedState: baseSharedState,
+      }),
+      transactionManager,
+    );
+    expect(stateRepo.findOne).toHaveBeenLastCalledWith({
+      where: { acpId: "acp-1" },
+      lock: { mode: "pessimistic_write" },
+    });
+  });
+
+  it("rejects locked clean-state work while a draft is pending", async () => {
+    stateRepo.findOne.mockResolvedValue(buildStateRecord({ status: "DIRTY" }));
+    const operation = jest.fn();
+
+    await expect(
+      service.runWithLockedCleanState("acp-1", operation),
+    ).rejects.toThrow(ConflictException);
+    expect(operation).not.toHaveBeenCalled();
+  });
+
   it("returns conflict on outdated draft version", async () => {
     stateRepo.findOne.mockResolvedValue(buildStateRecord({ version: 7 }));
 

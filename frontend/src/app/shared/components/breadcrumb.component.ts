@@ -33,7 +33,7 @@ export interface BreadcrumbItem {
         color: var(--color-text-secondary);
       }
       .breadcrumb-link {
-        color: var(--color-primary-light);
+        color: var(--color-link);
         text-decoration: none;
       }
       .breadcrumb-link:hover {

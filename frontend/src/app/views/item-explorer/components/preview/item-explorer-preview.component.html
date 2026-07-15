@@ -1,4 +1,4 @@
-<div class="preview-panel">
+<div class="preview-panel" tabindex="0" role="region" aria-label="Item-Vorschau">
   @if (vm.selectedItem) {
     @if (vm.canEditExplorer) {
       <div
@@ -153,6 +153,7 @@
           #playerFrame
           [srcdoc]="vm.playerSrcDoc"
           class="player-iframe"
+          [title]="'Player-Vorschau für Item ' + vm.selectedItem.itemId"
           [class.view-all-mode]="vm.pagingMode === 'view-all' || vm.pagingMode === 'print-ids'"
           [style.height]="vm.playerHeight"
           sandbox="allow-scripts allow-same-origin allow-downloads"
@@ -192,6 +193,7 @@
     <div class="action-buttons">
       <select
         class="btn btn-outline btn-sm"
+        aria-label="Paging-Modus der Player-Vorschau"
         [ngModel]="vm.pagingMode"
         (ngModelChange)="vm.setPagingMode($event)"
         (change)="vm.onPagingModeChange()"
@@ -238,7 +240,7 @@
           class="btn btn-outline btn-sm"
           (click)="vm.resetResponseState()"
           title="Zustand zurücksetzen"
-          style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4)"
+          style="color: var(--color-danger-text); border-color: currentColor"
         >
           🗑️ Zustand löschen
         </button>

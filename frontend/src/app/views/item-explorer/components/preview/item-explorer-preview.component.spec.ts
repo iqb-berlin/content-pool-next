@@ -1,6 +1,7 @@
 import { ElementRef } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ItemExplorerPreviewComponent } from './item-explorer-preview.component';
+import template from './item-explorer-preview.component.html?raw';
 
 function createPreview() {
   const feature = {
@@ -15,6 +16,12 @@ function createPreview() {
 }
 
 describe('ItemExplorerPreviewComponent', () => {
+  it('names the scroll region, player frame and paging selector', () => {
+    expect(template).toContain('aria-label="Item-Vorschau"');
+    expect(template).toContain("[title]=\"'Player-Vorschau für Item ' + vm.selectedItem.itemId\"");
+    expect(template).toContain('aria-label="Paging-Modus der Player-Vorschau"');
+  });
+
   it('owns iframe messages and ignores messages from other windows', () => {
     const { component, feature } = createPreview();
     const iframe = document.createElement('iframe');

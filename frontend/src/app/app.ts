@@ -62,7 +62,7 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         padding: 0 24px;
         height: 64px;
         background: var(--color-primary);
-        color: white;
+        color: var(--color-on-primary);
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
       }
       .header-left {
@@ -76,7 +76,7 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         object-fit: contain;
       }
       .logo {
-        color: white;
+        color: var(--color-on-primary);
         text-decoration: none;
         font-size: 1.25rem;
         font-weight: 600;
@@ -87,33 +87,33 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         gap: 16px;
       }
       nav a {
-        color: rgba(255, 255, 255, 0.85);
+        color: var(--color-on-primary);
         text-decoration: none;
         font-size: 0.9rem;
       }
       nav a:hover {
-        color: white;
+        color: var(--color-on-primary);
       }
       .user-info {
         font-size: 0.85rem;
-        opacity: 0.8;
+        color: var(--color-on-primary);
       }
       .btn-logout {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        color: white;
+        background: transparent;
+        border: 1px solid currentColor;
+        color: var(--color-on-primary);
         padding: 4px 12px;
         border-radius: 4px;
         cursor: pointer;
         font-size: 0.85rem;
       }
       .btn-logout:hover {
-        background: rgba(255, 255, 255, 0.25);
+        background: color-mix(in srgb, var(--color-on-primary) 14%, transparent);
       }
       .btn-change-password {
         background: transparent;
         border: none;
-        color: white;
+        color: var(--color-on-primary);
         padding: 4px 8px;
         border-radius: 4px;
         cursor: pointer;
@@ -130,6 +130,40 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         width: 100%;
         margin: 0 auto;
         box-sizing: border-box;
+      }
+      @media (max-width: 700px) {
+        .app-header {
+          height: auto;
+          min-height: 64px;
+          padding: 10px 16px;
+          align-items: stretch;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .header-left {
+          min-width: 0;
+          gap: 10px;
+        }
+        .app-logo {
+          height: 32px;
+        }
+        .logo {
+          font-size: 1rem;
+          overflow-wrap: anywhere;
+        }
+        nav {
+          width: 100%;
+          gap: 10px;
+          flex-wrap: wrap;
+          justify-content: flex-start;
+        }
+        .user-info {
+          max-width: 100%;
+          overflow-wrap: anywhere;
+        }
+        .app-main {
+          padding: 16px;
+        }
       }
     `,
   ],

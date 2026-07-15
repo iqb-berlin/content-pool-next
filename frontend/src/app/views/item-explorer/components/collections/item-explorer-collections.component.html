@@ -10,6 +10,7 @@
     } @else {
       <select
         class="tag-input collection-select"
+        aria-label="Aktive Kollektion auswählen"
         [ngModel]="vm.activeCollectionId"
         (ngModelChange)="vm.activateCollection($event)"
         [disabled]="vm.collectionBusy || vm.itemCollections.length === 0"

@@ -276,6 +276,7 @@ When `enableItemCollections` is enabled, authenticated users and credential iden
 multiple named collections. Collections are stored in the existing `acp_item_preferences` JSONB
 record under the `item-explorer` view and are never exposed to other participants or managers.
 Every collection stores an ordered list of stable row keys and an optimistic-lock version.
+Non-manager collection access additionally requires the Item Explorer item list to be enabled.
 
 The leading duration is combined test time: item time is counted once per underlying item UUID and
 stimulus time once per selected unit. Selecting several partial-credit rows therefore does not

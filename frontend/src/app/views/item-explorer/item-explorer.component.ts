@@ -98,6 +98,7 @@ interface ItemParameterUploadResult {
   updated: number;
   failed: Array<{ csvRow: string; reason: string }>;
   successes: ItemParameterUploadSuccess[];
+  showOnlyItemsWithEmpiricalDifficulty?: boolean;
 }
 
 type PersonalDataLoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -4601,6 +4602,10 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.isUploading = false;
           this.uploadResult = result;
           this.showUploadReport = true;
+          if (typeof result.showOnlyItemsWithEmpiricalDifficulty === 'boolean') {
+            this.showOnlyItemsWithEmpiricalDifficulty =
+              result.showOnlyItemsWithEmpiricalDifficulty;
+          }
           if (result.explorerState) {
             this.applySharedExplorerEnvelope(result.explorerState, true);
           }

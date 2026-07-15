@@ -66,7 +66,9 @@ export class ItemsController {
     @Query("filter") filter?: string,
     @Query("sortBy") sortBy?: string,
     @Query("sortDir") sortDir?: "asc" | "desc",
+    @Request() req?: any,
   ) {
+    await this.assertCanReadItemList(acpId, req);
     return this.itemsService.getFilteredItems(acpId, filter, sortBy, sortDir);
   }
 
@@ -113,7 +115,9 @@ export class ItemsController {
   async getItem(
     @Param("acpId") acpId: string,
     @Param("itemId") itemId: string,
+    @Request() req?: any,
   ) {
+    await this.assertCanReadItemList(acpId, req);
     return this.itemsService.getItem(acpId, itemId);
   }
 
@@ -165,6 +169,9 @@ export class ItemsController {
           : currentState.publishedState.itemProperties,
       },
     );
+    const importedEmpiricalDifficulty = this.hasImportedEmpiricalDifficulty(
+      uploadResult.successes,
+    );
     const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
 
     if (!draftMode) {
@@ -182,7 +189,15 @@ export class ItemsController {
           },
         );
       }
-      return uploadResult;
+      const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
+        ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+            acpId,
+          )
+        : undefined;
+      return {
+        ...uploadResult,
+        showOnlyItemsWithEmpiricalDifficulty,
+      };
     }
 
     if (uploadResult.updated === 0) {
@@ -210,11 +225,17 @@ export class ItemsController {
           : parsedBaseVersion,
       },
     );
+    const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
+      ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+          acpId,
+        )
+      : undefined;
 
     return {
       updated: uploadResult.updated,
       failed: uploadResult.failed,
       successes: uploadResult.successes,
+      showOnlyItemsWithEmpiricalDifficulty,
       explorerState,
     };
   }
@@ -541,5 +562,32 @@ export class ItemsController {
         "Direct item-property changes are not allowed while an Item Explorer draft is pending. Use draft mode or publish/discard the draft first.",
       );
     }
+  }
+
+  private async assertCanReadItemList(acpId: string, req?: any): Promise<void> {
+    const isManager =
+      req?.user?.isAppAdmin ||
+      req?.acpAccessLevel === "MANAGER" ||
+      req?.acpAccessLevel === "ADMIN";
+    if (!isManager && !(await this.itemsService.canUseItemList(acpId))) {
+      throw new ForbiddenException("Item list is not enabled for this ACP");
+    }
+  }
+
+  private hasImportedEmpiricalDifficulty(successes: unknown): boolean {
+    return (
+      Array.isArray(successes) &&
+      successes.some((success) => {
+        if (!success || typeof success !== "object") return false;
+        const fields = (success as { fields?: unknown }).fields;
+        const value = (success as { value?: unknown }).value;
+        return (
+          Array.isArray(fields) &&
+          fields.includes("est") &&
+          typeof value === "number" &&
+          Number.isFinite(value)
+        );
+      })
+    );
   }
 }

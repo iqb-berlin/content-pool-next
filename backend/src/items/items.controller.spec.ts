@@ -10,6 +10,7 @@ describe("ItemsController", () => {
   beforeEach(() => {
     itemsService = {
       getFilteredItems: jest.fn().mockResolvedValue([{ itemId: "item-1" }]),
+      canUseItemList: jest.fn().mockResolvedValue(true),
       canUseItemTags: jest.fn().mockResolvedValue(true),
       getItemTags: jest.fn().mockResolvedValue({ item1: ["A"] }),
       getItem: jest.fn().mockResolvedValue({ itemId: "item-1" }),
@@ -93,6 +94,30 @@ describe("ItemsController", () => {
       "label",
       "asc",
     );
+  });
+
+  it("rejects item reads for non-managers when the item list is disabled", async () => {
+    itemsService.canUseItemList.mockResolvedValue(false);
+    const req = { user: { isAppAdmin: false }, acpAccessLevel: "READ_ONLY" };
+
+    await expect(
+      controller.getItems("acp-1", undefined, undefined, undefined, req),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(controller.getItem("acp-1", "item-1", req)).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(itemsService.getFilteredItems).not.toHaveBeenCalled();
+    expect(itemsService.getItem).not.toHaveBeenCalled();
+  });
+
+  it("allows managers to read items when the item list is disabled", async () => {
+    itemsService.canUseItemList.mockResolvedValue(false);
+    const req = { user: { isAppAdmin: false }, acpAccessLevel: "MANAGER" };
+
+    await expect(
+      controller.getItems("acp-1", undefined, undefined, undefined, req),
+    ).resolves.toEqual([{ itemId: "item-1" }]);
+    expect(itemsService.canUseItemList).not.toHaveBeenCalled();
   });
 
   it("returns item tags for manager users", async () => {
@@ -251,6 +276,38 @@ describe("ItemsController", () => {
       expect.objectContaining({
         updated: 1,
         explorerState: { status: "DIRTY", version: 5 },
+      }),
+    );
+    expect(
+      itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("preserves the difficulty-only visibility behavior for wide imports", async () => {
+    itemsService.uploadItemParameters.mockResolvedValueOnce({
+      updated: 1,
+      failed: [],
+      successes: [{ fields: ["est", "infit"], value: -0.4 }],
+      nextItemProperties: {
+        "item-1": { empiricalDifficulty: -0.4, infit: 1.05 },
+      },
+    });
+    const file = { buffer: Buffer.from("csv-data") } as Express.Multer.File;
+
+    const result = await controller.uploadItemParameters(
+      "acp-1",
+      file,
+      "true",
+      "4",
+      { user: { sub: "u-1" } },
+    );
+
+    expect(
+      itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty,
+    ).toHaveBeenCalledWith("acp-1");
+    expect(result).toEqual(
+      expect.objectContaining({
+        showOnlyItemsWithEmpiricalDifficulty: true,
       }),
     );
   });

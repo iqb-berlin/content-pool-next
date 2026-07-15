@@ -450,7 +450,7 @@ export class ViewsController {
     @Query("perspective") perspective: "editor" | "read-only" | undefined,
     @Request() req: any,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     return this.viewsService.getItemCollections(
       acpId,
       req?.user,
@@ -466,7 +466,7 @@ export class ViewsController {
     @Body() dto: CreateItemCollectionDto,
     @Request() req: any,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     return this.viewsService.createItemCollection(
       acpId,
       req?.user,
@@ -484,7 +484,7 @@ export class ViewsController {
     @Body() dto: UpdateItemCollectionDto,
     @Request() req: any,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     return this.viewsService.updateItemCollection(
       acpId,
       req?.user,
@@ -502,7 +502,7 @@ export class ViewsController {
     @Body() dto: ActivateItemCollectionDto,
     @Request() req: any,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     return this.viewsService.activateItemCollection(
       acpId,
       req?.user,
@@ -520,7 +520,7 @@ export class ViewsController {
     @Query("perspective") perspective: "editor" | "read-only" | undefined,
     @Request() req: any,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     return this.viewsService.deleteItemCollection(
       acpId,
       req?.user,
@@ -539,7 +539,7 @@ export class ViewsController {
     @Request() req: any,
     @Res() res: Response,
   ) {
-    await this.assertItemCollectionsEnabled(acpId);
+    await this.assertItemCollectionsEnabled(acpId, req);
     const buffer = await this.viewsService.exportItemCollectionCsv(
       acpId,
       req?.user,
@@ -636,12 +636,22 @@ export class ViewsController {
     return featureConfig.enablePersonalItemData === true;
   }
 
-  private async assertItemCollectionsEnabled(acpId: string): Promise<void> {
+  private async assertItemCollectionsEnabled(
+    acpId: string,
+    req?: any,
+  ): Promise<void> {
     const data = await this.viewsService.getAcpStartPage(acpId);
     const featureConfig = (data?.featureConfig || {}) as Record<
       string,
       unknown
     >;
+    const isManager =
+      req?.user?.isAppAdmin ||
+      req?.acpAccessLevel === "MANAGER" ||
+      req?.acpAccessLevel === "ADMIN";
+    if (!isManager && featureConfig.enableItemList === false) {
+      throw new ForbiddenException("Item list is not enabled for this ACP");
+    }
     if (featureConfig.enableItemCollections !== true) {
       throw new ForbiddenException(
         "Item collections are not enabled for this ACP",

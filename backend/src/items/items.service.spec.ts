@@ -262,24 +262,16 @@ describe("ItemsService", () => {
     });
   });
 
-  it("accepts an item-only CSV as an unchanged import", async () => {
+  it("rejects a CSV without a supported item parameter column", async () => {
     acpRepository.findOne.mockResolvedValue({
       id: "acp-1",
       itemProperties: { "uuid-1": { infit: 1.05 } },
     });
     unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
 
-    const result = await service.uploadItemParameters(
-      "acp-1",
-      Buffer.from("item\nI1"),
-    );
-
-    expect(result).toEqual({
-      updated: 0,
-      failed: [],
-      successes: [],
-      nextItemProperties: { "uuid-1": { infit: 1.05 } },
-    });
+    await expect(
+      service.uploadItemParameters("acp-1", Buffer.from("item")),
+    ).rejects.toThrow(/at least one supported item parameter column/);
     expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
@@ -1012,5 +1004,20 @@ describe("ItemsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValueOnce(null);
     await expect(service.canUseItemTags("acp-1")).resolves.toBe(false);
+  });
+
+  it("checks the item-list feature switch with the public default", async () => {
+    accessConfigRepository.findOne.mockResolvedValueOnce({
+      featureConfig: { enableItemList: false },
+    });
+    await expect(service.canUseItemList("acp-1")).resolves.toBe(false);
+
+    accessConfigRepository.findOne.mockResolvedValueOnce({
+      featureConfig: { enableItemList: true },
+    });
+    await expect(service.canUseItemList("acp-1")).resolves.toBe(true);
+
+    accessConfigRepository.findOne.mockResolvedValueOnce(null);
+    await expect(service.canUseItemList("acp-1")).resolves.toBe(true);
   });
 });

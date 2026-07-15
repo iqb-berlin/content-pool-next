@@ -554,6 +554,44 @@ describe("ViewsController", () => {
     expect(viewsService.getItemCollections).not.toHaveBeenCalled();
   });
 
+  it("blocks collection endpoints when the public item list is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        enableItemList: false,
+        enableItemCollections: true,
+      },
+    });
+
+    await expect(
+      controller.getItemCollections("acp-1", "read-only", {
+        user: { sub: "user-1" },
+        acpAccessLevel: "READ_ONLY",
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.getItemCollections).not.toHaveBeenCalled();
+  });
+
+  it("allows managers to use collections when the public item list is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: {
+        enableItemList: false,
+        enableItemCollections: true,
+      },
+    });
+    const request = {
+      user: { sub: "manager-1" },
+      acpAccessLevel: "MANAGER",
+    };
+
+    await controller.getItemCollections("acp-1", "editor", request);
+
+    expect(viewsService.getItemCollections).toHaveBeenCalledWith(
+      "acp-1",
+      request.user,
+      true,
+    );
+  });
+
   it.each(["READ_ONLY", "CREDENTIAL", "PUBLIC", undefined])(
     "blocks all-participant exports for access level %s",
     async (acpAccessLevel) => {

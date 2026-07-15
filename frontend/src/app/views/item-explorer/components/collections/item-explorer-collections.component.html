@@ -1,0 +1,105 @@
+@if (vm.enableItemCollections) {
+  <div class="collection-bar">
+    @if (vm.collectionLoadState === 'loading') {
+      <span>Kollektionen werden geladen …</span>
+    } @else if (vm.collectionLoadState === 'error') {
+      <span class="personal-data-error">{{ vm.collectionError }}</span>
+      <button class="btn btn-outline btn-sm" (click)="vm.loadItemCollections()">
+        Erneut laden
+      </button>
+    } @else {
+      <select
+        class="tag-input collection-select"
+        [ngModel]="vm.activeCollectionId"
+        (ngModelChange)="vm.activateCollection($event)"
+        [disabled]="vm.collectionBusy || vm.itemCollections.length === 0"
+      >
+        @if (vm.itemCollections.length === 0) {
+          <option [ngValue]="null">Noch keine Kollektion</option>
+        }
+        @for (collection of vm.itemCollections; track collection.id) {
+          <option [value]="collection.id">{{ collection.name }}</option>
+        }
+      </select>
+      <button class="btn btn-outline btn-sm" (click)="vm.createCollection()">Neu</button>
+      <button
+        class="btn btn-outline btn-sm"
+        [disabled]="!vm.activeItemCollection || vm.collectionBusy"
+        (click)="vm.renameActiveCollection()"
+      >
+        Umbenennen
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        [disabled]="!vm.activeItemCollection || vm.collectionBusy"
+        (click)="vm.clearActiveCollection()"
+      >
+        Leeren
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        [disabled]="!vm.activeItemCollection || vm.collectionBusy"
+        (click)="vm.toggleCollectionDrawer()"
+      >
+        {{ vm.showCollectionDrawer ? 'Details schließen' : 'Details' }}
+      </button>
+      @if (vm.activeItemCollection; as collection) {
+        <span class="collection-summary">
+          <strong>{{ vm.formatDuration(collection.summary.testTimeSeconds) }}</strong>
+          · {{ collection.summary.rowCount }} Zeilen · {{ collection.summary.itemCount }} Items ·
+          {{ collection.summary.unitCount }} Units
+          @if (!collection.summary.complete) {
+            <span class="collection-warning">
+              · unvollständig: {{ collection.summary.missingItemTimeCount }} Itemzeiten,
+              {{ collection.summary.missingStimulusTimeUnitCount }} Stimuluszeiten fehlen
+            </span>
+          }
+        </span>
+      }
+    }
+  </div>
+  @if (vm.collectionError && vm.collectionLoadState !== 'error') {
+    <div class="alert alert-error collection-error">{{ vm.collectionError }}</div>
+  }
+  @if (vm.showCollectionDrawer && vm.activeItemCollection) {
+    <div class="collection-drawer">
+      <div class="collection-drawer-header">
+        <strong>{{ vm.activeItemCollection.name }}</strong>
+        <div>
+          <button class="btn btn-outline btn-sm" (click)="vm.exportActiveCollection()">
+            CSV exportieren
+          </button>
+          <button class="btn btn-danger btn-sm" (click)="vm.deleteActiveCollection()">
+            Kollektion löschen
+          </button>
+        </div>
+      </div>
+      @if (vm.activeCollectionItems.length === 0) {
+        <p class="help-text">Noch keine Items ausgewählt.</p>
+      } @else {
+        <ol class="collection-items">
+          @for (entry of vm.activeCollectionItems; track entry.rowKey) {
+            <li>
+              @if (entry.item) {
+                <span>
+                  {{ entry.item.unitLabel }} · {{ entry.item.itemId }}
+                  @if (entry.item.subIdDisplay || entry.item.subId) {
+                    · {{ entry.item.subIdDisplay || entry.item.subId }}
+                  }
+                </span>
+              } @else {
+                <span class="collection-warning">Nicht verfügbar: {{ entry.rowKey }}</span>
+              }
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="vm.removeRowFromActiveCollection(entry.rowKey)"
+              >
+                Entfernen
+              </button>
+            </li>
+          }
+        </ol>
+      }
+    </div>
+  }
+}

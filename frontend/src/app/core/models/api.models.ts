@@ -452,6 +452,8 @@ export interface ItemViewPreferences {
   rowData?: Record<string, Record<string, unknown>>;
 }
 
+export type ItemExplorerPerspective = 'editor' | 'read-only';
+
 export interface ItemCollectionSummary {
   rowCount: number;
   itemCount: number;

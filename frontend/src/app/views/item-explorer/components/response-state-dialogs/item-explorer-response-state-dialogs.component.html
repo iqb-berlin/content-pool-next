@@ -1,0 +1,172 @@
+<!-- OVERLAY: Save Response State Confirmation -->
+@if (vm.showSaveConfirmDialog) {
+  <div class="overlay-backdrop" (click)="!vm.confirmDialogState && vm.closeSaveConfirmDialog()">
+    <div class="overlay-dialog" style="max-width: 450px" (click)="$event.stopPropagation()">
+      <div
+        class="overlay-header"
+        [style.border-top]="
+          vm.confirmDialogState === 'saving' ? '4px solid #3498db' : '4px solid #27ae60'
+        "
+      >
+        @if (vm.confirmDialogState === 'saving') {
+          <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px">
+            <span class="spinner-inline"></span> Speichern...
+          </h2>
+        } @else {
+          <h2 style="color: #27ae60; display: flex; align-items: center; gap: 8px">
+            <span>💾</span> Zustand speichern
+          </h2>
+        }
+        <button
+          class="btn btn-sm btn-outline"
+          [disabled]="vm.confirmDialogState === 'saving'"
+          (click)="vm.closeSaveConfirmDialog()"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="overlay-content" style="text-align: center; padding: 32px 24px">
+        @if (vm.confirmDialogError) {
+          <div style="font-size: 3rem; margin-bottom: 16px">⚠️</div>
+          <p style="color: #e74c3c; margin-bottom: 20px">{{ vm.confirmDialogError }}</p>
+        } @else {
+          <div style="font-size: 3rem; margin-bottom: 16px">💾</div>
+          <p style="font-size: 1.1rem; margin-bottom: 8px">
+            Möchten Sie den aktuellen Zustand speichern?
+          </p>
+          <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px">
+            Item: <code>{{ vm.selectedItem?.unitId }}{{ vm.selectedItem?.itemId }}</code>
+          </p>
+        }
+        <div style="display: flex; gap: 12px; justify-content: center">
+          <button
+            class="btn btn-outline"
+            [disabled]="vm.confirmDialogState === 'saving'"
+            (click)="vm.closeSaveConfirmDialog()"
+          >
+            Abbrechen
+          </button>
+          <button
+            class="btn btn-primary"
+            [disabled]="vm.confirmDialogState === 'saving'"
+            (click)="vm.confirmSaveResponseState()"
+          >
+            💾 Speichern
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- OVERLAY: Delete Response State Confirmation -->
+@if (vm.showDeleteConfirmDialog) {
+  <div class="overlay-backdrop" (click)="!vm.confirmDialogState && vm.closeDeleteConfirmDialog()">
+    <div class="overlay-dialog" style="max-width: 450px" (click)="$event.stopPropagation()">
+      <div
+        class="overlay-header"
+        [style.border-top]="
+          vm.confirmDialogState === 'deleting' ? '4px solid #3498db' : '4px solid #e74c3c'
+        "
+      >
+        @if (vm.confirmDialogState === 'deleting') {
+          <h2 style="color: #3498db; display: flex; align-items: center; gap: 8px">
+            <span class="spinner-inline"></span> Löschen...
+          </h2>
+        } @else {
+          <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px">
+            <span>🗑️</span> Zustand löschen
+          </h2>
+        }
+        <button
+          class="btn btn-sm btn-outline"
+          [disabled]="vm.confirmDialogState === 'deleting'"
+          (click)="vm.closeDeleteConfirmDialog()"
+        >
+          ✕
+        </button>
+      </div>
+      <div class="overlay-content" style="text-align: center; padding: 32px 24px">
+        @if (vm.confirmDialogError) {
+          <div style="font-size: 3rem; margin-bottom: 16px">⚠️</div>
+          <p style="color: #e74c3c; margin-bottom: 20px">{{ vm.confirmDialogError }}</p>
+        } @else {
+          <div style="font-size: 3rem; margin-bottom: 16px">🗑️</div>
+          <p style="font-size: 1.1rem; margin-bottom: 8px">
+            Möchten Sie den gespeicherten Zustand löschen?
+          </p>
+          <p style="color: var(--color-text-secondary); font-size: 0.9rem; margin-bottom: 24px">
+            Item: <code>{{ vm.selectedItem?.unitId }}{{ vm.selectedItem?.itemId }}</code>
+          </p>
+          <p
+            style="
+              color: #e74c3c;
+              font-size: 0.85rem;
+              margin-bottom: 24px;
+              background: rgba(231, 76, 60, 0.05);
+              padding: 8px 12px;
+              border-radius: 4px;
+            "
+          >
+            ⚠️ Diese Aktion kann nicht rückgängig gemacht werden.
+          </p>
+        }
+        <div style="display: flex; gap: 12px; justify-content: center">
+          <button
+            class="btn btn-outline"
+            [disabled]="vm.confirmDialogState === 'deleting'"
+            (click)="vm.closeDeleteConfirmDialog()"
+          >
+            Abbrechen
+          </button>
+          <button
+            class="btn btn-danger"
+            [disabled]="vm.confirmDialogState === 'deleting'"
+            (click)="vm.confirmDeleteResponseState()"
+            style="background: #e74c3c; color: white; border-color: #e74c3c"
+          >
+            🗑️ Löschen
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- OVERLAY: Raw Response State Data -->
+@if (vm.showRawDataOverlay) {
+  <div class="overlay-backdrop" (click)="vm.closeRawDataOverlay()">
+    <div class="overlay-dialog" style="max-width: 900px" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <div class="drawer-title">
+          <span class="drawer-icon" style="background: var(--color-primary)">📊</span>
+          <div>
+            <h2>Gespeicherte Zustände</h2>
+            <small>Alle gespeicherten Response States</small>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeRawDataOverlay()">✕</button>
+      </div>
+      <div class="overlay-content">
+        @if (vm.allResponseStates.length === 0) {
+          <div class="empty-state">
+            <p>Keine gespeicherten Zustände vorhanden.</p>
+          </div>
+        } @else {
+          <div class="state-list">
+            @for (state of vm.allResponseStates; track state.id) {
+              <div class="state-item">
+                <div class="state-header">
+                  <code>{{ state.itemId }}</code>
+                  <span class="unit-badge">{{ state.unitId }}</span>
+                  <span class="date">{{ state.updatedAt | date: 'short' }}</span>
+                </div>
+                <pre class="json-view">{{ state.responseData | json }}</pre>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+}

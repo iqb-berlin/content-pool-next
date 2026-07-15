@@ -1,0 +1,261 @@
+<div class="preview-panel">
+  @if (vm.selectedItem) {
+    @if (vm.canEditExplorer) {
+      <div
+        class="preview-target-info card"
+        [class.unavailable]="!vm.canPreviewSelectedItem || !!vm.previewUnavailableReason"
+      >
+        <div class="preview-target-header">
+          <strong>Explorer-Item</strong>
+          <code>{{ vm.selectedItem.unitId }}{{ vm.selectedItem.itemId }}</code>
+          @if (vm.selectedItem.subId) {
+            <span class="player-target-badge secondary">
+              {{ vm.itemSubIdLabel }}:
+              {{ vm.selectedItem.subIdDisplay || vm.selectedItem.subId }}
+            </span>
+          }
+          @if (vm.isItemExcluded(vm.selectedItem)) {
+            <span class="excluded-item-badge">Ausgeschlossen</span>
+          }
+          @if (vm.selectedItemTarget && vm.selectedItemTarget !== vm.selectedPreviewTarget) {
+            <span class="player-target-badge secondary">
+              Kodierschema {{ vm.selectedItemTarget }}
+            </span>
+          }
+          @if (vm.selectedPreviewTarget) {
+            <span class="player-target-badge">Player {{ vm.selectedPreviewTarget }}</span>
+          } @else {
+            <span class="player-target-badge unmapped">Kein Player-Ziel</span>
+          }
+        </div>
+        @if (vm.showPlayerTargetInfo) {
+          @if (
+            vm.hasStoredPreviewTargetOverride && vm.selectedItemTarget && vm.selectedPreviewTarget
+          ) {
+            <p>
+              Das Item referenziert standardmäßig
+              <code>{{ vm.selectedItemTarget }}</code
+              >. Für die Vorschau wird aktuell manuell
+              <code>{{ vm.selectedPreviewTarget }}</code> verwendet.
+            </p>
+          } @else if (
+            vm.selectedItemUsesDerivedTarget && vm.selectedItemTarget && vm.selectedPreviewTarget
+          ) {
+            <p>
+              Das Item referenziert im Kodierschema die abhängige Variable
+              <code>{{ vm.selectedItemTarget }}</code
+              >. Für die Vorschau wird standardmäßig zur Basisvariable
+              <code>{{ vm.selectedPreviewTarget }}</code> gesprungen.
+            </p>
+          } @else if (vm.selectedPreviewTarget && !vm.previewUnavailableReason) {
+            <p>
+              Der Listeneintrag springt im Player zur Variable
+              <code>{{ vm.selectedPreviewTarget }}</code
+              >.
+            </p>
+          } @else if (vm.selectedPreviewTarget) {
+            <p>
+              Für diesen Listeneintrag ist die Player-Variable
+              <code>{{ vm.selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht zuverlässig
+              in der Unit-Definition aufgelöst werden.
+            </p>
+          } @else {
+            <p>
+              Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können unten ein
+              alternatives Sprungziel auswählen oder manuell eintragen.
+            </p>
+          }
+        }
+
+        <div class="preview-target-controls">
+          @if (vm.showPreviewTargetSelector) {
+            <div class="preview-target-selector">
+              <label for="item-explorer-preview-target-select">Sprungziel aus Kodierschema</label>
+              <select
+                id="item-explorer-preview-target-select"
+                class="preview-target-select"
+                [ngModel]="vm.selectedPreviewTargetId"
+                (ngModelChange)="vm.setSelectedPreviewTargetId($event)"
+                (ngModelChange)="vm.onPreviewTargetSelectionChange()"
+              >
+                <option value="">{{ vm.previewTargetDefaultOptionLabel }}</option>
+                @for (option of vm.previewTargetOptions; track option.id) {
+                  <option [value]="option.id">{{ option.label }}</option>
+                }
+              </select>
+              <small>
+                {{ vm.previewTargetOptions.length }} bekannte Variablen aus dem Kodierschema
+                verfügbar.
+              </small>
+            </div>
+          }
+
+          <div class="preview-target-selector">
+            <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
+            <div class="preview-target-custom-row">
+              <input
+                id="item-explorer-custom-preview-target"
+                type="text"
+                class="preview-target-input"
+                placeholder="z.B. VAR_12 oder alias_12"
+                [ngModel]="vm.customPreviewTargetDraft"
+                (ngModelChange)="vm.setCustomPreviewTargetDraft($event)"
+                (keydown.enter)="vm.applyCustomPreviewTarget()"
+              />
+              <button class="btn btn-outline btn-sm" (click)="vm.applyCustomPreviewTarget()">
+                Übernehmen
+              </button>
+            </div>
+            <small> Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden. </small>
+          </div>
+
+          <div class="preview-target-actions">
+            <button
+              class="btn btn-outline btn-sm"
+              [disabled]="!vm.hasStoredPreviewTargetOverride"
+              (click)="vm.resetPreviewTargetSelection()"
+            >
+              Standardziel verwenden
+            </button>
+            @if (vm.hasStoredPreviewTargetOverride && vm.selectedPreviewTarget) {
+              <small>
+                Manueller Override aktiv:
+                <code>{{ vm.selectedPreviewTarget }}</code>
+              </small>
+            }
+          </div>
+        </div>
+
+        @if (vm.previewUnavailableReason && vm.showPlayerTargetInfo) {
+          <p class="preview-warning">{{ vm.previewUnavailableMessage }}</p>
+        }
+      </div>
+    }
+
+    <!-- Player -->
+    <div
+      class="player-container card"
+      [class.view-all-mode]="vm.pagingMode === 'view-all' || vm.pagingMode === 'print-ids'"
+    >
+      @if (vm.previewUnavailableReason) {
+        <div class="empty-state">
+          <div style="font-size: 2.5rem; margin-bottom: 12px">🧭</div>
+          <h3>Keine zielgenaue Player-Vorschau</h3>
+          <p>{{ vm.previewUnavailableMessage }}</p>
+        </div>
+      } @else if (vm.isPreviewLoading) {
+        <div class="empty-state">
+          <div class="spinner"></div>
+          <p>Aufgabe wird geladen...</p>
+        </div>
+      } @else if (vm.shouldRenderPlayerFrame) {
+        <iframe
+          #playerFrame
+          [srcdoc]="vm.playerSrcDoc"
+          class="player-iframe"
+          [class.view-all-mode]="vm.pagingMode === 'view-all' || vm.pagingMode === 'print-ids'"
+          [style.height]="vm.playerHeight"
+          sandbox="allow-scripts allow-same-origin allow-downloads"
+          (load)="vm.onPlayerLoaded()"
+        >
+        </iframe>
+      } @else {
+        <div class="empty-state">
+          <div style="font-size: 2.5rem; margin-bottom: 12px">🎮</div>
+          <h3>Kein Player verfügbar</h3>
+        </div>
+      }
+    </div>
+
+    <!-- Item Navigation -->
+    <div class="item-nav">
+      <button
+        class="btn btn-outline"
+        [disabled]="vm.selectedIndex <= 0"
+        (click)="vm.navigateItem(-1)"
+      >
+        ← Vorheriges Item
+      </button>
+      <span class="item-nav-info"
+        >Item {{ vm.selectedIndex + 1 }} von {{ vm.filteredItems.length }}</span
+      >
+      <button
+        class="btn btn-outline"
+        [disabled]="vm.selectedIndex >= vm.filteredItems.length - 1"
+        (click)="vm.navigateItem(1)"
+      >
+        Nächstes Item →
+      </button>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+      <select
+        class="btn btn-outline btn-sm"
+        [ngModel]="vm.pagingMode"
+        (ngModelChange)="vm.setPagingMode($event)"
+        (change)="vm.onPagingModeChange()"
+        [disabled]="!vm.canPreviewSelectedItem"
+      >
+        <option value="buttons">Paging: Buttons</option>
+        <option value="separate">Paging: Separate</option>
+        <option value="concat-scroll">Paging: Scroll</option>
+        <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
+        <option value="view-all">Paging: Alles (Print)</option>
+        <option value="print-ids">Paging: Alles + IDs (Print)</option>
+      </select>
+      <button class="btn btn-outline btn-sm" (click)="vm.openCodingOverlay()">📋 Kodierung</button>
+      <button
+        class="btn btn-outline btn-sm"
+        (click)="vm.setMetadataDrawerOpen(!vm.showMetadataDrawer)"
+        [class.btn-primary]="vm.showMetadataDrawer"
+      >
+        📄 Metadaten
+      </button>
+      @if (vm.canEditExplorer) {
+        <button
+          class="btn btn-outline btn-sm"
+          (click)="vm.toggleSelectedItemExclusion()"
+          [class.btn-primary]="vm.isItemExcluded(vm.selectedItem)"
+          [title]="
+            vm.isItemExcluded(vm.selectedItem)
+              ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
+              : 'Schließt das Item aus und blendet es standardmäßig aus.'
+          "
+        >
+          {{
+            vm.isItemExcluded(vm.selectedItem) ? '↩️ Ausschluss aufheben' : '🚫 Item ausschließen'
+          }}
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          (click)="vm.saveCurrentResponseState()"
+          title="Aktuellen Zustand speichern"
+        >
+          💾 Zustand speichern
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          (click)="vm.resetResponseState()"
+          title="Zustand zurücksetzen"
+          style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4)"
+        >
+          🗑️ Zustand löschen
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          (click)="vm.loadAllResponseStates()"
+          title="Alle gespeicherten Daten anzeigen"
+        >
+          👁️ Rohdaten
+        </button>
+      }
+    </div>
+  } @else {
+    <div class="empty-state preview-empty">
+      <div style="font-size: 3rem; margin-bottom: 16px">👈</div>
+      <h3>Item auswählen</h3>
+      <p>Klicken Sie auf ein Item in der Tabelle, um es hier anzuzeigen.</p>
+    </div>
+  }
+</div>

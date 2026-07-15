@@ -1,0 +1,325 @@
+<div class="explorer-header">
+  <div class="header-title">
+    <h1>Item-Explorer</h1>
+  </div>
+  <div class="header-actions">
+    <span class="item-count"
+      >{{ vm.filteredItems.length }} von {{ vm.visibleItemsCount }} Zeilen</span
+    >
+    <button
+      class="btn btn-outline btn-sm"
+      type="button"
+      (click)="vm.toggleFullscreen()"
+      [class.btn-primary]="vm.isFullscreen"
+      [attr.aria-pressed]="vm.isFullscreen"
+      [title]="
+        vm.isFullscreen ? 'Vollbild verlassen (auch mit Esc)' : 'Item-Explorer im Vollbild anzeigen'
+      "
+    >
+      {{ vm.isFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
+    </button>
+    @if (vm.canToggleReadOnlyPreview) {
+      <button
+        class="btn btn-outline btn-sm"
+        type="button"
+        (click)="vm.toggleReadOnlyPreview()"
+        [class.btn-primary]="vm.isReadOnlyPreview"
+        [attr.aria-pressed]="vm.isReadOnlyPreview"
+        [disabled]="vm.perspectiveSwitchBusy || !vm.latestExplorerState"
+        [title]="
+          vm.isReadOnlyPreview
+            ? 'Zurück zur Bearbeitungsansicht wechseln'
+            : 'Explorer aus READ ONLY-Perspektive anzeigen'
+        "
+      >
+        {{ vm.isReadOnlyPreview ? 'Bearbeitungsansicht' : 'READ ONLY-Vorschau' }}
+      </button>
+    }
+    @if (vm.showPersonalItemData) {
+      <button
+        class="btn btn-outline btn-sm"
+        type="button"
+        (click)="vm.exportPersonalItemDataXlsx()"
+        [disabled]="
+          vm.personalExportInProgress ||
+          vm.personalDataLoadState !== 'loaded' ||
+          vm.filteredItems.length === 0 ||
+          vm.perspectiveSwitchBusy
+        "
+        title="Aktuell gefilterte und sortierte persönliche Item-Arbeitsdaten exportieren"
+      >
+        {{ vm.personalExportInProgress ? 'Export läuft …' : '📊 Persönliche Daten (XLSX)' }}
+      </button>
+    }
+    @if (vm.canExportAllPersonalItemData) {
+      <button
+        class="btn btn-outline btn-sm"
+        type="button"
+        (click)="vm.exportAllPersonalItemDataCsv()"
+        [disabled]="vm.allPersonalDataExportInProgress || vm.perspectiveSwitchBusy"
+        title="Persönliche Item-Arbeitsdaten aller Teilnehmenden exportieren"
+      >
+        {{ vm.allPersonalDataExportInProgress ? 'Gesamtexport läuft …' : '📄 Gesamtdaten (CSV)' }}
+      </button>
+    }
+    @if (vm.canEditExplorer) {
+      <input
+        type="file"
+        #csvUploadInput
+        style="display: none"
+        accept=".csv"
+        (change)="vm.onCsvFileSelected($event)"
+      />
+      <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
+        📄 Itemparameter (CSV) hochladen
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        style="color: #e74c3c; border-color: rgba(231, 76, 60, 0.4)"
+        (click)="vm.openClearEmpiricalDifficultiesDialog()"
+        title="Alle Itemschwierigkeiten löschen"
+      >
+        🗑️ Werte bereinigen
+      </button>
+      <button class="btn btn-outline btn-sm" (click)="vm.openColumnManager()">
+        👁️ Spalten verwalten
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        (click)="vm.openRenumberDialog()"
+        [disabled]="vm.isRenumberingBlocked()"
+        [title]="vm.getRenumberingActionTitle()"
+      >
+        🔢 Nummerierung neu
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        (click)="vm.enableManualOrderMode()"
+        [class.btn-primary]="vm.sortField === '__manual__'"
+      >
+        ↕️ Reihenfolge
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
+        (click)="vm.moveSelectedItem(-1)"
+      >
+        ↑
+      </button>
+      <button
+        class="btn btn-outline btn-sm"
+        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
+        (click)="vm.moveSelectedItem(1)"
+      >
+        ↓
+      </button>
+      <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">🕒 Änderungsverlauf</button>
+    }
+  </div>
+</div>
+
+@if (vm.showReadOnlyPreviewBanner) {
+  <div class="card" style="margin-bottom: 12px">
+    <strong>READ ONLY-Vorschau aktiv.</strong>
+    <p class="help-text" style="margin: 8px 0 0">
+      Sie sehen den veröffentlichten Stand inklusive derselben Feature-Beschränkungen wie nicht
+      editierende Nutzerinnen und Nutzer.
+    </p>
+    @if (vm.latestExplorerState?.status === 'DIRTY') {
+      <p class="help-text" style="margin: 6px 0 0">
+        Ein unveröffentlichter Explorer-Entwurf existiert, ist in dieser Vorschau aber bewusst
+        ausgeblendet.
+      </p>
+    }
+  </div>
+}
+
+@if (vm.showExplorerDraftStatus) {
+  <div class="card explorer-status-bar">
+    <div class="status-main">
+      <strong>Status:</strong>
+      <span [class]="'status-pill status-' + vm.explorerUiStatus.toLowerCase()">{{
+        vm.explorerStatusLabel
+      }}</span>
+      <span class="status-meta"
+        >v{{ vm.explorerVersion }} · veröffentlicht v{{ vm.explorerPublishedVersion }}</span
+      >
+      @if (vm.lastExplorerChangeInfo) {
+        <span class="status-meta">· {{ vm.lastExplorerChangeInfo }}</span>
+      }
+    </div>
+    <div class="status-actions">
+      @if (vm.canPublishExplorer) {
+        <button
+          class="btn btn-primary btn-sm"
+          [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
+          (click)="vm.openSavePreviewDialog()"
+        >
+          💾 Speichern
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
+          (click)="vm.openDiscardExplorerDraftDialog()"
+        >
+          ↩️ Verwerfen
+        </button>
+      }
+    </div>
+  </div>
+}
+
+@if (vm.lastDraftOperationError) {
+  <div class="alert alert-error" style="margin-bottom: 12px">
+    {{ vm.lastDraftOperationError }}
+  </div>
+}
+
+@if (vm.itemListError) {
+  <div class="alert alert-info" style="margin-bottom: 12px">
+    {{ vm.itemListError }}
+  </div>
+}
+
+@if (vm.personalExportError) {
+  <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.personalExportError }}
+  </div>
+}
+
+@if (vm.allPersonalDataExportError) {
+  <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.allPersonalDataExportError }}
+  </div>
+}
+
+@if (vm.numberingSuccessMessage) {
+  <div class="alert alert-success" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.numberingSuccessMessage }}
+  </div>
+}
+
+<app-confirm-dialog
+  [open]="vm.showRenumberDialog"
+  title="Nummerierung neu berechnen"
+  message="Alle aktuell vorhandenen Zeilen werden nach Item-ID und Sub-ID neu nummeriert."
+  [details]="[
+    'Bisherige Nummernlücken können sich dadurch schließen.',
+    'Die Nummern bleiben anschließend bei Sortierung und Filterung unverändert.',
+  ]"
+  [error]="vm.renumberError"
+  [busy]="vm.renumberBusy"
+  busyLabel="Nummeriere Zeilen..."
+  confirmLabel="Nummerierung neu"
+  confirmVariant="primary"
+  (confirmed)="vm.confirmRenumber()"
+  (cancelled)="vm.closeRenumberDialog()"
+/>
+
+<app-confirm-dialog
+  [open]="vm.showClearEmpiricalDifficultiesDialog"
+  title="Werte bereinigen"
+  message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
+  [details]="[
+    'Die Änderungen betreffen alle Items im aktuellen ACP.',
+    'Veröffentlicht wird erst nach anschließendem Speichern.',
+  ]"
+  [error]="vm.clearEmpiricalDifficultiesError"
+  [busy]="vm.clearEmpiricalDifficultiesBusy"
+  busyLabel="Bereinige Werte..."
+  confirmLabel="Alle Werte entfernen"
+  confirmVariant="danger"
+  (confirmed)="vm.confirmClearEmpiricalDifficulties()"
+  (cancelled)="vm.closeClearEmpiricalDifficultiesDialog()"
+/>
+
+<app-confirm-dialog
+  [open]="vm.showDiscardDraftDialog"
+  title="Änderungen verwerfen"
+  message="Die aktuellen Entwurfsänderungen im Item-Explorer werden verworfen."
+  [details]="[
+    'Nicht veröffentlichte Änderungen gehen verloren.',
+    'Der veröffentlichte Stand bleibt unverändert.',
+  ]"
+  [error]="vm.discardDraftDialogError"
+  [busy]="vm.discardDraftDialogBusy"
+  busyLabel="Verwerfe Änderungen..."
+  confirmLabel="Änderungen verwerfen"
+  confirmVariant="danger"
+  (confirmed)="vm.confirmDiscardDraftDialog()"
+  (cancelled)="vm.closeDiscardDraftDialog()"
+/>
+
+<app-confirm-dialog
+  [open]="vm.showDiscardPersonalItemDataDialog"
+  title="Persönliche Änderungen verwerfen"
+  message="Die nicht gespeicherten persönlichen Änderungen werden verworfen."
+  [details]="[
+    'Nicht gespeicherte Kategorien, Markierungen und Notizen gehen verloren.',
+    'Anschließend wird der zuletzt gespeicherte Stand neu geladen.',
+  ]"
+  confirmLabel="Änderungen verwerfen"
+  confirmVariant="danger"
+  (confirmed)="vm.confirmDiscardPersonalItemDataChanges()"
+  (cancelled)="vm.closeDiscardPersonalItemDataDialog()"
+/>
+
+@if (vm.showLeaveWithChangesDialog) {
+  <div
+    class="overlay-backdrop"
+    (click)="vm.leaveWithChangesDialogState === 'idle' && vm.stayOnPage()"
+  >
+    <div class="overlay-dialog" style="max-width: 560px" (click)="$event.stopPropagation()">
+      <div
+        class="overlay-header"
+        [style.border-top]="
+          vm.leaveWithChangesDialogState === 'idle' ? '4px solid #f39c12' : '4px solid #3498db'
+        "
+      >
+        <h2 style="display: flex; align-items: center; gap: 8px">
+          <span>⚠️</span> Ungespeicherte Änderungen
+        </h2>
+      </div>
+      <div class="overlay-content" style="padding: 24px">
+        <p>Es gibt ungespeicherte Explorer-Änderungen. Wie möchten Sie fortfahren?</p>
+        <ul style="margin: 10px 0 14px 18px; color: var(--color-text-secondary)">
+          <li>
+            <strong>Speichern & Weiter:</strong> Änderungen veröffentlichen und Seite verlassen
+          </li>
+          <li><strong>Nicht speichern:</strong> Änderungen verwerfen und Seite verlassen</li>
+          <li><strong>Bleiben:</strong> Auf der aktuellen Seite bleiben</li>
+        </ul>
+
+        @if (vm.leaveWithChangesDialogError) {
+          <div class="alert alert-error" style="margin-bottom: 14px">
+            {{ vm.leaveWithChangesDialogError }}
+          </div>
+        }
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap">
+          <button
+            class="btn btn-outline"
+            [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            (click)="vm.stayOnPage()"
+          >
+            Bleiben
+          </button>
+          <button
+            class="btn btn-danger"
+            [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            (click)="vm.discardAndLeave()"
+          >
+            Nicht speichern
+          </button>
+          <button
+            class="btn btn-primary"
+            [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            (click)="vm.saveAndLeave()"
+          >
+            Speichern & Weiter
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+}

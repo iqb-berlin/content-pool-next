@@ -1,0 +1,383 @@
+<div class="table-panel">
+  <div class="table-toolbar">
+    <input
+      #globalFilterInput
+      class="filter-input"
+      [ngModel]="vm.filterText"
+      (ngModelChange)="vm.setFilterText($event)"
+      placeholder="🔍 Items filtern..."
+      (input)="vm.applyFilter()"
+    />
+    @if (vm.excludedItemsCount > 0 || vm.showExcludedItems) {
+      <div class="table-toolbar-actions">
+        <button
+          class="btn btn-outline btn-sm"
+          type="button"
+          (click)="vm.toggleShowExcludedItems()"
+          [class.btn-primary]="vm.showExcludedItems"
+        >
+          {{
+            vm.showExcludedItems
+              ? 'Ausgeschlossene ausblenden'
+              : 'Ausgeschlossene anzeigen (' + vm.excludedItemsCount + ')'
+          }}
+        </button>
+      </div>
+    }
+    @if (vm.showExplorerKeyboardHints) {
+      <div class="help-text">
+        Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl, <kbd>Pos1</kbd>/<kbd
+          >Ende</kbd
+        >
+        Sprung, <kbd>Strg/Cmd + S</kbd> speichern
+      </div>
+    }
+    @if (vm.showPersonalItemData) {
+      <div class="personal-data-status" aria-live="polite">
+        @if (vm.personalDataLoadState === 'loading') {
+          Persönliche Arbeitsdaten werden geladen …
+        } @else if (vm.personalDataLoadState === 'error') {
+          <span class="personal-data-error">{{ vm.personalDataError }}</span>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            (click)="vm.retryPersonalItemDataLoad()"
+          >
+            Erneut laden
+          </button>
+        } @else if (
+          vm.personalDataSaveState === 'saving' || vm.personalDataSaveState === 'pending'
+        ) {
+          Persönliche Änderungen werden gespeichert …
+        } @else if (vm.personalDataSaveState === 'error') {
+          <span class="personal-data-error">{{ vm.personalDataError }}</span>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            (click)="vm.retryPersonalItemDataSave()"
+          >
+            Erneut speichern
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            (click)="vm.openDiscardPersonalItemDataDialog()"
+          >
+            Änderungen verwerfen
+          </button>
+        } @else if (vm.personalDataSaveState === 'saved') {
+          Persönliche Änderungen gespeichert
+        }
+      </div>
+    }
+  </div>
+
+  <app-item-explorer-collections />
+
+  <div
+    #tableScroll
+    class="table-scroll"
+    tabindex="0"
+    role="region"
+    aria-label="Item-Liste"
+    (keydown)="onTableKeydown($event)"
+  >
+    <table class="table explorer-table">
+      <thead>
+        <tr>
+          @if (vm.enableItemCollections) {
+            <th class="collection-select-col" title="Zur aktiven Kollektion hinzufügen">✓</th>
+          }
+          <th (click)="vm.sortBy('rowNumber')" class="sortable number-col">
+            Nr. {{ vm.getSortIndicator('rowNumber') }}
+          </th>
+          <th (click)="vm.sortBy('itemId')" class="sortable sticky-col">
+            Item-ID {{ vm.getSortIndicator('itemId') }}
+          </th>
+          <th (click)="vm.sortBy('unitLabel')" class="sortable">
+            Aufgabe {{ vm.getSortIndicator('unitLabel') }}
+          </th>
+          @if (vm.hasPartialCredit) {
+            <th (click)="vm.sortBy('subIdDisplay')" class="sortable">
+              {{ vm.itemSubIdLabel }} {{ vm.getSortIndicator('subIdDisplay') }}
+            </th>
+          }
+          @if (vm.hasEmpiricalDifficulty) {
+            <th (click)="vm.sortBy('empiricalDifficulty')" class="sortable">
+              Empirische Itemschwierigkeit {{ vm.getSortIndicator('empiricalDifficulty') }}
+            </th>
+          }
+          @for (col of vm.columns; track col.id) {
+            <th (click)="vm.sortByMeta(col.id)" class="sortable">
+              {{ col.label }} {{ vm.getMetaSortIndicator(col.id) }}
+            </th>
+          }
+          @if (vm.enableTags) {
+            <th>Tags</th>
+          }
+          @if (vm.showPersonalItemData) {
+            <th>{{ vm.personalItemCategoryLabel }}</th>
+            <th>{{ vm.personalItemTagLabel }}</th>
+            <th>Notiz</th>
+          }
+        </tr>
+        <tr class="filter-row">
+          @if (vm.enableItemCollections) {
+            <th class="collection-select-col"></th>
+          }
+          <th class="number-col"></th>
+          <th class="sticky-col">
+            <input
+              class="col-filter-input"
+              [ngModel]="vm.columnFilters['itemId']"
+              (ngModelChange)="vm.setColumnFilter('itemId', $event)"
+              placeholder="🔍 ID..."
+              (input)="vm.applyFilter()"
+            />
+          </th>
+          <th>
+            <input
+              class="col-filter-input"
+              [ngModel]="vm.columnFilters['unitLabel']"
+              (ngModelChange)="vm.setColumnFilter('unitLabel', $event)"
+              placeholder="🔍 Aufgabe..."
+              (input)="vm.applyFilter()"
+            />
+          </th>
+          @if (vm.hasPartialCredit) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.columnFilters['subId']"
+                (ngModelChange)="vm.setColumnFilter('subId', $event)"
+                [placeholder]="'🔍 ' + vm.itemSubIdLabel + '...'"
+                (input)="vm.applyFilter()"
+              />
+            </th>
+          }
+          @if (vm.hasEmpiricalDifficulty) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.columnFilters['empiricalDifficulty']"
+                (ngModelChange)="vm.setColumnFilter('empiricalDifficulty', $event)"
+                placeholder="Min..Max"
+                (input)="vm.applyFilter()"
+              />
+            </th>
+          }
+          @for (col of vm.columns; track col.id) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.columnFilters[col.id]"
+                (ngModelChange)="vm.setColumnFilter(col.id, $event)"
+                [placeholder]="
+                  col.kind === 'number' || col.kind === 'position'
+                    ? 'Min..Max'
+                    : '🔍 ' + col.label + '...'
+                "
+                (input)="vm.applyFilter()"
+              />
+            </th>
+          }
+          @if (vm.enableTags) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.columnFilters['tags']"
+                (ngModelChange)="vm.setColumnFilter('tags', $event)"
+                placeholder="🔍 Tags..."
+                (input)="vm.applyFilter()"
+              />
+            </th>
+          }
+          @if (vm.showPersonalItemData) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.personalColumnFilters['personalCategory']"
+                (ngModelChange)="vm.setPersonalColumnFilter('personalCategory', $event)"
+                [placeholder]="'🔍 ' + vm.personalItemCategoryLabel + '...'"
+                [disabled]="vm.personalDataLoadState !== 'loaded'"
+                (input)="vm.applyFilter(false)"
+              />
+            </th>
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.personalColumnFilters['personalTags']"
+                (ngModelChange)="vm.setPersonalColumnFilter('personalTags', $event)"
+                [placeholder]="'🔍 ' + vm.personalItemTagLabel + '...'"
+                [disabled]="vm.personalDataLoadState !== 'loaded'"
+                (input)="vm.applyFilter(false)"
+              />
+            </th>
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.personalColumnFilters['personalNote']"
+                (ngModelChange)="vm.setPersonalColumnFilter('personalNote', $event)"
+                placeholder="🔍 Notiz..."
+                [disabled]="vm.personalDataLoadState !== 'loaded'"
+                (input)="vm.applyFilter(false)"
+              />
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (item of vm.filteredItems; track item.rowKey; let i = $index) {
+          <tr
+            [id]="vm.getItemRowId(item)"
+            [class.active]="vm.selectedItem?.rowKey === item.rowKey"
+            [class.excluded]="vm.isItemExcluded(item)"
+            [class.no-preview]="!vm.canPreviewItem(item)"
+            [attr.aria-selected]="vm.selectedItem?.rowKey === item.rowKey"
+            (click)="vm.selectItem(item, i)"
+          >
+            @if (vm.enableItemCollections) {
+              <td class="collection-select-col" (click)="$event.stopPropagation()">
+                <input
+                  type="checkbox"
+                  [checked]="vm.isItemInActiveCollection(item)"
+                  [disabled]="vm.collectionBusy || vm.collectionLoadState !== 'loaded'"
+                  (change)="vm.toggleItemInActiveCollection(item)"
+                  [attr.aria-label]="'Item ' + item.itemId + ' in Kollektion auswählen'"
+                />
+              </td>
+            }
+            <td class="number-col">{{ item.rowNumber }}</td>
+            <td class="sticky-col">
+              <div class="item-id-cell">
+                <code
+                  ><span class="unit-id">{{ item.unitId }}</span
+                  ><span class="item-id">{{ item.itemId }}</span></code
+                >
+                @if (vm.isItemExcluded(item)) {
+                  <span class="excluded-item-badge">Ausgeschlossen</span>
+                }
+                @if (vm.showPlayerTargetInfo) {
+                  @if (vm.getPlayerTarget(item)) {
+                    <span class="player-target-badge">Player {{ vm.getPlayerTarget(item) }}</span>
+                  } @else {
+                    <span class="player-target-badge unmapped">Kein Player-Ziel</span>
+                  }
+                }
+              </div>
+            </td>
+            <td>{{ item.unitLabel }}</td>
+            @if (vm.hasPartialCredit) {
+              <td>
+                <span [title]="item.subId || ''">{{ item.subIdDisplay || '–' }}</span>
+              </td>
+            }
+            @if (vm.hasEmpiricalDifficulty) {
+              <td>
+                {{
+                  item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null
+                    ? item.empiricalDifficulty
+                    : ''
+                }}
+              </td>
+            }
+            @for (col of vm.columns; track col.id) {
+              <td class="meta-cell">
+                {{ vm.getMetadataColumnDisplayValue(item, col) }}
+              </td>
+            }
+            @if (vm.enableTags) {
+              <td class="tags-cell" (click)="$event.stopPropagation()">
+                @for (tag of vm.itemTags[item.rowKey] || []; track tag) {
+                  <span
+                    class="badge badge-info tag-badge"
+                    (click)="vm.removeItemTag(item.rowKey, tag)"
+                    >{{ tag }}
+                    @if (vm.canEditExplorer) {
+                      ✕
+                    }
+                  </span>
+                }
+                @if (vm.canEditExplorer) {
+                  <div class="tag-add-container">
+                    @if (vm.availableTags.length > 0) {
+                      <select class="tag-select" (change)="vm.addItemTag(item.rowKey, $event)">
+                        <option value="">+Tag</option>
+                        @for (tag of vm.availableTags; track tag) {
+                          <option [value]="tag">{{ tag }}</option>
+                        }
+                      </select>
+                    }
+                    <input
+                      type="text"
+                      class="tag-input-inline"
+                      placeholder="Neu..."
+                      (keydown.enter)="vm.addCustomTag(item.rowKey, $event)"
+                      (blur)="vm.addCustomTag(item.rowKey, $event)"
+                    />
+                  </div>
+                }
+              </td>
+            }
+            @if (vm.showPersonalItemData) {
+              <td class="personal-data-cell" (click)="$event.stopPropagation()">
+                <select
+                  class="personal-category-select"
+                  [ngModel]="vm.personalItemData[item.rowKey]?.category || ''"
+                  [disabled]="!vm.canChangePersonalItemData"
+                  (ngModelChange)="vm.setPersonalItemCategory(item.rowKey, $event)"
+                >
+                  <option value="">–</option>
+                  @for (category of vm.personalItemCategoryValues; track category) {
+                    <option [value]="category">{{ category }}</option>
+                  }
+                </select>
+              </td>
+              <td class="personal-data-cell" (click)="$event.stopPropagation()">
+                <div class="personal-tag-list">
+                  @for (tag of vm.personalItemData[item.rowKey]?.tags || []; track tag) {
+                    <button
+                      type="button"
+                      class="personal-tag-badge"
+                      [style.backgroundColor]="vm.getPersonalTagColor(tag)"
+                      [title]="tag + ' entfernen'"
+                      [disabled]="!vm.canChangePersonalItemData"
+                      (click)="vm.removePersonalItemTagFromRow(item.rowKey, tag)"
+                    >
+                      {{ tag }} ×
+                    </button>
+                  }
+                  @if (vm.availablePersonalTagsForRow(item.rowKey).length > 0) {
+                    <select
+                      class="tag-select"
+                      (change)="vm.addPersonalItemTagToRow(item.rowKey, $event)"
+                      [attr.aria-label]="vm.personalItemTagLabel + ' hinzufügen'"
+                      [disabled]="!vm.canChangePersonalItemData"
+                    >
+                      <option value="">+ Hinzufügen</option>
+                      @for (tag of vm.availablePersonalTagsForRow(item.rowKey); track tag.label) {
+                        <option [value]="tag.label">{{ tag.label }}</option>
+                      }
+                    </select>
+                  }
+                </div>
+              </td>
+              <td class="personal-data-cell note-cell" (click)="$event.stopPropagation()">
+                <textarea
+                  class="personal-note-input"
+                  rows="2"
+                  maxlength="10000"
+                  placeholder="Persönliche Notiz..."
+                  [ngModel]="vm.personalItemData[item.rowKey]?.note || ''"
+                  [disabled]="!vm.canChangePersonalItemData"
+                  (ngModelChange)="vm.setPersonalItemNote(item.rowKey, $event)"
+                  (blur)="vm.flushPersonalItemDataSave()"
+                ></textarea>
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>

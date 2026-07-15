@@ -1,12 +1,10 @@
 import {
   BadRequestException,
-  ConflictException,
   Injectable,
-  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { EntityManager, Repository } from "typeorm";
+import { Repository } from "typeorm";
 import {
   Acp,
   AcpAccessConfig,
@@ -28,6 +26,12 @@ import {
   buildPatchPersonalItemPreferenceRowQuery,
   PreferenceIdentityColumn,
 } from "./personal-item-preferences.query";
+import { StablePreferenceIdentity } from "../item-preferences/preference-identity";
+import {
+  ItemPreferencesPayload,
+  normalizeItemPreferenceRowData,
+  normalizeItemPreferences,
+} from "../item-preferences/item-preference-normalizer";
 import {
   getItemExportCell,
   ITEM_EXPORT_IDENTITY_COLUMNS,
@@ -36,56 +40,11 @@ import {
   ItemExportProjection,
   MEAN_DIFFICULTY_EXPORT_COLUMN,
   projectItemExportRow,
-} from "./item-export-projection";
-import { v4 as uuidv4 } from "uuid";
-
+} from "../item-explorer/item-export-projection";
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
 const MAX_EXPORT_ROW_KEY_LENGTH = 500;
-const MAX_ITEM_COLLECTIONS = 100;
 
-export interface ItemPreferencesPayload {
-  [key: string]: unknown;
-  ui: Record<string, unknown>;
-  tags: Record<string, string[]>;
-  rowData: Record<string, Record<string, unknown>>;
-}
-
-interface PreferenceIdentity {
-  userId?: string;
-  credentialId?: string;
-  credentialUsername?: string;
-}
-
-interface StoredItemCollection {
-  id: string;
-  name: string;
-  rowKeys: string[];
-  version: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ItemCollectionSummary {
-  rowCount: number;
-  itemCount: number;
-  unitCount: number;
-  itemTimeSeconds: number;
-  stimulusTimeSeconds: number;
-  testTimeSeconds: number;
-  missingItemTimeCount: number;
-  missingStimulusTimeUnitCount: number;
-  complete: boolean;
-}
-
-export interface ItemCollectionView extends StoredItemCollection {
-  unavailableRowKeys: string[];
-  summary: ItemCollectionSummary;
-}
-
-export interface ItemCollectionsPayload {
-  activeCollectionId: string | null;
-  collections: ItemCollectionView[];
-}
+export type { ItemPreferencesPayload } from "../item-preferences/item-preference-normalizer";
 
 @Injectable()
 export class ViewsService {
@@ -397,11 +356,10 @@ export class ViewsService {
 
   async getItemPreferences(
     acpId: string,
-    user: any,
+    identity: StablePreferenceIdentity | null,
     viewId?: string,
   ): Promise<ItemPreferencesPayload> {
     const normalizedViewId = this.normalizeViewId(viewId);
-    const identity = this.resolvePreferenceIdentity(user);
     if (!identity) {
       if (normalizedViewId === "item-explorer") {
         throw new UnauthorizedException(
@@ -410,71 +368,38 @@ export class ViewsService {
       }
       return { ui: {}, tags: {}, rowData: {} };
     }
-    if (
-      normalizedViewId === "item-explorer" &&
-      !identity.userId &&
-      !identity.credentialId
-    ) {
-      throw new UnauthorizedException(
-        "A stable identity is required for personal item data",
-      );
-    }
-
     const record = await this.findPreferenceRecord(
       acpId,
       normalizedViewId,
       identity,
     );
-    return this.normalizeItemPreferences(record?.preferences);
+    return normalizeItemPreferences(record?.preferences);
   }
 
   async saveItemPreferences(
     acpId: string,
-    user: any,
+    identity: StablePreferenceIdentity | null,
     preferences: Partial<ItemPreferencesPayload>,
     viewId?: string,
   ): Promise<ItemPreferencesPayload> {
-    const normalized = this.normalizeItemPreferences(preferences);
-    const identity = this.resolvePreferenceIdentity(user);
+    const normalized = normalizeItemPreferences(preferences);
     if (!identity) {
       return normalized;
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
-    if (identity.userId || identity.credentialId) {
-      await this.upsertItemPreferences(
-        acpId,
-        normalizedViewId,
-        identity,
-        normalized,
-      );
-      return normalized;
-    }
-
-    let record = await this.findPreferenceRecord(
+    await this.upsertItemPreferences(
       acpId,
       normalizedViewId,
       identity,
+      normalized,
     );
-
-    if (!record) {
-      record = this.itemPreferenceRepository.create({
-        acpId,
-        viewId: normalizedViewId,
-        userId: identity.userId || null,
-        credentialId: identity.credentialId || null,
-        credentialUsername: identity.credentialUsername || null,
-      });
-    }
-
-    record.preferences = normalized;
-    await this.itemPreferenceRepository.save(record);
     return normalized;
   }
 
   async patchPersonalItemPreferenceRow(
     acpId: string,
-    user: any,
+    identity: StablePreferenceIdentity | null,
     rawRowKey: string,
     rawRowData: Record<string, unknown> | null,
     viewId = "item-explorer",
@@ -486,10 +411,9 @@ export class ViewsService {
     }
 
     const normalizedRow = rawRowData
-      ? this.normalizeRowData({ [rowKey]: rawRowData })[rowKey] || null
+      ? normalizeItemPreferenceRowData({ [rowKey]: rawRowData })[rowKey] || null
       : null;
-    const identity = this.resolvePreferenceIdentity(user);
-    if (!identity || (!identity.userId && !identity.credentialId)) {
+    if (!identity) {
       throw new UnauthorizedException(
         "A stable identity is required for personal item data",
       );
@@ -504,9 +428,8 @@ export class ViewsService {
     }
 
     const normalizedViewId = this.normalizeViewId(viewId);
-    const identityColumn: PreferenceIdentityColumn = identity.userId
-      ? "user_id"
-      : "credential_id";
+    const identityColumn: PreferenceIdentityColumn =
+      identity.kind === "user" ? "user_id" : "credential_id";
     const initialPreferences: ItemPreferencesPayload = {
       ui: {},
       tags: {},
@@ -519,9 +442,11 @@ export class ViewsService {
       [
         acpId,
         normalizedViewId,
-        identity.userId || null,
-        identity.credentialId || null,
-        identity.credentialUsername || null,
+        identity.kind === "user" ? identity.userId : null,
+        identity.kind === "credential" ? identity.credentialId : null,
+        identity.kind === "credential"
+          ? identity.credentialUsername || null
+          : null,
         JSON.stringify(initialPreferences),
         rowDataJson,
         rowKey,
@@ -540,280 +465,15 @@ export class ViewsService {
     };
   }
 
-  async getItemCollections(
-    acpId: string,
-    user: any,
-    canEditExplorerState = false,
-  ): Promise<ItemCollectionsPayload> {
-    const { record } = await this.requireCollectionPreferenceRecord(
-      acpId,
-      user,
-      false,
-    );
-    const state = this.normalizeCollectionState(record?.preferences);
-    return this.resolveCollectionViews(
-      acpId,
-      state.collections,
-      state.activeCollectionId,
-      canEditExplorerState,
-    );
-  }
-
-  async createItemCollection(
-    acpId: string,
-    user: any,
-    rawName?: string,
-    canEditExplorerState = false,
-  ): Promise<ItemCollectionsPayload> {
-    const name = this.normalizeCollectionName(rawName || "Meine Kollektion");
-    const now = new Date().toISOString();
-    const collection: StoredItemCollection = {
-      id: uuidv4(),
-      name,
-      rowKeys: [],
-      version: 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-    const state = await this.mutateCollectionState(
-      acpId,
-      user,
-      true,
-      (lockedState) => {
-        if (lockedState.collections.length >= MAX_ITEM_COLLECTIONS) {
-          throw new BadRequestException(
-            `At most ${MAX_ITEM_COLLECTIONS} item collections can be stored`,
-          );
-        }
-        lockedState.collections.push(collection);
-        lockedState.activeCollectionId = collection.id;
-      },
-    );
-    return this.resolveCollectionViews(
-      acpId,
-      state.collections,
-      state.activeCollectionId,
-      canEditExplorerState,
-    );
-  }
-
-  async updateItemCollection(
-    acpId: string,
-    user: any,
-    collectionId: string,
-    update: { name?: unknown; rowKeys?: unknown; baseVersion?: unknown },
-    canEditExplorerState = false,
-  ): Promise<ItemCollectionsPayload> {
-    const normalizedName =
-      update.name === undefined
-        ? undefined
-        : this.normalizeCollectionName(update.name);
-    let normalizedRowKeys: string[] | undefined;
-    let knownRowKeys: ReadonlySet<string> | undefined;
-    if (update.rowKeys !== undefined) {
-      normalizedRowKeys = this.normalizeCollectionRowKeys(update.rowKeys);
-      const explorerState =
-        await this.itemExplorerStateService.getStateForViewer(
-          acpId,
-          canEditExplorerState,
-        );
-      knownRowKeys = await this.unitParserService.getItemRowKeysFromFiles(
-        acpId,
-        {
-          itemPropertiesOverride: explorerState.activeState.itemProperties,
-          publishedItemPropertiesOverride:
-            explorerState.publishedState.itemProperties,
-        },
-      );
-    }
-    const baseVersion = Number(update.baseVersion);
-    const state = await this.mutateCollectionState(
-      acpId,
-      user,
-      false,
-      (lockedState) => {
-        const collection = lockedState.collections.find(
-          (candidate) => candidate.id === collectionId,
-        );
-        if (!collection) {
-          throw new NotFoundException("Item collection not found");
-        }
-        if (
-          !Number.isInteger(baseVersion) ||
-          baseVersion !== collection.version
-        ) {
-          throw new ConflictException(
-            "The item collection changed concurrently",
-          );
-        }
-        if (normalizedName !== undefined) collection.name = normalizedName;
-        if (normalizedRowKeys !== undefined && knownRowKeys) {
-          const previouslyStored = new Set(collection.rowKeys);
-          const invalidRowKey = normalizedRowKeys.find(
-            (rowKey) =>
-              !knownRowKeys!.has(rowKey) && !previouslyStored.has(rowKey),
-          );
-          if (invalidRowKey) {
-            throw new BadRequestException(
-              "Collections can only add existing item rows",
-            );
-          }
-          collection.rowKeys = normalizedRowKeys;
-        }
-        collection.version += 1;
-        collection.updatedAt = new Date().toISOString();
-      },
-    );
-    return this.resolveCollectionViews(
-      acpId,
-      state.collections,
-      state.activeCollectionId,
-      canEditExplorerState,
-    );
-  }
-
-  async activateItemCollection(
-    acpId: string,
-    user: any,
-    collectionId: string | null,
-    canEditExplorerState = false,
-  ): Promise<ItemCollectionsPayload> {
-    const state = await this.mutateCollectionState(
-      acpId,
-      user,
-      false,
-      (lockedState) => {
-        if (
-          collectionId &&
-          !lockedState.collections.some(
-            (collection) => collection.id === collectionId,
-          )
-        ) {
-          throw new NotFoundException("Item collection not found");
-        }
-        lockedState.activeCollectionId = collectionId;
-      },
-    );
-    return this.resolveCollectionViews(
-      acpId,
-      state.collections,
-      state.activeCollectionId,
-      canEditExplorerState,
-    );
-  }
-
-  async deleteItemCollection(
-    acpId: string,
-    user: any,
-    collectionId: string,
-    canEditExplorerState = false,
-  ): Promise<ItemCollectionsPayload> {
-    const state = await this.mutateCollectionState(
-      acpId,
-      user,
-      false,
-      (lockedState) => {
-        const nextCollections = lockedState.collections.filter(
-          (collection) => collection.id !== collectionId,
-        );
-        if (nextCollections.length === lockedState.collections.length) {
-          throw new NotFoundException("Item collection not found");
-        }
-        lockedState.collections = nextCollections;
-        if (lockedState.activeCollectionId === collectionId) {
-          lockedState.activeCollectionId = nextCollections[0]?.id || null;
-        }
-      },
-    );
-    return this.resolveCollectionViews(
-      acpId,
-      state.collections,
-      state.activeCollectionId,
-      canEditExplorerState,
-    );
-  }
-
-  async exportItemCollectionCsv(
-    acpId: string,
-    user: any,
-    collectionId: string,
-    canEditExplorerState = false,
-  ): Promise<Buffer> {
-    const { record } = await this.requireCollectionPreferenceRecord(
-      acpId,
-      user,
-      false,
-    );
-    if (!record) throw new NotFoundException("Item collection not found");
-    const state = this.normalizeCollectionState(record.preferences);
-    const collection = state.collections.find(
-      (candidate) => candidate.id === collectionId,
-    );
-    if (!collection) throw new NotFoundException("Item collection not found");
-    const explorerState = await this.itemExplorerStateService.getStateForViewer(
-      acpId,
-      canEditExplorerState,
-    );
-    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
-      itemPropertiesOverride: explorerState.activeState.itemProperties,
-      publishedItemPropertiesOverride:
-        explorerState.publishedState.itemProperties,
-    });
-    const itemsByRowKey = new Map(
-      itemList.items.map((item) => [item.rowKey, item] as const),
-    );
-    const personalRows = this.normalizeItemPreferences(
-      record.preferences,
-    ).rowData;
-    const headers = [
-      "Kollektion",
-      "Reihenfolge",
-      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) => column.header),
-      ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
-      "Kategorie",
-      "Tags",
-      "Notiz",
-    ];
-    const rows = collection.rowKeys.flatMap((rowKey, index) => {
-      const item = itemsByRowKey.get(rowKey);
-      if (!item) return [];
-      const personal = personalRows[rowKey] || {};
-      const projection = projectItemExportRow({
-        rowKey,
-        item,
-        personalRow: personal,
-      });
-      return [
-        [
-          collection.name,
-          index + 1,
-          ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) =>
-            getItemExportCell(projection, column),
-          ),
-          ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) =>
-            getItemExportCell(projection, column),
-          ),
-          projection.category || "",
-          projection.tags.join(", "),
-          projection.note?.replace(/\n/g, "\\n") || "",
-        ],
-      ];
-    });
-    const lines = [headers, ...rows].map((row) =>
-      row.map((value) => this.escapeCsvCell(value)).join(";"),
-    );
-    return Buffer.from(`\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
-  }
-
   async exportPersonalItemDataXlsx(
     acpId: string,
-    user: any,
+    identity: StablePreferenceIdentity | null,
     rawRowKeys: string[],
     canEditExplorerState = false,
   ): Promise<Buffer> {
     const rowKeys = this.normalizeExportRowKeys(rawRowKeys);
     const [preferences, explorerState, accessConfig] = await Promise.all([
-      this.getItemPreferences(acpId, user, "item-explorer"),
+      this.getItemPreferences(acpId, identity, "item-explorer"),
       this.itemExplorerStateService.getStateForViewer(
         acpId,
         canEditExplorerState,
@@ -890,7 +550,7 @@ export class ViewsService {
       const participant = this.getPreferenceParticipantIdentifier(record);
       if (!participant) return [];
 
-      const preferences = this.normalizeItemPreferences(record.preferences);
+      const preferences = normalizeItemPreferences(record.preferences);
       return Object.entries(preferences.rowData).map(
         ([rowKey, personalRow]) => {
           const item = itemsByRowKey.get(rowKey);
@@ -920,313 +580,18 @@ export class ViewsService {
     return this.buildAllPersonalItemDataCsv(rows);
   }
 
-  private async requireCollectionPreferenceRecord(
-    acpId: string,
-    user: any,
-    createIfMissing: boolean,
-  ): Promise<{
-    identity: PreferenceIdentity;
-    record: AcpItemPreference | null;
-  }> {
-    const identity = this.requireCollectionIdentity(user);
-    let record = await this.findPreferenceRecord(
-      acpId,
-      "item-explorer",
-      identity,
-    );
-    if (!record && createIfMissing) {
-      record = this.itemPreferenceRepository.create({
-        acpId,
-        viewId: "item-explorer",
-        userId: identity.userId || null,
-        credentialId: identity.credentialId || null,
-        credentialUsername: identity.credentialUsername || null,
-        preferences: { ui: {}, tags: {}, rowData: {} },
-      });
-    }
-    return { identity, record };
-  }
-
-  private getRawPreferences(raw: unknown): Record<string, unknown> {
-    return this.isRecord(raw) ? { ...raw } : {};
-  }
-
-  private normalizeCollectionState(rawPreferences: unknown): {
-    collections: StoredItemCollection[];
-    activeCollectionId: string | null;
-  } {
-    const preferences = this.getRawPreferences(rawPreferences);
-    const seen = new Set<string>();
-    const collections = Array.isArray(preferences.collections)
-      ? preferences.collections
-          .map((rawCollection): StoredItemCollection | null => {
-            if (!this.isRecord(rawCollection)) return null;
-            const id = String(rawCollection.id || "").trim();
-            const name = String(rawCollection.name || "").trim();
-            if (!id || !name || seen.has(id)) return null;
-            seen.add(id);
-            const createdAt = this.normalizeIsoDate(rawCollection.createdAt);
-            return {
-              id,
-              name: name.slice(0, 100),
-              rowKeys: this.normalizeCollectionRowKeys(
-                Array.isArray(rawCollection.rowKeys)
-                  ? rawCollection.rowKeys
-                  : [],
-              ),
-              version: Math.max(1, Number(rawCollection.version) || 1),
-              createdAt,
-              updatedAt: this.normalizeIsoDate(
-                rawCollection.updatedAt,
-                createdAt,
-              ),
-            };
-          })
-          .filter(
-            (collection): collection is StoredItemCollection =>
-              collection !== null,
-          )
-      : [];
-    const requestedActiveId = String(
-      preferences.activeCollectionId || "",
-    ).trim();
-    return {
-      collections,
-      activeCollectionId: collections.some(
-        (collection) => collection.id === requestedActiveId,
-      )
-        ? requestedActiveId
-        : collections[0]?.id || null,
-    };
-  }
-
-  private normalizeCollectionName(value: unknown): string {
-    const name = this.normalizePlainText(value, 100);
-    if (!name) throw new BadRequestException("Collection name is required");
-    return name;
-  }
-
-  private normalizeCollectionRowKeys(value: unknown): string[] {
-    if (!Array.isArray(value) || value.length > MAX_PERSONAL_ITEM_ROWS) {
-      throw new BadRequestException(
-        `At most ${MAX_PERSONAL_ITEM_ROWS} item rows can be stored in a collection`,
-      );
-    }
-    const seen = new Set<string>();
-    const rowKeys: string[] = [];
-    for (const rawRowKey of value) {
-      if (typeof rawRowKey !== "string") {
-        throw new BadRequestException("Collection row keys must be strings");
-      }
-      const rowKey = rawRowKey.trim();
-      if (!rowKey || rowKey.length > MAX_EXPORT_ROW_KEY_LENGTH) {
-        throw new BadRequestException("A valid collection row key is required");
-      }
-      if (!seen.has(rowKey)) {
-        seen.add(rowKey);
-        rowKeys.push(rowKey);
-      }
-    }
-    return rowKeys;
-  }
-
-  private normalizeIsoDate(value: unknown, fallback?: string): string {
-    const parsed = typeof value === "string" ? new Date(value) : null;
-    return parsed && Number.isFinite(parsed.getTime())
-      ? parsed.toISOString()
-      : fallback || new Date().toISOString();
-  }
-
-  private requireCollectionIdentity(user: any): PreferenceIdentity {
-    const identity = this.resolvePreferenceIdentity(user);
-    if (!identity || (!identity.userId && !identity.credentialId)) {
-      throw new UnauthorizedException(
-        "A stable identity is required for item collections",
-      );
-    }
-    return identity;
-  }
-
-  private async mutateCollectionState(
-    acpId: string,
-    user: any,
-    createIfMissing: boolean,
-    mutate: (state: {
-      collections: StoredItemCollection[];
-      activeCollectionId: string | null;
-    }) => void,
-  ): Promise<{
-    collections: StoredItemCollection[];
-    activeCollectionId: string | null;
-  }> {
-    const identity = this.requireCollectionIdentity(user);
-    return this.itemPreferenceRepository.manager.transaction(
-      async (manager) => {
-        if (createIfMissing) {
-          await this.insertCollectionPreferenceIfMissing(
-            manager,
-            acpId,
-            identity,
-          );
-        }
-        const repository = manager.getRepository(AcpItemPreference);
-        const record = await repository.findOne({
-          where: {
-            acpId,
-            viewId: "item-explorer",
-            ...(identity.userId
-              ? { userId: identity.userId }
-              : { credentialId: identity.credentialId }),
-          },
-          lock: { mode: "pessimistic_write" },
-        });
-        if (!record) throw new NotFoundException("Item collection not found");
-
-        const preferences = this.getRawPreferences(record.preferences);
-        const state = this.normalizeCollectionState(preferences);
-        mutate(state);
-        record.preferences = {
-          ...preferences,
-          collections: state.collections,
-          activeCollectionId: state.activeCollectionId,
-        };
-        if (identity.credentialUsername) {
-          record.credentialUsername = identity.credentialUsername;
-        }
-        await repository.save(record);
-        return state;
-      },
-    );
-  }
-
-  private async insertCollectionPreferenceIfMissing(
-    manager: EntityManager,
-    acpId: string,
-    identity: PreferenceIdentity,
-  ): Promise<void> {
-    const identityColumn = identity.userId ? "user_id" : "credential_id";
-    const identityPredicate = identity.userId
-      ? '"user_id" IS NOT NULL'
-      : '"credential_id" IS NOT NULL';
-    await manager.query(
-      `
-        INSERT INTO "acp_item_preferences" (
-          "id", "acp_id", "view_id", "user_id", "credential_id",
-          "credential_username", "preferences", "created_at", "updated_at"
-        )
-        VALUES (
-          uuid_generate_v4(), $1, 'item-explorer', $2, $3, $4,
-          '{"ui":{},"tags":{},"rowData":{}}'::jsonb, now(), now()
-        )
-        ON CONFLICT ("acp_id", "view_id", "${identityColumn}")
-          WHERE ${identityPredicate}
-        DO NOTHING
-      `,
-      [
-        acpId,
-        identity.userId || null,
-        identity.credentialId || null,
-        identity.credentialUsername || null,
-      ],
-    );
-  }
-
-  private async resolveCollectionViews(
-    acpId: string,
-    collections: StoredItemCollection[],
-    activeCollectionId: string | null,
-    canEditExplorerState: boolean,
-  ): Promise<ItemCollectionsPayload> {
-    const explorerState = await this.itemExplorerStateService.getStateForViewer(
-      acpId,
-      canEditExplorerState,
-    );
-    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
-      itemPropertiesOverride: explorerState.activeState.itemProperties,
-      publishedItemPropertiesOverride:
-        explorerState.publishedState.itemProperties,
-    });
-    const itemsByRowKey = new Map(
-      itemList.items.map((item) => [item.rowKey, item] as const),
-    );
-    return {
-      activeCollectionId,
-      collections: collections.map((collection) => {
-        const unavailableRowKeys = collection.rowKeys.filter(
-          (rowKey) => !itemsByRowKey.has(rowKey),
-        );
-        const items = collection.rowKeys
-          .map((rowKey) => itemsByRowKey.get(rowKey))
-          .filter((item): item is VomdItemData => Boolean(item));
-        return {
-          ...collection,
-          unavailableRowKeys,
-          summary: this.calculateItemCollectionSummary(
-            items,
-            collection.rowKeys.length,
-          ),
-        };
-      }),
-    };
-  }
-
-  private calculateItemCollectionSummary(
-    items: VomdItemData[],
-    selectedRowCount = items.length,
-  ): ItemCollectionSummary {
-    const uniqueItems = new Map<string, VomdItemData[]>();
-    const uniqueUnits = new Map<string, VomdItemData[]>();
-    for (const item of items) {
-      const itemRows = uniqueItems.get(item.uuid) || [];
-      itemRows.push(item);
-      uniqueItems.set(item.uuid, itemRows);
-      const unitRows = uniqueUnits.get(item.unitId) || [];
-      unitRows.push(item);
-      uniqueUnits.set(item.unitId, unitRows);
-    }
-
-    let itemTimeSeconds = 0;
-    let stimulusTimeSeconds = 0;
-    let missingItemTimeCount = 0;
-    let missingStimulusTimeUnitCount = 0;
-    for (const rows of uniqueItems.values()) {
-      const time = rows
-        .map((row) => row.itemTimeSeconds)
-        .find((value): value is number => Number.isFinite(value));
-      if (time === undefined) missingItemTimeCount += 1;
-      else itemTimeSeconds += time;
-    }
-    for (const rows of uniqueUnits.values()) {
-      const time = rows
-        .map((row) => row.stimulusTimeSeconds)
-        .find((value): value is number => Number.isFinite(value));
-      if (time === undefined) missingStimulusTimeUnitCount += 1;
-      else stimulusTimeSeconds += time;
-    }
-    return {
-      rowCount: selectedRowCount,
-      itemCount: uniqueItems.size,
-      unitCount: uniqueUnits.size,
-      itemTimeSeconds,
-      stimulusTimeSeconds,
-      testTimeSeconds: itemTimeSeconds + stimulusTimeSeconds,
-      missingItemTimeCount,
-      missingStimulusTimeUnitCount,
-      complete:
-        missingItemTimeCount === 0 && missingStimulusTimeUnitCount === 0,
-    };
-  }
-
   private async upsertItemPreferences(
     acpId: string,
     viewId: string,
-    identity: PreferenceIdentity,
+    identity: StablePreferenceIdentity,
     preferences: ItemPreferencesPayload,
   ): Promise<void> {
-    const identityColumn = identity.userId ? "user_id" : "credential_id";
-    const identityPredicate = identity.userId
-      ? '"user_id" IS NOT NULL'
-      : '"credential_id" IS NOT NULL';
+    const identityColumn =
+      identity.kind === "user" ? "user_id" : "credential_id";
+    const identityPredicate =
+      identity.kind === "user"
+        ? '"user_id" IS NOT NULL'
+        : '"credential_id" IS NOT NULL';
 
     await this.itemPreferenceRepository.query(
       `
@@ -1240,7 +605,13 @@ export class ViewsService {
         ON CONFLICT ("acp_id", "view_id", "${identityColumn}")
           WHERE ${identityPredicate}
         DO UPDATE SET
-          "preferences" = EXCLUDED."preferences",
+          "preferences" = (
+            CASE
+              WHEN jsonb_typeof("acp_item_preferences"."preferences") = 'object'
+                THEN "acp_item_preferences"."preferences"
+              ELSE '{}'::jsonb
+            END
+          ) || EXCLUDED."preferences",
           "credential_username" = CASE
             WHEN EXCLUDED."credential_id" IS NOT NULL
               THEN EXCLUDED."credential_username"
@@ -1251,9 +622,11 @@ export class ViewsService {
       [
         acpId,
         viewId,
-        identity.userId || null,
-        identity.credentialId || null,
-        identity.credentialUsername || null,
+        identity.kind === "user" ? identity.userId : null,
+        identity.kind === "credential" ? identity.credentialId : null,
+        identity.kind === "credential"
+          ? identity.credentialUsername || null
+          : null,
         JSON.stringify(preferences),
       ],
     );
@@ -1505,35 +878,12 @@ export class ViewsService {
     return null;
   }
 
-  private resolvePreferenceIdentity(user: any): PreferenceIdentity | null {
-    if (!user || typeof user !== "object") {
-      return null;
-    }
-
-    if (user.type === "credential" && typeof user.username === "string") {
-      const credentialUsername = user.username.trim();
-      const credentialId = typeof user.sub === "string" ? user.sub.trim() : "";
-      if (credentialId.length > 0) {
-        return { credentialId, credentialUsername };
-      }
-      if (credentialUsername.length > 0) {
-        return { credentialUsername };
-      }
-    }
-
-    if (typeof user.sub === "string" && user.sub.trim().length > 0) {
-      return { userId: user.sub.trim() };
-    }
-
-    return null;
-  }
-
   private async findPreferenceRecord(
     acpId: string,
     viewId: string,
-    identity: PreferenceIdentity,
+    identity: StablePreferenceIdentity,
   ): Promise<AcpItemPreference | null> {
-    if (identity.userId) {
+    if (identity.kind === "user") {
       return this.itemPreferenceRepository.findOne({
         where: {
           acpId,
@@ -1543,70 +893,13 @@ export class ViewsService {
       });
     }
 
-    if (identity.credentialId) {
-      return this.itemPreferenceRepository.findOne({
-        where: {
-          acpId,
-          viewId,
-          credentialId: identity.credentialId,
-        },
-      });
-    }
-
-    if (identity.credentialUsername) {
-      return this.itemPreferenceRepository.findOne({
-        where: {
-          acpId,
-          viewId,
-          credentialUsername: identity.credentialUsername,
-        },
-      });
-    }
-
-    return null;
-  }
-
-  private normalizeItemPreferences(raw: unknown): ItemPreferencesPayload {
-    const payload = this.isRecord(raw) ? raw : {};
-    const ui = this.isRecord(payload.ui) ? payload.ui : {};
-    return {
-      ui,
-      tags: this.normalizeTags(payload.tags),
-      rowData: this.normalizeRowData(payload.rowData),
-    };
-  }
-
-  private normalizeRowData(
-    rawRowData: unknown,
-  ): Record<string, Record<string, unknown>> {
-    if (!this.isRecord(rawRowData)) {
-      return {};
-    }
-
-    const normalized: Record<string, Record<string, unknown>> = {};
-    for (const [rawRowKey, value] of Object.entries(rawRowData)) {
-      const rowKey = rawRowKey.trim();
-      if (!rowKey || !this.isRecord(value)) continue;
-
-      const category = this.normalizePlainText(value.category, 200);
-      const note = this.normalizePlainText(value.note, 10_000, true);
-      const tags = Array.isArray(value.tags)
-        ? Array.from(
-            new Set(
-              value.tags
-                .map((tag) => this.normalizePlainText(tag, 100))
-                .filter((tag): tag is string => Boolean(tag)),
-            ),
-          ).slice(0, 50)
-        : [];
-
-      const row: Record<string, unknown> = {};
-      if (category) row.category = category;
-      if (tags.length) row.tags = tags;
-      if (note) row.note = note;
-      if (Object.keys(row).length) normalized[rowKey] = row;
-    }
-    return normalized;
+    return this.itemPreferenceRepository.findOne({
+      where: {
+        acpId,
+        viewId,
+        credentialId: identity.credentialId,
+      },
+    });
   }
 
   private normalizePlainText(
@@ -1620,39 +913,6 @@ export class ViewsService {
       .replace(multiline ? /[\t\f\v]+/g : /\s+/g, " ")
       .trim();
     return normalized ? normalized.slice(0, maxLength) : null;
-  }
-
-  private normalizeTags(rawTags: unknown): Record<string, string[]> {
-    if (!this.isRecord(rawTags)) {
-      return {};
-    }
-
-    const tags: Record<string, string[]> = {};
-
-    for (const [itemKey, values] of Object.entries(rawTags)) {
-      const normalizedItemKey = String(itemKey || "").trim();
-      if (!normalizedItemKey) {
-        continue;
-      }
-
-      if (!Array.isArray(values)) {
-        continue;
-      }
-
-      const normalizedValues = Array.from(
-        new Set(
-          values
-            .map((value) => String(value || "").trim())
-            .filter((value) => value.length > 0),
-        ),
-      );
-
-      if (normalizedValues.length) {
-        tags[normalizedItemKey] = normalizedValues;
-      }
-    }
-
-    return tags;
   }
 
   private isRecord(value: unknown): value is Record<string, any> {

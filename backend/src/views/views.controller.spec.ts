@@ -5,6 +5,7 @@ describe("ViewsController", () => {
   let controller: ViewsController;
   let viewsService: any;
   let itemExplorerStateService: any;
+  let itemCollectionsService: any;
 
   beforeEach(() => {
     viewsService = {
@@ -43,6 +44,12 @@ describe("ViewsController", () => {
       exportAllPersonalItemDataCsv: jest
         .fn()
         .mockResolvedValue(Buffer.from("all-personal-csv")),
+      getTaskSequence: jest
+        .fn()
+        .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
+    };
+
+    itemCollectionsService = {
       getItemCollections: jest.fn().mockResolvedValue({
         activeCollectionId: "collection-1",
         collections: [],
@@ -66,9 +73,6 @@ describe("ViewsController", () => {
       exportItemCollectionCsv: jest
         .fn()
         .mockResolvedValue(Buffer.from("collection-csv")),
-      getTaskSequence: jest
-        .fn()
-        .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
     };
 
     itemExplorerStateService = {
@@ -77,7 +81,11 @@ describe("ViewsController", () => {
         .mockResolvedValue({ status: "CLEAN", canEdit: false }),
     };
 
-    controller = new ViewsController(viewsService, itemExplorerStateService);
+    controller = new ViewsController(
+      viewsService,
+      itemExplorerStateService,
+      itemCollectionsService,
+    );
   });
 
   it("returns public settings and ACP list", async () => {
@@ -299,7 +307,7 @@ describe("ViewsController", () => {
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "u-1" },
+      { kind: "user", userId: "u-1" },
       "uuid::1",
       { note: "mine" },
       "item-explorer",
@@ -324,7 +332,7 @@ describe("ViewsController", () => {
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "u-1" },
+      { kind: "user", userId: "u-1" },
       "uuid::draft",
       { note: "mine" },
       "item-explorer",
@@ -349,7 +357,7 @@ describe("ViewsController", () => {
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "u-1" },
+      { kind: "user", userId: "u-1" },
       "uuid::published",
       { note: "mine" },
       "item-explorer",
@@ -369,12 +377,23 @@ describe("ViewsController", () => {
         rowData: { note: "mine" },
         perspective: "editor",
       },
-      { user: { sub: "credential-1" }, acpAccessLevel: "CREDENTIAL" },
+      {
+        user: {
+          type: "credential",
+          sub: "credential-1",
+          username: "reader-a",
+        },
+        acpAccessLevel: "CREDENTIAL",
+      },
     );
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "credential-1" },
+      {
+        kind: "credential",
+        credentialId: "credential-1",
+        credentialUsername: "reader-a",
+      },
       "uuid::published",
       { note: "mine" },
       "item-explorer",
@@ -397,7 +416,7 @@ describe("ViewsController", () => {
 
     expect(viewsService.exportPersonalItemDataXlsx).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "u-1" },
+      { kind: "user", userId: "u-1" },
       ["uuid-2::1", "uuid-1::1"],
       true,
     );
@@ -468,7 +487,7 @@ describe("ViewsController", () => {
 
     expect(viewsService.exportPersonalItemDataXlsx).toHaveBeenCalledWith(
       "acp-1",
-      { sub: "manager-1" },
+      { kind: "user", userId: "manager-1" },
       ["uuid::1"],
       false,
     );
@@ -520,21 +539,21 @@ describe("ViewsController", () => {
       res,
     );
 
-    expect(viewsService.getItemCollections).toHaveBeenCalledWith(
+    expect(itemCollectionsService.getItemCollections).toHaveBeenCalledWith(
       "acp-1",
-      request.user,
+      { kind: "user", userId: "user-1" },
       true,
     );
-    expect(viewsService.updateItemCollection).toHaveBeenCalledWith(
+    expect(itemCollectionsService.updateItemCollection).toHaveBeenCalledWith(
       "acp-1",
-      request.user,
+      { kind: "user", userId: "user-1" },
       "collection-1",
       expect.objectContaining({ baseVersion: 2, rowKeys: ["uuid::1"] }),
       true,
     );
-    expect(viewsService.exportItemCollectionCsv).toHaveBeenCalledWith(
+    expect(itemCollectionsService.exportItemCollectionCsv).toHaveBeenCalledWith(
       "acp-1",
-      request.user,
+      { kind: "user", userId: "user-1" },
       "collection-1",
       true,
     );
@@ -551,7 +570,7 @@ describe("ViewsController", () => {
         user: { sub: "user-1" },
       }),
     ).rejects.toThrow(ForbiddenException);
-    expect(viewsService.getItemCollections).not.toHaveBeenCalled();
+    expect(itemCollectionsService.getItemCollections).not.toHaveBeenCalled();
   });
 
   it("blocks collection endpoints when the public item list is disabled", async () => {
@@ -568,7 +587,7 @@ describe("ViewsController", () => {
         acpAccessLevel: "READ_ONLY",
       }),
     ).rejects.toThrow(ForbiddenException);
-    expect(viewsService.getItemCollections).not.toHaveBeenCalled();
+    expect(itemCollectionsService.getItemCollections).not.toHaveBeenCalled();
   });
 
   it("allows managers to use collections when the public item list is disabled", async () => {
@@ -585,9 +604,9 @@ describe("ViewsController", () => {
 
     await controller.getItemCollections("acp-1", "editor", request);
 
-    expect(viewsService.getItemCollections).toHaveBeenCalledWith(
+    expect(itemCollectionsService.getItemCollections).toHaveBeenCalledWith(
       "acp-1",
-      request.user,
+      { kind: "user", userId: "manager-1" },
       true,
     );
   });

@@ -35,6 +35,11 @@ import { Response } from "express";
 import { ViewsService } from "./views.service";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { ItemCollectionsService } from "../item-collections/item-collections.service";
+import {
+  requireStablePreferenceIdentity,
+  resolveStablePreferenceIdentity,
+} from "../item-preferences/preference-identity";
 
 class SaveItemPreferencesDto {
   @ApiPropertyOptional({
@@ -191,6 +196,7 @@ export class ViewsController {
   constructor(
     private readonly viewsService: ViewsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
+    private readonly itemCollectionsService: ItemCollectionsService,
   ) {}
 
   @Get("settings")
@@ -305,7 +311,7 @@ export class ViewsController {
 
     return this.viewsService.getItemPreferences(
       acpId,
-      req?.user,
+      resolveStablePreferenceIdentity(req?.user),
       normalizedViewId,
     );
   }
@@ -331,7 +337,7 @@ export class ViewsController {
 
     return this.viewsService.saveItemPreferences(
       acpId,
-      req?.user,
+      resolveStablePreferenceIdentity(req?.user),
       {
         ui: dto.ui,
         tags: dto.tags,
@@ -358,7 +364,7 @@ export class ViewsController {
 
     return this.viewsService.patchPersonalItemPreferenceRow(
       acpId,
-      req?.user,
+      resolveStablePreferenceIdentity(req?.user),
       dto.rowKey,
       dto.rowData ?? null,
       "item-explorer",
@@ -391,7 +397,7 @@ export class ViewsController {
       dto.perspective === "editor";
     const buffer = await this.viewsService.exportPersonalItemDataXlsx(
       acpId,
-      req?.user,
+      resolveStablePreferenceIdentity(req?.user),
       dto.rowKeys,
       canEditExplorerState,
     );
@@ -451,9 +457,9 @@ export class ViewsController {
     @Request() req: any,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    return this.viewsService.getItemCollections(
+    return this.itemCollectionsService.getItemCollections(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       this.isEditorPerspective(req, perspective),
     );
   }
@@ -467,9 +473,9 @@ export class ViewsController {
     @Request() req: any,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    return this.viewsService.createItemCollection(
+    return this.itemCollectionsService.createItemCollection(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       dto.name,
       this.isEditorPerspective(req, dto.perspective),
     );
@@ -485,9 +491,9 @@ export class ViewsController {
     @Request() req: any,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    return this.viewsService.updateItemCollection(
+    return this.itemCollectionsService.updateItemCollection(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       collectionId,
       dto,
       this.isEditorPerspective(req, dto.perspective),
@@ -503,9 +509,9 @@ export class ViewsController {
     @Request() req: any,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    return this.viewsService.activateItemCollection(
+    return this.itemCollectionsService.activateItemCollection(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       dto.collectionId || null,
       this.isEditorPerspective(req, dto.perspective),
     );
@@ -521,9 +527,9 @@ export class ViewsController {
     @Request() req: any,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    return this.viewsService.deleteItemCollection(
+    return this.itemCollectionsService.deleteItemCollection(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       collectionId,
       this.isEditorPerspective(req, perspective),
     );
@@ -540,9 +546,9 @@ export class ViewsController {
     @Res() res: Response,
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
-    const buffer = await this.viewsService.exportItemCollectionCsv(
+    const buffer = await this.itemCollectionsService.exportItemCollectionCsv(
       acpId,
-      req?.user,
+      this.requireCollectionIdentity(req),
       collectionId,
       this.isEditorPerspective(req, perspective),
     );
@@ -657,6 +663,13 @@ export class ViewsController {
         "Item collections are not enabled for this ACP",
       );
     }
+  }
+
+  private requireCollectionIdentity(req?: any) {
+    return requireStablePreferenceIdentity(
+      req?.user,
+      "A stable identity is required for item collections",
+    );
   }
 
   private isEditorPerspective(

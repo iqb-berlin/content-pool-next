@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { DataSource, Repository } from "typeorm";
 import * as bcrypt from "bcryptjs";
 import {
   Acp,
@@ -15,6 +15,7 @@ import {
   AccessModel,
   AcpCredential,
   AppSettings,
+  ItemResponseState,
   User,
 } from "../database/entities";
 import {
@@ -53,6 +54,7 @@ export class AcpService {
     private readonly settingsRepository: Repository<AppSettings>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async findAll(): Promise<Acp[]> {
@@ -126,7 +128,10 @@ export class AcpService {
 
   async delete(id: string): Promise<void> {
     const acp = await this.findById(id);
-    await this.acpRepository.remove(acp);
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(ItemResponseState).delete({ acpId: id });
+      await manager.getRepository(Acp).remove(acp);
+    });
   }
 
   // ACP-Index management

@@ -528,7 +528,18 @@ describe("UnitParserService", () => {
       itemPropertiesOverride: {
         i1: { tags: ["legacy"], empiricalDifficulty: 0.25 },
         u1_i1: { tags: ["resolved"] },
-        "uuid-1": { empiricalDifficulty: 0.75 },
+        "uuid-1": {
+          empiricalDifficulty: 0.75,
+          infit: 1.04,
+          discrimination: 0.41,
+          solutionRate: 0.68,
+          itemTimeSeconds: 33,
+          stimulusTimeSeconds: 12,
+          bookletOccurrences: [
+            { booklet: "B2", position: 8 },
+            { booklet: "B1", position: 3 },
+          ],
+        },
       },
     });
 
@@ -537,6 +548,15 @@ describe("UnitParserService", () => {
         uuid: "uuid-1",
         rowKey: "uuid-1",
         empiricalDifficulty: 0.75,
+        infit: 1.04,
+        discrimination: 0.41,
+        solutionRate: 0.68,
+        itemTimeSeconds: 33,
+        stimulusTimeSeconds: 12,
+        bookletOccurrences: [
+          { booklet: "B1", position: 3 },
+          { booklet: "B2", position: 8 },
+        ],
         tags: ["resolved"],
       }),
     ]);

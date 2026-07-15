@@ -106,6 +106,91 @@ describe("ItemsService", () => {
     ]);
   });
 
+  it("resolves explicit VOMD UUID properties and partial-credit rows in the item list", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      acpIndex: {
+        assessmentParts: [
+          {
+            units: [
+              {
+                id: "unit-1",
+                name: "Unit One",
+                items: [{ id: "item-1", name: "Item One" }],
+              },
+            ],
+          },
+        ],
+      },
+      itemProperties: {
+        "explicit-uuid::A": { infit: 1.1 },
+        "explicit-uuid::B": { infit: 1.2 },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          itemId: "item-1",
+          uuid: "explicit-uuid",
+          rowKey: "explicit-uuid::A",
+          rowNumber: 1,
+          subId: "A",
+          unitId: "unit-1",
+          unitLabel: "Unit One",
+          description: "",
+          variableId: "v1",
+          metadata: {},
+          empiricalDifficulty: 0.1,
+          infit: 1.1,
+          itemTimeSeconds: 20,
+          stimulusTimeSeconds: 10,
+          bookletOccurrences: [{ booklet: "B1", position: 3 }],
+          tags: [],
+        },
+        {
+          itemId: "item-1",
+          uuid: "explicit-uuid",
+          rowKey: "explicit-uuid::B",
+          rowNumber: 2,
+          subId: "B",
+          unitId: "unit-1",
+          unitLabel: "Unit One",
+          description: "",
+          variableId: "v1",
+          metadata: {},
+          empiricalDifficulty: 0.2,
+          infit: 1.2,
+          itemTimeSeconds: 20,
+          stimulusTimeSeconds: 10,
+          bookletOccurrences: [{ booklet: "B2", position: 4 }],
+          tags: [],
+        },
+      ],
+    });
+
+    const items = await service.getItems("acp-1");
+
+    expect(items).toHaveLength(2);
+    expect(items).toEqual([
+      expect.objectContaining({
+        itemId: "unit-1_item-1",
+        uuid: "explicit-uuid",
+        rowKey: "explicit-uuid::A",
+        subId: "A",
+        infit: 1.1,
+        bookletOccurrences: [{ booklet: "B1", position: 3 }],
+      }),
+      expect.objectContaining({
+        itemId: "unit-1_item-1",
+        uuid: "explicit-uuid",
+        rowKey: "explicit-uuid::B",
+        subId: "B",
+        infit: 1.2,
+        bookletOccurrences: [{ booklet: "B2", position: 4 }],
+      }),
+    ]);
+  });
+
   it("returns item details by id and null for unknown items", async () => {
     jest
       .spyOn(service, "getItems")
@@ -169,7 +254,33 @@ describe("ItemsService", () => {
       Buffer.from("item;est"),
     );
 
-    expect(result).toEqual({ updated: 0, failed: [] });
+    expect(result).toEqual({
+      updated: 0,
+      failed: [],
+      successes: [],
+      nextItemProperties: {},
+    });
+  });
+
+  it("accepts an item-only CSV as an unchanged import", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: { "uuid-1": { infit: 1.05 } },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item\nI1"),
+    );
+
+    expect(result).toEqual({
+      updated: 0,
+      failed: [],
+      successes: [],
+      nextItemProperties: { "uuid-1": { infit: 1.05 } },
+    });
+    expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
   it("validates required CSV headers", async () => {
@@ -270,6 +381,242 @@ describe("ItemsService", () => {
     await expect(
       service.uploadEmpiricalDifficulties("acp-1", Buffer.from(csv)),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it("imports wide item parameters and groups multiple booklet occurrences", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: { "uuid-1": { tags: ["keep"] } },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+
+    const csv = [
+      "item;sub_id;est;infit;discrimination;solution_rate;item_time_s;stimulus_time_s;booklet;position",
+      "I1;;0,25;1,05;0,42;0,73;35;12;B2;8",
+      "I1;;0.25;1.05;0.42;0.73;35;12;B1;3",
+    ].join("\n");
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from(csv),
+    );
+
+    expect(result.updated).toBe(1);
+    expect(result.failed).toEqual([]);
+    expect(result.successes).toEqual([
+      expect.objectContaining({
+        fields: [
+          "est",
+          "infit",
+          "discrimination",
+          "solution_rate",
+          "item_time_s",
+          "stimulus_time_s",
+          "booklet",
+          "position",
+        ],
+        bookletOccurrences: [
+          { booklet: "B1", position: 3 },
+          { booklet: "B2", position: 8 },
+        ],
+      }),
+    ]);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": {
+        tags: ["keep"],
+        empiricalDifficulty: 0.25,
+        infit: 1.05,
+        discrimination: 0.42,
+        solutionRate: 0.73,
+        itemTimeSeconds: 35,
+        stimulusTimeSeconds: 12,
+        bookletOccurrences: [
+          { booklet: "B1", position: 3 },
+          { booklet: "B2", position: 8 },
+        ],
+      },
+    });
+  });
+
+  it("reports clearing booklet occurrences as an explicit field update", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [{ booklet: "B1", position: 3 }],
+        },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;booklet;position\nI1;;"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { bookletOccurrences: [] },
+    });
+    expect(result.successes).toEqual([
+      expect.objectContaining({
+        fields: ["booklet", "position"],
+        bookletOccurrences: [],
+      }),
+    ]);
+  });
+
+  it("rejects conflicting scalar values and duplicate booklet occurrences", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    await expect(
+      service.uploadItemParameters(
+        "acp-1",
+        Buffer.from("item;infit;booklet;position\nI1;1.0;B1;1\nI1;1.1;B2;2"),
+      ),
+    ).rejects.toThrow(/unterschiedliche Werte/);
+
+    await expect(
+      service.uploadItemParameters(
+        "acp-1",
+        Buffer.from("item;infit;booklet;position\nI1;1.0;B1;1\nI1;1.0;B1;1"),
+      ),
+    ).rejects.toThrow(/mehrfach vor/);
+  });
+
+  it("rejects inconsistent stimulus times within one unit", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        { uuid: "uuid-1", itemId: "I-1", unitId: "U-1", unitLabel: "U1" },
+        { uuid: "uuid-2", itemId: "I-2", unitId: "U-1", unitLabel: "U1" },
+      ],
+    });
+
+    await expect(
+      service.uploadItemParameters(
+        "acp-1",
+        Buffer.from("item;stimulus_time_s\nI1;10\nI2;12"),
+      ),
+    ).rejects.toThrow(/unterschiedliche Stimuluszeiten/);
+  });
+
+  it("accepts one stimulus time with blank repetitions in the same unit", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        { uuid: "uuid-1", itemId: "I-1", unitId: "U-1", unitLabel: "U1" },
+        { uuid: "uuid-2", itemId: "I-2", unitId: "U-1", unitLabel: "U1" },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;stimulus_time_s\nI1;10\nI2;"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { stimulusTimeSeconds: 10 },
+      "uuid-2": { stimulusTimeSeconds: 10 },
+    });
+  });
+
+  it("accepts one item time with blank partial-credit repetitions", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        { uuid: "uuid-1", itemId: "I-1", unitId: "U-1", unitLabel: "U1" },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;sub_id;item_time_s\nI1;A;20\nI1;B;"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { itemTimeSeconds: 20 },
+      "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
+      "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
+    });
+  });
+
+  it("canonicalizes item time by UUID and stimulus time across the complete unit", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": { stimulusTimeSeconds: 5 },
+        "uuid-1::A": {
+          itemUuid: "uuid-1",
+          subId: "A",
+          itemTimeSeconds: 3,
+          stimulusTimeSeconds: 5,
+        },
+        "uuid-1::B": {
+          itemUuid: "uuid-1",
+          subId: "B",
+          itemTimeSeconds: 4,
+          stimulusTimeSeconds: 5,
+        },
+        "uuid-2": { stimulusTimeSeconds: 6 },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        { uuid: "uuid-1", itemId: "I-1", unitId: "U-1", unitLabel: "U1" },
+        { uuid: "uuid-2", itemId: "I-2", unitId: "U-1", unitLabel: "U1" },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;sub_id;item_time_s;stimulus_time_s\nI1;A;20;12"),
+    );
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { itemTimeSeconds: 20, stimulusTimeSeconds: 12 },
+      "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
+      "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
+      "uuid-2": { stimulusTimeSeconds: 12 },
+    });
   });
 
   it("imports multiple partial-credit rows for the same item by second-column Sub-ID", async () => {
@@ -450,6 +797,43 @@ describe("ItemsService", () => {
     ).rejects.toThrow(/sowohl mit als auch ohne Sub-ID/);
 
     expect(acpRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("does not let an invalid row poison standard/partial mode detection", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      itemProperties: {},
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "U1",
+        },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;sub_id;infit\nI1;A;invalid\nI1;;1.0"),
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        updated: 1,
+        failed: [
+          { csvRow: "I1", reason: "Ungültiger Zahlenwert in infit" },
+        ],
+        nextItemProperties: { "uuid-1": { infit: 1 } },
+      }),
+    );
+    expect(acpRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: { "uuid-1": { infit: 1 } },
+      }),
+    );
   });
 
   it("supports dry-run upload mode without persistence", async () => {

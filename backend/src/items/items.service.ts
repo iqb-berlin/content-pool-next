@@ -6,7 +6,7 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Acp, AcpAccessConfig, AccessModel } from "../database/entities";
-import { UnitParserService } from "../files/unit-parser.service";
+import { UnitParserService, VomdItemData } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
 import {
@@ -20,14 +20,50 @@ const SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY =
 
 export interface ItemData {
   itemId: string;
+  uuid?: string;
+  rowKey?: string;
+  rowNumber?: number;
+  subId?: string;
+  subIdDisplay?: string;
   unitId: string;
   unitName: string;
   name: string;
   sourceVariable?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
+  infit?: number;
+  discrimination?: number;
+  solutionRate?: number;
+  itemTimeSeconds?: number;
+  stimulusTimeSeconds?: number;
+  bookletOccurrences?: Array<{ booklet: string; position: number }>;
   tags?: string[];
 }
+
+type ImportedScalarProperty =
+  | "empiricalDifficulty"
+  | "infit"
+  | "discrimination"
+  | "solutionRate"
+  | "itemTimeSeconds"
+  | "stimulusTimeSeconds";
+
+const IMPORTED_SCALAR_COLUMNS: Array<{
+  header: string;
+  property: ImportedScalarProperty;
+  nonNegative?: boolean;
+}> = [
+  { header: "est", property: "empiricalDifficulty" },
+  { header: "infit", property: "infit" },
+  { header: "discrimination", property: "discrimination" },
+  { header: "solution_rate", property: "solutionRate" },
+  { header: "item_time_s", property: "itemTimeSeconds", nonNegative: true },
+  {
+    header: "stimulus_time_s",
+    property: "stimulusTimeSeconds",
+    nonNegative: true,
+  },
+];
 
 @Injectable()
 export class ItemsService {
@@ -49,6 +85,15 @@ export class ItemsService {
     const index = acp.acpIndex as any;
     const units = getIndexUnits(index);
     const items: ItemData[] = [];
+    const parsedItemList =
+      await this.unitParserService.getItemListFromFiles(acpId);
+    const fileRowsByItem = new Map<string, VomdItemData[]>();
+    for (const fileRow of parsedItemList?.items || []) {
+      const key = `${fileRow.unitId}\u0000${fileRow.itemId}`;
+      const rows = fileRowsByItem.get(key) || [];
+      rows.push(fileRow);
+      fileRowsByItem.set(key, rows);
+    }
 
     for (const unit of units) {
       for (const item of unit.items || []) {
@@ -56,6 +101,40 @@ export class ItemsService {
           item.useUnitAliasAsPrefix !== false
             ? `${unit.id}_${item.id}`
             : item.id;
+        const fileRows =
+          fileRowsByItem.get(`${unit.id}\u0000${item.id}`) ||
+          fileRowsByItem.get(`${unit.id}\u0000${itemId}`) ||
+          [];
+
+        if (fileRows.length) {
+          for (const fileRow of fileRows) {
+            items.push({
+              itemId,
+              uuid: fileRow.uuid,
+              rowKey: fileRow.rowKey,
+              rowNumber: fileRow.rowNumber,
+              subId: fileRow.subId,
+              subIdDisplay: fileRow.subIdDisplay,
+              unitId: unit.id,
+              unitName: unit.name,
+              name: item.name || fileRow.description || item.id,
+              sourceVariable: fileRow.sourceVariable || item.sourceVariable,
+              metadata: {
+                ...(item.metadata || {}),
+                ...(fileRow.metadata || {}),
+              },
+              empiricalDifficulty: fileRow.empiricalDifficulty,
+              infit: fileRow.infit,
+              discrimination: fileRow.discrimination,
+              solutionRate: fileRow.solutionRate,
+              itemTimeSeconds: fileRow.itemTimeSeconds,
+              stimulusTimeSeconds: fileRow.stimulusTimeSeconds,
+              bookletOccurrences: fileRow.bookletOccurrences,
+              tags: fileRow.tags || [],
+            });
+          }
+          continue;
+        }
 
         const props = acp.itemProperties?.[itemId] || {};
 
@@ -67,6 +146,32 @@ export class ItemsService {
           sourceVariable: item.sourceVariable,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
+          ...(this.toFiniteNumber(props.infit) !== undefined
+            ? { infit: this.toFiniteNumber(props.infit) }
+            : {}),
+          ...(this.toFiniteNumber(props.discrimination) !== undefined
+            ? { discrimination: this.toFiniteNumber(props.discrimination) }
+            : {}),
+          ...(this.toFiniteNumber(props.solutionRate) !== undefined
+            ? { solutionRate: this.toFiniteNumber(props.solutionRate) }
+            : {}),
+          ...(this.toFiniteNumber(props.itemTimeSeconds) !== undefined
+            ? { itemTimeSeconds: this.toFiniteNumber(props.itemTimeSeconds) }
+            : {}),
+          ...(this.toFiniteNumber(props.stimulusTimeSeconds) !== undefined
+            ? {
+                stimulusTimeSeconds: this.toFiniteNumber(
+                  props.stimulusTimeSeconds,
+                ),
+              }
+            : {}),
+          ...(this.normalizeBookletOccurrences(props.bookletOccurrences).length
+            ? {
+                bookletOccurrences: this.normalizeBookletOccurrences(
+                  props.bookletOccurrences,
+                ),
+              }
+            : {}),
           tags: Array.isArray(props.tags) ? props.tags : [],
         });
       }
@@ -127,6 +232,26 @@ export class ItemsService {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
     } = {},
   ) {
+    return this.uploadItemParameters(acpId, fileBuffer, {
+      ...options,
+      requireEmpiricalDifficulty: true,
+    });
+  }
+
+  /**
+   * Upload empirical values and additional item parameters from a wide CSV.
+   * Rows that share an item/Sub-ID are grouped so booklet occurrences remain
+   * a 1:n property of one stable Explorer row.
+   */
+  async uploadItemParameters(
+    acpId: string,
+    fileBuffer: Buffer,
+    options: {
+      persist?: boolean;
+      itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      requireEmpiricalDifficulty?: boolean;
+    } = {},
+  ) {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) throw new NotFoundException("ACP not found");
 
@@ -135,35 +260,87 @@ export class ItemsService {
 
     const content = fileBuffer.toString("utf-8");
     const lines = content.split(/\r?\n/);
-    if (lines.length < 2) return { updated: 0, failed: [] };
+    if (lines.length < 2) {
+      return {
+        updated: 0,
+        failed: [],
+        successes: [],
+        nextItemProperties: this.cloneItemProperties(
+          options.itemPropertiesOverride || acp.itemProperties || {},
+        ),
+      };
+    }
 
-    const headers = this.parseCsvLine(lines[0]).map((header) =>
-      header.trim().toLowerCase(),
+    const headers = this.parseCsvLine(lines[0]).map((header, index) =>
+      header
+        .replace(index === 0 ? /^\uFEFF/ : /$^/, "")
+        .trim()
+        .toLowerCase(),
     );
     const itemIdx = headers.indexOf("item");
     const estIdx = headers.indexOf("est");
+    const canonicalSubIdIdx = headers.indexOf("sub_id");
     const subIdIdx =
-      headers.length > 2 && ![itemIdx, estIdx].includes(1) ? 1 : -1;
+      canonicalSubIdIdx >= 0
+        ? canonicalSubIdIdx
+        : options.requireEmpiricalDifficulty &&
+            headers.length > 2 &&
+            ![itemIdx, estIdx].includes(1)
+          ? 1
+          : -1;
+    const bookletIdx = headers.indexOf("booklet");
+    const positionIdx = headers.indexOf("position");
+    const hasBookletColumn = bookletIdx >= 0;
+    const hasPositionColumn = positionIdx >= 0;
 
-    if (itemIdx === -1 || estIdx === -1) {
+    if (itemIdx === -1 || (options.requireEmpiricalDifficulty && estIdx < 0)) {
       throw new BadRequestException(
-        'CSV must contain "item" and "est" columns',
+        options.requireEmpiricalDifficulty
+          ? 'CSV must contain "item" and "est" columns'
+          : 'CSV must contain an "item" column',
+      );
+    }
+    if (hasBookletColumn !== hasPositionColumn) {
+      throw new BadRequestException(
+        'CSV columns "booklet" and "position" must be provided together',
       );
     }
 
-    const failed = [];
-    const successes = [];
-    const matchedRowKeys = new Map<string, number>(); // stable row key -> row index
+    const scalarColumns = IMPORTED_SCALAR_COLUMNS.map((definition) => ({
+      ...definition,
+      index: headers.indexOf(definition.header),
+    })).filter((definition) => definition.index >= 0);
+
+    const props = this.cloneItemProperties(
+      options.itemPropertiesOverride || acp.itemProperties || {},
+    );
+    if (!scalarColumns.length && bookletIdx < 0) {
+      return {
+        updated: 0,
+        failed: [],
+        successes: [],
+        nextItemProperties: props,
+      };
+    }
+
+    const failed: Array<{ csvRow: string; reason: string }> = [];
+    const successes: Array<Record<string, unknown>> = [];
     const matchedItemModes = new Map<
       string,
       { mode: "standard" | "partial"; rowIndex: number }
     >();
-    let updatedCount = 0;
+    const groups = new Map<
+      string,
+      {
+        match: (typeof items)[number];
+        subId: string;
+        rowIndexes: number[];
+        scalars: Map<ImportedScalarProperty, Set<number>>;
+        occurrences: Map<string, { booklet: string; position: number }>;
+        emptyOccurrenceRows: number[];
+      }
+    >();
 
-    // Copy existing prop configurations
-    const props = this.cloneItemProperties(
-      options.itemPropertiesOverride || acp.itemProperties || {},
-    );
     let isUpdated = false;
 
     // Normalization helper handles variable separators
@@ -176,12 +353,17 @@ export class ItemsService {
 
       const row = this.parseCsvLine(line);
       const itemValRaw = row[itemIdx]?.trim() || "";
-      const estValRaw = row[estIdx]?.trim() || "";
       const subId = subIdIdx >= 0 ? normalizeItemSubId(row[subIdIdx]) : "";
-
-      const estValNum = parseFloat(estValRaw.replace(",", "."));
-
-      if (!itemValRaw || isNaN(estValNum)) continue;
+      if (!itemValRaw) {
+        failed.push({ csvRow: `Zeile ${i + 1}`, reason: "Item fehlt" });
+        continue;
+      }
+      if (options.requireEmpiricalDifficulty) {
+        const empiricalValue = Number(
+          (row[estIdx] || "").trim().replace(",", "."),
+        );
+        if (!Number.isFinite(empiricalValue)) continue;
+      }
 
       const normalizedCsvItem = normalize(itemValRaw);
 
@@ -201,6 +383,90 @@ export class ItemsService {
       if (match) {
         const rowKey = buildItemRowKey(match.uuid, subId);
         const mode = subId ? "partial" : "standard";
+
+        let group = groups.get(rowKey);
+        if (!group) {
+          group = {
+            match,
+            subId,
+            rowIndexes: [],
+            scalars: new Map(),
+            occurrences: new Map(),
+            emptyOccurrenceRows: [],
+          };
+          groups.set(rowKey, group);
+        }
+        if (bookletIdx < 0 && group.rowIndexes.length > 0) {
+          throw new BadRequestException(
+            `Konflikt: Die Zeile für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} kommt mehrfach in der CSV vor.`,
+          );
+        }
+
+        let invalidReason = "";
+        const rowScalars = new Map<ImportedScalarProperty, number>();
+        for (const definition of scalarColumns) {
+          const rawValue = row[definition.index]?.trim() || "";
+          if (!rawValue) continue;
+          const value = Number(rawValue.replace(",", "."));
+          if (!Number.isFinite(value)) {
+            invalidReason = `Ungültiger Zahlenwert in ${definition.header}`;
+            break;
+          }
+          if (definition.nonNegative && value < 0) {
+            invalidReason = `${definition.header} darf nicht negativ sein`;
+            break;
+          }
+          rowScalars.set(definition.property, value);
+        }
+        if (invalidReason) {
+          failed.push({ csvRow: itemValRaw, reason: invalidReason });
+          if (!group.rowIndexes.length) groups.delete(rowKey);
+          continue;
+        }
+
+        let occurrence:
+          | { key: string; value: { booklet: string; position: number } }
+          | undefined;
+        let emptyOccurrence = false;
+        if (bookletIdx >= 0) {
+          const booklet = row[bookletIdx]?.trim() || "";
+          const rawPosition = row[positionIdx]?.trim() || "";
+          if (!booklet && !rawPosition) {
+            if (group.emptyOccurrenceRows.length > 0) {
+              throw new BadRequestException(
+                `Konflikt: Die leere Booklet-Zuordnung für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} kommt mehrfach vor.`,
+              );
+            }
+            emptyOccurrence = true;
+          } else if (!booklet || !rawPosition) {
+            failed.push({
+              csvRow: itemValRaw,
+              reason: "Booklet und Position müssen gemeinsam gesetzt sein",
+            });
+            if (!group.rowIndexes.length) groups.delete(rowKey);
+            continue;
+          } else {
+            const position = Number(rawPosition);
+            if (!Number.isInteger(position) || position <= 0) {
+              failed.push({
+                csvRow: itemValRaw,
+                reason: "Position muss eine positive Ganzzahl sein",
+              });
+              if (!group.rowIndexes.length) groups.delete(rowKey);
+              continue;
+            }
+            const occurrenceKey = `${booklet}\u0000${position}`;
+            if (group.occurrences.has(occurrenceKey)) {
+              throw new BadRequestException(
+                `Konflikt: Booklet "${booklet}" und Position ${position} kommen für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} mehrfach vor.`,
+              );
+            }
+            occurrence = {
+              key: occurrenceKey,
+              value: { booklet, position },
+            };
+          }
+        }
         const previousMode = matchedItemModes.get(match.uuid);
         if (previousMode && previousMode.mode !== mode) {
           throw new BadRequestException(
@@ -208,57 +474,180 @@ export class ItemsService {
           );
         }
         matchedItemModes.set(match.uuid, { mode, rowIndex: i });
-
-        if (matchedRowKeys.has(rowKey)) {
-          throw new BadRequestException(
-            `Konflikt: Die Zeile für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} kommt mehrfach in der CSV vor (Zeile ${matchedRowKeys.get(rowKey)! + 1} und Zeile ${i + 1}). Bitte bereinigen Sie die Datei.`,
-          );
-        }
-        matchedRowKeys.set(rowKey, i);
-
-        const partialRowKeys = this.getPartialCreditRowKeys(props, match.uuid);
-        let affectedRowKeys = [rowKey];
-        if (mode === "standard" && partialRowKeys.length) {
-          affectedRowKeys = partialRowKeys;
-          if (props[match.uuid]?.empiricalDifficulty !== undefined) {
-            delete props[match.uuid].empiricalDifficulty;
-          }
-          for (const partialRowKey of partialRowKeys) {
-            props[partialRowKey] = {
-              ...props[partialRowKey],
-              empiricalDifficulty: estValNum,
-            };
-          }
-        } else {
-          if (
-            mode === "partial" &&
-            props[match.uuid]?.empiricalDifficulty !== undefined
-          ) {
-            delete props[match.uuid].empiricalDifficulty;
-          }
-          props[rowKey] = {
-            ...props[rowKey],
-            ...(subId ? { itemUuid: match.uuid, subId } : {}),
-            empiricalDifficulty: estValNum,
-          };
-        }
-        successes.push({
-          itemId: match.itemId,
-          unitId: match.unitId,
-          ...(affectedRowKeys.length === 1
-            ? { rowKey: affectedRowKeys[0] }
-            : {}),
-          affectedRowKeys,
-          subId: subId || undefined,
-          value: estValNum,
+        rowScalars.forEach((value, property) => {
+          const values = group.scalars.get(property) || new Set<number>();
+          values.add(value);
+          group.scalars.set(property, values);
         });
-        updatedCount++;
-        isUpdated = true;
+        if (occurrence) {
+          group.occurrences.set(occurrence.key, occurrence.value);
+        }
+        if (emptyOccurrence) group.emptyOccurrenceRows.push(i);
+        group.rowIndexes.push(i);
       } else {
         failed.push({
           csvRow: itemValRaw,
           reason: "Kein passendes Item gefunden",
         });
+      }
+    }
+
+    for (const group of groups.values()) {
+      for (const [property, values] of group.scalars.entries()) {
+        if (values.size > 1) {
+          throw new BadRequestException(
+            `Konflikt: Für Item "${group.match.itemId}"${group.subId ? ` und Sub-ID "${group.subId}"` : ""} wurden unterschiedliche Werte für ${property} geliefert.`,
+          );
+        }
+      }
+    }
+
+    const hasStimulusColumn = scalarColumns.some(
+      (definition) => definition.property === "stimulusTimeSeconds",
+    );
+    const hasItemTimeColumn = scalarColumns.some(
+      (definition) => definition.property === "itemTimeSeconds",
+    );
+    const stimulusTimesByUnit = new Map<string, Set<number>>();
+    const itemTimesByUuid = new Map<string, Set<number>>();
+    for (const group of groups.values()) {
+      const values = group.scalars.get("stimulusTimeSeconds");
+      if (hasStimulusColumn) {
+        const unitValues =
+          stimulusTimesByUnit.get(group.match.unitId) || new Set<number>();
+        if (values?.size) unitValues.add(Array.from(values)[0]);
+        stimulusTimesByUnit.set(group.match.unitId, unitValues);
+      }
+
+      const itemTimeValues = group.scalars.get("itemTimeSeconds");
+      if (hasItemTimeColumn) {
+        const valuesForItem =
+          itemTimesByUuid.get(group.match.uuid) || new Set<number>();
+        if (itemTimeValues?.size) {
+          valuesForItem.add(Array.from(itemTimeValues)[0]);
+        }
+        itemTimesByUuid.set(group.match.uuid, valuesForItem);
+      }
+    }
+    for (const [unitId, values] of stimulusTimesByUnit.entries()) {
+      if (values.size > 1) {
+        throw new BadRequestException(
+          `Konflikt: Für Unit "${unitId}" wurden unterschiedliche Stimuluszeiten geliefert.`,
+        );
+      }
+    }
+    for (const [itemUuid, values] of itemTimesByUuid.entries()) {
+      if (values.size > 1) {
+        throw new BadRequestException(
+          `Konflikt: Für Item "${itemUuid}" wurden unterschiedliche Itemzeiten geliefert.`,
+        );
+      }
+    }
+
+    for (const [rowKey, group] of groups.entries()) {
+      const partialRowKeys = this.getPartialCreditRowKeys(
+        props,
+        group.match.uuid,
+      );
+      const affectedRowKeys =
+        !group.subId && partialRowKeys.length ? partialRowKeys : [rowKey];
+      const importedProperties = scalarColumns.map(
+        (definition) => definition.property,
+      );
+      const bookletOccurrences =
+        bookletIdx >= 0
+          ? Array.from(group.occurrences.values()).sort(
+              (left, right) =>
+                left.booklet.localeCompare(right.booklet, "de", {
+                  numeric: true,
+                }) || left.position - right.position,
+            )
+          : undefined;
+
+      if (group.subId || affectedRowKeys.length > 1) {
+        const base = props[group.match.uuid];
+        if (base) {
+          for (const property of importedProperties) delete base[property];
+          if (bookletIdx >= 0) delete base.bookletOccurrences;
+        }
+      }
+
+      for (const affectedRowKey of affectedRowKeys) {
+        const nextProperties: Record<string, unknown> = {
+          ...(props[affectedRowKey] || {}),
+          ...(group.subId
+            ? { itemUuid: group.match.uuid, subId: group.subId }
+            : {}),
+        };
+        for (const definition of scalarColumns) {
+          const values = group.scalars.get(definition.property);
+          if (values?.size) {
+            nextProperties[definition.property] = Array.from(values)[0];
+          } else {
+            delete nextProperties[definition.property];
+          }
+        }
+        if (bookletOccurrences) {
+          nextProperties.bookletOccurrences = bookletOccurrences;
+        }
+        props[affectedRowKey] = nextProperties;
+      }
+
+      successes.push({
+        itemId: group.match.itemId,
+        unitId: group.match.unitId,
+        ...(affectedRowKeys.length === 1 ? { rowKey: affectedRowKeys[0] } : {}),
+        affectedRowKeys,
+        subId: group.subId || undefined,
+        ...(!options.requireEmpiricalDifficulty
+          ? {
+              fields: [
+                ...scalarColumns.map((definition) => definition.header),
+                ...(bookletIdx >= 0 ? ["booklet", "position"] : []),
+              ],
+            }
+          : {}),
+        ...(group.scalars.get("empiricalDifficulty")?.size
+          ? {
+              value: Array.from(
+                group.scalars.get("empiricalDifficulty") as Set<number>,
+              )[0],
+            }
+          : {}),
+        ...(!options.requireEmpiricalDifficulty && bookletIdx >= 0
+          ? { bookletOccurrences }
+          : {}),
+      });
+      isUpdated = true;
+    }
+
+    if (hasItemTimeColumn) {
+      for (const [itemUuid, values] of itemTimesByUuid.entries()) {
+        this.setCanonicalItemProperty(
+          props,
+          itemUuid,
+          "itemTimeSeconds",
+          this.parseImportedTimeValue(values),
+        );
+      }
+    }
+    if (hasStimulusColumn) {
+      const itemUuidsByUnit = new Map<string, Set<string>>();
+      for (const item of items) {
+        const itemUuids = itemUuidsByUnit.get(item.unitId) || new Set<string>();
+        itemUuids.add(item.uuid);
+        itemUuidsByUnit.set(item.unitId, itemUuids);
+      }
+      for (const [unitId, values] of stimulusTimesByUnit.entries()) {
+        const stimulusTime = this.parseImportedTimeValue(values);
+        for (const itemUuid of itemUuidsByUnit.get(unitId) || []) {
+          this.setCanonicalItemProperty(
+            props,
+            itemUuid,
+            "stimulusTimeSeconds",
+            stimulusTime,
+          );
+        }
       }
     }
 
@@ -268,11 +657,77 @@ export class ItemsService {
     }
 
     return {
-      updated: updatedCount,
+      updated: groups.size,
       failed,
       successes,
       nextItemProperties: props,
     };
+  }
+
+  private toFiniteNumber(value: unknown): number | undefined {
+    const numberValue = Number(value);
+    return value === undefined ||
+      value === null ||
+      !Number.isFinite(numberValue)
+      ? undefined
+      : numberValue;
+  }
+
+  private normalizeBookletOccurrences(
+    value: unknown,
+  ): Array<{ booklet: string; position: number }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => {
+        const booklet =
+          entry && typeof entry === "object" && "booklet" in entry
+            ? String((entry as { booklet?: unknown }).booklet || "").trim()
+            : "";
+        const position =
+          entry && typeof entry === "object" && "position" in entry
+            ? Number((entry as { position?: unknown }).position)
+            : Number.NaN;
+        return { booklet, position };
+      })
+      .filter(
+        (entry) =>
+          entry.booklet.length > 0 &&
+          Number.isInteger(entry.position) &&
+          entry.position > 0,
+      )
+      .sort(
+        (left, right) =>
+          left.booklet.localeCompare(right.booklet, "de", { numeric: true }) ||
+          left.position - right.position,
+      );
+  }
+
+  private parseImportedTimeValue(values: Set<number>): number | undefined {
+    return Array.from(values)[0];
+  }
+
+  private setCanonicalItemProperty(
+    itemProperties: Record<string, Record<string, unknown>>,
+    itemUuid: string,
+    property: "itemTimeSeconds" | "stimulusTimeSeconds",
+    value: number | undefined,
+  ): void {
+    const baseProperties = { ...(itemProperties[itemUuid] || {}) };
+    if (value === undefined) delete baseProperties[property];
+    else baseProperties[property] = value;
+    if (Object.keys(baseProperties).length || itemProperties[itemUuid]) {
+      itemProperties[itemUuid] = baseProperties;
+    }
+    for (const rowKey of this.getPartialCreditRowKeys(
+      itemProperties,
+      itemUuid,
+    )) {
+      if (itemProperties[rowKey]?.[property] !== undefined) {
+        const rowProperties = { ...itemProperties[rowKey] };
+        delete rowProperties[property];
+        itemProperties[rowKey] = rowProperties;
+      }
+    }
   }
 
   private getPartialCreditRowKeys(

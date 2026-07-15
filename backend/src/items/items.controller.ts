@@ -117,6 +117,108 @@ export class ItemsController {
     return this.itemsService.getItem(acpId, itemId);
   }
 
+  @Post("upload-item-parameters")
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("ACP_MANAGER")
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Upload a wide CSV with empirical and additional item parameters",
+  })
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        file: { type: "string", format: "binary" },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor("file"))
+  async uploadItemParameters(
+    @Param("acpId") acpId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query("draft") draft?: string,
+    @Query("baseVersion") baseVersion?: string,
+    @Request() req?: any,
+  ) {
+    if (!file?.buffer) {
+      throw new BadRequestException("A CSV file is required");
+    }
+    const draftMode = draft === "true";
+    const parsedBaseVersion = parseInt(baseVersion || "", 10);
+    const currentState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      true,
+    );
+
+    if (!draftMode) {
+      this.assertCleanExplorerStateForDirectWrite(currentState.status);
+    }
+
+    const uploadResult = await this.itemsService.uploadItemParameters(
+      acpId,
+      file.buffer,
+      {
+        persist: false,
+        itemPropertiesOverride: draftMode
+          ? currentState.draftState.itemProperties
+          : currentState.publishedState.itemProperties,
+      },
+    );
+    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
+
+    if (!draftMode) {
+      if (uploadResult.updated > 0) {
+        await this.itemExplorerStateService.publishItemPropertiesImmediately(
+          acpId,
+          uploadResult.nextItemProperties as Record<
+            string,
+            Record<string, unknown>
+          >,
+          {
+            actor,
+            changeType: "CSV_UPLOAD_ITEM_PARAMETERS",
+            baseVersion: currentState.version,
+          },
+        );
+      }
+      return uploadResult;
+    }
+
+    if (uploadResult.updated === 0) {
+      return {
+        updated: 0,
+        failed: uploadResult.failed,
+        successes: uploadResult.successes,
+        explorerState: currentState,
+      };
+    }
+
+    const explorerState = await this.itemExplorerStateService.patchDraft(
+      acpId,
+      {
+        itemProperties: uploadResult.nextItemProperties as Record<
+          string,
+          Record<string, unknown>
+        >,
+      },
+      {
+        actor,
+        changeType: "CSV_UPLOAD_ITEM_PARAMETERS",
+        baseVersion: Number.isNaN(parsedBaseVersion)
+          ? undefined
+          : parsedBaseVersion,
+      },
+    );
+
+    return {
+      updated: uploadResult.updated,
+      failed: uploadResult.failed,
+      successes: uploadResult.successes,
+      explorerState,
+    };
+  }
+
   @Post("upload-empirical-difficulty")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")

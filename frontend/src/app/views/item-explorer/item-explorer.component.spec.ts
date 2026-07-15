@@ -3102,9 +3102,9 @@ describe('ItemExplorerComponent', () => {
         showOnlyItemsWithEmpiricalDifficulty: true,
       }),
     );
-    const getFileItemList = vi.fn().mockReturnValue(
-      of({ items: [], columns: [], unitMetadata: {}, codingSchemes: {} }),
-    );
+    const getFileItemList = vi
+      .fn()
+      .mockReturnValue(of({ items: [], columns: [], unitMetadata: {}, codingSchemes: {} }));
     const component = createComponent({
       api: { uploadItemParameters, getFileItemList },
     });

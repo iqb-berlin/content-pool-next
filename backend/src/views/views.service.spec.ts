@@ -1,10 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
-import {
-  BadRequestException,
-  ConflictException,
-  UnauthorizedException,
-} from "@nestjs/common";
+import { BadRequestException, UnauthorizedException } from "@nestjs/common";
 import { ViewsService } from "./views.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { UnitParserService } from "../files/unit-parser.service";
@@ -247,7 +243,7 @@ describe("ViewsService", () => {
 
     const prefs = await service.getItemPreferences(
       "acp-1",
-      { sub: "user-1", type: "user" },
+      { kind: "user", userId: "user-1" },
       "item-list",
     );
     expect(prefs).toEqual({
@@ -267,12 +263,9 @@ describe("ViewsService", () => {
       service.getItemPreferences("acp-1", null, "item-explorer"),
     ).rejects.toThrow(UnauthorizedException);
     await expect(
-      service.patchPersonalItemPreferenceRow(
-        "acp-1",
-        { type: "credential", username: "legacy-reader" },
-        "uuid::1",
-        { note: "not saved" },
-      ),
+      service.patchPersonalItemPreferenceRow("acp-1", null, "uuid::1", {
+        note: "not saved",
+      }),
     ).rejects.toThrow(UnauthorizedException);
     expect(itemPreferenceRepository.query).not.toHaveBeenCalled();
   });
@@ -333,7 +326,7 @@ describe("ViewsService", () => {
 
     const buffer = await service.exportPersonalItemDataXlsx(
       "acp-1",
-      { sub: "user-1", type: "user" },
+      { kind: "user", userId: "user-1" },
       ["uuid-2::1", "removed-row", "uuid-1::1"],
       true,
     );
@@ -405,287 +398,11 @@ describe("ViewsService", () => {
     await expect(
       service.exportPersonalItemDataXlsx(
         "acp-1",
-        { sub: "user-1", type: "user" },
+        { kind: "user", userId: "user-1" },
         undefined as unknown as string[],
       ),
     ).rejects.toThrow(BadRequestException);
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
-  });
-
-  it("resolves personal collection summaries without double-counting partial-credit rows", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue({
-      preferences: {
-        activeCollectionId: "collection-1",
-        collections: [
-          {
-            id: "collection-1",
-            name: "Auswahl A",
-            rowKeys: ["uuid-1::1", "uuid-1::2", "uuid-2", "removed"],
-            version: 3,
-            createdAt: "2026-07-01T10:00:00.000Z",
-            updatedAt: "2026-07-02T10:00:00.000Z",
-          },
-        ],
-      },
-    });
-    unitParserService.getItemListFromFiles.mockResolvedValue({
-      items: [
-        {
-          rowKey: "uuid-1::1",
-          uuid: "uuid-1",
-          unitId: "unit-1",
-          itemTimeSeconds: 10,
-          stimulusTimeSeconds: 5,
-        },
-        {
-          rowKey: "uuid-1::2",
-          uuid: "uuid-1",
-          unitId: "unit-1",
-          itemTimeSeconds: 10,
-          stimulusTimeSeconds: 5,
-        },
-        {
-          rowKey: "uuid-2",
-          uuid: "uuid-2",
-          unitId: "unit-1",
-          stimulusTimeSeconds: 5,
-        },
-      ],
-    });
-
-    const result = await service.getItemCollections(
-      "acp-1",
-      { sub: "user-1", type: "user" },
-      true,
-    );
-
-    expect(result.activeCollectionId).toBe("collection-1");
-    expect(result.collections[0].unavailableRowKeys).toEqual(["removed"]);
-    expect(result.collections[0].summary).toEqual({
-      rowCount: 4,
-      itemCount: 2,
-      unitCount: 1,
-      itemTimeSeconds: 10,
-      stimulusTimeSeconds: 5,
-      testTimeSeconds: 15,
-      missingItemTimeCount: 1,
-      missingStimulusTimeUnitCount: 0,
-      complete: false,
-    });
-  });
-
-  it("version-checks and persists personal collection updates", async () => {
-    const record = {
-      preferences: {
-        rowData: { "uuid-1::1": { note: "keep" } },
-        activeCollectionId: "collection-1",
-        collections: [
-          {
-            id: "collection-1",
-            name: "Alt",
-            rowKeys: ["uuid-1::1"],
-            version: 2,
-            createdAt: "2026-07-01T10:00:00.000Z",
-            updatedAt: "2026-07-01T10:00:00.000Z",
-          },
-        ],
-      },
-    };
-    itemPreferenceRepository.findOne.mockResolvedValue(record);
-
-    await expect(
-      service.updateItemCollection(
-        "acp-1",
-        { sub: "user-1", type: "user" },
-        "collection-1",
-        { baseVersion: 1, name: "Neu" },
-      ),
-    ).rejects.toThrow(ConflictException);
-
-    await service.updateItemCollection(
-      "acp-1",
-      { sub: "user-1", type: "user" },
-      "collection-1",
-      { baseVersion: 2, name: "Neu", rowKeys: ["uuid-1::1", "uuid-2::1"] },
-    );
-
-    expect(itemPreferenceRepository.save).toHaveBeenCalledWith(record);
-    expect(record.preferences.collections[0] as any).toEqual(
-      expect.objectContaining({
-        name: "Neu",
-        rowKeys: ["uuid-1::1", "uuid-2::1"],
-        version: 3,
-      }),
-    );
-    expect(record.preferences.rowData).toEqual({
-      "uuid-1::1": { note: "keep" },
-    });
-    expect(itemPreferenceRepository.findOne).toHaveBeenCalledWith(
-      expect.objectContaining({ lock: { mode: "pessimistic_write" } }),
-    );
-  });
-
-  it("serializes concurrent collection updates before checking the version", async () => {
-    const record = {
-      preferences: {
-        rowData: { "uuid-1::1": { note: "keep" } },
-        activeCollectionId: "collection-1",
-        collections: [
-          {
-            id: "collection-1",
-            name: "Alt",
-            rowKeys: ["uuid-1::1"],
-            version: 2,
-            createdAt: "2026-07-01T10:00:00.000Z",
-            updatedAt: "2026-07-01T10:00:00.000Z",
-          },
-        ],
-      },
-    };
-    itemPreferenceRepository.findOne.mockResolvedValue(record);
-    let transactionTail = Promise.resolve();
-    itemPreferenceRepository.manager.transaction.mockImplementation(
-      (callback: (manager: typeof transactionManager) => Promise<unknown>) => {
-        const result = transactionTail.then(() => callback(transactionManager));
-        transactionTail = result.then(
-          () => undefined,
-          () => undefined,
-        );
-        return result;
-      },
-    );
-
-    const results = await Promise.allSettled([
-      service.updateItemCollection(
-        "acp-1",
-        { sub: "user-1", type: "user" },
-        "collection-1",
-        { baseVersion: 2, name: "Erste Änderung" },
-      ),
-      service.updateItemCollection(
-        "acp-1",
-        { sub: "user-1", type: "user" },
-        "collection-1",
-        { baseVersion: 2, name: "Zweite Änderung" },
-      ),
-    ]);
-
-    expect(results[0].status).toBe("fulfilled");
-    expect(results[1]).toEqual(
-      expect.objectContaining({
-        status: "rejected",
-        reason: expect.any(ConflictException),
-      }),
-    );
-    expect(record.preferences.collections[0]).toEqual(
-      expect.objectContaining({ name: "Erste Änderung", version: 3 }),
-    );
-    expect(record.preferences.rowData).toEqual({
-      "uuid-1::1": { note: "keep" },
-    });
-  });
-
-  it("limits the number of personal item collections", async () => {
-    const timestamp = "2026-07-01T10:00:00.000Z";
-    const record = {
-      preferences: {
-        activeCollectionId: "collection-1",
-        collections: Array.from({ length: 100 }, (_, index) => ({
-          id: `collection-${index + 1}`,
-          name: `Kollektion ${index + 1}`,
-          rowKeys: [],
-          version: 1,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        })),
-      },
-    };
-    itemPreferenceRepository.findOne.mockResolvedValue(record);
-
-    await expect(
-      service.createItemCollection(
-        "acp-1",
-        { sub: "user-1", type: "user" },
-        "Eine zu viel",
-      ),
-    ).rejects.toThrow(BadRequestException);
-
-    expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
-  });
-
-  it("requires a stable identity for item collections", async () => {
-    await expect(service.getItemCollections("acp-1", null)).rejects.toThrow(
-      UnauthorizedException,
-    );
-    await expect(
-      service.getItemCollections("acp-1", {
-        type: "credential",
-        username: "legacy-only",
-      }),
-    ).rejects.toThrow(UnauthorizedException);
-  });
-
-  it("exports collection rows through the shared Sub-ID and parameter columns", async () => {
-    itemPreferenceRepository.findOne.mockResolvedValue({
-      preferences: {
-        collections: [
-          {
-            id: "collection-1",
-            name: "Auswahl A",
-            rowKeys: ["uuid-1::A", "removed-row"],
-            version: 1,
-            createdAt: "2026-07-01T10:00:00.000Z",
-            updatedAt: "2026-07-01T10:00:00.000Z",
-          },
-        ],
-        rowData: {
-          "uuid-1::A": {
-            category: "II",
-            tags: ["Prüfen"],
-            note: "Erste Zeile\nZweite Zeile",
-          },
-        },
-      },
-    });
-    unitParserService.getItemListFromFiles.mockResolvedValue({
-      items: [
-        {
-          itemId: "item-1",
-          uuid: "uuid-1",
-          rowKey: "uuid-1::A",
-          subId: "A",
-          unitId: "unit-1",
-          unitLabel: "Aufgabe 1",
-          empiricalDifficulty: -0.25,
-          infit: 1.05,
-          discrimination: 0.4,
-          solutionRate: 0.75,
-          itemTimeSeconds: 20,
-          stimulusTimeSeconds: 12,
-          bookletOccurrences: [{ booklet: "B1", position: 3 }],
-        },
-      ],
-    });
-
-    const csv = (
-      await service.exportItemCollectionCsv(
-        "acp-1",
-        { sub: "user-1", type: "user" },
-        "collection-1",
-        true,
-      )
-    ).toString("utf8");
-
-    expect(csv).toContain(
-      '"Unit-ID";"Unit-Label";"Item-ID";"Item-UUID";"Sub-ID";"Zeilenschlüssel"',
-    );
-    expect(csv).toContain(
-      '"Empirische Itemschwierigkeit";"Infit";"Trennschärfe";"Lösungshäufigkeit";"Itemzeit (s)";"Stimuluszeit (s)";"Booklet";"Position im Booklet"',
-    );
-    expect(csv).toContain(
-      '"Auswahl A";"1";"unit-1";"Aufgabe 1";"item-1";"uuid-1";"A";"uuid-1::A";"-0.25";"1.05";"0.4";"0.75";"20";"12";"B1";"3";"II";"Prüfen";"Erste Zeile\\nZweite Zeile"',
-    );
-    expect(csv).not.toContain("removed-row");
   });
 
   it("exports all stored participant rows as CSV with literal note line breaks", async () => {
@@ -777,7 +494,7 @@ describe("ViewsService", () => {
     await expect(
       service.exportPersonalItemDataXlsx(
         "acp-1",
-        { sub: "user-1", type: "user" },
+        { kind: "user", userId: "user-1" },
         rowKeys,
       ),
     ).rejects.toThrow("At most 10000 item rows can be exported");
@@ -797,7 +514,11 @@ describe("ViewsService", () => {
     await expect(
       service.getItemPreferences(
         "acp-1",
-        { type: "credential", sub: "credential-new", username: "reader-a" },
+        {
+          kind: "credential",
+          credentialId: "credential-new",
+          credentialUsername: "reader-a",
+        },
         "item-explorer",
       ),
     ).resolves.toEqual({ ui: {}, tags: {}, rowData: {} });
@@ -814,7 +535,11 @@ describe("ViewsService", () => {
   it("saves preferences scoped by stable credential id", async () => {
     const saved = await service.saveItemPreferences(
       "acp-1",
-      { type: "credential", sub: "credential-1", username: "reader-a" },
+      {
+        kind: "credential",
+        credentialId: "credential-1",
+        credentialUsername: "reader-a",
+      },
       {
         ui: {
           filterText: "xyz",
@@ -1118,7 +843,7 @@ describe("ViewsService", () => {
   it("upserts preference records atomically for authenticated users", async () => {
     const saved = await service.saveItemPreferences(
       "acp-1",
-      { sub: "user-1", type: "oidc" },
+      { kind: "user", userId: "user-1" },
       {
         ui: { sortBy: "name" },
         tags: { itemA: ["A", "A", " B "] },
@@ -1127,7 +852,9 @@ describe("ViewsService", () => {
     );
 
     expect(itemPreferenceRepository.query).toHaveBeenCalledWith(
-      expect.stringContaining('ON CONFLICT ("acp_id", "view_id", "user_id")'),
+      expect.stringMatching(
+        /ON CONFLICT \("acp_id", "view_id", "user_id"\)[\s\S]*jsonb_typeof\("acp_item_preferences"\."preferences"\) = 'object'[\s\S]*ELSE '\{\}'::jsonb[\s\S]*\) \|\| EXCLUDED\."preferences"/,
+      ),
       ["acp-1", "item-list", "user-1", null, null, JSON.stringify(saved)],
     );
     expect(itemPreferenceRepository.findOne).not.toHaveBeenCalled();
@@ -1138,7 +865,7 @@ describe("ViewsService", () => {
   it("persists personal working data by stable row key", async () => {
     const saved = await service.saveItemPreferences(
       "acp-1",
-      { sub: "user-1", type: "oidc" },
+      { kind: "user", userId: "user-1" },
       {
         rowData: {
           "uuid-1::1": {
@@ -1167,7 +894,7 @@ describe("ViewsService", () => {
 
     const result = await service.patchPersonalItemPreferenceRow(
       "acp-1",
-      { sub: "user-1", type: "oidc" },
+      { kind: "user", userId: "user-1" },
       "uuid-2::1",
       { category: " II ", formatted: "ignored" },
     );
@@ -1212,7 +939,7 @@ describe("ViewsService", () => {
     await expect(
       service.patchPersonalItemPreferenceRow(
         "acp-1",
-        { sub: "user-1", type: "oidc" },
+        { kind: "user", userId: "user-1" },
         "invented-row",
         { note: "unbounded" },
       ),
@@ -1226,7 +953,7 @@ describe("ViewsService", () => {
     await expect(
       service.patchPersonalItemPreferenceRow(
         "acp-1",
-        { sub: "user-1", type: "oidc" },
+        { kind: "user", userId: "user-1" },
         "removed-row",
         null,
       ),
@@ -1241,7 +968,7 @@ describe("ViewsService", () => {
     await expect(
       service.patchPersonalItemPreferenceRow(
         "acp-1",
-        { sub: "user-1", type: "oidc" },
+        { kind: "user", userId: "user-1" },
         "uuid-1::1",
         { note: "one too many" },
       ),

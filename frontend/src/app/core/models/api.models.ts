@@ -378,6 +378,7 @@ export interface FeatureConfig {
   itemSubIdLabel?: string;
   itemSubIdLabels?: Record<string, string>;
   enablePersonalItemData?: boolean;
+  enableItemCollections?: boolean;
   personalItemCategoryLabel?: string;
   personalItemCategoryValues?: string[];
   personalItemTagLabel?: string;
@@ -449,6 +450,34 @@ export interface ItemViewPreferences {
   ui?: Record<string, unknown>;
   tags?: Record<string, string[]>;
   rowData?: Record<string, Record<string, unknown>>;
+}
+
+export interface ItemCollectionSummary {
+  rowCount: number;
+  itemCount: number;
+  unitCount: number;
+  itemTimeSeconds: number;
+  stimulusTimeSeconds: number;
+  testTimeSeconds: number;
+  missingItemTimeCount: number;
+  missingStimulusTimeUnitCount: number;
+  complete: boolean;
+}
+
+export interface ItemCollection {
+  id: string;
+  name: string;
+  rowKeys: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  unavailableRowKeys: string[];
+  summary: ItemCollectionSummary;
+}
+
+export interface ItemCollectionsPayload {
+  activeCollectionId: string | null;
+  collections: ItemCollection[];
 }
 
 export interface ItemExplorerMetadataColumns {

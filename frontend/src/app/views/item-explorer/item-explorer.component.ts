@@ -18,6 +18,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 import { finalize, firstValueFrom, Subscription } from 'rxjs';
 import {
+  ItemCollection,
+  ItemCollectionSummary,
   ItemExplorerChangeLogEntry,
   ItemExplorerSharedState,
   ItemExplorerStateEnvelope,
@@ -27,6 +29,7 @@ interface MetadataColumn {
   id: string;
   label: string;
   visible?: boolean;
+  kind?: 'text' | 'number' | 'booklet' | 'position';
 }
 
 interface ExplorerItem {
@@ -43,6 +46,12 @@ interface ExplorerItem {
   sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  infit?: number;
+  discrimination?: number;
+  solutionRate?: number;
+  itemTimeSeconds?: number;
+  stimulusTimeSeconds?: number;
+  bookletOccurrences?: Array<{ booklet: string; position: number }>;
   tags?: string[];
   previewTargetId?: string;
   excluded?: boolean;
@@ -74,6 +83,21 @@ interface PendingPersonalRowUpdate {
 interface SuspendedPersonalSession {
   identity: string;
   updates: Array<[string, PendingPersonalRowUpdate]>;
+}
+
+interface ItemParameterUploadSuccess {
+  unitId?: string;
+  itemId?: string;
+  subId?: string;
+  value?: number;
+  fields?: string[];
+  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+}
+
+interface ItemParameterUploadResult {
+  updated: number;
+  failed: Array<{ csvRow: string; reason: string }>;
+  successes: ItemParameterUploadSuccess[];
 }
 
 type PersonalDataLoadState = 'idle' | 'loading' | 'loaded' | 'error';
@@ -109,6 +133,29 @@ type ItemExplorerPerspective = 'editor' | 'read-only';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
+  { id: 'infit', label: 'Infit', kind: 'number' },
+  { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
+  { id: 'solutionRate', label: 'Lösungshäufigkeit', kind: 'number' },
+  { id: 'itemTimeSeconds', label: 'Itemzeit (s)', kind: 'number' },
+  { id: 'stimulusTimeSeconds', label: 'Stimuluszeit (s)', kind: 'number' },
+  { id: 'booklet', label: 'Booklet', kind: 'booklet' },
+  { id: 'bookletPosition', label: 'Position im Booklet', kind: 'position' },
+];
+const UPLOAD_FIELD_LABELS: Record<string, string> = {
+  est: 'Empirische Itemschwierigkeit',
+  empiricalDifficulty: 'Empirische Itemschwierigkeit',
+  infit: 'Infit',
+  discrimination: 'Trennschärfe',
+  solution_rate: 'Lösungshäufigkeit',
+  solutionRate: 'Lösungshäufigkeit',
+  item_time_s: 'Itemzeit (s)',
+  itemTimeSeconds: 'Itemzeit (s)',
+  stimulus_time_s: 'Stimuluszeit (s)',
+  stimulusTimeSeconds: 'Stimuluszeit (s)',
+  booklet: 'Booklet',
+  position: 'Position im Booklet',
+};
 
 @Component({
   selector: 'app-item-explorer',
@@ -203,7 +250,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
               (change)="onCsvFileSelected($event)"
             />
             <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
-              📄 Item-Schwierigkeiten (CSV) hochladen
+              📄 Itemparameter (CSV) hochladen
             </button>
             <button
               class="btn btn-outline btn-sm"
@@ -532,6 +579,115 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             }
           </div>
 
+          @if (enableItemCollections) {
+            <div class="collection-bar">
+              @if (collectionLoadState === 'loading') {
+                <span>Kollektionen werden geladen …</span>
+              } @else if (collectionLoadState === 'error') {
+                <span class="personal-data-error">{{ collectionError }}</span>
+                <button class="btn btn-outline btn-sm" (click)="loadItemCollections()">
+                  Erneut laden
+                </button>
+              } @else {
+                <select
+                  class="tag-input collection-select"
+                  [ngModel]="activeCollectionId"
+                  (ngModelChange)="activateCollection($event)"
+                  [disabled]="collectionBusy || itemCollections.length === 0"
+                >
+                  @if (itemCollections.length === 0) {
+                    <option [ngValue]="null">Noch keine Kollektion</option>
+                  }
+                  @for (collection of itemCollections; track collection.id) {
+                    <option [value]="collection.id">{{ collection.name }}</option>
+                  }
+                </select>
+                <button class="btn btn-outline btn-sm" (click)="createCollection()">Neu</button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  [disabled]="!activeItemCollection || collectionBusy"
+                  (click)="renameActiveCollection()"
+                >
+                  Umbenennen
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  [disabled]="!activeItemCollection || collectionBusy"
+                  (click)="clearActiveCollection()"
+                >
+                  Leeren
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  [disabled]="!activeItemCollection || collectionBusy"
+                  (click)="showCollectionDrawer = !showCollectionDrawer"
+                >
+                  {{ showCollectionDrawer ? 'Details schließen' : 'Details' }}
+                </button>
+                @if (activeItemCollection; as collection) {
+                  <span class="collection-summary">
+                    <strong>{{ formatDuration(collection.summary.testTimeSeconds) }}</strong>
+                    · {{ collection.summary.rowCount }} Zeilen ·
+                    {{ collection.summary.itemCount }} Items ·
+                    {{ collection.summary.unitCount }} Units
+                    @if (!collection.summary.complete) {
+                      <span class="collection-warning">
+                        · unvollständig: {{ collection.summary.missingItemTimeCount }} Itemzeiten,
+                        {{ collection.summary.missingStimulusTimeUnitCount }} Stimuluszeiten fehlen
+                      </span>
+                    }
+                  </span>
+                }
+              }
+            </div>
+            @if (collectionError && collectionLoadState !== 'error') {
+              <div class="alert alert-error collection-error">{{ collectionError }}</div>
+            }
+            @if (showCollectionDrawer && activeItemCollection) {
+              <div class="collection-drawer">
+                <div class="collection-drawer-header">
+                  <strong>{{ activeItemCollection.name }}</strong>
+                  <div>
+                    <button class="btn btn-outline btn-sm" (click)="exportActiveCollection()">
+                      CSV exportieren
+                    </button>
+                    <button class="btn btn-danger btn-sm" (click)="deleteActiveCollection()">
+                      Kollektion löschen
+                    </button>
+                  </div>
+                </div>
+                @if (activeCollectionItems.length === 0) {
+                  <p class="help-text">Noch keine Items ausgewählt.</p>
+                } @else {
+                  <ol class="collection-items">
+                    @for (entry of activeCollectionItems; track entry.rowKey) {
+                      <li>
+                        @if (entry.item) {
+                          <span>
+                            {{ entry.item.unitLabel }} · {{ entry.item.itemId }}
+                            @if (entry.item.subIdDisplay || entry.item.subId) {
+                              · {{ entry.item.subIdDisplay || entry.item.subId }}
+                            }
+                          </span>
+                        } @else {
+                          <span class="collection-warning"
+                            >Nicht verfügbar: {{ entry.rowKey }}</span
+                          >
+                        }
+                        <button
+                          class="btn btn-outline btn-sm"
+                          (click)="removeRowFromActiveCollection(entry.rowKey)"
+                        >
+                          Entfernen
+                        </button>
+                      </li>
+                    }
+                  </ol>
+                }
+              </div>
+            }
+          }
+
           <div
             #tableScroll
             class="table-scroll"
@@ -543,6 +699,11 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             <table class="table explorer-table">
               <thead>
                 <tr>
+                  @if (enableItemCollections) {
+                    <th class="collection-select-col" title="Zur aktiven Kollektion hinzufügen">
+                      ✓
+                    </th>
+                  }
                   <th (click)="sortBy('rowNumber')" class="sortable number-col">
                     Nr. {{ getSortIndicator('rowNumber') }}
                   </th>
@@ -577,6 +738,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                   }
                 </tr>
                 <tr class="filter-row">
+                  @if (enableItemCollections) {
+                    <th class="collection-select-col"></th>
+                  }
                   <th class="number-col"></th>
                   <th class="sticky-col">
                     <input
@@ -607,10 +771,9 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                   @if (hasEmpiricalDifficulty) {
                     <th>
                       <input
-                        type="number"
                         class="col-filter-input"
                         [(ngModel)]="columnFilters['empiricalDifficulty']"
-                        placeholder="🔍 Wert..."
+                        placeholder="Min..Max"
                         (input)="applyFilter()"
                       />
                     </th>
@@ -620,7 +783,11 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                       <input
                         class="col-filter-input"
                         [(ngModel)]="columnFilters[col.id]"
-                        [placeholder]="'🔍 ' + col.label + '...'"
+                        [placeholder]="
+                          col.kind === 'number' || col.kind === 'position'
+                            ? 'Min..Max'
+                            : '🔍 ' + col.label + '...'
+                        "
                         (input)="applyFilter()"
                       />
                     </th>
@@ -676,6 +843,17 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                     [attr.aria-selected]="selectedItem?.rowKey === item.rowKey"
                     (click)="selectItem(item, i)"
                   >
+                    @if (enableItemCollections) {
+                      <td class="collection-select-col" (click)="$event.stopPropagation()">
+                        <input
+                          type="checkbox"
+                          [checked]="isItemInActiveCollection(item)"
+                          [disabled]="collectionBusy || collectionLoadState !== 'loaded'"
+                          (change)="toggleItemInActiveCollection(item)"
+                          [attr.aria-label]="'Item ' + item.itemId + ' in Kollektion auswählen'"
+                        />
+                      </td>
+                    }
                     <td class="number-col">{{ item.rowNumber }}</td>
                     <td class="sticky-col">
                       <div class="item-id-cell">
@@ -709,12 +887,14 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                           item.empiricalDifficulty !== undefined &&
                           item.empiricalDifficulty !== null
                             ? item.empiricalDifficulty
-                            : '–'
+                            : ''
                         }}
                       </td>
                     }
                     @for (col of columns; track col.id) {
-                      <td class="meta-cell">{{ item.metadata[col.id] || '–' }}</td>
+                      <td class="meta-cell">
+                        {{ getMetadataColumnDisplayValue(item, col) }}
+                      </td>
                     }
                     @if (enableTags) {
                       <td class="tags-cell" (click)="$event.stopPropagation()">
@@ -1310,9 +1490,19 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                             Item-ID
                           </th>
                           <th
-                            style="text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                            style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
                           >
-                            Wert (est)
+                            Sub-ID
+                          </th>
+                          <th
+                            style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                          >
+                            Aktualisierte Felder
+                          </th>
+                          <th
+                            style="text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--color-border);"
+                          >
+                            Booklet / Position
                           </th>
                         </tr>
                       </thead>
@@ -1330,9 +1520,19 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                               <code>{{ success.itemId }}</code>
                             </td>
                             <td
-                              style="text-align: right; padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                              style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
                             >
-                              {{ success.value }}
+                              {{ success.subId || '–' }}
+                            </td>
+                            <td
+                              style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                            >
+                              {{ getUploadSuccessFieldSummary(success) }}
+                            </td>
+                            <td
+                              style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border);"
+                            >
+                              {{ getUploadSuccessBookletSummary(success) }}
                             </td>
                           </tr>
                         }
@@ -2951,8 +3151,20 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   private readonly authStorageListener = (event: StorageEvent) => {
     if (!event.key || event.key === 'cp_token') {
       this.syncPersonalItemDataSession();
+      this.syncItemCollectionSession();
     }
   };
+
+  // Personal named item collections
+  enableItemCollections = false;
+  itemCollections: ItemCollection[] = [];
+  activeCollectionId: string | null = null;
+  collectionLoadState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
+  collectionBusy = false;
+  collectionError = '';
+  showCollectionDrawer = false;
+  private collectionSessionIdentity: string | null = null;
+  private collectionSessionVersion = 0;
 
   private readonly draftPatchDebounceMs = 250;
   private draftPatchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -2974,7 +3186,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   // File Upload
   showUploadReport = false;
-  uploadResult: { updated: number; failed: any[]; successes: any[] } | null = null;
+  uploadResult: ItemParameterUploadResult | null = null;
   isUploading = false;
   showErrorDialog = false;
   errorMessage = '';
@@ -3191,6 +3403,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.items.filter((item) => this.isItemVisibleByBaseRules(item)).length;
   }
 
+  get activeItemCollection(): ItemCollection | null {
+    return (
+      this.itemCollections.find((collection) => collection.id === this.activeCollectionId) || null
+    );
+  }
+
+  get activeCollectionItems(): Array<{
+    rowKey: string;
+    item: ExplorerItem | null;
+  }> {
+    const collection = this.activeItemCollection;
+    if (!collection) return [];
+    const itemMap = new Map(this.items.map((item) => [item.rowKey, item] as const));
+    return collection.rowKeys.map((rowKey) => ({ rowKey, item: itemMap.get(rowKey) || null }));
+  }
+
   get selectedPreviewTarget(): string {
     const storedId = this.getStoredPreviewTargetId(this.selectedItem);
     if (storedId) {
@@ -3393,6 +3621,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     window.addEventListener('storage', this.authStorageListener);
     this.authSessionSubscription = this.authService.currentUser$.subscribe(() => {
       this.syncPersonalItemDataSession();
+      this.syncItemCollectionSession();
     });
 
     // Check if user is ACP Manager
@@ -3411,6 +3640,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.showOnlyItemsWithEmpiricalDifficulty = fc.showOnlyItemsWithEmpiricalDifficulty === true;
       this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
       this.enablePersonalItemData = fc.enablePersonalItemData === true;
+      this.enableItemCollections = fc.enableItemCollections === true;
       this.personalItemCategoryLabel =
         String(fc.personalItemCategoryLabel || 'Kompetenzstufe').trim() || 'Kompetenzstufe';
       this.personalItemCategoryValues = this.normalizeStringList(fc.personalItemCategoryValues);
@@ -3425,6 +3655,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       this.metadataSettings = this.resolveMetadataSettings(fc);
       this.loadSharedExplorerState();
       this.syncPersonalItemDataSession();
+      this.syncItemCollectionSession();
       this.startPlayerIfReady();
     });
 
@@ -3448,12 +3679,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
             onSettled?.();
             return;
           }
-          this.allColumns = result.columns || [];
-          this.columns = this.filterVisibleColumns(this.allColumns);
           this.items = (result.items || []).map((item: ExplorerItem) => ({
             ...item,
             rowKey: item.rowKey || item.uuid || `${item.unitId}_${item.itemId}`,
+            bookletOccurrences: Array.isArray(item.bookletOccurrences)
+              ? item.bookletOccurrences
+              : [],
           }));
+          this.allColumns = this.getAvailableMetadataColumns(result.columns || []);
+          this.columns = this.filterVisibleColumns(this.allColumns);
           this.itemSubIdLabel = String(result.subIdLabel || this.itemSubIdLabel).trim() || 'Sub-ID';
           this.hasPartialCredit = this.items.some((item) => !!item.subId);
           this.hydrateItemTagsFromItems();
@@ -3466,6 +3700,9 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
           this.applyFilter(false); // re-apply current filters and sort
+          if (this.enableItemCollections && this.collectionLoadState === 'loaded') {
+            this.recalculateCollectionSummaries();
+          }
           this.itemListLoading = false;
           onSettled?.();
         },
@@ -3500,6 +3737,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     window.removeEventListener('storage', this.authStorageListener);
     this.authSessionSubscription?.unsubscribe();
     this.authSessionSubscription = null;
+    this.collectionSessionVersion += 1;
     this.stopAutoResize();
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
@@ -3587,6 +3825,417 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return this.confirmLeaveWithUnsavedChanges();
   }
 
+  private getAvailableMetadataColumns(sourceColumns: MetadataColumn[]): MetadataColumn[] {
+    const importedIds = new Set(IMPORTED_PARAMETER_COLUMNS.map((column) => column.id));
+    const normalizedSourceColumns = sourceColumns.filter((column) => !importedIds.has(column.id));
+    return [
+      ...normalizedSourceColumns.map((column) => ({ ...column, kind: 'text' as const })),
+      ...IMPORTED_PARAMETER_COLUMNS,
+    ];
+  }
+
+  getMetadataColumnDisplayValue(item: ExplorerItem, column: MetadataColumn): string {
+    if (column.kind === 'booklet') {
+      return (item.bookletOccurrences || []).map((occurrence) => occurrence.booklet).join(' | ');
+    }
+    if (column.kind === 'position') {
+      return (item.bookletOccurrences || [])
+        .map((occurrence) => String(occurrence.position))
+        .join(' | ');
+    }
+    const value = this.getMetadataColumnRawValue(item, column);
+    return value === undefined || value === null ? '' : String(value);
+  }
+
+  private getMetadataColumnRawValue(
+    item: ExplorerItem,
+    column: MetadataColumn,
+  ): string | number | undefined {
+    switch (column.id) {
+      case 'infit':
+        return item.infit;
+      case 'discrimination':
+        return item.discrimination;
+      case 'solutionRate':
+        return item.solutionRate;
+      case 'itemTimeSeconds':
+        return item.itemTimeSeconds;
+      case 'stimulusTimeSeconds':
+        return item.stimulusTimeSeconds;
+      case 'booklet':
+        return item.bookletOccurrences?.[0]?.booklet;
+      case 'bookletPosition':
+        return item.bookletOccurrences?.length
+          ? Math.min(...item.bookletOccurrences.map((occurrence) => occurrence.position))
+          : undefined;
+      default:
+        return item.metadata[column.id];
+    }
+  }
+
+  private matchesNumericFilter(value: number, rawFilter: string): boolean {
+    const filter = rawFilter.trim().replace(/,/g, '.');
+    const range = filter.match(/^(-?\d+(?:\.\d+)?)?\.\.(-?\d+(?:\.\d+)?)?$/);
+    if (range) {
+      const minimum = range[1] === undefined ? -Infinity : Number(range[1]);
+      const maximum = range[2] === undefined ? Infinity : Number(range[2]);
+      return value >= minimum && value <= maximum;
+    }
+    const comparison = filter.match(/^(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+    if (comparison) {
+      const expected = Number(comparison[2]);
+      if (comparison[1] === '>=') return value >= expected;
+      if (comparison[1] === '<=') return value <= expected;
+      if (comparison[1] === '>') return value > expected;
+      return value < expected;
+    }
+    const expected = Number(filter);
+    return Number.isFinite(expected) && value === expected;
+  }
+
+  private syncItemCollectionSession() {
+    const nextIdentity = this.enableItemCollections
+      ? this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken())
+      : null;
+    if (nextIdentity === this.collectionSessionIdentity) {
+      if (nextIdentity && this.collectionLoadState === 'idle') {
+        this.loadItemCollections();
+      } else if (
+        !nextIdentity &&
+        this.enableItemCollections &&
+        this.collectionLoadState === 'idle'
+      ) {
+        this.collectionLoadState = 'error';
+        this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      }
+      return;
+    }
+
+    this.collectionSessionVersion += 1;
+    this.collectionSessionIdentity = nextIdentity;
+    this.itemCollections = [];
+    this.activeCollectionId = null;
+    this.collectionBusy = false;
+    this.collectionError = '';
+    this.collectionLoadState = 'idle';
+    this.showCollectionDrawer = false;
+    if (nextIdentity) {
+      this.loadItemCollections();
+    } else if (this.enableItemCollections) {
+      this.collectionLoadState = 'error';
+      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+    }
+  }
+
+  private getItemCollectionSession(): { identity: string | null; version: number } {
+    return {
+      identity: this.collectionSessionIdentity,
+      version: this.collectionSessionVersion,
+    };
+  }
+
+  private isCurrentItemCollectionSession(session: {
+    identity: string | null;
+    version: number;
+  }): boolean {
+    return (
+      session.identity !== null &&
+      session.identity === this.collectionSessionIdentity &&
+      session.version === this.collectionSessionVersion
+    );
+  }
+
+  loadItemCollections() {
+    if (!this.enableItemCollections) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) {
+      this.collectionLoadState = 'error';
+      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      return;
+    }
+    this.collectionLoadState = 'loading';
+    this.collectionError = '';
+    this.api.getItemCollections(this.acpId, this.getPerspectiveForViewerRequests()).subscribe({
+      next: (payload) => {
+        if (!this.isCurrentItemCollectionSession(session)) return;
+        this.itemCollections = payload.collections || [];
+        this.activeCollectionId = payload.activeCollectionId || null;
+        this.collectionLoadState = 'loaded';
+        if (!this.itemListLoading && !this.itemListError) {
+          this.recalculateCollectionSummaries();
+        }
+      },
+      error: (error) => {
+        if (!this.isCurrentItemCollectionSession(session)) return;
+        this.collectionLoadState = 'error';
+        this.collectionError =
+          error?.status === 401
+            ? 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.'
+            : 'Kollektionen konnten nicht geladen werden.';
+      },
+    });
+  }
+
+  async createCollection(): Promise<ItemCollection | null> {
+    if (this.collectionBusy) return null;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) {
+      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      return null;
+    }
+    this.collectionBusy = true;
+    this.collectionError = '';
+    const name =
+      this.itemCollections.length === 0
+        ? 'Meine Kollektion'
+        : `Kollektion ${this.itemCollections.length + 1}`;
+    try {
+      const payload = await firstValueFrom(
+        this.api.createItemCollection(this.acpId, name, this.getPerspectiveForViewerRequests()),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return null;
+      this.applyItemCollectionsPayload(payload);
+      return this.activeItemCollection;
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return null;
+      this.collectionError = 'Die Kollektion konnte nicht erstellt werden.';
+      return null;
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
+  async activateCollection(collectionId: string | null) {
+    if (this.collectionBusy) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const payload = await firstValueFrom(
+        this.api.activateItemCollection(
+          this.acpId,
+          collectionId || null,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.applyItemCollectionsPayload(payload);
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.collectionError = 'Die aktive Kollektion konnte nicht gespeichert werden.';
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
+  isItemInActiveCollection(item: ExplorerItem): boolean {
+    return this.activeItemCollection?.rowKeys.includes(item.rowKey) === true;
+  }
+
+  async toggleItemInActiveCollection(item: ExplorerItem) {
+    let collection = this.activeItemCollection;
+    if (!collection) collection = await this.createCollection();
+    if (!collection) return;
+    const nextRowKeys = collection.rowKeys.includes(item.rowKey)
+      ? collection.rowKeys.filter((rowKey) => rowKey !== item.rowKey)
+      : [...collection.rowKeys, item.rowKey];
+    await this.persistActiveCollectionRows(nextRowKeys);
+  }
+
+  async removeRowFromActiveCollection(rowKey: string) {
+    const collection = this.activeItemCollection;
+    if (!collection) return;
+    await this.persistActiveCollectionRows(
+      collection.rowKeys.filter((candidate) => candidate !== rowKey),
+    );
+  }
+
+  async clearActiveCollection() {
+    if (!this.activeItemCollection?.rowKeys.length) return;
+    await this.persistActiveCollectionRows([]);
+  }
+
+  async renameActiveCollection() {
+    const collection = this.activeItemCollection;
+    if (!collection || this.collectionBusy) return;
+    const name = window.prompt('Name der Kollektion', collection.name)?.trim();
+    if (!name || name === collection.name) return;
+    await this.persistActiveCollectionUpdate({ name });
+  }
+
+  async deleteActiveCollection() {
+    const collection = this.activeItemCollection;
+    if (!collection || this.collectionBusy) return;
+    if (!window.confirm(`Kollektion „${collection.name}“ löschen?`)) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const payload = await firstValueFrom(
+        this.api.deleteItemCollection(
+          this.acpId,
+          collection.id,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.applyItemCollectionsPayload(payload);
+      if (!this.activeItemCollection) this.showCollectionDrawer = false;
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.collectionError = 'Die Kollektion konnte nicht gelöscht werden.';
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
+  async exportActiveCollection() {
+    const collection = this.activeItemCollection;
+    if (!collection || this.collectionBusy) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const blob = await firstValueFrom(
+        this.api.exportItemCollectionCsv(
+          this.acpId,
+          collection.id,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `item-collection-${collection.id}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.collectionError = 'Die Kollektion konnte nicht exportiert werden.';
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
+  formatDuration(rawSeconds: number): string {
+    const seconds = Math.max(0, Math.round(Number(rawSeconds) || 0));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+    return hours > 0
+      ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+      : `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+  }
+
+  private async persistActiveCollectionRows(rowKeys: string[]) {
+    await this.persistActiveCollectionUpdate({ rowKeys });
+  }
+
+  private async persistActiveCollectionUpdate(update: { name?: string; rowKeys?: string[] }) {
+    const collection = this.activeItemCollection;
+    if (!collection || this.collectionBusy) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    const previous = structuredClone(collection);
+    if (update.name !== undefined) collection.name = update.name;
+    if (update.rowKeys !== undefined) collection.rowKeys = [...update.rowKeys];
+    this.recalculateCollectionSummaries();
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const payload = await firstValueFrom(
+        this.api.updateItemCollection(
+          this.acpId,
+          collection.id,
+          { baseVersion: previous.version, ...update },
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.applyItemCollectionsPayload(payload);
+    } catch (error: any) {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      const index = this.itemCollections.findIndex((candidate) => candidate.id === previous.id);
+      if (index >= 0) this.itemCollections[index] = previous;
+      this.collectionError =
+        error?.status === 409
+          ? 'Die Kollektion wurde parallel geändert und wird neu geladen.'
+          : 'Die Kollektion konnte nicht gespeichert werden.';
+      if (error?.status === 409) this.loadItemCollections();
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
+  private applyItemCollectionsPayload(payload: {
+    activeCollectionId: string | null;
+    collections: ItemCollection[];
+  }) {
+    this.itemCollections = payload.collections || [];
+    this.activeCollectionId = payload.activeCollectionId || null;
+    this.collectionLoadState = 'loaded';
+    if (!this.itemListLoading && !this.itemListError) {
+      this.recalculateCollectionSummaries();
+    }
+  }
+
+  private recalculateCollectionSummaries() {
+    const itemMap = new Map(this.items.map((item) => [item.rowKey, item] as const));
+    this.itemCollections = this.itemCollections.map((collection) => {
+      const items = collection.rowKeys
+        .map((rowKey) => itemMap.get(rowKey))
+        .filter((item): item is ExplorerItem => Boolean(item));
+      return {
+        ...collection,
+        unavailableRowKeys: collection.rowKeys.filter((rowKey) => !itemMap.has(rowKey)),
+        summary: this.calculateCollectionSummary(items, collection.rowKeys.length),
+      };
+    });
+  }
+
+  private calculateCollectionSummary(
+    items: ExplorerItem[],
+    selectedRowCount = items.length,
+  ): ItemCollectionSummary {
+    const itemsByUuid = new Map<string, ExplorerItem[]>();
+    const itemsByUnit = new Map<string, ExplorerItem[]>();
+    items.forEach((item) => {
+      itemsByUuid.set(item.uuid, [...(itemsByUuid.get(item.uuid) || []), item]);
+      itemsByUnit.set(item.unitId, [...(itemsByUnit.get(item.unitId) || []), item]);
+    });
+    let itemTimeSeconds = 0;
+    let stimulusTimeSeconds = 0;
+    let missingItemTimeCount = 0;
+    let missingStimulusTimeUnitCount = 0;
+    itemsByUuid.forEach((rows) => {
+      const value = rows.map((row) => row.itemTimeSeconds).find((time) => Number.isFinite(time));
+      if (value === undefined) missingItemTimeCount += 1;
+      else itemTimeSeconds += value;
+    });
+    itemsByUnit.forEach((rows) => {
+      const value = rows
+        .map((row) => row.stimulusTimeSeconds)
+        .find((time) => Number.isFinite(time));
+      if (value === undefined) missingStimulusTimeUnitCount += 1;
+      else stimulusTimeSeconds += value;
+    });
+    return {
+      rowCount: selectedRowCount,
+      itemCount: itemsByUuid.size,
+      unitCount: itemsByUnit.size,
+      itemTimeSeconds,
+      stimulusTimeSeconds,
+      testTimeSeconds: itemTimeSeconds + stimulusTimeSeconds,
+      missingItemTimeCount,
+      missingStimulusTimeUnitCount,
+      complete: missingItemTimeCount === 0 && missingStimulusTimeUnitCount === 0,
+    };
+  }
+
   // --- Filtering ---
   applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
@@ -3638,8 +4287,24 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           .includes(term) ||
         item.unitLabel.toLowerCase().includes(term) ||
         item.description.toLowerCase().includes(term) ||
-        Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term));
+        Object.values(item.metadata).some((val) => val && val.toLowerCase().includes(term)) ||
+        IMPORTED_PARAMETER_COLUMNS.some((column) =>
+          this.getMetadataColumnDisplayValue(item, column).toLowerCase().includes(term),
+        );
       if (!matchesGlobal) return false;
+    }
+
+    const bookletFilter = (this.columnFilters['booklet'] || '').trim().toLowerCase();
+    const positionFilter = (this.columnFilters['bookletPosition'] || '').trim();
+    if (bookletFilter || positionFilter) {
+      const matchesOccurrence = (item.bookletOccurrences || []).some((occurrence) => {
+        const matchesBooklet =
+          !bookletFilter || occurrence.booklet.toLowerCase().includes(bookletFilter);
+        const matchesPosition =
+          !positionFilter || this.matchesNumericFilter(occurrence.position, positionFilter);
+        return matchesBooklet && matchesPosition;
+      });
+      if (!matchesOccurrence) return false;
     }
 
     // 2. Column Filters
@@ -3661,11 +4326,22 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       } else if (colId === 'empiricalDifficulty') {
         if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
           return false;
-        if (item.empiricalDifficulty.toString() !== filterValue) return false;
+        if (!this.matchesNumericFilter(item.empiricalDifficulty, filterValue)) return false;
+      } else if (colId === 'booklet' || colId === 'bookletPosition') {
+        continue;
       } else {
-        // Metadata column
-        const val = item.metadata[colId] || '';
-        if (!val.toLowerCase().includes(subTerm)) return false;
+        const column = this.allColumns.find((candidate) => candidate.id === colId);
+        if (column?.kind === 'number') {
+          const value = this.getMetadataColumnRawValue(item, column);
+          if (typeof value !== 'number' || !this.matchesNumericFilter(value, filterValue)) {
+            return false;
+          }
+        } else {
+          const val = column
+            ? this.getMetadataColumnDisplayValue(item, column)
+            : item.metadata[colId] || '';
+          if (!val.toLowerCase().includes(subTerm)) return false;
+        }
       }
     }
 
@@ -3809,16 +4485,20 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       let bVal: any = '';
 
       if (this.sortIsMeta) {
-        aVal = a.metadata[this.sortField] || '';
-        bVal = b.metadata[this.sortField] || '';
+        const column = this.allColumns.find((candidate) => candidate.id === this.sortField);
+        aVal = column ? this.getMetadataColumnRawValue(a, column) : a.metadata[this.sortField];
+        bVal = column ? this.getMetadataColumnRawValue(b, column) : b.metadata[this.sortField];
       } else if (this.sortField === 'empiricalDifficulty') {
-        aVal = a.empiricalDifficulty ?? -Infinity;
-        bVal = b.empiricalDifficulty ?? -Infinity;
+        aVal = a.empiricalDifficulty;
+        bVal = b.empiricalDifficulty;
       } else {
         aVal = (a as any)[this.sortField] || '';
         bVal = (b as any)[this.sortField] || '';
       }
 
+      const aMissing = aVal === undefined || aVal === null || aVal === '';
+      const bMissing = bVal === undefined || bVal === null || bVal === '';
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
       const primaryCmp = this.compareSortValues(aVal, bVal, this.sortDir);
       if (primaryCmp !== 0) {
         return primaryCmp;
@@ -3862,6 +4542,49 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   }
 
   // --- CSV Upload Handling ---
+  getUploadSuccessFieldSummary(success: ItemParameterUploadSuccess): string {
+    const fields = Array.isArray(success.fields) ? success.fields : [];
+    const labels = fields.map((field) => UPLOAD_FIELD_LABELS[field] || field);
+    const difficultyIndex = fields.findIndex(
+      (field) => field === 'est' || field === 'empiricalDifficulty',
+    );
+
+    if (success.value !== undefined && success.value !== null) {
+      const valueLabel = `Empirische Itemschwierigkeit: ${success.value}`;
+      if (difficultyIndex >= 0) labels[difficultyIndex] = valueLabel;
+      else labels.unshift(valueLabel);
+    }
+
+    const hasBookletUpdate =
+      fields.includes('booklet') ||
+      fields.includes('position') ||
+      Array.isArray(success.bookletOccurrences);
+    if (hasBookletUpdate) {
+      const withoutSeparateBookletFields = labels.filter(
+        (label) => label !== 'Booklet' && label !== 'Position im Booklet',
+      );
+      withoutSeparateBookletFields.push(
+        success.bookletOccurrences?.length
+          ? 'Booklet / Position'
+          : 'Booklet / Position gelöscht',
+      );
+      return [...new Set(withoutSeparateBookletFields)].join(', ') || '–';
+    }
+
+    return [...new Set(labels)].join(', ') || '–';
+  }
+
+  getUploadSuccessBookletSummary(success: ItemParameterUploadSuccess): string {
+    if (!Array.isArray(success.bookletOccurrences)) {
+      return '–';
+    }
+    if (!success.bookletOccurrences.length) return 'Gelöscht';
+
+    return success.bookletOccurrences
+      .map((occurrence) => `${occurrence.booklet} / ${occurrence.position}`)
+      .join(' | ');
+  }
+
   onCsvFileSelected(event: Event) {
     const input = event.target as HTMLInputElement;
     if (!input.files || input.files.length === 0) return;
@@ -3869,7 +4592,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
     this.isUploading = true;
     this.api
-      .uploadEmpiricalDifficulties(this.acpId, file, {
+      .uploadItemParameters(this.acpId, file, {
         draft: true,
         baseVersion: this.explorerVersion,
       })
@@ -3878,9 +4601,6 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.isUploading = false;
           this.uploadResult = result;
           this.showUploadReport = true;
-          if (typeof result.showOnlyItemsWithEmpiricalDifficulty === 'boolean') {
-            this.showOnlyItemsWithEmpiricalDifficulty = result.showOnlyItemsWithEmpiricalDifficulty;
-          }
           if (result.explorerState) {
             this.applySharedExplorerEnvelope(result.explorerState, true);
           }
@@ -3895,7 +4615,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           } else {
             this.errorMessage =
               err.error?.message ||
-              'Fehler beim Hochladen der CSV-Datei. Bitte stelle sicher, dass die Spalten "item" und "est" vorhanden sind.';
+              'Fehler beim Hochladen der CSV-Datei. Bitte prüfe die Spalte "item" und die unterstützten Itemparameter.';
           }
           this.showErrorDialog = true;
         },

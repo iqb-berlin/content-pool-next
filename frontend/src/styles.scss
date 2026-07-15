@@ -320,6 +320,72 @@ a:hover {
 /* Item Explorer tags and personal row data. Kept global so the already large Explorer
    component stylesheet stays below Angular's per-component budget. */
 app-item-explorer {
+  .collection-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+    flex-shrink: 0;
+    font-size: 0.82rem;
+  }
+
+  .collection-select {
+    min-width: 170px;
+    max-width: 260px;
+  }
+
+  .collection-summary {
+    color: var(--color-text-secondary);
+  }
+
+  .collection-warning {
+    color: #b9770e;
+  }
+
+  .collection-error {
+    margin: 6px 12px;
+  }
+
+  .collection-drawer {
+    padding: 12px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-surface);
+    max-height: 240px;
+    overflow: auto;
+    flex-shrink: 0;
+  }
+
+  .collection-drawer-header,
+  .collection-items li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .collection-drawer-header > div {
+    display: flex;
+    gap: 6px;
+  }
+
+  .collection-items {
+    margin: 10px 0 0;
+    padding-left: 24px;
+  }
+
+  .collection-items li {
+    padding: 5px 0;
+  }
+
+  .collection-select-col {
+    width: 38px;
+    min-width: 38px;
+    text-align: center;
+  }
+
   .overlay-content,
   .coding-scheme-view,
   .coding-item,

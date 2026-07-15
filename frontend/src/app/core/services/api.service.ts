@@ -29,6 +29,7 @@ import {
   ValidateUnitsResponse,
   FilePreviewResponse,
   FileDeletionResponse,
+  ItemCollectionsPayload,
 } from '../models/api.models';
 
 type ItemExplorerPerspective = 'editor' | 'read-only';
@@ -540,6 +541,32 @@ export class ApiService {
   }
 
   // Items
+  uploadItemParameters(
+    acpId: string,
+    file: File,
+    options?: { draft?: boolean; baseVersion?: number },
+  ): Observable<{
+    updated: number;
+    failed: any[];
+    successes: any[];
+    explorerState?: ItemExplorerStateEnvelope;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const query: string[] = [];
+    if (options?.draft) query.push('draft=true');
+    if (typeof options?.baseVersion === 'number') {
+      query.push(`baseVersion=${encodeURIComponent(String(options.baseVersion))}`);
+    }
+    const queryString = query.length ? `?${query.join('&')}` : '';
+    return this.http.post<{
+      updated: number;
+      failed: any[];
+      successes: any[];
+      explorerState?: ItemExplorerStateEnvelope;
+    }>(`${this.API}/acp/${acpId}/items/upload-item-parameters${queryString}`, formData);
+  }
+
   uploadEmpiricalDifficulties(
     acpId: string,
     file: File,
@@ -567,6 +594,71 @@ export class ApiService {
       successes: any[];
       explorerState?: ItemExplorerStateEnvelope;
     }>(`${this.API}/acp/${acpId}/items/upload-empirical-difficulty${queryString}`, formData);
+  }
+
+  getItemCollections(
+    acpId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.get<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections?perspective=${encodeURIComponent(perspective)}`,
+    );
+  }
+
+  createItemCollection(
+    acpId: string,
+    name: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.post<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections`,
+      { name, perspective },
+    );
+  }
+
+  updateItemCollection(
+    acpId: string,
+    collectionId: string,
+    update: { baseVersion: number; name?: string; rowKeys?: string[] },
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.patch<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}`,
+      { ...update, perspective },
+    );
+  }
+
+  activateItemCollection(
+    acpId: string,
+    collectionId: string | null,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.put<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections/active`,
+      { collectionId, perspective },
+    );
+  }
+
+  deleteItemCollection(
+    acpId: string,
+    collectionId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.delete<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}?perspective=${encodeURIComponent(perspective)}`,
+    );
+  }
+
+  exportItemCollectionCsv(
+    acpId: string,
+    collectionId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<Blob> {
+    return this.http.post(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}/export.csv?perspective=${encodeURIComponent(perspective)}`,
+      {},
+      { responseType: 'blob' },
+    );
   }
 
   clearEmpiricalDifficulties(

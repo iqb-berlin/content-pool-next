@@ -34,6 +34,18 @@ import { Roles } from "../auth/roles.decorator";
 import { IsObject } from "class-validator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 
+type ItemParameterImportKind = "item-parameters" | "empirical-difficulty";
+type ItemParameterImportTarget = "draft" | "published";
+
+interface ItemParameterImportCommand {
+  acpId: string;
+  fileBuffer: Buffer;
+  kind: ItemParameterImportKind;
+  target: ItemParameterImportTarget;
+  baseVersion?: number;
+  user?: unknown;
+}
+
 class SaveItemTagsDto {
   @ApiProperty({
     description: "Map of item UUID to tag list",
@@ -148,96 +160,14 @@ export class ItemsController {
     if (!file?.buffer) {
       throw new BadRequestException("A CSV file is required");
     }
-    const draftMode = draft === "true";
-    const parsedBaseVersion = parseInt(baseVersion || "", 10);
-    const currentState = await this.itemExplorerStateService.getStateForViewer(
+    return this.runItemParameterImport({
       acpId,
-      true,
-    );
-
-    if (!draftMode) {
-      this.assertCleanExplorerStateForDirectWrite(currentState.status);
-    }
-
-    const uploadResult = await this.itemsService.uploadItemParameters(
-      acpId,
-      file.buffer,
-      {
-        persist: false,
-        itemPropertiesOverride: draftMode
-          ? currentState.draftState.itemProperties
-          : currentState.publishedState.itemProperties,
-      },
-    );
-    const importedEmpiricalDifficulty = this.hasImportedEmpiricalDifficulty(
-      uploadResult.successes,
-    );
-    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
-
-    if (!draftMode) {
-      if (uploadResult.updated > 0) {
-        await this.itemExplorerStateService.publishItemPropertiesImmediately(
-          acpId,
-          uploadResult.nextItemProperties as Record<
-            string,
-            Record<string, unknown>
-          >,
-          {
-            actor,
-            changeType: "CSV_UPLOAD_ITEM_PARAMETERS",
-            baseVersion: currentState.version,
-          },
-        );
-      }
-      const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
-        ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
-            acpId,
-          )
-        : undefined;
-      return {
-        ...uploadResult,
-        showOnlyItemsWithEmpiricalDifficulty,
-      };
-    }
-
-    if (uploadResult.updated === 0) {
-      return {
-        updated: 0,
-        failed: uploadResult.failed,
-        successes: uploadResult.successes,
-        explorerState: currentState,
-      };
-    }
-
-    const explorerState = await this.itemExplorerStateService.patchDraft(
-      acpId,
-      {
-        itemProperties: uploadResult.nextItemProperties as Record<
-          string,
-          Record<string, unknown>
-        >,
-      },
-      {
-        actor,
-        changeType: "CSV_UPLOAD_ITEM_PARAMETERS",
-        baseVersion: Number.isNaN(parsedBaseVersion)
-          ? undefined
-          : parsedBaseVersion,
-      },
-    );
-    const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
-      ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
-          acpId,
-        )
-      : undefined;
-
-    return {
-      updated: uploadResult.updated,
-      failed: uploadResult.failed,
-      successes: uploadResult.successes,
-      showOnlyItemsWithEmpiricalDifficulty,
-      explorerState,
-    };
+      fileBuffer: file.buffer,
+      kind: "item-parameters",
+      target: draft === "true" ? "draft" : "published",
+      baseVersion: this.parseBaseVersion(baseVersion),
+      user: req?.user,
+    });
   }
 
   @Post("upload-empirical-difficulty")
@@ -267,96 +197,14 @@ export class ItemsController {
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
   ) {
-    const draftMode = draft === "true";
-    const parsedBaseVersion = parseInt(baseVersion || "", 10);
-
-    if (!draftMode) {
-      const currentState =
-        await this.itemExplorerStateService.getStateForViewer(acpId, true);
-      this.assertCleanExplorerStateForDirectWrite(currentState.status);
-      const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(
-        acpId,
-        file.buffer,
-        {
-          persist: false,
-          itemPropertiesOverride: currentState.publishedState.itemProperties,
-        },
-      );
-      if (uploadResult.updated > 0) {
-        const actor = this.itemExplorerStateService.resolveActor(
-          req?.user,
-          acpId,
-        );
-        await this.itemExplorerStateService.publishItemPropertiesImmediately(
-          acpId,
-          uploadResult.nextItemProperties as Record<
-            string,
-            Record<string, unknown>
-          >,
-          {
-            actor,
-            changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
-            baseVersion: currentState.version,
-          },
-        );
-      }
-      const showOnlyItemsWithEmpiricalDifficulty =
-        uploadResult.updated > 0
-          ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
-              acpId,
-            )
-          : undefined;
-
-      return {
-        ...uploadResult,
-        showOnlyItemsWithEmpiricalDifficulty,
-      };
-    }
-
-    const currentState = await this.itemExplorerStateService.getStateForViewer(
+    return this.runItemParameterImport({
       acpId,
-      true,
-    );
-    const uploadResult = await this.itemsService.uploadEmpiricalDifficulties(
-      acpId,
-      file.buffer,
-      {
-        persist: false,
-        itemPropertiesOverride: currentState.draftState.itemProperties,
-      },
-    );
-
-    const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
-    const explorerState = await this.itemExplorerStateService.patchDraft(
-      acpId,
-      {
-        itemProperties: uploadResult.nextItemProperties as Record<
-          string,
-          Record<string, unknown>
-        >,
-      },
-      {
-        actor,
-        changeType: "CSV_UPLOAD_EMPIRICAL_DIFFICULTY",
-        baseVersion: Number.isNaN(parsedBaseVersion)
-          ? undefined
-          : parsedBaseVersion,
-      },
-    );
-    const showOnlyItemsWithEmpiricalDifficulty =
-      uploadResult.updated > 0
-        ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
-            acpId,
-          )
-        : undefined;
-
-    return {
-      updated: uploadResult.updated,
-      failed: uploadResult.failed,
-      successes: uploadResult.successes,
-      showOnlyItemsWithEmpiricalDifficulty,
-      explorerState,
-    };
+      fileBuffer: file.buffer,
+      kind: "empirical-difficulty",
+      target: draft === "true" ? "draft" : "published",
+      baseVersion: this.parseBaseVersion(baseVersion),
+      user: req?.user,
+    });
   }
 
   @Delete("empirical-difficulty")
@@ -554,6 +402,105 @@ export class ItemsController {
       true,
       rowKey,
     );
+  }
+
+  private async runItemParameterImport(command: ItemParameterImportCommand) {
+    const currentState = await this.itemExplorerStateService.getStateForViewer(
+      command.acpId,
+      true,
+    );
+    if (command.target === "published") {
+      this.assertCleanExplorerStateForDirectWrite(currentState.status);
+    }
+
+    const itemProperties =
+      command.target === "draft"
+        ? currentState.draftState.itemProperties
+        : currentState.publishedState.itemProperties;
+    const uploadResult =
+      command.kind === "empirical-difficulty"
+        ? await this.itemsService.uploadEmpiricalDifficulties(
+            command.acpId,
+            command.fileBuffer,
+            { persist: false, itemPropertiesOverride: itemProperties },
+          )
+        : await this.itemsService.uploadItemParameters(
+            command.acpId,
+            command.fileBuffer,
+            { persist: false, itemPropertiesOverride: itemProperties },
+          );
+    const importedEmpiricalDifficulty =
+      command.kind === "empirical-difficulty"
+        ? uploadResult.updated > 0
+        : this.hasImportedEmpiricalDifficulty(uploadResult.successes);
+    const actor = this.itemExplorerStateService.resolveActor(
+      command.user,
+      command.acpId,
+    );
+    const changeType =
+      command.kind === "empirical-difficulty"
+        ? "CSV_UPLOAD_EMPIRICAL_DIFFICULTY"
+        : "CSV_UPLOAD_ITEM_PARAMETERS";
+
+    if (command.target === "published") {
+      if (uploadResult.updated > 0) {
+        await this.itemExplorerStateService.publishItemPropertiesImmediately(
+          command.acpId,
+          uploadResult.nextItemProperties,
+          {
+            actor,
+            changeType,
+            baseVersion: currentState.version,
+          },
+        );
+      }
+      const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
+        ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+            command.acpId,
+          )
+        : undefined;
+      return {
+        ...uploadResult,
+        showOnlyItemsWithEmpiricalDifficulty,
+      };
+    }
+
+    if (command.kind === "item-parameters" && uploadResult.updated === 0) {
+      return {
+        updated: 0,
+        failed: uploadResult.failed,
+        successes: uploadResult.successes,
+        explorerState: currentState,
+      };
+    }
+
+    const explorerState = await this.itemExplorerStateService.patchDraft(
+      command.acpId,
+      { itemProperties: uploadResult.nextItemProperties },
+      {
+        actor,
+        changeType,
+        baseVersion: command.baseVersion,
+      },
+    );
+    const showOnlyItemsWithEmpiricalDifficulty = importedEmpiricalDifficulty
+      ? await this.itemsService.ensureShowOnlyItemsWithEmpiricalDifficulty(
+          command.acpId,
+        )
+      : undefined;
+
+    return {
+      updated: uploadResult.updated,
+      failed: uploadResult.failed,
+      successes: uploadResult.successes,
+      showOnlyItemsWithEmpiricalDifficulty,
+      explorerState,
+    };
+  }
+
+  private parseBaseVersion(baseVersion?: string): number | undefined {
+    const parsedBaseVersion = parseInt(baseVersion || "", 10);
+    return Number.isNaN(parsedBaseVersion) ? undefined : parsedBaseVersion;
   }
 
   private assertCleanExplorerStateForDirectWrite(status: string): void {

@@ -625,6 +625,69 @@ describe("ViewsService", () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it("exports collection rows through the shared Sub-ID and parameter columns", async () => {
+    itemPreferenceRepository.findOne.mockResolvedValue({
+      preferences: {
+        collections: [
+          {
+            id: "collection-1",
+            name: "Auswahl A",
+            rowKeys: ["uuid-1::A", "removed-row"],
+            version: 1,
+            createdAt: "2026-07-01T10:00:00.000Z",
+            updatedAt: "2026-07-01T10:00:00.000Z",
+          },
+        ],
+        rowData: {
+          "uuid-1::A": {
+            category: "II",
+            tags: ["Prüfen"],
+            note: "Erste Zeile\nZweite Zeile",
+          },
+        },
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          itemId: "item-1",
+          uuid: "uuid-1",
+          rowKey: "uuid-1::A",
+          subId: "A",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          empiricalDifficulty: -0.25,
+          infit: 1.05,
+          discrimination: 0.4,
+          solutionRate: 0.75,
+          itemTimeSeconds: 20,
+          stimulusTimeSeconds: 12,
+          bookletOccurrences: [{ booklet: "B1", position: 3 }],
+        },
+      ],
+    });
+
+    const csv = (
+      await service.exportItemCollectionCsv(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        "collection-1",
+        true,
+      )
+    ).toString("utf8");
+
+    expect(csv).toContain(
+      '"Unit-ID";"Unit-Label";"Item-ID";"Item-UUID";"Sub-ID";"Zeilenschlüssel"',
+    );
+    expect(csv).toContain(
+      '"Empirische Itemschwierigkeit";"Infit";"Trennschärfe";"Lösungshäufigkeit";"Itemzeit (s)";"Stimuluszeit (s)";"Booklet";"Position im Booklet"',
+    );
+    expect(csv).toContain(
+      '"Auswahl A";"1";"unit-1";"Aufgabe 1";"item-1";"uuid-1";"A";"uuid-1::A";"-0.25";"1.05";"0.4";"0.75";"20";"12";"B1";"3";"II";"Prüfen";"Erste Zeile\\nZweite Zeile"',
+    );
+    expect(csv).not.toContain("removed-row");
+  });
+
   it("exports all stored participant rows as CSV with literal note line breaks", async () => {
     itemPreferenceRepository.find.mockResolvedValue([
       {

@@ -1,6 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ItemsService } from "./items.service";
 import { AccessModel } from "../database/entities";
+import { ItemParameterImportPipeline } from "./item-parameter-import.pipeline";
 
 describe("ItemsService", () => {
   let service: ItemsService;
@@ -32,6 +33,7 @@ describe("ItemsService", () => {
       acpRepository as any,
       accessConfigRepository as any,
       unitParserService as any,
+      new ItemParameterImportPipeline(),
     );
   });
 

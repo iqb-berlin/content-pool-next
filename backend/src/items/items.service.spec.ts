@@ -815,9 +815,7 @@ describe("ItemsService", () => {
     expect(result).toEqual(
       expect.objectContaining({
         updated: 1,
-        failed: [
-          { csvRow: "I1", reason: "Ungültiger Zahlenwert in infit" },
-        ],
+        failed: [{ csvRow: "I1", reason: "Ungültiger Zahlenwert in infit" }],
         nextItemProperties: { "uuid-1": { infit: 1 } },
       }),
     );

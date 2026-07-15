@@ -1,5 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { DataSource } from "typeorm";
 import {
   BadRequestException,
   ConflictException,
@@ -14,6 +15,7 @@ import {
   AcpCredential,
   AppSettings,
   AccessModel,
+  ItemResponseState,
   User,
 } from "../database/entities";
 
@@ -25,6 +27,8 @@ describe("AcpService", () => {
   let credentialRepo: any;
   let settingsRepo: any;
   let userRepo: any;
+  let responseStateRepo: any;
+  let dataSource: any;
 
   const mockAcp = {
     id: "acp-1",
@@ -82,6 +86,17 @@ describe("AcpService", () => {
       findOne: jest.fn().mockResolvedValue({ id: "user-1", isAppAdmin: false }),
       find: jest.fn().mockResolvedValue([]),
     };
+    responseStateRepo = {
+      delete: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    dataSource = {
+      transaction: jest.fn(async (callback) =>
+        callback({
+          getRepository: (entity: unknown) =>
+            entity === ItemResponseState ? responseStateRepo : acpRepo,
+        }),
+      ),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -98,6 +113,7 @@ describe("AcpService", () => {
         },
         { provide: getRepositoryToken(AppSettings), useValue: settingsRepo },
         { provide: getRepositoryToken(User), useValue: userRepo },
+        { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
 
@@ -154,7 +170,9 @@ describe("AcpService", () => {
     it("should delete existing ACP", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       await service.delete("acp-1");
+      expect(responseStateRepo.delete).toHaveBeenCalledWith({ acpId: "acp-1" });
       expect(acpRepo.remove).toHaveBeenCalledWith(mockAcp);
+      expect(dataSource.transaction).toHaveBeenCalledTimes(1);
     });
   });
 

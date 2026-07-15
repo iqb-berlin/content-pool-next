@@ -16,7 +16,7 @@ export class ItemResponseState {
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 
-  @Column({ name: "acp_id" })
+  @Column({ name: "acp_id", type: "uuid" })
   acpId!: string;
 
   @Column({ name: "item_id" })

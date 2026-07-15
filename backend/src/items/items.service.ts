@@ -260,16 +260,6 @@ export class ItemsService {
 
     const content = fileBuffer.toString("utf-8");
     const lines = content.split(/\r?\n/);
-    if (lines.length < 2) {
-      return {
-        updated: 0,
-        failed: [],
-        successes: [],
-        nextItemProperties: this.cloneItemProperties(
-          options.itemPropertiesOverride || acp.itemProperties || {},
-        ),
-      };
-    }
 
     const headers = this.parseCsvLine(lines[0]).map((header, index) =>
       header
@@ -315,12 +305,9 @@ export class ItemsService {
       options.itemPropertiesOverride || acp.itemProperties || {},
     );
     if (!scalarColumns.length && bookletIdx < 0) {
-      return {
-        updated: 0,
-        failed: [],
-        successes: [],
-        nextItemProperties: props,
-      };
+      throw new BadRequestException(
+        'CSV must contain at least one supported item parameter column: "est", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", or the pair "booklet" and "position"',
+      );
     }
 
     const failed: Array<{ csvRow: string; reason: string }> = [];
@@ -812,6 +799,17 @@ export class ItemsService {
       unknown
     >;
     return Boolean(featureConfig.enableItemListTags);
+  }
+
+  async canUseItemList(acpId: string): Promise<boolean> {
+    const config = await this.accessConfigRepository.findOne({
+      where: { acpId },
+    });
+    const featureConfig = (config?.featureConfig || {}) as Record<
+      string,
+      unknown
+    >;
+    return featureConfig.enableItemList !== false;
   }
 
   async ensureShowOnlyItemsWithEmpiricalDifficulty(

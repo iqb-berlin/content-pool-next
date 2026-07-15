@@ -549,6 +549,7 @@ export class ApiService {
     updated: number;
     failed: any[];
     successes: any[];
+    showOnlyItemsWithEmpiricalDifficulty?: boolean;
     explorerState?: ItemExplorerStateEnvelope;
   }> {
     const formData = new FormData();
@@ -563,6 +564,7 @@ export class ApiService {
       updated: number;
       failed: any[];
       successes: any[];
+      showOnlyItemsWithEmpiricalDifficulty?: boolean;
       explorerState?: ItemExplorerStateEnvelope;
     }>(`${this.API}/acp/${acpId}/items/upload-item-parameters${queryString}`, formData);
   }

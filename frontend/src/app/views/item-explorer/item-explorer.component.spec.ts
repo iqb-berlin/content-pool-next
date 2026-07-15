@@ -3093,6 +3093,37 @@ describe('ItemExplorerComponent', () => {
     expect(component.getUploadSuccessBookletSummary({ value: -0.4 })).toBe('–');
   });
 
+  it('applies the item-list visibility returned by a wide difficulty import', () => {
+    const uploadItemParameters = vi.fn().mockReturnValue(
+      of({
+        updated: 1,
+        failed: [],
+        successes: [{ fields: ['est'], value: -0.4 }],
+        showOnlyItemsWithEmpiricalDifficulty: true,
+      }),
+    );
+    const getFileItemList = vi.fn().mockReturnValue(
+      of({ items: [], columns: [], unitMetadata: {}, codingSchemes: {} }),
+    );
+    const component = createComponent({
+      api: { uploadItemParameters, getFileItemList },
+    });
+    component.acpId = 'acp-1';
+    component.explorerVersion = 7;
+    component.showOnlyItemsWithEmpiricalDifficulty = false;
+    const file = new File(['item;est\nI1;-0.4'], 'parameters.csv', { type: 'text/csv' });
+    const input = { files: [file], value: 'parameters.csv' };
+
+    component.onCsvFileSelected({ target: input } as unknown as Event);
+
+    expect(uploadItemParameters).toHaveBeenCalledWith('acp-1', file, {
+      draft: true,
+      baseVersion: 7,
+    });
+    expect(component.showOnlyItemsWithEmpiricalDifficulty).toBe(true);
+    expect(input.value).toBe('');
+  });
+
   it('keeps server collection summaries while the item list is loading', () => {
     const summary = {
       rowCount: 2,

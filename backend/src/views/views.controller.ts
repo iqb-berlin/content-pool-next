@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -24,9 +25,11 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
+  Min,
 } from "class-validator";
 import { Response } from "express";
 import { ViewsService } from "./views.service";
@@ -129,6 +132,54 @@ class ExportAllPersonalItemDataDto {
     enum: ["editor", "read-only"],
     default: "read-only",
   })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class CreateItemCollectionDto {
+  @ApiPropertyOptional({ example: "Meine Kollektion" })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ enum: ["editor", "read-only"] })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class UpdateItemCollectionDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  baseVersion!: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ type: [String], maxItems: 10_000 })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  rowKeys?: string[];
+
+  @ApiPropertyOptional({ enum: ["editor", "read-only"] })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class ActivateItemCollectionDto {
+  @ApiPropertyOptional({ nullable: true })
+  @IsOptional()
+  @IsString()
+  collectionId?: string | null;
+
+  @ApiPropertyOptional({ enum: ["editor", "read-only"] })
   @IsOptional()
   @IsIn(["editor", "read-only"])
   perspective?: "editor" | "read-only";
@@ -391,6 +442,118 @@ export class ViewsController {
     res.send(buffer);
   }
 
+  @Get("acp/:acpId/items/collections")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "List the caller's personal item collections" })
+  async getItemCollections(
+    @Param("acpId") acpId: string,
+    @Query("perspective") perspective: "editor" | "read-only" | undefined,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    return this.viewsService.getItemCollections(
+      acpId,
+      req?.user,
+      this.isEditorPerspective(req, perspective),
+    );
+  }
+
+  @Post("acp/:acpId/items/collections")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Create a personal item collection" })
+  async createItemCollection(
+    @Param("acpId") acpId: string,
+    @Body() dto: CreateItemCollectionDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    return this.viewsService.createItemCollection(
+      acpId,
+      req?.user,
+      dto.name,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Patch("acp/:acpId/items/collections/:collectionId")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Update a personal item collection" })
+  async updateItemCollection(
+    @Param("acpId") acpId: string,
+    @Param("collectionId") collectionId: string,
+    @Body() dto: UpdateItemCollectionDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    return this.viewsService.updateItemCollection(
+      acpId,
+      req?.user,
+      collectionId,
+      dto,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Put("acp/:acpId/items/collections/active")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Persist the active personal item collection" })
+  async activateItemCollection(
+    @Param("acpId") acpId: string,
+    @Body() dto: ActivateItemCollectionDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    return this.viewsService.activateItemCollection(
+      acpId,
+      req?.user,
+      dto.collectionId || null,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Delete("acp/:acpId/items/collections/:collectionId")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Delete a personal item collection" })
+  async deleteItemCollection(
+    @Param("acpId") acpId: string,
+    @Param("collectionId") collectionId: string,
+    @Query("perspective") perspective: "editor" | "read-only" | undefined,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    return this.viewsService.deleteItemCollection(
+      acpId,
+      req?.user,
+      collectionId,
+      this.isEditorPerspective(req, perspective),
+    );
+  }
+
+  @Post("acp/:acpId/items/collections/:collectionId/export.csv")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Export one personal item collection as CSV" })
+  async exportItemCollectionCsv(
+    @Param("acpId") acpId: string,
+    @Param("collectionId") collectionId: string,
+    @Query("perspective") perspective: "editor" | "read-only" | undefined,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId);
+    const buffer = await this.viewsService.exportItemCollectionCsv(
+      acpId,
+      req?.user,
+      collectionId,
+      this.isEditorPerspective(req, perspective),
+    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="item-collection-${collectionId}.csv"`,
+    );
+    res.send(buffer);
+  }
+
   @Get("acp/:acpId/sequences")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "List task sequences for an ACP" })
@@ -471,6 +634,29 @@ export class ViewsController {
       unknown
     >;
     return featureConfig.enablePersonalItemData === true;
+  }
+
+  private async assertItemCollectionsEnabled(acpId: string): Promise<void> {
+    const data = await this.viewsService.getAcpStartPage(acpId);
+    const featureConfig = (data?.featureConfig || {}) as Record<
+      string,
+      unknown
+    >;
+    if (featureConfig.enableItemCollections !== true) {
+      throw new ForbiddenException(
+        "Item collections are not enabled for this ACP",
+      );
+    }
+  }
+
+  private isEditorPerspective(
+    req: any,
+    perspective?: "editor" | "read-only",
+  ): boolean {
+    return (
+      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+      perspective === "editor"
+    );
   }
 
   private normalizePreferenceViewId(viewId?: string): string {

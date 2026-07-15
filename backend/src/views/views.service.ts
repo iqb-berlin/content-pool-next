@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { EntityManager, Repository } from "typeorm";
 import {
   Acp,
   AcpAccessConfig,
@@ -26,9 +28,11 @@ import {
   buildPatchPersonalItemPreferenceRowQuery,
   PreferenceIdentityColumn,
 } from "./personal-item-preferences.query";
+import { v4 as uuidv4 } from "uuid";
 
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
 const MAX_EXPORT_ROW_KEY_LENGTH = 500;
+const MAX_ITEM_COLLECTIONS = 100;
 
 export interface ItemPreferencesPayload {
   [key: string]: unknown;
@@ -41,6 +45,37 @@ interface PreferenceIdentity {
   userId?: string;
   credentialId?: string;
   credentialUsername?: string;
+}
+
+interface StoredItemCollection {
+  id: string;
+  name: string;
+  rowKeys: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ItemCollectionSummary {
+  rowCount: number;
+  itemCount: number;
+  unitCount: number;
+  itemTimeSeconds: number;
+  stimulusTimeSeconds: number;
+  testTimeSeconds: number;
+  missingItemTimeCount: number;
+  missingStimulusTimeUnitCount: number;
+  complete: boolean;
+}
+
+export interface ItemCollectionView extends StoredItemCollection {
+  unavailableRowKeys: string[];
+  summary: ItemCollectionSummary;
+}
+
+export interface ItemCollectionsPayload {
+  activeCollectionId: string | null;
+  collections: ItemCollectionView[];
 }
 
 @Injectable()
@@ -496,6 +531,289 @@ export class ViewsService {
     };
   }
 
+  async getItemCollections(
+    acpId: string,
+    user: any,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const { record } = await this.requireCollectionPreferenceRecord(
+      acpId,
+      user,
+      false,
+    );
+    const state = this.normalizeCollectionState(record?.preferences);
+    return this.resolveCollectionViews(
+      acpId,
+      state.collections,
+      state.activeCollectionId,
+      canEditExplorerState,
+    );
+  }
+
+  async createItemCollection(
+    acpId: string,
+    user: any,
+    rawName?: string,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const name = this.normalizeCollectionName(rawName || "Meine Kollektion");
+    const now = new Date().toISOString();
+    const collection: StoredItemCollection = {
+      id: uuidv4(),
+      name,
+      rowKeys: [],
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const state = await this.mutateCollectionState(
+      acpId,
+      user,
+      true,
+      (lockedState) => {
+        if (lockedState.collections.length >= MAX_ITEM_COLLECTIONS) {
+          throw new BadRequestException(
+            `At most ${MAX_ITEM_COLLECTIONS} item collections can be stored`,
+          );
+        }
+        lockedState.collections.push(collection);
+        lockedState.activeCollectionId = collection.id;
+      },
+    );
+    return this.resolveCollectionViews(
+      acpId,
+      state.collections,
+      state.activeCollectionId,
+      canEditExplorerState,
+    );
+  }
+
+  async updateItemCollection(
+    acpId: string,
+    user: any,
+    collectionId: string,
+    update: { name?: unknown; rowKeys?: unknown; baseVersion?: unknown },
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const normalizedName =
+      update.name === undefined
+        ? undefined
+        : this.normalizeCollectionName(update.name);
+    let normalizedRowKeys: string[] | undefined;
+    let knownRowKeys: ReadonlySet<string> | undefined;
+    if (update.rowKeys !== undefined) {
+      normalizedRowKeys = this.normalizeCollectionRowKeys(update.rowKeys);
+      const explorerState =
+        await this.itemExplorerStateService.getStateForViewer(
+          acpId,
+          canEditExplorerState,
+        );
+      knownRowKeys = await this.unitParserService.getItemRowKeysFromFiles(
+        acpId,
+        {
+          itemPropertiesOverride: explorerState.activeState.itemProperties,
+          publishedItemPropertiesOverride:
+            explorerState.publishedState.itemProperties,
+        },
+      );
+    }
+    const baseVersion = Number(update.baseVersion);
+    const state = await this.mutateCollectionState(
+      acpId,
+      user,
+      false,
+      (lockedState) => {
+        const collection = lockedState.collections.find(
+          (candidate) => candidate.id === collectionId,
+        );
+        if (!collection) {
+          throw new NotFoundException("Item collection not found");
+        }
+        if (
+          !Number.isInteger(baseVersion) ||
+          baseVersion !== collection.version
+        ) {
+          throw new ConflictException(
+            "The item collection changed concurrently",
+          );
+        }
+        if (normalizedName !== undefined) collection.name = normalizedName;
+        if (normalizedRowKeys !== undefined && knownRowKeys) {
+          const previouslyStored = new Set(collection.rowKeys);
+          const invalidRowKey = normalizedRowKeys.find(
+            (rowKey) =>
+              !knownRowKeys!.has(rowKey) && !previouslyStored.has(rowKey),
+          );
+          if (invalidRowKey) {
+            throw new BadRequestException(
+              "Collections can only add existing item rows",
+            );
+          }
+          collection.rowKeys = normalizedRowKeys;
+        }
+        collection.version += 1;
+        collection.updatedAt = new Date().toISOString();
+      },
+    );
+    return this.resolveCollectionViews(
+      acpId,
+      state.collections,
+      state.activeCollectionId,
+      canEditExplorerState,
+    );
+  }
+
+  async activateItemCollection(
+    acpId: string,
+    user: any,
+    collectionId: string | null,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const state = await this.mutateCollectionState(
+      acpId,
+      user,
+      false,
+      (lockedState) => {
+        if (
+          collectionId &&
+          !lockedState.collections.some(
+            (collection) => collection.id === collectionId,
+          )
+        ) {
+          throw new NotFoundException("Item collection not found");
+        }
+        lockedState.activeCollectionId = collectionId;
+      },
+    );
+    return this.resolveCollectionViews(
+      acpId,
+      state.collections,
+      state.activeCollectionId,
+      canEditExplorerState,
+    );
+  }
+
+  async deleteItemCollection(
+    acpId: string,
+    user: any,
+    collectionId: string,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const state = await this.mutateCollectionState(
+      acpId,
+      user,
+      false,
+      (lockedState) => {
+        const nextCollections = lockedState.collections.filter(
+          (collection) => collection.id !== collectionId,
+        );
+        if (nextCollections.length === lockedState.collections.length) {
+          throw new NotFoundException("Item collection not found");
+        }
+        lockedState.collections = nextCollections;
+        if (lockedState.activeCollectionId === collectionId) {
+          lockedState.activeCollectionId = nextCollections[0]?.id || null;
+        }
+      },
+    );
+    return this.resolveCollectionViews(
+      acpId,
+      state.collections,
+      state.activeCollectionId,
+      canEditExplorerState,
+    );
+  }
+
+  async exportItemCollectionCsv(
+    acpId: string,
+    user: any,
+    collectionId: string,
+    canEditExplorerState = false,
+  ): Promise<Buffer> {
+    const { record } = await this.requireCollectionPreferenceRecord(
+      acpId,
+      user,
+      false,
+    );
+    if (!record) throw new NotFoundException("Item collection not found");
+    const state = this.normalizeCollectionState(record.preferences);
+    const collection = state.collections.find(
+      (candidate) => candidate.id === collectionId,
+    );
+    if (!collection) throw new NotFoundException("Item collection not found");
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    const personalRows = this.normalizeItemPreferences(
+      record.preferences,
+    ).rowData;
+    const headers = [
+      "Kollektion",
+      "Reihenfolge",
+      "Unit-ID",
+      "Unit-Label",
+      "Item-ID",
+      "Item-UUID",
+      "Sub-ID",
+      "Zeilenschlüssel",
+      "Empirische Itemschwierigkeit",
+      "Infit",
+      "Trennschärfe",
+      "Lösungshäufigkeit",
+      "Itemzeit (s)",
+      "Stimuluszeit (s)",
+      "Booklet",
+      "Position im Booklet",
+      "Kategorie",
+      "Tags",
+      "Notiz",
+    ];
+    const rows = collection.rowKeys.flatMap((rowKey, index) => {
+      const item = itemsByRowKey.get(rowKey);
+      if (!item) return [];
+      const personal = personalRows[rowKey] || {};
+      const occurrenceColumns = this.formatBookletOccurrenceColumns(item);
+      return [
+        [
+          collection.name,
+          index + 1,
+          item.unitId,
+          item.unitLabel,
+          item.itemId,
+          item.uuid,
+          item.subId || "",
+          item.rowKey,
+          item.empiricalDifficulty ?? "",
+          item.infit ?? "",
+          item.discrimination ?? "",
+          item.solutionRate ?? "",
+          item.itemTimeSeconds ?? "",
+          item.stimulusTimeSeconds ?? "",
+          occurrenceColumns.booklets,
+          occurrenceColumns.positions,
+          typeof personal.category === "string" ? personal.category : "",
+          Array.isArray(personal.tags) ? personal.tags.join(", ") : "",
+          typeof personal.note === "string"
+            ? personal.note.replace(/\n/g, "\\n")
+            : "",
+        ],
+      ];
+    });
+    const lines = [headers, ...rows].map((row) =>
+      row.map((value) => this.escapeCsvCell(value)).join(";"),
+    );
+    return Buffer.from(`\uFEFF${lines.join("\r\n")}\r\n`, "utf8");
+  }
+
   async exportPersonalItemDataXlsx(
     acpId: string,
     user: any,
@@ -534,6 +852,7 @@ export class ViewsService {
       const tags = Array.isArray(personalRow.tags)
         ? personalRow.tags.map((tag) => String(tag))
         : [];
+      const occurrenceColumns = this.formatBookletOccurrenceColumns(item);
 
       return {
         sequenceNumber: index + 1,
@@ -541,6 +860,8 @@ export class ViewsService {
         unitLabel: item.unitLabel,
         itemId: item.itemId,
         itemUuid: item.uuid,
+        subId: item.subId || null,
+        rowKey: item.rowKey,
         markers: this.formatPersonalMarkers(tags, personalTagColors),
         note: typeof personalRow.note === "string" ? personalRow.note : null,
         competenceLevel:
@@ -551,6 +872,13 @@ export class ViewsService {
           item.empiricalDifficulty === undefined
             ? null
             : item.empiricalDifficulty,
+        infit: item.infit ?? null,
+        discrimination: item.discrimination ?? null,
+        solutionRate: item.solutionRate ?? null,
+        itemTimeSeconds: item.itemTimeSeconds ?? null,
+        stimulusTimeSeconds: item.stimulusTimeSeconds ?? null,
+        booklets: occurrenceColumns.booklets || null,
+        bookletPositions: occurrenceColumns.positions || null,
         meanTaskDifficulty: meanDifficultyByUnit.get(item.unitId) ?? null,
       };
     });
@@ -598,6 +926,9 @@ export class ViewsService {
           const tags = Array.isArray(personalRow.tags)
             ? personalRow.tags.map((tag) => String(tag)).join(", ")
             : "";
+          const occurrenceColumns = item
+            ? this.formatBookletOccurrenceColumns(item)
+            : { booklets: "", positions: "" };
 
           return {
             participant,
@@ -616,6 +947,13 @@ export class ViewsService {
                 ? personalRow.note.replace(/\n/g, "\\n")
                 : "",
             empiricalDifficulty: item?.empiricalDifficulty ?? "",
+            infit: item?.infit ?? "",
+            discrimination: item?.discrimination ?? "",
+            solutionRate: item?.solutionRate ?? "",
+            itemTimeSeconds: item?.itemTimeSeconds ?? "",
+            stimulusTimeSeconds: item?.stimulusTimeSeconds ?? "",
+            booklets: occurrenceColumns.booklets,
+            bookletPositions: occurrenceColumns.positions,
             meanTaskDifficulty: item
               ? (meanDifficultyByUnit.get(item.unitId) ?? "")
               : "",
@@ -633,6 +971,316 @@ export class ViewsService {
     );
 
     return this.buildAllPersonalItemDataCsv(rows);
+  }
+
+  private async requireCollectionPreferenceRecord(
+    acpId: string,
+    user: any,
+    createIfMissing: boolean,
+  ): Promise<{
+    identity: PreferenceIdentity;
+    record: AcpItemPreference | null;
+  }> {
+    const identity = this.requireCollectionIdentity(user);
+    let record = await this.findPreferenceRecord(
+      acpId,
+      "item-explorer",
+      identity,
+    );
+    if (!record && createIfMissing) {
+      record = this.itemPreferenceRepository.create({
+        acpId,
+        viewId: "item-explorer",
+        userId: identity.userId || null,
+        credentialId: identity.credentialId || null,
+        credentialUsername: identity.credentialUsername || null,
+        preferences: { ui: {}, tags: {}, rowData: {} },
+      });
+    }
+    return { identity, record };
+  }
+
+  private getRawPreferences(raw: unknown): Record<string, unknown> {
+    return this.isRecord(raw) ? { ...raw } : {};
+  }
+
+  private normalizeCollectionState(rawPreferences: unknown): {
+    collections: StoredItemCollection[];
+    activeCollectionId: string | null;
+  } {
+    const preferences = this.getRawPreferences(rawPreferences);
+    const seen = new Set<string>();
+    const collections = Array.isArray(preferences.collections)
+      ? preferences.collections
+          .map((rawCollection): StoredItemCollection | null => {
+            if (!this.isRecord(rawCollection)) return null;
+            const id = String(rawCollection.id || "").trim();
+            const name = String(rawCollection.name || "").trim();
+            if (!id || !name || seen.has(id)) return null;
+            seen.add(id);
+            const createdAt = this.normalizeIsoDate(rawCollection.createdAt);
+            return {
+              id,
+              name: name.slice(0, 100),
+              rowKeys: this.normalizeCollectionRowKeys(
+                Array.isArray(rawCollection.rowKeys)
+                  ? rawCollection.rowKeys
+                  : [],
+              ),
+              version: Math.max(1, Number(rawCollection.version) || 1),
+              createdAt,
+              updatedAt: this.normalizeIsoDate(
+                rawCollection.updatedAt,
+                createdAt,
+              ),
+            };
+          })
+          .filter(
+            (collection): collection is StoredItemCollection =>
+              collection !== null,
+          )
+      : [];
+    const requestedActiveId = String(
+      preferences.activeCollectionId || "",
+    ).trim();
+    return {
+      collections,
+      activeCollectionId: collections.some(
+        (collection) => collection.id === requestedActiveId,
+      )
+        ? requestedActiveId
+        : collections[0]?.id || null,
+    };
+  }
+
+  private normalizeCollectionName(value: unknown): string {
+    const name = this.normalizePlainText(value, 100);
+    if (!name) throw new BadRequestException("Collection name is required");
+    return name;
+  }
+
+  private normalizeCollectionRowKeys(value: unknown): string[] {
+    if (!Array.isArray(value) || value.length > MAX_PERSONAL_ITEM_ROWS) {
+      throw new BadRequestException(
+        `At most ${MAX_PERSONAL_ITEM_ROWS} item rows can be stored in a collection`,
+      );
+    }
+    const seen = new Set<string>();
+    const rowKeys: string[] = [];
+    for (const rawRowKey of value) {
+      if (typeof rawRowKey !== "string") {
+        throw new BadRequestException("Collection row keys must be strings");
+      }
+      const rowKey = rawRowKey.trim();
+      if (!rowKey || rowKey.length > MAX_EXPORT_ROW_KEY_LENGTH) {
+        throw new BadRequestException("A valid collection row key is required");
+      }
+      if (!seen.has(rowKey)) {
+        seen.add(rowKey);
+        rowKeys.push(rowKey);
+      }
+    }
+    return rowKeys;
+  }
+
+  private normalizeIsoDate(value: unknown, fallback?: string): string {
+    const parsed = typeof value === "string" ? new Date(value) : null;
+    return parsed && Number.isFinite(parsed.getTime())
+      ? parsed.toISOString()
+      : fallback || new Date().toISOString();
+  }
+
+  private requireCollectionIdentity(user: any): PreferenceIdentity {
+    const identity = this.resolvePreferenceIdentity(user);
+    if (!identity || (!identity.userId && !identity.credentialId)) {
+      throw new UnauthorizedException(
+        "A stable identity is required for item collections",
+      );
+    }
+    return identity;
+  }
+
+  private async mutateCollectionState(
+    acpId: string,
+    user: any,
+    createIfMissing: boolean,
+    mutate: (state: {
+      collections: StoredItemCollection[];
+      activeCollectionId: string | null;
+    }) => void,
+  ): Promise<{
+    collections: StoredItemCollection[];
+    activeCollectionId: string | null;
+  }> {
+    const identity = this.requireCollectionIdentity(user);
+    return this.itemPreferenceRepository.manager.transaction(
+      async (manager) => {
+        if (createIfMissing) {
+          await this.insertCollectionPreferenceIfMissing(
+            manager,
+            acpId,
+            identity,
+          );
+        }
+        const repository = manager.getRepository(AcpItemPreference);
+        const record = await repository.findOne({
+          where: {
+            acpId,
+            viewId: "item-explorer",
+            ...(identity.userId
+              ? { userId: identity.userId }
+              : { credentialId: identity.credentialId }),
+          },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (!record) throw new NotFoundException("Item collection not found");
+
+        const preferences = this.getRawPreferences(record.preferences);
+        const state = this.normalizeCollectionState(preferences);
+        mutate(state);
+        record.preferences = {
+          ...preferences,
+          collections: state.collections,
+          activeCollectionId: state.activeCollectionId,
+        };
+        if (identity.credentialUsername) {
+          record.credentialUsername = identity.credentialUsername;
+        }
+        await repository.save(record);
+        return state;
+      },
+    );
+  }
+
+  private async insertCollectionPreferenceIfMissing(
+    manager: EntityManager,
+    acpId: string,
+    identity: PreferenceIdentity,
+  ): Promise<void> {
+    const identityColumn = identity.userId ? "user_id" : "credential_id";
+    const identityPredicate = identity.userId
+      ? '"user_id" IS NOT NULL'
+      : '"credential_id" IS NOT NULL';
+    await manager.query(
+      `
+        INSERT INTO "acp_item_preferences" (
+          "id", "acp_id", "view_id", "user_id", "credential_id",
+          "credential_username", "preferences", "created_at", "updated_at"
+        )
+        VALUES (
+          uuid_generate_v4(), $1, 'item-explorer', $2, $3, $4,
+          '{"ui":{},"tags":{},"rowData":{}}'::jsonb, now(), now()
+        )
+        ON CONFLICT ("acp_id", "view_id", "${identityColumn}")
+          WHERE ${identityPredicate}
+        DO NOTHING
+      `,
+      [
+        acpId,
+        identity.userId || null,
+        identity.credentialId || null,
+        identity.credentialUsername || null,
+      ],
+    );
+  }
+
+  private async resolveCollectionViews(
+    acpId: string,
+    collections: StoredItemCollection[],
+    activeCollectionId: string | null,
+    canEditExplorerState: boolean,
+  ): Promise<ItemCollectionsPayload> {
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    return {
+      activeCollectionId,
+      collections: collections.map((collection) => {
+        const unavailableRowKeys = collection.rowKeys.filter(
+          (rowKey) => !itemsByRowKey.has(rowKey),
+        );
+        const items = collection.rowKeys
+          .map((rowKey) => itemsByRowKey.get(rowKey))
+          .filter((item): item is VomdItemData => Boolean(item));
+        return {
+          ...collection,
+          unavailableRowKeys,
+          summary: this.calculateItemCollectionSummary(
+            items,
+            collection.rowKeys.length,
+          ),
+        };
+      }),
+    };
+  }
+
+  private calculateItemCollectionSummary(
+    items: VomdItemData[],
+    selectedRowCount = items.length,
+  ): ItemCollectionSummary {
+    const uniqueItems = new Map<string, VomdItemData[]>();
+    const uniqueUnits = new Map<string, VomdItemData[]>();
+    for (const item of items) {
+      const itemRows = uniqueItems.get(item.uuid) || [];
+      itemRows.push(item);
+      uniqueItems.set(item.uuid, itemRows);
+      const unitRows = uniqueUnits.get(item.unitId) || [];
+      unitRows.push(item);
+      uniqueUnits.set(item.unitId, unitRows);
+    }
+
+    let itemTimeSeconds = 0;
+    let stimulusTimeSeconds = 0;
+    let missingItemTimeCount = 0;
+    let missingStimulusTimeUnitCount = 0;
+    for (const rows of uniqueItems.values()) {
+      const time = rows
+        .map((row) => row.itemTimeSeconds)
+        .find((value): value is number => Number.isFinite(value));
+      if (time === undefined) missingItemTimeCount += 1;
+      else itemTimeSeconds += time;
+    }
+    for (const rows of uniqueUnits.values()) {
+      const time = rows
+        .map((row) => row.stimulusTimeSeconds)
+        .find((value): value is number => Number.isFinite(value));
+      if (time === undefined) missingStimulusTimeUnitCount += 1;
+      else stimulusTimeSeconds += time;
+    }
+    return {
+      rowCount: selectedRowCount,
+      itemCount: uniqueItems.size,
+      unitCount: uniqueUnits.size,
+      itemTimeSeconds,
+      stimulusTimeSeconds,
+      testTimeSeconds: itemTimeSeconds + stimulusTimeSeconds,
+      missingItemTimeCount,
+      missingStimulusTimeUnitCount,
+      complete:
+        missingItemTimeCount === 0 && missingStimulusTimeUnitCount === 0,
+    };
+  }
+
+  private formatBookletOccurrenceColumns(item: VomdItemData): {
+    booklets: string;
+    positions: string;
+  } {
+    const occurrences = item.bookletOccurrences || [];
+    return {
+      booklets: occurrences.map((occurrence) => occurrence.booklet).join(" | "),
+      positions: occurrences
+        .map((occurrence) => String(occurrence.position))
+        .join(" | "),
+    };
   }
 
   private async upsertItemPreferences(
@@ -821,6 +1469,8 @@ export class ViewsService {
       { header: "Unit-Label", key: "unitLabel", width: 30 },
       { header: "Item-ID", key: "itemId", width: 22 },
       { header: "Item-UUID", key: "itemUuid", width: 38 },
+      { header: "Sub-ID", key: "subId", width: 18 },
+      { header: "Zeilenschlüssel", key: "rowKey", width: 45 },
       { header: "Markierung/Farbe", key: "markers", width: 32 },
       { header: "Notiz", key: "note", width: 50 },
       { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
@@ -829,6 +1479,17 @@ export class ViewsService {
         key: "empiricalDifficulty",
         width: 30,
       },
+      { header: "Infit", key: "infit", width: 16 },
+      { header: "Trennschärfe", key: "discrimination", width: 18 },
+      { header: "Lösungshäufigkeit", key: "solutionRate", width: 22 },
+      { header: "Itemzeit (s)", key: "itemTimeSeconds", width: 18 },
+      { header: "Stimuluszeit (s)", key: "stimulusTimeSeconds", width: 20 },
+      { header: "Booklet", key: "booklets", width: 30 },
+      {
+        header: "Position im Booklet",
+        key: "bookletPositions",
+        width: 25,
+      },
       {
         header: "Mittlere Aufgabenschwierigkeit",
         key: "meanTaskDifficulty",
@@ -836,7 +1497,7 @@ export class ViewsService {
       },
     ];
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = { from: "A1", to: "J1" };
+    sheet.autoFilter = { from: "A1", to: "S1" };
 
     const headerRow = sheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -854,6 +1515,15 @@ export class ViewsService {
     };
     sheet.getColumn("empiricalDifficulty").numFmt = "0.############";
     sheet.getColumn("meanTaskDifficulty").numFmt = "0.############";
+    for (const key of [
+      "infit",
+      "discrimination",
+      "solutionRate",
+      "itemTimeSeconds",
+      "stimulusTimeSeconds",
+    ]) {
+      sheet.getColumn(key).numFmt = "0.############";
+    }
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
@@ -871,6 +1541,13 @@ export class ViewsService {
       tags: string;
       note: string;
       empiricalDifficulty: number | string;
+      infit: number | string;
+      discrimination: number | string;
+      solutionRate: number | string;
+      itemTimeSeconds: number | string;
+      stimulusTimeSeconds: number | string;
+      booklets: string;
+      bookletPositions: string;
       meanTaskDifficulty: number | string;
     }>,
   ): Buffer {
@@ -885,6 +1562,13 @@ export class ViewsService {
       "Tags",
       "Notiz",
       "Empirische Itemschwierigkeit",
+      "Infit",
+      "Trennschärfe",
+      "Lösungshäufigkeit",
+      "Itemzeit (s)",
+      "Stimuluszeit (s)",
+      "Booklet",
+      "Position im Booklet",
       "Mittlere Aufgabenschwierigkeit",
     ];
     const lines = [
@@ -900,6 +1584,13 @@ export class ViewsService {
         row.tags,
         row.note,
         row.empiricalDifficulty,
+        row.infit,
+        row.discrimination,
+        row.solutionRate,
+        row.itemTimeSeconds,
+        row.stimulusTimeSeconds,
+        row.booklets,
+        row.bookletPositions,
         row.meanTaskDifficulty,
       ]),
     ].map((row) => row.map((value) => this.escapeCsvCell(value)).join(";"));

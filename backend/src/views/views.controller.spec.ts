@@ -22,6 +22,7 @@ describe("ViewsController", () => {
           enableSequenceNavigation: true,
           persistUserPreferences: true,
           enablePersonalItemData: true,
+          enableItemCollections: true,
         },
       }),
       getAcpIndex: jest.fn().mockResolvedValue({ packageId: "pkg-1" }),
@@ -42,6 +43,29 @@ describe("ViewsController", () => {
       exportAllPersonalItemDataCsv: jest
         .fn()
         .mockResolvedValue(Buffer.from("all-personal-csv")),
+      getItemCollections: jest.fn().mockResolvedValue({
+        activeCollectionId: "collection-1",
+        collections: [],
+      }),
+      createItemCollection: jest.fn().mockResolvedValue({
+        activeCollectionId: "collection-1",
+        collections: [],
+      }),
+      updateItemCollection: jest.fn().mockResolvedValue({
+        activeCollectionId: "collection-1",
+        collections: [],
+      }),
+      activateItemCollection: jest.fn().mockResolvedValue({
+        activeCollectionId: "collection-1",
+        collections: [],
+      }),
+      deleteItemCollection: jest.fn().mockResolvedValue({
+        activeCollectionId: null,
+        collections: [],
+      }),
+      exportItemCollectionCsv: jest
+        .fn()
+        .mockResolvedValue(Buffer.from("collection-csv")),
       getTaskSequence: jest
         .fn()
         .mockResolvedValue({ id: "seq-1", units: [{ id: "unit-1" }] }),
@@ -473,6 +497,61 @@ describe("ViewsController", () => {
       'attachment; filename="all-participant-item-data-acp-1.csv"',
     );
     expect(res.send).toHaveBeenCalledWith(Buffer.from("all-personal-csv"));
+  });
+
+  it("routes personal collection reads, updates and exports to the caller identity", async () => {
+    const request = {
+      user: { sub: "user-1" },
+      acpAccessLevel: "MANAGER",
+    };
+    await controller.getItemCollections("acp-1", "editor", request);
+    await controller.updateItemCollection(
+      "acp-1",
+      "collection-1",
+      { baseVersion: 2, rowKeys: ["uuid::1"], perspective: "editor" },
+      request,
+    );
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+    await controller.exportItemCollectionCsv(
+      "acp-1",
+      "collection-1",
+      "editor",
+      request,
+      res,
+    );
+
+    expect(viewsService.getItemCollections).toHaveBeenCalledWith(
+      "acp-1",
+      request.user,
+      true,
+    );
+    expect(viewsService.updateItemCollection).toHaveBeenCalledWith(
+      "acp-1",
+      request.user,
+      "collection-1",
+      expect.objectContaining({ baseVersion: 2, rowKeys: ["uuid::1"] }),
+      true,
+    );
+    expect(viewsService.exportItemCollectionCsv).toHaveBeenCalledWith(
+      "acp-1",
+      request.user,
+      "collection-1",
+      true,
+    );
+    expect(res.send).toHaveBeenCalledWith(Buffer.from("collection-csv"));
+  });
+
+  it("blocks collection endpoints when the feature is disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: { enableItemCollections: false },
+    });
+
+    await expect(
+      controller.getItemCollections("acp-1", "read-only", {
+        user: { sub: "user-1" },
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.getItemCollections).not.toHaveBeenCalled();
   });
 
   it.each(["READ_ONLY", "CREDENTIAL", "PUBLIC", undefined])(

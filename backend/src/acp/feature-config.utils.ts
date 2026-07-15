@@ -97,6 +97,7 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
     source.enablePlayerFocusHighlight === true;
 
   normalized.enablePersonalItemData = source.enablePersonalItemData === true;
+  normalized.enableItemCollections = source.enableItemCollections === true;
   normalized.personalItemCategoryLabel =
     typeof source.personalItemCategoryLabel === "string" &&
     source.personalItemCategoryLabel.trim()

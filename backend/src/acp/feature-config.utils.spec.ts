@@ -5,6 +5,7 @@ describe("normalizeFeatureConfig", () => {
     expect(
       normalizeFeatureConfig({
         enablePersonalItemData: true,
+        enableItemCollections: true,
         personalItemCategoryLabel: " Stufe ",
         personalItemCategoryValues: ["I", " I ", "II", ""],
         personalItemTagLabel: " Sichtung ",
@@ -16,6 +17,7 @@ describe("normalizeFeatureConfig", () => {
       }),
     ).toMatchObject({
       enablePersonalItemData: true,
+      enableItemCollections: true,
       personalItemCategoryLabel: "Stufe",
       personalItemCategoryValues: ["I", "II"],
       personalItemTagLabel: "Sichtung",

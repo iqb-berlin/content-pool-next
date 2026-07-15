@@ -1,6 +1,10 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
-import { BadRequestException, UnauthorizedException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { ViewsService } from "./views.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { UnitParserService } from "../files/unit-parser.service";
@@ -24,7 +28,9 @@ describe("ViewsService", () => {
     create: jest.Mock;
     save: jest.Mock;
     query: jest.Mock;
+    manager: { transaction: jest.Mock };
   };
+  let transactionManager: { getRepository: jest.Mock; query: jest.Mock };
   let itemExplorerStateService: { getStateForViewer: jest.Mock };
   let unitParserService: {
     getItemRowKeysFromFiles: jest.Mock;
@@ -36,13 +42,29 @@ describe("ViewsService", () => {
     accessConfigRepository = { findOne: jest.fn(), find: jest.fn() };
     fileRepository = { find: jest.fn(), findOne: jest.fn() };
     settingsRepository = { findOne: jest.fn() };
+    transactionManager = {
+      getRepository: jest.fn(),
+      query: jest.fn(),
+    };
     itemPreferenceRepository = {
       find: jest.fn(),
       findOne: jest.fn(),
       create: jest.fn().mockImplementation((value) => value),
       save: jest.fn().mockImplementation(async (value) => value),
       query: jest.fn(),
+      manager: {
+        transaction: jest
+          .fn()
+          .mockImplementation(
+            async (
+              callback: (
+                manager: typeof transactionManager,
+              ) => Promise<unknown>,
+            ) => callback(transactionManager),
+          ),
+      },
     };
+    transactionManager.getRepository.mockReturnValue(itemPreferenceRepository);
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
         activeState: { itemProperties: {} },
@@ -286,6 +308,7 @@ describe("ViewsService", () => {
           itemId: "item-1",
           uuid: "uuid-1",
           rowKey: "uuid-1::1",
+          subId: "1",
           unitId: "unit-1",
           unitLabel: "Aufgabe 1",
           description: "",
@@ -297,6 +320,7 @@ describe("ViewsService", () => {
           itemId: "item-2",
           uuid: "uuid-2",
           rowKey: "uuid-2::1",
+          subId: "1",
           unitId: "unit-1",
           unitLabel: "Aufgabe 1",
           description: "",
@@ -347,21 +371,34 @@ describe("ViewsService", () => {
       "Unit-Label",
       "Item-ID",
       "Item-UUID",
+      "Sub-ID",
+      "Zeilenschlüssel",
       "Markierung/Farbe",
       "Notiz",
       "Kompetenzstufe",
       "Empirische Itemschwierigkeit",
+      "Infit",
+      "Trennschärfe",
+      "Lösungshäufigkeit",
+      "Itemzeit (s)",
+      "Stimuluszeit (s)",
+      "Booklet",
+      "Position im Booklet",
       "Mittlere Aufgabenschwierigkeit",
     ]);
     expect(sheet!.getCell("A2").value).toBe(1);
     expect(sheet!.getCell("E2").value).toBe("uuid-2");
-    expect(sheet!.getCell("F2").value).toBeNull();
-    expect(sheet!.getCell("J2").value).toBe(0.5);
+    expect(sheet!.getCell("F2").value).toBe("1");
+    expect(sheet!.getCell("G2").value).toBe("uuid-2::1");
+    expect(sheet!.getCell("H2").value).toBeNull();
+    expect(sheet!.getCell("S2").value).toBe(0.5);
     expect(sheet!.getCell("A3").value).toBe(2);
     expect(sheet!.getCell("E3").value).toBe("uuid-1");
-    expect(sheet!.getCell("F3").value).toBe("Prüfen (#ff0000)");
-    expect(sheet!.getCell("G3").value).toBe("Eigene Notiz");
-    expect(sheet!.getCell("H3").value).toBe("II");
+    expect(sheet!.getCell("F3").value).toBe("1");
+    expect(sheet!.getCell("G3").value).toBe("uuid-1::1");
+    expect(sheet!.getCell("H3").value).toBe("Prüfen (#ff0000)");
+    expect(sheet!.getCell("I3").value).toBe("Eigene Notiz");
+    expect(sheet!.getCell("J3").value).toBe("II");
   });
 
   it("requires an explicit filtered and sorted row order for exports", async () => {
@@ -373,6 +410,219 @@ describe("ViewsService", () => {
       ),
     ).rejects.toThrow(BadRequestException);
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
+  });
+
+  it("resolves personal collection summaries without double-counting partial-credit rows", async () => {
+    itemPreferenceRepository.findOne.mockResolvedValue({
+      preferences: {
+        activeCollectionId: "collection-1",
+        collections: [
+          {
+            id: "collection-1",
+            name: "Auswahl A",
+            rowKeys: ["uuid-1::1", "uuid-1::2", "uuid-2", "removed"],
+            version: 3,
+            createdAt: "2026-07-01T10:00:00.000Z",
+            updatedAt: "2026-07-02T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          rowKey: "uuid-1::1",
+          uuid: "uuid-1",
+          unitId: "unit-1",
+          itemTimeSeconds: 10,
+          stimulusTimeSeconds: 5,
+        },
+        {
+          rowKey: "uuid-1::2",
+          uuid: "uuid-1",
+          unitId: "unit-1",
+          itemTimeSeconds: 10,
+          stimulusTimeSeconds: 5,
+        },
+        {
+          rowKey: "uuid-2",
+          uuid: "uuid-2",
+          unitId: "unit-1",
+          stimulusTimeSeconds: 5,
+        },
+      ],
+    });
+
+    const result = await service.getItemCollections(
+      "acp-1",
+      { sub: "user-1", type: "user" },
+      true,
+    );
+
+    expect(result.activeCollectionId).toBe("collection-1");
+    expect(result.collections[0].unavailableRowKeys).toEqual(["removed"]);
+    expect(result.collections[0].summary).toEqual({
+      rowCount: 4,
+      itemCount: 2,
+      unitCount: 1,
+      itemTimeSeconds: 10,
+      stimulusTimeSeconds: 5,
+      testTimeSeconds: 15,
+      missingItemTimeCount: 1,
+      missingStimulusTimeUnitCount: 0,
+      complete: false,
+    });
+  });
+
+  it("version-checks and persists personal collection updates", async () => {
+    const record = {
+      preferences: {
+        rowData: { "uuid-1::1": { note: "keep" } },
+        activeCollectionId: "collection-1",
+        collections: [
+          {
+            id: "collection-1",
+            name: "Alt",
+            rowKeys: ["uuid-1::1"],
+            version: 2,
+            createdAt: "2026-07-01T10:00:00.000Z",
+            updatedAt: "2026-07-01T10:00:00.000Z",
+          },
+        ],
+      },
+    };
+    itemPreferenceRepository.findOne.mockResolvedValue(record);
+
+    await expect(
+      service.updateItemCollection(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        "collection-1",
+        { baseVersion: 1, name: "Neu" },
+      ),
+    ).rejects.toThrow(ConflictException);
+
+    await service.updateItemCollection(
+      "acp-1",
+      { sub: "user-1", type: "user" },
+      "collection-1",
+      { baseVersion: 2, name: "Neu", rowKeys: ["uuid-1::1", "uuid-2::1"] },
+    );
+
+    expect(itemPreferenceRepository.save).toHaveBeenCalledWith(record);
+    expect(record.preferences.collections[0] as any).toEqual(
+      expect.objectContaining({
+        name: "Neu",
+        rowKeys: ["uuid-1::1", "uuid-2::1"],
+        version: 3,
+      }),
+    );
+    expect(record.preferences.rowData).toEqual({
+      "uuid-1::1": { note: "keep" },
+    });
+    expect(itemPreferenceRepository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ lock: { mode: "pessimistic_write" } }),
+    );
+  });
+
+  it("serializes concurrent collection updates before checking the version", async () => {
+    const record = {
+      preferences: {
+        rowData: { "uuid-1::1": { note: "keep" } },
+        activeCollectionId: "collection-1",
+        collections: [
+          {
+            id: "collection-1",
+            name: "Alt",
+            rowKeys: ["uuid-1::1"],
+            version: 2,
+            createdAt: "2026-07-01T10:00:00.000Z",
+            updatedAt: "2026-07-01T10:00:00.000Z",
+          },
+        ],
+      },
+    };
+    itemPreferenceRepository.findOne.mockResolvedValue(record);
+    let transactionTail = Promise.resolve();
+    itemPreferenceRepository.manager.transaction.mockImplementation(
+      (callback: (manager: typeof transactionManager) => Promise<unknown>) => {
+        const result = transactionTail.then(() => callback(transactionManager));
+        transactionTail = result.then(
+          () => undefined,
+          () => undefined,
+        );
+        return result;
+      },
+    );
+
+    const results = await Promise.allSettled([
+      service.updateItemCollection(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        "collection-1",
+        { baseVersion: 2, name: "Erste Änderung" },
+      ),
+      service.updateItemCollection(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        "collection-1",
+        { baseVersion: 2, name: "Zweite Änderung" },
+      ),
+    ]);
+
+    expect(results[0].status).toBe("fulfilled");
+    expect(results[1]).toEqual(
+      expect.objectContaining({
+        status: "rejected",
+        reason: expect.any(ConflictException),
+      }),
+    );
+    expect(record.preferences.collections[0]).toEqual(
+      expect.objectContaining({ name: "Erste Änderung", version: 3 }),
+    );
+    expect(record.preferences.rowData).toEqual({
+      "uuid-1::1": { note: "keep" },
+    });
+  });
+
+  it("limits the number of personal item collections", async () => {
+    const timestamp = "2026-07-01T10:00:00.000Z";
+    const record = {
+      preferences: {
+        activeCollectionId: "collection-1",
+        collections: Array.from({ length: 100 }, (_, index) => ({
+          id: `collection-${index + 1}`,
+          name: `Kollektion ${index + 1}`,
+          rowKeys: [],
+          version: 1,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        })),
+      },
+    };
+    itemPreferenceRepository.findOne.mockResolvedValue(record);
+
+    await expect(
+      service.createItemCollection(
+        "acp-1",
+        { sub: "user-1", type: "user" },
+        "Eine zu viel",
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(itemPreferenceRepository.save).not.toHaveBeenCalled();
+  });
+
+  it("requires a stable identity for item collections", async () => {
+    await expect(service.getItemCollections("acp-1", null)).rejects.toThrow(
+      UnauthorizedException,
+    );
+    await expect(
+      service.getItemCollections("acp-1", {
+        type: "credential",
+        username: "legacy-only",
+      }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it("exports all stored participant rows as CSV with literal note line breaks", async () => {
@@ -447,10 +697,10 @@ describe("ViewsService", () => {
       '"Teilnehmerkennung";"Unit-ID";"Unit-Label";"Item-ID";"Sub-ID";"Zeilenschlüssel"',
     );
     expect(csv).toContain(
-      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"0.25"',
+      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"0.25"',
     );
     expect(csv).toContain(
-      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"0.25"',
+      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"0.25"',
     );
     expect(csv).not.toContain("ohne-eintrag");
   });

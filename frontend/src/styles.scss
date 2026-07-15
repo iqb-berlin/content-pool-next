@@ -320,6 +320,34 @@ a:hover {
 /* Item Explorer tags and personal row data. Kept global so the already large Explorer
    component stylesheet stays below Angular's per-component budget. */
 app-item-explorer {
+  .overlay-content,
+  .coding-scheme-view,
+  .coding-item,
+  .html-content {
+    min-width: 0;
+  }
+
+  .coding-focus-warning {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .coding-aggregation-info code {
+    display: inline-block;
+    margin-inline: 3px;
+  }
+
+  .html-content {
+    overflow-wrap: anywhere;
+  }
+
+  // Rich-text children inserted through innerHTML are outside Angular's component style scope.
+  .html-content img {
+    max-width: 100%;
+    height: auto;
+  }
+
   .item-count {
     color: var(--color-text-secondary);
     font-size: 0.85rem;

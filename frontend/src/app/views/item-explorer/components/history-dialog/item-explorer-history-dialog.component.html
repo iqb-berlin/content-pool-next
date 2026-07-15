@@ -1,0 +1,83 @@
+<!-- OVERLAY: Explorer Change History -->
+@if (vm.showHistoryOverlay) {
+  <div class="overlay-backdrop" (click)="vm.closeHistoryOverlay()">
+    <div class="overlay-dialog" style="max-width: 980px" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <div class="drawer-title">
+          <span class="drawer-icon" style="background: var(--color-primary)">🕒</span>
+          <div>
+            <h2>Änderungsverlauf</h2>
+            <small>Wer hat wann was geändert</small>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeHistoryOverlay()">✕</button>
+      </div>
+      <div class="overlay-content">
+        <div class="column-manager-toolbar">
+          <input
+            class="filter-input"
+            [ngModel]="vm.historyFilterUser"
+            (ngModelChange)="vm.setHistoryFilter('historyFilterUser', $event)"
+            placeholder="Nach Nutzer filtern..."
+          />
+          <input
+            class="filter-input"
+            [ngModel]="vm.historyFilterType"
+            (ngModelChange)="vm.setHistoryFilter('historyFilterType', $event)"
+            placeholder="Nach Aktion filtern..."
+          />
+          <input
+            class="filter-input"
+            type="date"
+            [ngModel]="vm.historyFilterFrom"
+            (ngModelChange)="vm.setHistoryFilter('historyFilterFrom', $event)"
+            title="Von Datum"
+          />
+          <input
+            class="filter-input"
+            type="date"
+            [ngModel]="vm.historyFilterTo"
+            (ngModelChange)="vm.setHistoryFilter('historyFilterTo', $event)"
+            title="Bis Datum"
+          />
+          <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">Aktualisieren</button>
+          <button
+            class="btn btn-outline btn-sm"
+            [disabled]="vm.filteredHistoryEntries.length === 0"
+            (click)="vm.exportHistoryCsv()"
+          >
+            Export CSV
+          </button>
+        </div>
+        @if (vm.historyLoading) {
+          <div class="empty-state">
+            <div class="spinner"></div>
+            <p>Verlauf wird geladen...</p>
+          </div>
+        } @else if (vm.historyError) {
+          <div class="empty-state">
+            <p>{{ vm.historyError }}</p>
+          </div>
+        } @else if (vm.filteredHistoryEntries.length === 0) {
+          <div class="empty-state">
+            <p>Keine Änderungen gefunden.</p>
+          </div>
+        } @else {
+          <div class="state-list">
+            @for (entry of vm.filteredHistoryEntries; track entry.id) {
+              <div class="state-item">
+                <div class="state-header">
+                  <strong>{{ entry.changeType }}</strong>
+                  <span class="unit-badge">{{ entry.actorRole || 'unbekannt' }}</span>
+                  <span>{{ entry.actorUsername || 'unbekannt' }}</span>
+                  <span class="date">{{ entry.createdAt | date: 'short' }}</span>
+                </div>
+                <pre class="json-view">{{ entry.diff | json }}</pre>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+}

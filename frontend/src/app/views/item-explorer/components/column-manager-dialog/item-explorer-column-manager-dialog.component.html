@@ -1,0 +1,98 @@
+<!-- OVERLAY: Column Manager -->
+@if (vm.showColumnManager) {
+  <div class="overlay-backdrop" (click)="vm.closeColumnManager()">
+    <div class="overlay-dialog column-manager-dialog" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <div class="drawer-title">
+          <span class="drawer-icon" style="background: var(--color-primary)">👁️</span>
+          <div>
+            <h2>Spalten verwalten</h2>
+            <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeColumnManager()">✕</button>
+      </div>
+      <div class="overlay-content">
+        <div class="column-manager-toolbar">
+          <div class="search-container">
+            <input
+              class="filter-input"
+              [ngModel]="vm.columnFilterText"
+              (ngModelChange)="vm.setColumnFilterText($event)"
+              placeholder="🔍 Spalten suchen (Label oder ID)..."
+            />
+          </div>
+          <button
+            class="btn btn-outline btn-sm"
+            (click)="vm.resetToDefault()"
+            [disabled]="!vm.metadataSettings.visible.length"
+          >
+            🔄 Standard
+          </button>
+        </div>
+
+        <div class="column-grid">
+          @for (col of vm.filteredAllColumns; track col.id) {
+            <div
+              class="column-tile"
+              [class.active]="vm.metadataSettings.visible.includes(col.id)"
+              (click)="vm.toggleColumnVisibility(col)"
+            >
+              <div class="tile-check">
+                <input
+                  type="checkbox"
+                  [checked]="vm.metadataSettings.visible.includes(col.id)"
+                  (click)="$event.stopPropagation()"
+                  (change)="vm.toggleColumnVisibility(col)"
+                />
+              </div>
+              <div class="tile-body">
+                <span class="tile-label">{{ col.label }}</span>
+                <span class="tile-id">ID: {{ col.id }}</span>
+              </div>
+              @if (vm.metadataSettings.visible.includes(col.id)) {
+                <div class="tile-actions" (click)="$event.stopPropagation()">
+                  <button
+                    class="btn btn-xs btn-outline"
+                    (click)="vm.moveColumnUp(col)"
+                    [disabled]="vm.metadataSettings.order[0] === col.id"
+                    title="Nach oben"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    class="btn btn-xs btn-outline"
+                    (click)="vm.moveColumnDown(col)"
+                    [disabled]="
+                      vm.metadataSettings.order[vm.metadataSettings.order.length - 1] === col.id
+                    "
+                    title="Nach unten"
+                  >
+                    ↓
+                  </button>
+                </div>
+              }
+            </div>
+          }
+          @if (vm.filteredAllColumns.length === 0) {
+            <div class="empty-state">
+              <p>Keine Spalten gefunden für "{{ vm.columnFilterText }}"</p>
+            </div>
+          }
+        </div>
+
+        <div class="column-manager-footer">
+          <div class="selection-info">
+            {{ vm.metadataSettings.visible.length }} von {{ vm.allColumns.length }} Spalten gewählt
+          </div>
+          <div class="footer-actions">
+            <button class="btn btn-outline" (click)="vm.closeColumnManager()">Abbrechen</button>
+            <button class="btn btn-primary" (click)="vm.saveMetadataSettings()">
+              💾 Speichern
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+}

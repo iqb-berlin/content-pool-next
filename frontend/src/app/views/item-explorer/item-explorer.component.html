@@ -1,0 +1,20 @@
+<div #explorerRoot class="explorer-shell">
+  @if (!isFullscreenActive) {
+    <app-breadcrumb [items]="breadcrumbs" />
+  }
+
+  <app-item-explorer-header />
+
+  <app-split-pane [initialLeftPercent]="45" [minLeftPx]="350" [minRightPx]="400">
+    <app-item-explorer-table left />
+    <app-item-explorer-preview right />
+  </app-split-pane>
+
+  <app-item-explorer-coding-dialog />
+  <app-item-explorer-metadata-drawer />
+  <app-item-explorer-upload-dialogs />
+  <app-item-explorer-column-manager-dialog />
+  <app-item-explorer-response-state-dialogs />
+  <app-item-explorer-history-dialog />
+  <app-item-explorer-draft-dialogs />
+</div>

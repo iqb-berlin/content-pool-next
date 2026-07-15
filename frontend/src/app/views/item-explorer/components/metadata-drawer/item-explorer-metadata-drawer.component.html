@@ -1,0 +1,43 @@
+<!-- DRAWER: Metadata -->
+<div
+  class="drawer-backdrop"
+  [class.open]="vm.showMetadataDrawer"
+  (click)="vm.setMetadataDrawerOpen(false)"
+>
+  <div
+    class="drawer-container"
+    [class.open]="vm.showMetadataDrawer"
+    (click)="$event.stopPropagation()"
+  >
+    <div class="drawer-header">
+      <div class="drawer-title">
+        <span class="drawer-icon">📄</span>
+        <div>
+          <h3>Metadaten</h3>
+          <small>{{ vm.selectedItem?.unitLabel }}</small>
+        </div>
+      </div>
+      <button class="btn-close" (click)="vm.setMetadataDrawerOpen(false)">✕</button>
+    </div>
+    <div class="drawer-content">
+      @if (vm.currentUnitMetadata && vm.currentUnitMetadata.length) {
+        <div class="meta-grid">
+          @for (entry of vm.currentUnitMetadata; track entry.id) {
+            <div class="meta-item">
+              <div class="meta-label">{{ vm.extractLabel(entry.label) }}</div>
+              <div class="meta-value">
+                {{
+                  vm.extractValueText(entry.valueAsText) || vm.extractValueText(entry.value) || '–'
+                }}
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="empty-state">
+          <p>Keine Metadaten für diese Aufgabe verfügbar.</p>
+        </div>
+      }
+    </div>
+  </div>
+</div>

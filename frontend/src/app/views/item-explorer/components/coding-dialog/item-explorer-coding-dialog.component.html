@@ -1,0 +1,140 @@
+<!-- OVERLAY: Coding Scheme -->
+@if (vm.showOverlay === 'coding') {
+  <div class="overlay-backdrop" (click)="vm.closeCodingOverlay()">
+    <div class="overlay-dialog" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <h2>Kodierung – {{ vm.selectedItem?.unitLabel }}</h2>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeCodingOverlay()">
+          ✕ Schließen
+        </button>
+      </div>
+      <div class="overlay-content">
+        @if (vm.currentCodingSchemeAsText) {
+          @if (vm.codingVariableFocus.status === 'unique') {
+            <div class="coding-focus-info" data-testid="coding-variable-focus">
+              <div>
+                <strong>Kodierung für Item {{ vm.selectedItem?.itemId }}</strong>
+                @if (vm.selectedItem?.subId) {
+                  <span>
+                    · {{ vm.itemSubIdLabel }}
+                    {{ vm.selectedItem?.subIdDisplay || vm.selectedItem?.subId }}
+                  </span>
+                }
+              </div>
+              <div>
+                Zugeordnete Variable:
+                <code>{{ vm.codingVariableFocus.targetId }}</code>
+                @if (
+                  vm.codingVariableFocus.codingId &&
+                  vm.codingVariableFocus.codingId.toLowerCase() !==
+                    vm.codingVariableFocus.targetId.toLowerCase()
+                ) {
+                  · Anzeige im Kodierschema:
+                  <code>{{ vm.codingVariableFocus.codingId }}</code>
+                }
+              </div>
+              @if (vm.codingVariableFocus.isDerived) {
+                <div class="coding-aggregation-info">
+                  <strong>Abgeleitete/aggregierte Kodierung</strong>
+                  @if (vm.codingVariableFocus.sourceIds.length) {
+                    aus
+                    @for (sourceId of vm.codingVariableFocus.sourceIds; track sourceId) {
+                      <code>{{ sourceId }}</code>
+                    }
+                  }
+                  – angezeigt wird die Ergebnisvariable, die den Itemwert liefert.
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="coding-focus-warning" role="status">
+              <strong>Keine eindeutige Kodiervariable für dieses Item</strong>
+              <span>{{ vm.codingVariableFocusMessage }}</span>
+            </div>
+
+            <div class="coding-toolbar">
+              <div class="search-container">
+                <input
+                  class="filter-input"
+                  [ngModel]="vm.codingSearchText"
+                  (ngModelChange)="vm.setCodingSearchText($event)"
+                  placeholder="🔍 Variablen suchen (ID oder Label)..."
+                />
+              </div>
+              <div class="sort-actions">
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="vm.toggleCodingSort('id')"
+                  title="Nach ID sortieren"
+                >
+                  ID {{ vm.getCodingSortIndicator('id') }}
+                </button>
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="vm.toggleCodingSort('label')"
+                  title="Nach Label sortieren"
+                >
+                  Label {{ vm.getCodingSortIndicator('label') }}
+                </button>
+              </div>
+            </div>
+          }
+
+          <div class="coding-scheme-view">
+            @for (coding of vm.filteredCodingSchemeAsText; track coding.id) {
+              <div class="coding-item">
+                <div class="coding-item-header">
+                  <h4>{{ coding.label || coding.id }}</h4>
+                  <div class="header-tags">
+                    <code class="variable-id">{{ coding.id }}</code>
+                  </div>
+                </div>
+                @if ($any(coding).manualInstructionText) {
+                  <div class="global-manual-instruction">
+                    <strong>📖 Variable-Instruktion:</strong>
+                    <div
+                      class="html-content"
+                      [innerHTML]="$any(coding).manualInstructionText"
+                    ></div>
+                  </div>
+                }
+                <div class="codes-list">
+                  @for (code of coding.codes; track code.id) {
+                    <div class="code-row">
+                      <div class="code-main">
+                        <span class="code-id">{{ code.id }}</span>
+                        <span class="code-score">({{ code.score }})</span>
+                        <span class="code-label">{{ code.label }}</span>
+                        @if (code.hasManualInstruction) {
+                          <span class="manual-icon" title="Manuelle Prüfung erforderlich">📝</span>
+                        }
+                      </div>
+                      @if ($any(code).manualInstructionText) {
+                        <div class="code-manual-instruction">
+                          <strong>Instruktion:</strong>
+                          <div
+                            class="html-content"
+                            [innerHTML]="$any(code).manualInstructionText"
+                          ></div>
+                        </div>
+                      }
+                      @if (code.ruleSetDescriptions.length) {
+                        <ul class="rule-list">
+                          @for (rule of code.ruleSetDescriptions; track rule) {
+                            <li>{{ rule }}</li>
+                          }
+                        </ul>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+          <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
+        }
+      </div>
+    </div>
+  </div>
+}

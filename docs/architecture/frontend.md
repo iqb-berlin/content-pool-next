@@ -159,6 +159,13 @@ Patterns used in the codebase:
 - local component state handles filters, selected items, dialogs, and temporary UI state,
 - shared ACP explorer state is loaded from the backend and updated through versioned draft APIs.
 
+The Item Explorer uses a route-scoped feature facade because it combines several independent UI
+areas with draft state, personal working data, collections, and a player preview. The route
+component only owns route and host integration. Child components consume typed, read-only view
+model slices and send feature actions back through the facade; table and preview components retain
+their own DOM references. Small registered DOM ports keep fullscreen, focus and scrolling, iframe
+messaging, player-document focus, and resize observation inside the owning UI component.
+
 There is no central client-side store such as NgRx at the moment.
 
 ## Feature-Specific UI Areas

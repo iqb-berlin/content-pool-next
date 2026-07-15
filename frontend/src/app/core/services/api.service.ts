@@ -30,9 +30,8 @@ import {
   FilePreviewResponse,
   FileDeletionResponse,
   ItemCollectionsPayload,
+  ItemExplorerPerspective,
 } from '../models/api.models';
-
-type ItemExplorerPerspective = 'editor' | 'read-only';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {

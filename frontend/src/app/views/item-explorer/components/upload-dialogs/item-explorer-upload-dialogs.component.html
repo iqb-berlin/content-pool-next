@@ -1,0 +1,174 @@
+<!-- OVERLAY: Upload Report -->
+@if (vm.showUploadReport) {
+  <div class="overlay-backdrop" (click)="vm.closeUploadReport()">
+    <div class="overlay-dialog" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <h2>Upload Bericht</h2>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeUploadReport(true)">
+          ✕ Schließen
+        </button>
+      </div>
+      <div class="overlay-content">
+        <p>
+          <strong>Zusammenfassung:</strong> {{ vm.uploadResult?.updated }} erfolgreich aktualisiert,
+          {{ vm.uploadResult?.failed?.length || 0 }} fehlgeschlagen.
+        </p>
+
+        @if (vm.uploadResult?.successes?.length) {
+          <div style="margin-top: 16px">
+            <h3 style="color: #27ae60">
+              Erfolgreich aktualisiert ({{ vm.uploadResult!.successes.length }})
+            </h3>
+            <div
+              style="
+                margin: 8px 0;
+                max-height: 350px;
+                overflow-y: auto;
+                border: 1px solid var(--color-border);
+                border-radius: 4px;
+              "
+            >
+              <table class="table" style="width: 100%; border-collapse: collapse">
+                <thead
+                  style="position: sticky; top: 0; background: var(--color-surface); z-index: 1"
+                >
+                  <tr>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 4px 8px;
+                        border-bottom: 1px solid var(--color-border);
+                      "
+                    >
+                      Aufgabe
+                    </th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 4px 8px;
+                        border-bottom: 1px solid var(--color-border);
+                      "
+                    >
+                      Item-ID
+                    </th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 4px 8px;
+                        border-bottom: 1px solid var(--color-border);
+                      "
+                    >
+                      Sub-ID
+                    </th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 4px 8px;
+                        border-bottom: 1px solid var(--color-border);
+                      "
+                    >
+                      Aktualisierte Felder
+                    </th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 4px 8px;
+                        border-bottom: 1px solid var(--color-border);
+                      "
+                    >
+                      Booklet / Position
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (success of vm.uploadResult!.successes; track $index) {
+                    <tr>
+                      <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border)">
+                        <code>{{ success.unitId }}</code>
+                      </td>
+                      <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border)">
+                        <code>{{ success.itemId }}</code>
+                      </td>
+                      <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border)">
+                        {{ success.subId || '–' }}
+                      </td>
+                      <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border)">
+                        {{ vm.getUploadSuccessFieldSummary(success) }}
+                      </td>
+                      <td style="padding: 4px 8px; border-bottom: 1px dotted var(--color-border)">
+                        {{ vm.getUploadSuccessBookletSummary(success) }}
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        }
+
+        @if (vm.uploadResult?.failed?.length) {
+          <div style="margin-top: 16px">
+            <h3 style="color: #e74c3c">Fehlgeschlagen ({{ vm.uploadResult!.failed.length }})</h3>
+            <div
+              style="
+                margin: 8px 0;
+                max-height: 250px;
+                overflow-y: auto;
+                background: rgba(231, 76, 60, 0.05);
+                padding: 8px;
+                border-radius: 4px;
+                border: 1px solid rgba(231, 76, 60, 0.2);
+              "
+            >
+              <ul
+                style="margin: 0; padding-left: 20px; color: var(--color-text); font-size: 0.9rem"
+              >
+                @for (fail of vm.uploadResult!.failed; track $index) {
+                  <li>
+                    <code>{{ fail.csvRow }}</code
+                    >: {{ fail.reason }}
+                  </li>
+                }
+              </ul>
+            </div>
+            <p class="help-text" style="font-size: 0.8rem; margin-top: 8px">
+              Überprüfe diese Einträge in der CSV-Datei (Spalte "item" muss mit Item-ID oder
+              Unit-Item Kombi übereinstimmen).
+            </p>
+          </div>
+        } @else if (vm.uploadResult?.successes?.length) {
+          <p style="color: #27ae60; margin-top: 16px; font-weight: bold">
+            🎉 Alle Items aus der CSV konnten erfolgreich zugeordnet werden!
+          </p>
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<!-- OVERLAY: Error Dialog -->
+@if (vm.showErrorDialog) {
+  <div class="overlay-backdrop" (click)="vm.closeUploadErrorDialog()">
+    <div
+      class="overlay-dialog"
+      style="max-width: 500px; border-top: 4px solid #e74c3c"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="overlay-header">
+        <h2 style="color: #e74c3c; display: flex; align-items: center; gap: 8px">
+          <span>⚠️</span> Upload-Fehler
+        </h2>
+        <button class="btn btn-sm btn-outline" (click)="vm.closeUploadErrorDialog()">✕</button>
+      </div>
+      <div class="overlay-content" style="text-align: center; padding: 24px 16px">
+        <div style="font-size: 3rem; margin-bottom: 16px">🚫</div>
+        <p style="font-size: 1.1rem; line-height: 1.5; color: var(--color-text)">
+          {{ vm.errorMessage }}
+        </p>
+        <div style="margin-top: 24px">
+          <button class="btn btn-primary" (click)="vm.closeUploadErrorDialog()">Verstanden</button>
+        </div>
+      </div>
+    </div>
+  </div>
+}

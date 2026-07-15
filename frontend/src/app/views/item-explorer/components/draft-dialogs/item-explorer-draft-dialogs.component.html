@@ -1,0 +1,48 @@
+<!-- OVERLAY: Save Draft Preview -->
+@if (vm.showSavePreviewDialog) {
+  <div class="overlay-backdrop" (click)="vm.cancelSavePreviewDialog()">
+    <div class="overlay-dialog" style="max-width: 700px" (click)="$event.stopPropagation()">
+      <div class="overlay-header">
+        <div class="drawer-title">
+          <span class="drawer-icon" style="background: var(--color-primary)">📝</span>
+          <div>
+            <h2>Änderungsübersicht vor Speichern</h2>
+            <small>Diese Änderungen werden veröffentlicht</small>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-outline" (click)="vm.cancelSavePreviewDialog()">✕</button>
+      </div>
+      <div class="overlay-content">
+        @if (vm.draftPreviewSummary.length === 0) {
+          <div class="empty-state">
+            <p>Keine Unterschiede zum veröffentlichten Stand gefunden.</p>
+          </div>
+        } @else {
+          <div class="state-list">
+            @for (entry of vm.draftPreviewSummary; track entry.label) {
+              <div class="state-item">
+                <div class="state-header">
+                  <strong>{{ entry.label }}</strong>
+                </div>
+                <p>{{ entry.detail }}</p>
+              </div>
+            }
+          </div>
+        }
+        <div class="column-manager-footer" style="margin-top: 20px">
+          <span class="selection-info"
+            >Draft v{{ vm.explorerVersion }} → Publish v{{ vm.explorerPublishedVersion + 1 }}</span
+          >
+          <div class="footer-actions">
+            <button class="btn btn-outline" (click)="vm.cancelSavePreviewDialog()">
+              Abbrechen
+            </button>
+            <button class="btn btn-primary" (click)="vm.confirmSaveExplorerDraft()">
+              Veröffentlichen
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+}

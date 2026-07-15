@@ -1,0 +1,121 @@
+:host {
+  display: contents;
+}
+
+.unit-metadata-card {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(26, 82, 118, 0.03);
+  border: 1px solid rgba(26, 82, 118, 0.1);
+}
+.unit-metadata-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.unit-metadata-card h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-primary);
+}
+.meta-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.meta-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.meta-summary-label {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+}
+.meta-summary-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.drawer-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 1100;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(4px);
+}
+.drawer-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+.drawer-container {
+  position: absolute;
+  top: 0;
+  right: -400px;
+  width: 400px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: -5px 0 25px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-left: 1px solid rgba(255, 255, 255, 0.3);
+}
+.drawer-container.open {
+  right: 0;
+}
+.drawer-header {
+  padding: 24px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: color 0.2s;
+}
+.btn-close:hover {
+  color: var(--color-danger);
+}
+.drawer-content {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+.meta-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.meta-item {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding-bottom: 12px;
+}
+.meta-item:last-child {
+  border-bottom: none;
+}
+.meta-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.meta-value {
+  font-size: 1rem;
+  color: var(--color-text);
+  font-weight: 500;
+}

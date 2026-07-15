@@ -1,0 +1,290 @@
+app-item-explorer {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 140px);
+  overflow: hidden;
+}
+app-item-explorer .explorer-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+app-item-explorer .explorer-shell:fullscreen {
+  width: 100%;
+  height: 100%;
+  padding: 16px 20px 20px;
+  box-sizing: border-box;
+  background: var(--color-bg);
+}
+app-item-explorer .explorer-shell:fullscreen::backdrop {
+  background: var(--color-bg);
+}
+app-item-explorer app-split-pane {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Table panel */
+app-item-explorer .filter-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+app-item-explorer .filter-input:focus {
+  outline: none;
+  border-color: var(--color-primary-light);
+  box-shadow: 0 0 0 3px rgba(41, 128, 185, 0.15);
+}
+/* Better scrollbar styling to avoid 'messy' intersection */
+
+/* Filter row */
+
+/* Combined ID styling */
+app-item-explorer .player-target-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(52, 152, 219, 0.12);
+  color: #1f618d;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+app-item-explorer .player-target-badge.unmapped {
+  background: rgba(243, 156, 18, 0.14);
+  color: #9c640c;
+}
+app-item-explorer .player-target-badge.secondary {
+  background: rgba(127, 140, 141, 0.16);
+  color: #566573;
+}
+app-item-explorer .excluded-item-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(231, 76, 60, 0.12);
+  color: #a93226;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* Preview panel */
+/* In view-all mode, we want the container to follow the iframe's height and not CLIP it */
+
+/* Navigations */
+
+/* Spinner */
+app-item-explorer .spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-primary-light);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 12px;
+}
+app-item-explorer .spinner-inline {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary-light);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+app-item-explorer .overlay-content {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* Combined ID styling */
+app-item-explorer .overlay-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+app-item-explorer .overlay-dialog {
+  background: var(--color-surface);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 90vw;
+  max-width: 800px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.2s ease;
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+/* Column Manager Premium */
+
+/* Coding Toolbar */
+
+/* Metadata Summary Card */
+
+/* Metadata Drawer */
+
+/* General Overlays */
+app-item-explorer .overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+app-item-explorer .overlay-header h2 {
+  margin-bottom: 0;
+  font-size: 1.1rem;
+}
+app-item-explorer .drawer-title {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+app-item-explorer .drawer-title h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+app-item-explorer .drawer-title small {
+  color: var(--color-text-secondary);
+  display: block;
+  margin-top: 2px;
+}
+app-item-explorer .drawer-icon {
+  width: 40px;
+  height: 40px;
+  background: var(--color-primary-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: white;
+  font-size: 1.2rem;
+}
+app-item-explorer .column-manager-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+app-item-explorer .column-manager-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+app-item-explorer .selection-info {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+app-item-explorer .footer-actions {
+  display: flex;
+  gap: 12px;
+}
+app-item-explorer .overlay-content {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+}
+app-item-explorer .json-view {
+  background: var(--color-bg);
+  padding: 16px;
+  border-radius: var(--radius);
+  font-size: 0.75rem;
+  overflow: auto;
+  max-height: 60vh;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+app-item-explorer .state-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+app-item-explorer .state-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+app-item-explorer .state-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+app-item-explorer .unit-badge {
+  background: var(--color-primary-light);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+app-item-explorer .state-header .date {
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+app-item-explorer .meta-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 20px;
+  font-size: 0.9rem;
+}
+app-item-explorer .meta-dl dt {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+app-item-explorer .meta-dl dd {
+  margin: 0;
+}
+app-item-explorer .help-text {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}

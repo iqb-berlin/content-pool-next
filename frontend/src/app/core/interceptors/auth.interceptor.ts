@@ -58,7 +58,16 @@ function handleAuthError(
   const nextUrl = `${window.location.pathname}${window.location.search}`;
 
   if (status === 401 && !isInlineAuthError(req.url)) {
-    const hadToken = !!auth.getToken();
+    const requestToken = getBearerToken(req.headers.get('Authorization'));
+    const currentToken = auth.getToken();
+
+    // A request started before login, or with a session that has since been
+    // replaced, must not clear the newer session when its late 401 arrives.
+    if (currentToken && requestToken !== currentToken) {
+      return throwError(() => error);
+    }
+
+    const hadToken = !!requestToken;
     const canRetryOidcRequest =
       hadToken && auth.isOidcUser && !req.context.get(OIDC_REFRESH_RETRY_ATTEMPTED);
 
@@ -97,6 +106,11 @@ function handleAuthError(
   }
 
   return throwError(() => error);
+}
+
+function getBearerToken(authorization: string | null): string | null {
+  if (!authorization?.startsWith('Bearer ')) return null;
+  return authorization.slice('Bearer '.length);
 }
 
 function handleUnauthorized(

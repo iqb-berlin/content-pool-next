@@ -924,6 +924,29 @@ describe('ItemExplorerFacade', () => {
     expect(loadSharedExplorerState).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps a draft patch conflict visible after reloading the shared state', async () => {
+    const component = createFacade({
+      api: {
+        patchItemExplorerDraft: vi.fn(() => throwError(() => ({ status: 409 }))),
+        getItemExplorerState: vi.fn(() => of(createExplorerEnvelope({ status: 'DIRTY' }))),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.canEditExplorer = true;
+    component.explorerVersion = 3;
+    (component as any).pendingDraftPatch = { tags: { 'row-1': ['QA'] } };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    const flushed = await (component as any).flushDraftPatch();
+
+    expect(flushed).toBe(false);
+    expect(component.lastDraftOperationError).toBe(
+      'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.',
+    );
+    expect(component.explorerUiStatus).toBe('ERROR');
+    consoleError.mockRestore();
+  });
+
   it('blocks renumbering while draft changes are pending or being saved', () => {
     const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 0 }));
 
@@ -3015,6 +3038,43 @@ describe('ItemExplorerFacade', () => {
       'read-only',
     );
     expect(component.activeItemCollection?.version).toBe(2);
+  });
+
+  it('keeps the collection conflict visible while reloading the latest version', async () => {
+    const freshCollection = {
+      id: 'collection-1',
+      name: 'Server-Auswahl',
+      rowKeys: [],
+      version: 2,
+      createdAt: '',
+      updatedAt: '',
+      unavailableRowKeys: [],
+      summary: {} as any,
+    };
+    const getItemCollections = vi.fn().mockReturnValue(
+      of({ activeCollectionId: 'collection-1', collections: [freshCollection] }),
+    );
+    const updateItemCollection = vi.fn().mockReturnValue(
+      throwError(() => ({ status: 409 })),
+    );
+    const component = createFacade({
+      api: { getItemCollections, updateItemCollection },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enableItemCollections = true;
+    component.itemCollections = [{ ...freshCollection, name: 'Lokale Auswahl', version: 1 }];
+    component.activeCollectionId = 'collection-1';
+    component.collectionLoadState = 'loaded';
+
+    await (component as any).persistActiveCollectionUpdate({ name: 'Geändert' });
+
+    expect(getItemCollections).toHaveBeenCalledWith('acp-1', 'read-only');
+    expect(component.activeItemCollection?.name).toBe('Server-Auswahl');
+    expect(component.collectionLoadState).toBe('loaded');
+    expect(component.collectionError).toBe(
+      'Die Kollektion wurde parallel geändert und wird neu geladen.',
+    );
   });
 
   it('filters empirical difficulty numerically and keeps missing values last', () => {

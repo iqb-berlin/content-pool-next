@@ -1139,7 +1139,7 @@ export class ItemExplorerFacade implements OnDestroy {
     );
   }
 
-  loadItemCollections() {
+  loadItemCollections(preserveError = false) {
     if (!this.enableItemCollections) return;
     const session = this.getItemCollectionSession();
     if (!session.identity) {
@@ -1148,7 +1148,7 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
     this.collectionLoadState = 'loading';
-    this.collectionError = '';
+    if (!preserveError) this.collectionError = '';
     this.api
       .getItemCollections(this.acpId, this.getPerspectiveForViewerRequests())
       .pipe(takeUntil(this.destroy$))
@@ -1362,7 +1362,7 @@ export class ItemExplorerFacade implements OnDestroy {
         error?.status === 409
           ? 'Die Kollektion wurde parallel geändert und wird neu geladen.'
           : 'Die Kollektion konnte nicht gespeichert werden.';
-      if (error?.status === 409) this.loadItemCollections();
+      if (error?.status === 409) this.loadItemCollections(true);
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
     }
@@ -4118,12 +4118,17 @@ export class ItemExplorerFacade implements OnDestroy {
     resolver?.(result);
   }
 
-  private async loadSharedExplorerState(): Promise<void> {
+  private async loadSharedExplorerState(preserveDraftOperationError = false): Promise<void> {
     if (this.destroyed) return;
+    const draftOperationError = preserveDraftOperationError ? this.lastDraftOperationError : '';
     try {
       const envelope = await firstValueFrom(this.api.getItemExplorerState(this.acpId));
       if (this.destroyed) return;
       this.applySharedExplorerEnvelope(envelope);
+      if (preserveDraftOperationError) {
+        this.lastDraftOperationError = draftOperationError;
+        this.explorerUiStatus = 'ERROR';
+      }
     } catch (error) {
       if (this.destroyed) return;
       console.error('Failed to load shared explorer state', error);
@@ -4418,7 +4423,7 @@ export class ItemExplorerFacade implements OnDestroy {
         'Fehler beim Speichern der Änderungen.',
       );
       if (error?.status === 409) {
-        await this.loadSharedExplorerState();
+        await this.loadSharedExplorerState(true);
       }
       return false;
     }
@@ -4464,7 +4469,7 @@ export class ItemExplorerFacade implements OnDestroy {
         'Fehler beim Verwerfen der Änderungen.',
       );
       if (error?.status === 409) {
-        await this.loadSharedExplorerState();
+        await this.loadSharedExplorerState(true);
       }
       return false;
     }
@@ -4922,7 +4927,7 @@ export class ItemExplorerFacade implements OnDestroy {
       if (error?.status === 409) {
         this.lastDraftOperationError =
           'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
-        await this.loadSharedExplorerState();
+        await this.loadSharedExplorerState(true);
         return false;
       }
       this.lastDraftOperationError = this.extractDraftErrorMessage(

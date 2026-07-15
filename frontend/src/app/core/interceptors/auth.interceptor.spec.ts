@@ -1,7 +1,7 @@
 import { Injector, runInInjectionContext } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { HttpContext, HttpErrorResponse, HttpRequest, HttpResponse } from '@angular/common/http';
-import { firstValueFrom, of, throwError } from 'rxjs';
+import { firstValueFrom, of, Subject, throwError } from 'rxjs';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 import { AccessService } from '../services/access.service';
@@ -107,6 +107,24 @@ describe('authInterceptor', () => {
 
     expect(authMock.clearSession).not.toHaveBeenCalled();
     expect(accessMock.redirectToAccess).not.toHaveBeenCalled();
+  });
+
+  it('does not clear a new login session when an older anonymous request returns 401', async () => {
+    token = null;
+    const response$ = new Subject<HttpResponse<unknown>>();
+    const req = new HttpRequest('GET', '/api/auth/context?type=acp');
+    const next = vi.fn(() => response$);
+    const result = firstValueFrom(
+      runInInjectionContext(injector, () => authInterceptor(req, next as any)),
+    );
+
+    token = 'new-login-token';
+    response$.error(new HttpErrorResponse({ status: 401 }));
+
+    await expect(result).rejects.toBeInstanceOf(HttpErrorResponse);
+    expect(authMock.clearSession).not.toHaveBeenCalled();
+    expect(accessMock.redirectToAccess).not.toHaveBeenCalled();
+    expect(token).toBe('new-login-token');
   });
 
   it('does not attach the app bearer token to bypassed requests', async () => {

@@ -13,6 +13,7 @@ import {
 import { AuthModule } from "../auth/auth.module";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 import { FilesModule } from "../files/files.module";
+import { ItemCollectionsModule } from "../item-collections/item-collections.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { FilesModule } from "../files/files.module";
     AuthModule,
     ItemExplorerModule,
     FilesModule,
+    ItemCollectionsModule,
   ],
   controllers: [ViewsController],
   providers: [ViewsService],

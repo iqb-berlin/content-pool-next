@@ -99,6 +99,8 @@ describe("ContentPool API (e2e)", () => {
 
   const featureConfig = {
     enableItemList: true,
+    enableItemCollections: true,
+    persistUserPreferences: true,
     enableUnitView: true,
     enableSequenceNavigation: true,
     enableCommenting: true,
@@ -494,6 +496,143 @@ describe("ContentPool API (e2e)", () => {
       credentialId,
     });
     expect(record.preferences).toEqual({ ui: {}, tags: {}, rowData: {} });
+  });
+
+  it("serializes collection updates without overwriting personal JSONB fields", async () => {
+    const rowKey = "collection-concurrency-row";
+    await itemPreferenceRepository.query(
+      buildPatchPersonalItemPreferenceRowQuery("credential_id"),
+      [
+        acpId,
+        "item-explorer",
+        null,
+        credentialId,
+        credentialUsername,
+        JSON.stringify({
+          ui: {},
+          tags: {},
+          rowData: { [rowKey]: { note: "must survive" } },
+        }),
+        JSON.stringify({ note: "must survive" }),
+        rowKey,
+        10_000,
+      ],
+    );
+
+    const created = await request(server)
+      .post(`/api/view/acp/${acpId}/items/collections`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .send({ name: "Concurrency" })
+      .expect(201);
+    const collectionId = created.body.activeCollectionId;
+
+    const updates = await Promise.all([
+      request(server)
+        .patch(`/api/view/acp/${acpId}/items/collections/${collectionId}`)
+        .set("Authorization", `Bearer ${credentialToken}`)
+        .send({ baseVersion: 1, name: "First" }),
+      request(server)
+        .patch(`/api/view/acp/${acpId}/items/collections/${collectionId}`)
+        .set("Authorization", `Bearer ${credentialToken}`)
+        .send({ baseVersion: 1, name: "Second" }),
+    ]);
+
+    expect(updates.map((response) => response.status).sort()).toEqual([
+      200, 409,
+    ]);
+    const record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId: "item-explorer",
+      credentialId,
+    });
+    expect(record.preferences.rowData).toEqual({
+      [rowKey]: { note: "must survive" },
+    });
+    expect((record.preferences.collections as any[])[0]).toEqual(
+      expect.objectContaining({ id: collectionId, version: 2 }),
+    );
+
+    const userCollections = await request(server)
+      .get(`/api/view/acp/${acpId}/items/collections`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(userCollections.body.collections).toEqual([]);
+  });
+
+  it("repairs a non-object preference root when creating a collection", async () => {
+    await itemPreferenceRepository.query(
+      `
+        UPDATE "acp_item_preferences"
+        SET "preferences" = '[]'::jsonb
+        WHERE "acp_id" = $1
+          AND "view_id" = 'item-explorer'
+          AND "credential_id" = $2
+      `,
+      [acpId, credentialId],
+    );
+
+    const created = await request(server)
+      .post(`/api/view/acp/${acpId}/items/collections`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .send({ name: "Repaired" })
+      .expect(201);
+
+    const record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId: "item-explorer",
+      credentialId,
+    });
+    expect(Array.isArray(record.preferences)).toBe(false);
+    expect(record.preferences.collections).toEqual([
+      expect.objectContaining({
+        id: created.body.activeCollectionId,
+        name: "Repaired",
+      }),
+    ]);
+  });
+
+  it("repairs a non-object preference root when saving view preferences", async () => {
+    const viewId = "item-list-root-repair";
+    await itemPreferenceRepository.query(
+      `
+        INSERT INTO "acp_item_preferences" (
+          "id", "acp_id", "view_id", "user_id", "credential_id",
+          "credential_username", "preferences", "created_at", "updated_at"
+        )
+        VALUES (
+          uuid_generate_v4(), $1, $2, null, $3, $4,
+          '[]'::jsonb, now(), now()
+        )
+        ON CONFLICT ("acp_id", "view_id", "credential_id")
+          WHERE "credential_id" IS NOT NULL
+        DO UPDATE SET "preferences" = '[]'::jsonb
+      `,
+      [acpId, viewId, credentialId, credentialUsername],
+    );
+
+    await request(server)
+      .put(`/api/view/acp/${acpId}/items/preferences`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .send({ viewId, ui: { filterText: "persisted" } })
+      .expect(200);
+
+    const loaded = await request(server)
+      .get(`/api/view/acp/${acpId}/items/preferences`)
+      .query({ viewId })
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(loaded.body).toEqual({
+      ui: { filterText: "persisted" },
+      tags: {},
+      rowData: {},
+    });
+
+    const record = await itemPreferenceRepository.findOneByOrFail({
+      acpId,
+      viewId,
+      credentialId,
+    });
+    expect(Array.isArray(record.preferences)).toBe(false);
   });
 
   it("covers comment export", async () => {

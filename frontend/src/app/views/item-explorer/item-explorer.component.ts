@@ -4565,9 +4565,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
         (label) => label !== 'Booklet' && label !== 'Position im Booklet',
       );
       withoutSeparateBookletFields.push(
-        success.bookletOccurrences?.length
-          ? 'Booklet / Position'
-          : 'Booklet / Position gelöscht',
+        success.bookletOccurrences?.length ? 'Booklet / Position' : 'Booklet / Position gelöscht',
       );
       return [...new Set(withoutSeparateBookletFields)].join(', ') || '–';
     }
@@ -4603,8 +4601,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
           this.uploadResult = result;
           this.showUploadReport = true;
           if (typeof result.showOnlyItemsWithEmpiricalDifficulty === 'boolean') {
-            this.showOnlyItemsWithEmpiricalDifficulty =
-              result.showOnlyItemsWithEmpiricalDifficulty;
+            this.showOnlyItemsWithEmpiricalDifficulty = result.showOnlyItemsWithEmpiricalDifficulty;
           }
           if (result.explorerState) {
             this.applySharedExplorerEnvelope(result.explorerState, true);

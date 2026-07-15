@@ -241,8 +241,19 @@ required. Time values are non-negative seconds; decimal point and decimal comma 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
 must agree, while `booklet` and `position` are collected as ordered 1:n metadata on the stable
 Explorer row. The occurrence columns must always be supplied and filled together. Columns that are
-absent leave stored values unchanged; a supplied but empty value clears that parameter for the
-imported row.
+absent leave stored values unchanged; a supplied but empty value clears that parameter in its
+defined scope:
+
+- difficulty, Infit, discrimination, solution rate, and booklet occurrences belong to the stable
+  Explorer row,
+- item time belongs to the underlying item UUID and is shared by its partial-credit rows,
+- stimulus time belongs to the complete unit and is shared by all of its item rows.
+
+When repeated rows address the same item or unit, one distinct non-empty time value is applied to
+the complete scope and blank repetitions are ignored. If every supplied value in that scope is
+blank, the stored value is cleared. Different non-empty values in one scope are rejected as a
+conflict before any item property is changed. A standard row fans row-scoped values out to existing
+partial-credit rows; importing explicit Sub-IDs does not delete other partial-credit rows.
 
 Infit, discrimination, solution rate, item time, stimulus time, booklet, and position are built-in
 configurable Explorer columns. Numeric columns use numeric filtering and sorting. Booklet and

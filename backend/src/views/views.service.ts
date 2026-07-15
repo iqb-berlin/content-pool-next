@@ -28,6 +28,15 @@ import {
   buildPatchPersonalItemPreferenceRowQuery,
   PreferenceIdentityColumn,
 } from "./personal-item-preferences.query";
+import {
+  getItemExportCell,
+  ITEM_EXPORT_IDENTITY_COLUMNS,
+  ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
+  ITEM_EXPORT_PARAMETER_COLUMNS,
+  ItemExportProjection,
+  MEAN_DIFFICULTY_EXPORT_COLUMN,
+  projectItemExportRow,
+} from "./item-export-projection";
 import { v4 as uuidv4 } from "uuid";
 
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
@@ -759,20 +768,8 @@ export class ViewsService {
     const headers = [
       "Kollektion",
       "Reihenfolge",
-      "Unit-ID",
-      "Unit-Label",
-      "Item-ID",
-      "Item-UUID",
-      "Sub-ID",
-      "Zeilenschlüssel",
-      "Empirische Itemschwierigkeit",
-      "Infit",
-      "Trennschärfe",
-      "Lösungshäufigkeit",
-      "Itemzeit (s)",
-      "Stimuluszeit (s)",
-      "Booklet",
-      "Position im Booklet",
+      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) => column.header),
+      ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
       "Kategorie",
       "Tags",
       "Notiz",
@@ -781,30 +778,24 @@ export class ViewsService {
       const item = itemsByRowKey.get(rowKey);
       if (!item) return [];
       const personal = personalRows[rowKey] || {};
-      const occurrenceColumns = this.formatBookletOccurrenceColumns(item);
+      const projection = projectItemExportRow({
+        rowKey,
+        item,
+        personalRow: personal,
+      });
       return [
         [
           collection.name,
           index + 1,
-          item.unitId,
-          item.unitLabel,
-          item.itemId,
-          item.uuid,
-          item.subId || "",
-          item.rowKey,
-          item.empiricalDifficulty ?? "",
-          item.infit ?? "",
-          item.discrimination ?? "",
-          item.solutionRate ?? "",
-          item.itemTimeSeconds ?? "",
-          item.stimulusTimeSeconds ?? "",
-          occurrenceColumns.booklets,
-          occurrenceColumns.positions,
-          typeof personal.category === "string" ? personal.category : "",
-          Array.isArray(personal.tags) ? personal.tags.join(", ") : "",
-          typeof personal.note === "string"
-            ? personal.note.replace(/\n/g, "\\n")
-            : "",
+          ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) =>
+            getItemExportCell(projection, column),
+          ),
+          ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) =>
+            getItemExportCell(projection, column),
+          ),
+          projection.category || "",
+          projection.tags.join(", "),
+          projection.note?.replace(/\n/g, "\\n") || "",
         ],
       ];
     });
@@ -848,38 +839,18 @@ export class ViewsService {
     );
 
     const rows = items.map((item, index) => {
-      const personalRow = preferences.rowData[item.rowKey] || {};
-      const tags = Array.isArray(personalRow.tags)
-        ? personalRow.tags.map((tag) => String(tag))
-        : [];
-      const occurrenceColumns = this.formatBookletOccurrenceColumns(item);
+      const projection = projectItemExportRow({
+        rowKey: item.rowKey,
+        item,
+        personalRow: preferences.rowData[item.rowKey],
+        meanDifficultyByUnit,
+      });
 
       return {
+        ...projection,
         sequenceNumber: index + 1,
-        unitId: item.unitId,
-        unitLabel: item.unitLabel,
-        itemId: item.itemId,
-        itemUuid: item.uuid,
-        subId: item.subId || null,
-        rowKey: item.rowKey,
-        markers: this.formatPersonalMarkers(tags, personalTagColors),
-        note: typeof personalRow.note === "string" ? personalRow.note : null,
-        competenceLevel:
-          typeof personalRow.category === "string"
-            ? personalRow.category
-            : null,
-        empiricalDifficulty:
-          item.empiricalDifficulty === undefined
-            ? null
-            : item.empiricalDifficulty,
-        infit: item.infit ?? null,
-        discrimination: item.discrimination ?? null,
-        solutionRate: item.solutionRate ?? null,
-        itemTimeSeconds: item.itemTimeSeconds ?? null,
-        stimulusTimeSeconds: item.stimulusTimeSeconds ?? null,
-        booklets: occurrenceColumns.booklets || null,
-        bookletPositions: occurrenceColumns.positions || null,
-        meanTaskDifficulty: meanDifficultyByUnit.get(item.unitId) ?? null,
+        markers: this.formatPersonalMarkers(projection.tags, personalTagColors),
+        competenceLevel: projection.category,
       };
     });
 
@@ -923,40 +894,16 @@ export class ViewsService {
       return Object.entries(preferences.rowData).map(
         ([rowKey, personalRow]) => {
           const item = itemsByRowKey.get(rowKey);
-          const tags = Array.isArray(personalRow.tags)
-            ? personalRow.tags.map((tag) => String(tag)).join(", ")
-            : "";
-          const occurrenceColumns = item
-            ? this.formatBookletOccurrenceColumns(item)
-            : { booklets: "", positions: "" };
+          const projection = projectItemExportRow({
+            rowKey,
+            item,
+            personalRow,
+            meanDifficultyByUnit,
+          });
 
           return {
+            ...projection,
             participant,
-            unitId: item?.unitId || "",
-            unitLabel: item?.unitLabel || "",
-            itemId: item?.itemId || "",
-            subId: item?.subId || "",
-            rowKey,
-            category:
-              typeof personalRow.category === "string"
-                ? personalRow.category
-                : "",
-            tags,
-            note:
-              typeof personalRow.note === "string"
-                ? personalRow.note.replace(/\n/g, "\\n")
-                : "",
-            empiricalDifficulty: item?.empiricalDifficulty ?? "",
-            infit: item?.infit ?? "",
-            discrimination: item?.discrimination ?? "",
-            solutionRate: item?.solutionRate ?? "",
-            itemTimeSeconds: item?.itemTimeSeconds ?? "",
-            stimulusTimeSeconds: item?.stimulusTimeSeconds ?? "",
-            booklets: occurrenceColumns.booklets,
-            bookletPositions: occurrenceColumns.positions,
-            meanTaskDifficulty: item
-              ? (meanDifficultyByUnit.get(item.unitId) ?? "")
-              : "",
             itemOrder: itemOrder.get(rowKey) ?? Number.MAX_SAFE_INTEGER,
           };
         },
@@ -1270,19 +1217,6 @@ export class ViewsService {
     };
   }
 
-  private formatBookletOccurrenceColumns(item: VomdItemData): {
-    booklets: string;
-    positions: string;
-  } {
-    const occurrences = item.bookletOccurrences || [];
-    return {
-      booklets: occurrences.map((occurrence) => occurrence.booklet).join(" | "),
-      positions: occurrences
-        .map((occurrence) => String(occurrence.position))
-        .join(" | "),
-    };
-  }
-
   private async upsertItemPreferences(
     acpId: string,
     viewId: string,
@@ -1455,7 +1389,13 @@ export class ViewsService {
   }
 
   private async buildPersonalItemDataXlsx(
-    rows: Array<Record<string, string | number | null>>,
+    rows: Array<
+      ItemExportProjection & {
+        sequenceNumber: number;
+        markers: string | null;
+        competenceLevel: string | null;
+      }
+    >,
   ): Promise<Buffer> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
@@ -1465,36 +1405,12 @@ export class ViewsService {
     const sheet = workbook.addWorksheet("Persönliche Itemdaten");
     sheet.columns = [
       { header: "Laufende Nummer", key: "sequenceNumber", width: 18 },
-      { header: "Unit-ID", key: "unitId", width: 22 },
-      { header: "Unit-Label", key: "unitLabel", width: 30 },
-      { header: "Item-ID", key: "itemId", width: 22 },
-      { header: "Item-UUID", key: "itemUuid", width: 38 },
-      { header: "Sub-ID", key: "subId", width: 18 },
-      { header: "Zeilenschlüssel", key: "rowKey", width: 45 },
+      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
       { header: "Markierung/Farbe", key: "markers", width: 32 },
       { header: "Notiz", key: "note", width: 50 },
       { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
-      {
-        header: "Empirische Itemschwierigkeit",
-        key: "empiricalDifficulty",
-        width: 30,
-      },
-      { header: "Infit", key: "infit", width: 16 },
-      { header: "Trennschärfe", key: "discrimination", width: 18 },
-      { header: "Lösungshäufigkeit", key: "solutionRate", width: 22 },
-      { header: "Itemzeit (s)", key: "itemTimeSeconds", width: 18 },
-      { header: "Stimuluszeit (s)", key: "stimulusTimeSeconds", width: 20 },
-      { header: "Booklet", key: "booklets", width: 30 },
-      {
-        header: "Position im Booklet",
-        key: "bookletPositions",
-        width: 25,
-      },
-      {
-        header: "Mittlere Aufgabenschwierigkeit",
-        key: "meanTaskDifficulty",
-        width: 32,
-      },
+      ...ITEM_EXPORT_PARAMETER_COLUMNS,
+      MEAN_DIFFICULTY_EXPORT_COLUMN,
     ];
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.autoFilter = { from: "A1", to: "S1" };
@@ -1513,16 +1429,13 @@ export class ViewsService {
       vertical: "top",
       wrapText: true,
     };
-    sheet.getColumn("empiricalDifficulty").numFmt = "0.############";
-    sheet.getColumn("meanTaskDifficulty").numFmt = "0.############";
-    for (const key of [
-      "infit",
-      "discrimination",
-      "solutionRate",
-      "itemTimeSeconds",
-      "stimulusTimeSeconds",
+    for (const column of [
+      ...ITEM_EXPORT_PARAMETER_COLUMNS,
+      MEAN_DIFFICULTY_EXPORT_COLUMN,
     ]) {
-      sheet.getColumn(key).numFmt = "0.############";
+      if (column.numeric) {
+        sheet.getColumn(column.key).numFmt = "0.############";
+      }
     }
 
     const buffer = await workbook.xlsx.writeBuffer();
@@ -1530,68 +1443,36 @@ export class ViewsService {
   }
 
   private buildAllPersonalItemDataCsv(
-    rows: Array<{
-      participant: string;
-      unitId: string;
-      unitLabel: string;
-      itemId: string;
-      subId: string;
-      rowKey: string;
-      category: string;
-      tags: string;
-      note: string;
-      empiricalDifficulty: number | string;
-      infit: number | string;
-      discrimination: number | string;
-      solutionRate: number | string;
-      itemTimeSeconds: number | string;
-      stimulusTimeSeconds: number | string;
-      booklets: string;
-      bookletPositions: string;
-      meanTaskDifficulty: number | string;
-    }>,
+    rows: Array<
+      {
+        participant: string;
+        itemOrder: number;
+      } & ItemExportProjection
+    >,
   ): Buffer {
     const headers = [
       "Teilnehmerkennung",
-      "Unit-ID",
-      "Unit-Label",
-      "Item-ID",
-      "Sub-ID",
-      "Zeilenschlüssel",
+      ...ITEM_EXPORT_IDENTITY_COLUMNS.map((column) => column.header),
       "Kategorie",
       "Tags",
       "Notiz",
-      "Empirische Itemschwierigkeit",
-      "Infit",
-      "Trennschärfe",
-      "Lösungshäufigkeit",
-      "Itemzeit (s)",
-      "Stimuluszeit (s)",
-      "Booklet",
-      "Position im Booklet",
-      "Mittlere Aufgabenschwierigkeit",
+      ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
+      MEAN_DIFFICULTY_EXPORT_COLUMN.header,
     ];
     const lines = [
       headers,
       ...rows.map((row) => [
         row.participant,
-        row.unitId,
-        row.unitLabel,
-        row.itemId,
-        row.subId,
-        row.rowKey,
-        row.category,
-        row.tags,
-        row.note,
-        row.empiricalDifficulty,
-        row.infit,
-        row.discrimination,
-        row.solutionRate,
-        row.itemTimeSeconds,
-        row.stimulusTimeSeconds,
-        row.booklets,
-        row.bookletPositions,
-        row.meanTaskDifficulty,
+        ...ITEM_EXPORT_IDENTITY_COLUMNS.map((column) =>
+          getItemExportCell(row, column),
+        ),
+        row.category || "",
+        row.tags.join(", "),
+        row.note?.replace(/\n/g, "\\n") || "",
+        ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) =>
+          getItemExportCell(row, column),
+        ),
+        getItemExportCell(row, MEAN_DIFFICULTY_EXPORT_COLUMN),
       ]),
     ].map((row) => row.map((value) => this.escapeCsvCell(value)).join(";"));
 

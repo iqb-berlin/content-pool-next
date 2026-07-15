@@ -85,4 +85,8 @@ describe('ItemExplorer presentational components', () => {
   ])('keeps the %s action binding in the production template', (_name, template, binding) => {
     expect(template).toContain(binding);
   });
+
+  it('gives the collection selector an accessible name', () => {
+    expect(collectionsTemplate).toContain('aria-label="Aktive Kollektion auswählen"');
+  });
 });

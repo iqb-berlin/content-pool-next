@@ -301,7 +301,11 @@
                 @if (vm.canEditExplorer) {
                   <div class="tag-add-container">
                     @if (vm.availableTags.length > 0) {
-                      <select class="tag-select" (change)="vm.addItemTag(item.rowKey, $event)">
+                      <select
+                        class="tag-select"
+                        [attr.aria-label]="'Tag für ' + item.itemId + ' hinzufügen'"
+                        (change)="vm.addItemTag(item.rowKey, $event)"
+                      >
                         <option value="">+Tag</option>
                         @for (tag of vm.availableTags; track tag) {
                           <option [value]="tag">{{ tag }}</option>
@@ -323,6 +327,7 @@
               <td class="personal-data-cell" (click)="$event.stopPropagation()">
                 <select
                   class="personal-category-select"
+                  [attr.aria-label]="vm.personalItemCategoryLabel + ' für ' + item.itemId"
                   [ngModel]="vm.personalItemData[item.rowKey]?.category || ''"
                   [disabled]="!vm.canChangePersonalItemData"
                   (ngModelChange)="vm.setPersonalItemCategory(item.rowKey, $event)"

@@ -1,8 +1,16 @@
 import { ElementRef } from '@angular/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ItemExplorerTableComponent } from './item-explorer-table.component';
+import template from './item-explorer-table.component.html?raw';
 
 describe('ItemExplorerTableComponent', () => {
+  it('names shared tag and personal category selectors per item', () => {
+    expect(template).toContain("[attr.aria-label]=\"'Tag für ' + item.itemId + ' hinzufügen'\"");
+    expect(template).toContain(
+      "[attr.aria-label]=\"vm.personalItemCategoryLabel + ' für ' + item.itemId\"",
+    );
+  });
+
   it('owns filter focus and selection scrolling', () => {
     vi.useFakeTimers();
     const feature = {

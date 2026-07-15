@@ -10,7 +10,10 @@
   --color-bg: #f5f7fa;
   --color-surface: #ffffff;
   --color-text: #2c3e50;
-  --color-text-secondary: #7f8c8d;
+  --color-text-secondary: #566573;
+  --color-on-primary: #ffffff;
+  --color-link: #1a5276;
+  --color-danger-text: #a93226;
   --color-border: #dfe6e9;
   --radius: 8px;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -50,7 +53,7 @@ h3 {
 }
 
 a {
-  color: var(--color-primary-light);
+  color: var(--color-link);
   text-decoration: none;
 }
 a:hover {

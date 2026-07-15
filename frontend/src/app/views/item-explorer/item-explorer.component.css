@@ -26,6 +26,61 @@ app-item-explorer app-split-pane {
   min-height: 0;
 }
 
+@media (max-width: 700px) {
+  app-item-explorer {
+    height: auto;
+    min-height: calc(100dvh - 180px);
+    overflow: visible;
+  }
+
+  app-item-explorer .explorer-shell {
+    overflow: visible;
+  }
+
+  app-item-explorer app-split-pane {
+    flex: none;
+    height: auto;
+  }
+
+  app-item-explorer app-split-pane .split-pane {
+    flex-direction: column;
+    height: auto;
+    gap: 16px;
+  }
+
+  app-item-explorer app-split-pane .pane-left {
+    width: 100% !important;
+    height: 60dvh;
+    min-height: 440px;
+  }
+
+  app-item-explorer app-split-pane .divider {
+    display: none;
+  }
+
+  app-item-explorer app-split-pane .pane-right {
+    width: 100%;
+    min-height: 560px;
+    overflow: visible;
+  }
+
+  app-item-explorer .preview-panel {
+    min-height: 560px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  app-item-explorer .collection-select {
+    min-width: 0;
+    max-width: 100%;
+    width: 100%;
+  }
+
+  app-item-explorer .collection-summary {
+    width: 100%;
+  }
+}
+
 /* Table panel */
 app-item-explorer .filter-input {
   width: 100%;
@@ -59,7 +114,7 @@ app-item-explorer .player-target-badge {
 }
 app-item-explorer .player-target-badge.unmapped {
   background: rgba(243, 156, 18, 0.14);
-  color: #9c640c;
+  color: #7a4a00;
 }
 app-item-explorer .player-target-badge.secondary {
   background: rgba(127, 140, 141, 0.16);

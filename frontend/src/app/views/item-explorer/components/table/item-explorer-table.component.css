@@ -31,6 +31,7 @@
   /* Fix corner and layout shift */
   scrollbar-gutter: stable;
   position: relative;
+  isolation: isolate;
 }
 .table-scroll:focus {
   outline: none;
@@ -62,7 +63,8 @@
   margin-bottom: 0;
   width: 100%;
   min-width: max-content;
-  border-collapse: collapse; /* Reverting to collapse for better background handling */
+  border-collapse: separate;
+  border-spacing: 0;
 }
 .explorer-table th,
 .explorer-table td {
@@ -74,12 +76,12 @@
   position: sticky;
   top: 0;
   background-color: var(--color-bg) !important;
-  z-index: 100;
+  z-index: 20;
   white-space: nowrap;
   min-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Using box-shadow instead of border-bottom for better sticky support in collapse mode */
+  /* A shadow avoids double borders while sticky cells use the separate border model. */
   box-shadow: inset 0 -2px 0 var(--color-border);
 }
 .explorer-table td {
@@ -92,12 +94,12 @@
   position: sticky;
   left: 72px;
   background-color: var(--color-surface) !important;
-  z-index: 50;
+  z-index: 30;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
-th.sticky-col {
+.explorer-table th.sticky-col {
   background-color: var(--color-bg) !important;
-  z-index: 200; /* Highest priority */
+  z-index: 40;
 }
 .number-col {
   position: sticky;
@@ -107,12 +109,12 @@ th.sticky-col {
   max-width: 72px;
   text-align: right !important;
   background-color: var(--color-surface) !important;
-  z-index: 55;
+  z-index: 31;
   font-variant-numeric: tabular-nums;
 }
-th.number-col {
+.explorer-table th.number-col {
   background-color: var(--color-bg) !important;
-  z-index: 210;
+  z-index: 41;
 }
 tr.active .number-col {
   background: rgba(41, 128, 185, 0.1) !important;
@@ -144,10 +146,10 @@ tr:not(.active) {
   border-bottom: 2px solid var(--color-border);
   position: sticky;
   top: 44px; /* Matches the header height */
-  z-index: 100;
+  z-index: 20;
 }
-.filter-row th.sticky-col {
-  z-index: 200;
+.explorer-table .filter-row th.sticky-col {
+  z-index: 40;
 }
 .col-filter-input {
   width: 100%;

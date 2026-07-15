@@ -10,9 +10,23 @@ describe('app-settings util', () => {
     });
 
     expect(result['--color-primary']).toBe('#000000');
+    expect(result['--color-on-primary']).toBe('#ffffff');
     expect(result['--color-text']).toBe(DEFAULT_THEME['--color-text']);
     expect(result['--color-border']).toBe(DEFAULT_THEME['--color-border']);
     expect((result as Record<string, string>)['--unknown']).toBeUndefined();
+  });
+
+  it('derives accessible foreground, link and secondary colors for a light theme', () => {
+    const result = normalizeTheme({
+      '--color-primary': '#a8cee6',
+      '--color-primary-light': '#a8cee6',
+      '--color-text-secondary': '#7f8c8d',
+    });
+
+    expect(result['--color-on-primary']).toBe('#000000');
+    expect(result['--color-link']).toBe(DEFAULT_THEME['--color-primary']);
+    expect(result['--color-text-secondary']).toBe(DEFAULT_THEME['--color-text-secondary']);
+    expect(result['--color-danger-text']).toBe('#a93226');
   });
 
   it('applyTheme should set css variables on document root', () => {

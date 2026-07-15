@@ -1058,6 +1058,39 @@ describe('ApiService', () => {
   });
 
   describe('Items', () => {
+    it('should upload wide item parameters in draft mode', () => {
+      httpClientMock.post.mockReturnValue(of({ updated: 1, failed: [], successes: [] }));
+
+      const file = new File(['item;infit\nx;1'], 'parameters.csv', { type: 'text/csv' });
+      service.uploadItemParameters('acp1', file, { draft: true, baseVersion: 7 }).subscribe();
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/upload-item-parameters?draft=true&baseVersion=7',
+        expect.any(FormData),
+      );
+    });
+
+    it('should update and export personal item collections', () => {
+      httpClientMock.patch.mockReturnValue(of({ activeCollectionId: 'c1', collections: [] }));
+      httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));
+
+      service
+        .updateItemCollection('acp1', 'c1', { baseVersion: 2, rowKeys: ['uuid-1'] }, 'editor')
+        .subscribe();
+      service.exportItemCollectionCsv('acp1', 'c1', 'editor').subscribe();
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith('/api/view/acp/acp1/items/collections/c1', {
+        baseVersion: 2,
+        rowKeys: ['uuid-1'],
+        perspective: 'editor',
+      });
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/c1/export.csv?perspective=editor',
+        {},
+        { responseType: 'blob' },
+      );
+    });
+
     it('should upload empirical difficulties in draft mode with baseVersion', () => {
       httpClientMock.post.mockReturnValue(of({ updated: 0, failed: [], successes: [] }));
 

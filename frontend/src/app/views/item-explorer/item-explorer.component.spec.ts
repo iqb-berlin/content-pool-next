@@ -84,6 +84,9 @@ function createComponent(options?: {
   (component as any).personalDataSessionIdentity = (
     component as any
   ).resolvePersonalItemDataSessionIdentity();
+  (component as any).collectionSessionIdentity = (
+    component as any
+  ).resolvePersonalItemDataSessionIdentity();
   return component;
 }
 
@@ -2826,5 +2829,350 @@ describe('ItemExplorerComponent', () => {
         delete (document as any).exitFullscreen;
       }
     }
+  });
+
+  it('filters imported numeric values and paired booklet occurrences', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        infit: 1.05,
+        bookletOccurrences: [
+          { booklet: 'B1', position: 5 },
+          { booklet: 'B2', position: 2 },
+        ],
+      },
+    ];
+    component.allColumns = [
+      { id: 'infit', label: 'Infit', kind: 'number' },
+      { id: 'booklet', label: 'Booklet', kind: 'booklet' },
+      { id: 'bookletPosition', label: 'Position', kind: 'position' },
+    ];
+    component.columnFilters = {
+      infit: '1,0..1,1',
+      booklet: 'B1',
+      bookletPosition: '1..3',
+    };
+
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
+
+    component.columnFilters['booklet'] = 'B2';
+    component.applyFilter(false);
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('calculates combined collection time once per item and unit', () => {
+    const component = createComponent();
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        itemTimeSeconds: 10,
+        stimulusTimeSeconds: 5,
+      },
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1::2',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        itemTimeSeconds: 10,
+        stimulusTimeSeconds: 5,
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        stimulusTimeSeconds: 5,
+      },
+    ];
+    component.itemCollections = [
+      {
+        id: 'collection-1',
+        name: 'Auswahl',
+        rowKeys: ['uuid-1::1', 'uuid-1::2', 'uuid-2', 'removed'],
+        version: 1,
+        createdAt: '',
+        updatedAt: '',
+        unavailableRowKeys: [],
+        summary: {} as any,
+      },
+    ];
+    component.activeCollectionId = 'collection-1';
+
+    (component as any).recalculateCollectionSummaries();
+
+    expect(component.activeItemCollection?.summary).toEqual({
+      rowCount: 4,
+      itemCount: 2,
+      unitCount: 1,
+      itemTimeSeconds: 10,
+      stimulusTimeSeconds: 5,
+      testTimeSeconds: 15,
+      missingItemTimeCount: 1,
+      missingStimulusTimeUnitCount: 0,
+      complete: false,
+    });
+    expect(component.activeItemCollection?.unavailableRowKeys).toEqual(['removed']);
+  });
+
+  it('persists selection changes against the active collection version', async () => {
+    const response = {
+      activeCollectionId: 'collection-1',
+      collections: [
+        {
+          id: 'collection-1',
+          name: 'Auswahl',
+          rowKeys: ['uuid-1'],
+          version: 2,
+          createdAt: '',
+          updatedAt: '',
+          unavailableRowKeys: [],
+          summary: {
+            rowCount: 1,
+            itemCount: 1,
+            unitCount: 1,
+            itemTimeSeconds: 10,
+            stimulusTimeSeconds: 5,
+            testTimeSeconds: 15,
+            missingItemTimeCount: 0,
+            missingStimulusTimeUnitCount: 0,
+            complete: true,
+          },
+        },
+      ],
+    };
+    const updateItemCollection = vi.fn().mockReturnValue(of(response));
+    const component = createComponent({
+      api: { updateItemCollection },
+      authService: { isLoggedIn: true },
+    });
+    const item = {
+      itemId: 'item-1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'unit-1',
+      unitLabel: 'Aufgabe 1',
+      description: '',
+      variableId: 'v1',
+      metadata: {},
+      itemTimeSeconds: 10,
+      stimulusTimeSeconds: 5,
+    };
+    component.acpId = 'acp-1';
+    component.items = [item];
+    component.itemCollections = [
+      {
+        ...response.collections[0],
+        rowKeys: [],
+        version: 1,
+        summary: { ...response.collections[0].summary, rowCount: 0 },
+      },
+    ];
+    component.activeCollectionId = 'collection-1';
+    component.collectionLoadState = 'loaded';
+
+    await component.toggleItemInActiveCollection(item);
+
+    expect(updateItemCollection).toHaveBeenCalledWith(
+      'acp-1',
+      'collection-1',
+      { baseVersion: 1, rowKeys: ['uuid-1'] },
+      'read-only',
+    );
+    expect(component.activeItemCollection?.version).toBe(2);
+  });
+
+  it('filters empirical difficulty numerically and keeps missing values last', () => {
+    const component = createComponent();
+    const baseItem = {
+      unitId: 'unit-1',
+      unitLabel: 'Aufgabe 1',
+      description: '',
+      variableId: 'v1',
+      metadata: {},
+    };
+    component.items = [
+      { ...baseItem, itemId: 'missing', uuid: 'uuid-0', rowKey: 'uuid-0' },
+      {
+        ...baseItem,
+        itemId: 'negative',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        empiricalDifficulty: -1,
+      },
+      {
+        ...baseItem,
+        itemId: 'positive',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        empiricalDifficulty: 2,
+      },
+    ];
+    component.columnFilters = { empiricalDifficulty: '-2..0' };
+
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['negative']);
+
+    component.columnFilters = {};
+    component.applyFilter(false);
+    component.sortBy('empiricalDifficulty');
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual([
+      'negative',
+      'positive',
+      'missing',
+    ]);
+  });
+
+  it('keeps all integrated parameter columns configurable when values are missing', () => {
+    const component = createComponent();
+
+    const columns = (component as any).getAvailableMetadataColumns([]);
+
+    expect(columns.map((column: { id: string }) => column.id)).toEqual([
+      'infit',
+      'discrimination',
+      'solutionRate',
+      'itemTimeSeconds',
+      'stimulusTimeSeconds',
+      'booklet',
+      'bookletPosition',
+    ]);
+  });
+
+  it('formats wide and legacy upload successes without losing imported details', () => {
+    const component = createComponent();
+    const wideSuccess = {
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      subId: 'A',
+      fields: ['infit', 'discrimination', 'booklet', 'position'],
+      bookletOccurrences: [
+        { booklet: 'B1', position: 2 },
+        { booklet: 'B2', position: 5 },
+      ],
+    };
+
+    expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
+      'Infit, Trennschärfe, Booklet / Position',
+    );
+    expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
+    const clearedBooklets = {
+      fields: ['booklet', 'position'],
+      bookletOccurrences: [],
+    };
+    expect(component.getUploadSuccessFieldSummary(clearedBooklets)).toBe(
+      'Booklet / Position gelöscht',
+    );
+    expect(component.getUploadSuccessBookletSummary(clearedBooklets)).toBe('Gelöscht');
+    expect(component.getUploadSuccessFieldSummary({ value: -0.4 })).toBe(
+      'Empirische Itemschwierigkeit: -0.4',
+    );
+    expect(component.getUploadSuccessBookletSummary({ value: -0.4 })).toBe('–');
+  });
+
+  it('keeps server collection summaries while the item list is loading', () => {
+    const summary = {
+      rowCount: 2,
+      itemCount: 2,
+      unitCount: 1,
+      itemTimeSeconds: 20,
+      stimulusTimeSeconds: 5,
+      testTimeSeconds: 25,
+      missingItemTimeCount: 0,
+      missingStimulusTimeUnitCount: 0,
+      complete: true,
+    };
+    const getItemCollections = vi.fn().mockReturnValue(
+      of({
+        activeCollectionId: 'collection-1',
+        collections: [
+          {
+            id: 'collection-1',
+            name: 'Auswahl',
+            rowKeys: ['uuid-1', 'uuid-2'],
+            version: 1,
+            createdAt: '',
+            updatedAt: '',
+            unavailableRowKeys: [],
+            summary,
+          },
+        ],
+      }),
+    );
+    const token = createJwt('user-1');
+    const component = createComponent({
+      api: { getItemCollections },
+      authService: { getToken: () => token },
+    });
+    component.enableItemCollections = true;
+    component.itemListLoading = true;
+
+    (component as any).syncItemCollectionSession();
+
+    expect(component.activeItemCollection?.summary).toEqual(summary);
+    expect(component.activeItemCollection?.unavailableRowKeys).toEqual([]);
+  });
+
+  it('clears collections on identity changes and ignores stale responses', () => {
+    const userAResponse = new Subject<any>();
+    const userBResponse = new Subject<any>();
+    const getItemCollections = vi
+      .fn()
+      .mockReturnValueOnce(userAResponse)
+      .mockReturnValueOnce(userBResponse);
+    let token: string | null = createJwt('user-a');
+    const component = createComponent({
+      api: { getItemCollections },
+      authService: { getToken: () => token },
+    });
+    component.enableItemCollections = true;
+
+    (component as any).syncItemCollectionSession();
+    expect(component.collectionLoadState).toBe('loading');
+
+    token = null;
+    (component as any).syncItemCollectionSession();
+    expect(component.itemCollections).toEqual([]);
+    expect(component.collectionLoadState).toBe('error');
+
+    userAResponse.next({
+      activeCollectionId: 'collection-a',
+      collections: [{ id: 'collection-a', name: 'User A', rowKeys: [] }],
+    });
+    expect(component.itemCollections).toEqual([]);
+
+    token = createJwt('user-b');
+    (component as any).syncItemCollectionSession();
+    userBResponse.next({
+      activeCollectionId: 'collection-b',
+      collections: [{ id: 'collection-b', name: 'User B', rowKeys: [] }],
+    });
+    expect(component.itemCollections).toEqual([
+      expect.objectContaining({ id: 'collection-b', name: 'User B' }),
+    ]);
+    expect(component.activeCollectionId).toBe('collection-b');
   });
 });

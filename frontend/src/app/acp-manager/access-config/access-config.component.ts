@@ -498,6 +498,10 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <input type="checkbox" [(ngModel)]="featureConfig[enablePersonalItemDataKey]" />
           <span>Persönliche Arbeitsdaten im Item-Explorer aktivieren</span>
         </label>
+        <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[enableItemCollectionsKey]" />
+          <span>Persönliche Item-Kollektionen aktivieren</span>
+        </label>
         @if (featureConfig[enablePersonalItemDataKey]) {
           <div class="indent-section personal-data-config">
             <label class="help-text" for="personal-item-category-label">
@@ -850,6 +854,7 @@ export class AccessConfigComponent implements OnInit {
   readonly itemSubIdLabelKey = 'itemSubIdLabel';
   readonly itemSubIdLabelsKey = 'itemSubIdLabels';
   readonly enablePersonalItemDataKey = 'enablePersonalItemData';
+  readonly enableItemCollectionsKey = 'enableItemCollections';
   readonly personalItemCategoryLabelKey = 'personalItemCategoryLabel';
   readonly personalItemCategoryValuesKey = 'personalItemCategoryValues';
   readonly personalItemTagLabelKey = 'personalItemTagLabel';
@@ -1123,6 +1128,8 @@ export class AccessConfigComponent implements OnInit {
     this.featureConfig[this.itemSubIdLabelKey] = itemSubIdLabel || 'Sub-ID';
     this.featureConfig[this.enablePersonalItemDataKey] =
       this.featureConfig[this.enablePersonalItemDataKey] === true;
+    this.featureConfig[this.enableItemCollectionsKey] =
+      this.featureConfig[this.enableItemCollectionsKey] === true;
     const personalCategoryLabel = String(
       this.featureConfig[this.personalItemCategoryLabelKey] || '',
     ).trim();

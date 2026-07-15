@@ -206,6 +206,8 @@ ACP managers and application admins can additionally download one ACP-wide CSV f
 toolbar. The endpoint rejects read-only users, credential logins, and public access. It exports every
 stored personal row across participants, using a stable participant identifier and including unit,
 item, Sub-ID, stable row key, category, tags, note, empirical difficulty, and mean unit difficulty.
+When present, both personal and manager exports also contain Infit, discrimination, solution rate,
+item/stimulus times, and paired booklet positions.
 Participants without stored rows are skipped without failing the export. Note line breaks are
 written as literal `\\n` sequences so every personal entry remains on one CSV row.
 
@@ -229,6 +231,24 @@ the result later.
 
 The same distinction exists when clearing empirical difficulty values.
 
+### Wide item-parameter import
+
+Managers can also upload a semicolon-separated wide CSV through the Item Explorer. Its canonical
+headers are `item`, `sub_id`, `est`, `infit`, `discrimination`, `solution_rate`, `item_time_s`,
+`stimulus_time_s`, `booklet`, and `position`. Only `item` and at least one parameter column are
+required. Time values are non-negative seconds; decimal point and decimal comma are accepted.
+
+Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
+must agree, while `booklet` and `position` are collected as ordered 1:n metadata on the stable
+Explorer row. The occurrence columns must always be supplied and filled together. Columns that are
+absent leave stored values unchanged; a supplied but empty value clears that parameter for the
+imported row.
+
+Infit, discrimination, solution rate, item time, stimulus time, booklet, and position are built-in
+configurable Explorer columns. Numeric columns use numeric filtering and sorting. Booklet and
+position filters are paired, so a row only matches two simultaneous filters when one occurrence
+satisfies both.
+
 ### Partial-credit rows
 
 Difficulty CSV files may use the second column as a Sub-ID, category, or score level. The
@@ -249,6 +269,23 @@ use their item UUID as their row key and remain single rows.
 Shared explorer properties, tags, manual ordering, saved response states, and personal
 `rowData` preferences use the stable row key. This prevents two partial-credit rows of the same
 item from overwriting one another and gives exports a unique identifier for every table row.
+
+## Personal Item Collections
+
+When `enableItemCollections` is enabled, authenticated users and credential identities can maintain
+multiple named collections. Collections are stored in the existing `acp_item_preferences` JSONB
+record under the `item-explorer` view and are never exposed to other participants or managers.
+Every collection stores an ordered list of stable row keys and an optimistic-lock version.
+
+The leading duration is combined test time: item time is counted once per underlying item UUID and
+stimulus time once per selected unit. Selecting several partial-credit rows therefore does not
+multiply either time. The UI continues to show the known subtotal when data is incomplete and
+reports how many item and unit time values are missing. Stale row keys remain removable but are
+excluded from totals and exports.
+
+Collections can be created, renamed, cleared, deleted, and exported as semicolon-separated UTF-8
+CSV. Up to 100 named collections can be stored per identity and ACP. Direct generation of ACP
+booklets or task sequences is intentionally outside this feature.
 
 ## Player Preview and Legacy Player Compatibility
 

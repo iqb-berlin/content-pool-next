@@ -21,6 +21,14 @@ describe("ItemsController", () => {
           "item-1": { id: "item-1", empiricalDifficulty: 0.7 },
         },
       }),
+      uploadItemParameters: jest.fn().mockResolvedValue({
+        updated: 1,
+        failed: [],
+        successes: ["item-1"],
+        nextItemProperties: {
+          "item-1": { infit: 1.05, itemTimeSeconds: 30 },
+        },
+      }),
       clearEmpiricalDifficulties: jest.fn().mockResolvedValue({
         nextItemProperties: {
           "item-1": { id: "item-1" },
@@ -205,6 +213,46 @@ describe("ItemsController", () => {
     );
     expect(itemExplorerStateService.patchDraft).not.toHaveBeenCalled();
     expect(itemExplorerStateService.saveDraft).not.toHaveBeenCalled();
+  });
+
+  it("uploads wide item parameters into the explorer draft", async () => {
+    const file = { buffer: Buffer.from("csv-data") } as Express.Multer.File;
+    const req = { user: { sub: "u-1" } };
+
+    const result = await controller.uploadItemParameters(
+      "acp-1",
+      file,
+      "true",
+      "4",
+      req,
+    );
+
+    expect(itemsService.uploadItemParameters).toHaveBeenCalledWith(
+      "acp-1",
+      file.buffer,
+      {
+        persist: false,
+        itemPropertiesOverride: { "item-1": { id: "item-1" } },
+      },
+    );
+    expect(itemExplorerStateService.patchDraft).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        itemProperties: {
+          "item-1": { infit: 1.05, itemTimeSeconds: 30 },
+        },
+      },
+      expect.objectContaining({
+        changeType: "CSV_UPLOAD_ITEM_PARAMETERS",
+        baseVersion: 4,
+      }),
+    );
+    expect(result).toEqual(
+      expect.objectContaining({
+        updated: 1,
+        explorerState: { status: "DIRTY", version: 5 },
+      }),
+    );
   });
 
   it("uploads empirical difficulties in draft mode and patches explorer state", async () => {

@@ -66,6 +66,12 @@ export interface VomdItemData {
   sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  infit?: number;
+  discrimination?: number;
+  solutionRate?: number;
+  itemTimeSeconds?: number;
+  stimulusTimeSeconds?: number;
+  bookletOccurrences: Array<{ booklet: string; position: number }>;
   tags?: string[];
   rowNumber: number;
 }
@@ -846,6 +852,39 @@ export class UnitParserService {
               !Number.isFinite(Number(empiricalDifficultyRaw))
                 ? undefined
                 : Number(empiricalDifficultyRaw);
+            const optionalNumber = (property: string): number | undefined => {
+              const rawValue = rowProperties[property];
+              if (rawValue === undefined || rawValue === null) return undefined;
+              const value = Number(rawValue);
+              return Number.isFinite(value) ? value : undefined;
+            };
+            const bookletOccurrences = Array.isArray(
+              rowProperties.bookletOccurrences,
+            )
+              ? rowProperties.bookletOccurrences
+                  .map((rawOccurrence) => {
+                    const occurrence =
+                      rawOccurrence && typeof rawOccurrence === "object"
+                        ? (rawOccurrence as Record<string, unknown>)
+                        : {};
+                    return {
+                      booklet: String(occurrence.booklet || "").trim(),
+                      position: Number(occurrence.position),
+                    };
+                  })
+                  .filter(
+                    (occurrence) =>
+                      occurrence.booklet.length > 0 &&
+                      Number.isInteger(occurrence.position) &&
+                      occurrence.position > 0,
+                  )
+                  .sort(
+                    (left, right) =>
+                      left.booklet.localeCompare(right.booklet, "de", {
+                        numeric: true,
+                      }) || left.position - right.position,
+                  )
+              : [];
 
             items.push({
               itemId: item.id,
@@ -863,6 +902,12 @@ export class UnitParserService {
               sourceVariable: sourceVariable || undefined,
               metadata: { ...metadata },
               empiricalDifficulty,
+              infit: optionalNumber("infit"),
+              discrimination: optionalNumber("discrimination"),
+              solutionRate: optionalNumber("solutionRate"),
+              itemTimeSeconds: optionalNumber("itemTimeSeconds"),
+              stimulusTimeSeconds: optionalNumber("stimulusTimeSeconds"),
+              bookletOccurrences,
               tags: Array.isArray(rowProperties.tags)
                 ? rowProperties.tags.map((tag) => String(tag))
                 : [],

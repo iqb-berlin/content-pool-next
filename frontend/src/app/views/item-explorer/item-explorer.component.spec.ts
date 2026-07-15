@@ -1304,6 +1304,233 @@ describe('ItemExplorerComponent', () => {
     expect(ids).toEqual(['TEXT_VAR', 'VAR_02']);
   });
 
+  it('focuses the coding overlay on the variable assigned to the selected item', () => {
+    const component = createComponent();
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'First item',
+      variableId: 'IGNORED_FALLBACK',
+      sourceVariable: 'result_alias',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', sourceType: 'BASE', deriveSources: [] },
+        {
+          id: 'RESULT',
+          alias: 'RESULT_ALIAS',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['BASE_A'],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Teil A', codes: [] },
+      { id: 'RESULT_ALIAS', label: 'Ergebnis', codes: [] },
+    ] as any;
+    component.codingSearchText = 'does-not-match';
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'result_alias',
+      codingId: 'RESULT_ALIAS',
+      isDerived: true,
+      sourceIds: ['BASE_A'],
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.id)).toEqual([
+      'RESULT_ALIAS',
+    ]);
+  });
+
+  it('shows the full coding scheme and an explanation when an item has no variable', () => {
+    const component = createComponent();
+    component.selectedItem = {
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Unmapped item',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.currentCodingSchemeAsText = [
+      { id: 'VAR_A', label: 'A', codes: [] },
+      { id: 'VAR_B', label: 'B', codes: [] },
+    ] as any;
+
+    expect(component.codingVariableFocus.status).toBe('missing-target');
+    expect(component.codingVariableFocusMessage).toContain('keine Variable zugeordnet');
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.id)).toEqual([
+      'VAR_A',
+      'VAR_B',
+    ]);
+  });
+
+  it('marks a valid base-variable alias shadow as ambiguous when the alias is targeted', () => {
+    const component = createComponent();
+    component.selectedItem = {
+      itemId: 'ITEM_3',
+      uuid: 'uuid-3',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Ambiguous item',
+      variableId: 'BASE_A',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', sourceType: 'BASE' },
+        {
+          id: 'TOTAL',
+          alias: 'BASE_A',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['BASE_A'],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Basiswert', codes: [] },
+      { id: 'BASE_A', label: 'Gesamtscore', codes: [] },
+    ] as any;
+
+    expect(component.codingVariableFocus.status).toBe('ambiguous');
+    expect(component.codingVariableFocusMessage).toContain('nicht eindeutig');
+    expect(component.filteredCodingSchemeAsText).toHaveLength(2);
+  });
+
+  it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {
+    const component = createComponent();
+    component.selectedItem = {
+      itemId: 'ITEM_4',
+      uuid: 'uuid-4',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Aggregate item',
+      variableId: 'TOTAL',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'BASE_A', sourceType: 'BASE' },
+        {
+          id: 'TOTAL',
+          alias: 'BASE_A',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['BASE_A'],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'BASE_A', label: 'Basiswert', codes: [] },
+      { id: 'BASE_A', label: 'Gesamtscore', codes: [] },
+    ] as any;
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'TOTAL',
+      codingId: 'BASE_A',
+      isDerived: true,
+      sourceIds: ['BASE_A'],
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Gesamtscore',
+    ]);
+  });
+
+  it('keeps manual variable and code instructions when the coding uses an alias', () => {
+    const component = createComponent();
+    const codings = (component as any).createCodingSchemeAsText([
+      {
+        id: 'INTERNAL_ID',
+        alias: 'VISIBLE_ALIAS',
+        label: 'Visible result',
+        sourceType: 'BASE',
+        manualInstruction: '<p>Text <img src="figure.png"></p>',
+        codes: [
+          {
+            id: 1,
+            score: 1,
+            label: 'Correct',
+            manualInstruction: '<p>Inspect figure</p>',
+            ruleSets: [],
+          },
+        ],
+      },
+    ]);
+
+    expect(codings[0].id).toBe('VISIBLE_ALIAS');
+    expect(codings[0].manualInstructionText).toContain('<img');
+    expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
+  });
+
+  it('sanitizes manual variable and code instructions while preserving graphics', () => {
+    const component = createComponent();
+    const codings = (component as any).createCodingSchemeAsText([
+      {
+        id: 'INTERNAL_ID',
+        alias: 'VISIBLE_ALIAS',
+        sourceType: 'BASE',
+        manualInstruction:
+          '<p>Text <img src="figure.png" onerror="alert(1)"></p><script>alert(2)</script>',
+        codes: [
+          {
+            id: 1,
+            score: 1,
+            label: 'Correct',
+            manualInstruction:
+              '<a href="javascript:alert(3)" onclick="alert(4)">Inspect figure</a>',
+            ruleSets: [],
+          },
+        ],
+      },
+    ]);
+
+    expect(codings[0].manualInstructionText).toContain('<img src="figure.png">');
+    expect(codings[0].manualInstructionText).not.toContain('onerror');
+    expect(codings[0].manualInstructionText).not.toContain('<script');
+    expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
+    expect(codings[0].codes[0].manualInstructionText).not.toContain('javascript:');
+    expect(codings[0].codes[0].manualInstructionText).not.toContain('onclick');
+  });
+
+  it('keeps manual instructions paired by position for a valid alias shadow', () => {
+    const component = createComponent();
+    const codings = (component as any).createCodingSchemeAsText([
+      {
+        id: 'BASE_A',
+        sourceType: 'BASE',
+        manualInstruction: '<p>Base instruction</p>',
+        codes: [],
+      },
+      {
+        id: 'TOTAL',
+        alias: 'BASE_A',
+        sourceType: 'SUM_SCORE',
+        deriveSources: ['BASE_A'],
+        manualInstruction: '<p>Aggregate instruction</p>',
+        codes: [],
+      },
+    ]);
+
+    expect(codings.map((coding: any) => coding.manualInstructionText)).toEqual([
+      '<p>Base instruction</p>',
+      '<p>Aggregate instruction</p>',
+    ]);
+  });
+
+  it('clears a previous coding search when the overlay is opened', () => {
+    const component = createComponent();
+    component.codingSearchText = 'old search';
+
+    component.openCodingOverlay();
+
+    expect(component.codingSearchText).toBe('');
+    expect(component.showOverlay).toBe('coding');
+  });
+
   it('adds the player highlight class when player focus highlighting is enabled', () => {
     const component = createComponent();
     component.playerFocusHighlightEnabled = true;

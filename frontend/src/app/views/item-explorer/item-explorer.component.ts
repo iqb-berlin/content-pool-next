@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
+import DOMPurify from 'dompurify';
 import { ApiService } from '../../core/services/api.service';
 import { VoudService } from '../../core/services/voud.service';
 import {
@@ -89,6 +90,17 @@ interface PreviewTargetResolution {
   isDerived: boolean;
   options: PreviewTargetOption[];
   defaultTargetId: string;
+}
+
+type CodingVariableFocusStatus = 'unique' | 'missing-target' | 'not-found' | 'ambiguous';
+
+interface CodingVariableFocusResolution {
+  status: CodingVariableFocusStatus;
+  targetId: string;
+  codingId: string;
+  matches: CodingAsText[];
+  isDerived: boolean;
+  sourceIds: string[];
 }
 
 type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
@@ -1081,31 +1093,74 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
             </div>
             <div class="overlay-content">
               @if (currentCodingSchemeAsText) {
-                <div class="coding-toolbar">
-                  <div class="search-container">
-                    <input
-                      class="filter-input"
-                      [(ngModel)]="codingSearchText"
-                      placeholder="🔍 Variablen suchen (ID oder Label)..."
-                    />
+                @if (codingVariableFocus.status === 'unique') {
+                  <div class="coding-focus-info" data-testid="coding-variable-focus">
+                    <div>
+                      <strong>Kodierung für Item {{ selectedItem?.itemId }}</strong>
+                      @if (selectedItem?.subId) {
+                        <span>
+                          · {{ itemSubIdLabel }}
+                          {{ selectedItem?.subIdDisplay || selectedItem?.subId }}
+                        </span>
+                      }
+                    </div>
+                    <div>
+                      Zugeordnete Variable:
+                      <code>{{ codingVariableFocus.targetId }}</code>
+                      @if (
+                        codingVariableFocus.codingId &&
+                        codingVariableFocus.codingId.toLowerCase() !==
+                          codingVariableFocus.targetId.toLowerCase()
+                      ) {
+                        · Anzeige im Kodierschema:
+                        <code>{{ codingVariableFocus.codingId }}</code>
+                      }
+                    </div>
+                    @if (codingVariableFocus.isDerived) {
+                      <div class="coding-aggregation-info">
+                        <strong>Abgeleitete/aggregierte Kodierung</strong>
+                        @if (codingVariableFocus.sourceIds.length) {
+                          aus
+                          @for (sourceId of codingVariableFocus.sourceIds; track sourceId) {
+                            <code>{{ sourceId }}</code>
+                          }
+                        }
+                        – angezeigt wird die Ergebnisvariable, die den Itemwert liefert.
+                      </div>
+                    }
                   </div>
-                  <div class="sort-actions">
-                    <button
-                      class="btn btn-outline btn-sm"
-                      (click)="toggleCodingSort('id')"
-                      title="Nach ID sortieren"
-                    >
-                      ID {{ getCodingSortIndicator('id') }}
-                    </button>
-                    <button
-                      class="btn btn-outline btn-sm"
-                      (click)="toggleCodingSort('label')"
-                      title="Nach Label sortieren"
-                    >
-                      Label {{ getCodingSortIndicator('label') }}
-                    </button>
+                } @else {
+                  <div class="coding-focus-warning" role="status">
+                    <strong>Keine eindeutige Kodiervariable für dieses Item</strong>
+                    <span>{{ codingVariableFocusMessage }}</span>
                   </div>
-                </div>
+
+                  <div class="coding-toolbar">
+                    <div class="search-container">
+                      <input
+                        class="filter-input"
+                        [(ngModel)]="codingSearchText"
+                        placeholder="🔍 Variablen suchen (ID oder Label)..."
+                      />
+                    </div>
+                    <div class="sort-actions">
+                      <button
+                        class="btn btn-outline btn-sm"
+                        (click)="toggleCodingSort('id')"
+                        title="Nach ID sortieren"
+                      >
+                        ID {{ getCodingSortIndicator('id') }}
+                      </button>
+                      <button
+                        class="btn btn-outline btn-sm"
+                        (click)="toggleCodingSort('label')"
+                        title="Nach Label sortieren"
+                      >
+                        Label {{ getCodingSortIndicator('label') }}
+                      </button>
+                    </div>
+                  </div>
+                }
 
                 <div class="coding-scheme-view">
                   @for (coding of filteredCodingSchemeAsText; track coding.id) {
@@ -1121,9 +1176,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                           <strong>📖 Variable-Instruktion:</strong>
                           <div
                             class="html-content"
-                            [innerHTML]="
-                              sanitizer.bypassSecurityTrustHtml($any(coding).manualInstructionText)
-                            "
+                            [innerHTML]="$any(coding).manualInstructionText"
                           ></div>
                         </div>
                       }
@@ -1145,11 +1198,7 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
                                 <strong>Instruktion:</strong>
                                 <div
                                   class="html-content"
-                                  [innerHTML]="
-                                    sanitizer.bypassSecurityTrustHtml(
-                                      $any(code).manualInstructionText
-                                    )
-                                  "
+                                  [innerHTML]="$any(code).manualInstructionText"
                                 ></div>
                               </div>
                             }
@@ -2293,6 +2342,21 @@ const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
         flex-direction: column;
         gap: 20px;
       }
+      .coding-focus-info,
+      .coding-focus-warning {
+        margin-bottom: 20px;
+        padding: 12px 16px;
+        border-radius: 8px;
+      }
+      .coding-focus-info {
+        background: rgba(41, 128, 185, 0.06);
+        border: 1px solid rgba(41, 128, 185, 0.25);
+      }
+      .coding-focus-warning {
+        color: #7e5109;
+        background: rgba(243, 156, 18, 0.08);
+        border: 1px solid rgba(243, 156, 18, 0.35);
+      }
       .coding-item {
         background: rgba(0, 0, 0, 0.02);
         border-radius: 12px;
@@ -3002,14 +3066,15 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
   get filteredCodingSchemeAsText(): CodingAsText[] {
     if (!this.currentCodingSchemeAsText) return [];
 
-    let list = [...this.currentCodingSchemeAsText];
+    const focus = this.codingVariableFocus;
+    let list = focus.status === 'unique' ? [...focus.matches] : [...this.currentCodingSchemeAsText];
 
     if (!this.showAudioVideoCodingVariables) {
       list = list.filter((c) => !this.isAudioVideoCodingVariable(c));
     }
 
     // Search
-    if (this.codingSearchText) {
+    if (focus.status !== 'unique' && this.codingSearchText) {
       const term = this.codingSearchText.toLowerCase();
       list = list.filter(
         (c) =>
@@ -3025,6 +3090,97 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const cmp = aVal.localeCompare(bVal, undefined, { numeric: true });
       return this.codingSortDir === 'asc' ? cmp : -cmp;
     });
+  }
+
+  get codingVariableFocus(): CodingVariableFocusResolution {
+    const targetId = this.getPlayerTarget(this.selectedItem);
+    const emptyResolution = (
+      status: Exclude<CodingVariableFocusStatus, 'unique'>,
+      matches: CodingAsText[] = [],
+    ): CodingVariableFocusResolution => ({
+      status,
+      targetId,
+      codingId: '',
+      matches,
+      isDerived: false,
+      sourceIds: [],
+    });
+
+    if (!targetId) {
+      return emptyResolution('missing-target');
+    }
+
+    const normalizedTarget = targetId.toLowerCase();
+    const codings = this.currentCodingSchemeAsText || [];
+    const rawVariables = this.getCurrentCodingVariables();
+    const rawMatchIndices = rawVariables.flatMap((variable, index) =>
+      this.getCodingVariableIdentifiers(variable).some(
+        (identifier) => identifier.toLowerCase() === normalizedTarget,
+      )
+        ? [index]
+        : [],
+    );
+
+    if (rawMatchIndices.length > 1) {
+      return emptyResolution(
+        'ambiguous',
+        rawMatchIndices
+          .map((index) => codings[index])
+          .filter((coding): coding is CodingAsText => Boolean(coding)),
+      );
+    }
+
+    if (rawMatchIndices.length === 1) {
+      const matchIndex = rawMatchIndices[0];
+      const textMatch = codings[matchIndex];
+      if (!textMatch) {
+        return emptyResolution('not-found');
+      }
+
+      const rawVariable = rawVariables[matchIndex];
+      const sourceType = this.getCodingVariableSourceType(rawVariable);
+      return {
+        status: 'unique',
+        targetId,
+        codingId: textMatch.id,
+        matches: [textMatch],
+        isDerived: sourceType !== 'BASE' && sourceType !== 'BASE_NO_VALUE',
+        sourceIds: this.getCodingVariableSources(rawVariable),
+      };
+    }
+
+    const directMatches = codings.filter(
+      (coding) =>
+        String(coding.id || '')
+          .trim()
+          .toLowerCase() === normalizedTarget,
+    );
+    if (directMatches.length !== 1) {
+      return emptyResolution(directMatches.length ? 'ambiguous' : 'not-found', directMatches);
+    }
+
+    return {
+      status: 'unique',
+      targetId,
+      codingId: directMatches[0].id,
+      matches: directMatches,
+      isDerived: false,
+      sourceIds: [],
+    };
+  }
+
+  get codingVariableFocusMessage(): string {
+    const focus = this.codingVariableFocus;
+    if (focus.status === 'missing-target') {
+      return 'Dem ausgewählten Item ist keine Variable zugeordnet. Das vollständige Kodierschema wird angezeigt.';
+    }
+    if (focus.status === 'not-found') {
+      return `Die zugeordnete Variable „${focus.targetId}“ wurde im Kodierschema nicht gefunden. Das vollständige Kodierschema wird angezeigt.`;
+    }
+    if (focus.status === 'ambiguous') {
+      return `Die zugeordnete Variable „${focus.targetId}“ kommt im Kodierschema nicht eindeutig vor. Das vollständige Kodierschema wird angezeigt.`;
+    }
+    return '';
   }
 
   get excludedItemsCount(): number {
@@ -3935,22 +4091,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
       const codings = Array.isArray(this.currentCodingScheme)
         ? this.currentCodingScheme
         : this.currentCodingScheme.variableCodings || [];
-      this.currentCodingSchemeAsText = CodingSchemeTextFactory.asText(codings);
-      // Enrich with manual instruction texts from raw JSON
-      this.currentCodingSchemeAsText.forEach((cat) => {
-        const rawVariable = codings.find((v: any) => v.id === cat.id);
-        if (rawVariable) {
-          (cat as any).manualInstructionText = rawVariable.manualInstruction;
-          cat.codes.forEach((c) => {
-            const rawCode = rawVariable.codes?.find(
-              (rc: any) => (rc.id === null ? 'null' : rc.id.toString(10)) === c.id,
-            );
-            if (rawCode) {
-              (c as any).manualInstructionText = rawCode.manualInstruction;
-            }
-          });
-        }
-      });
+      this.currentCodingSchemeAsText = this.createCodingSchemeAsText(codings);
     } else {
       this.currentCodingSchemeAsText = null;
     }
@@ -4621,6 +4762,43 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
     return Array.isArray(this.currentCodingScheme?.variableCodings)
       ? this.currentCodingScheme.variableCodings
       : [];
+  }
+
+  private createCodingSchemeAsText(codings: any[]): CodingAsText[] {
+    const codingSchemeAsText = CodingSchemeTextFactory.asText(codings);
+    codingSchemeAsText.forEach((coding, index) => {
+      const rawVariable = codings[index];
+      if (!rawVariable) {
+        return;
+      }
+
+      (coding as any).manualInstructionText = this.sanitizeManualInstruction(
+        rawVariable.manualInstruction,
+      );
+      coding.codes.forEach((code) => {
+        const rawCode = rawVariable.codes?.find(
+          (candidate: any) =>
+            String(candidate?.id === null ? 'null' : candidate?.id) === String(code.id),
+        );
+        if (rawCode) {
+          (code as any).manualInstructionText = this.sanitizeManualInstruction(
+            rawCode.manualInstruction,
+          );
+        }
+      });
+    });
+    return codingSchemeAsText;
+  }
+
+  private sanitizeManualInstruction(value: unknown): string | null {
+    if (typeof value !== 'string' || !value.trim()) {
+      return null;
+    }
+
+    const sanitizedHtml = DOMPurify.sanitize(value, {
+      USE_PROFILES: { html: true },
+    }).trim();
+    return sanitizedHtml || null;
   }
 
   private buildCodingVariableLookup(variables: any[]): Map<string, any> {
@@ -6463,6 +6641,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy {
 
   openCodingOverlay() {
     this.rememberFocusBeforeOverlay();
+    this.codingSearchText = '';
     this.showOverlay = 'coding';
   }
 

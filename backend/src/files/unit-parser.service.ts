@@ -20,6 +20,7 @@ import {
 } from "../items/item-row-key.util";
 import { ItemRowNumberingService } from "./item-row-numbering.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { calculateMeanTaskDifficultyByUnit } from "../items/mean-task-difficulty";
 
 /** Parsed reference data from a unit .xml file */
 export interface UnitXmlData {
@@ -66,6 +67,7 @@ export interface VomdItemData {
   sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
@@ -925,6 +927,11 @@ export class UnitParserService {
           );
         }
       }
+    }
+
+    const meanTaskDifficultyByUnit = calculateMeanTaskDifficultyByUnit(items);
+    for (const item of items) {
+      item.meanTaskDifficulty = meanTaskDifficultyByUnit.get(item.unitId);
     }
 
     // Build columns array

@@ -16,7 +16,9 @@ describe("CascadeItemResponseStatesWithAcp migration", () => {
     expect(queries[0]).toContain('DELETE FROM "item_response_states"');
     expect(queries[0]).toContain("WHERE NOT EXISTS");
     expect(queries[1]).toContain('ALTER COLUMN "acp_id" TYPE uuid');
-    expect(queries[2]).toContain('FOREIGN KEY ("acp_id") REFERENCES "acp"("id")');
+    expect(queries[2]).toContain(
+      'FOREIGN KEY ("acp_id") REFERENCES "acp"("id")',
+    );
     expect(queries[2]).toContain("ON DELETE CASCADE");
   });
 
@@ -30,7 +32,11 @@ describe("CascadeItemResponseStatesWithAcp migration", () => {
 
     await new CascadeItemResponseStatesWithAcp1784200000000().down(queryRunner);
 
-    expect(queries[0]).toContain('DROP CONSTRAINT IF EXISTS "FK_item_response_states_acp"');
-    expect(queries[1]).toContain('ALTER COLUMN "acp_id" TYPE character varying');
+    expect(queries[0]).toContain(
+      'DROP CONSTRAINT IF EXISTS "FK_item_response_states_acp"',
+    );
+    expect(queries[1]).toContain(
+      'ALTER COLUMN "acp_id" TYPE character varying',
+    );
   });
 });

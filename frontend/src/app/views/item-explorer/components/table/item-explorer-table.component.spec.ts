@@ -7,7 +7,7 @@ describe('ItemExplorerTableComponent', () => {
   it('names shared tag and personal category selectors per item', () => {
     expect(template).toContain("[attr.aria-label]=\"'Tag für ' + item.itemId + ' hinzufügen'\"");
     expect(template).toContain(
-      "[attr.aria-label]=\"vm.personalItemCategoryLabel + ' für ' + item.itemId\"",
+      '[attr.aria-label]="vm.personalItemCategoryLabel + \' für \' + item.itemId"',
     );
   });
 

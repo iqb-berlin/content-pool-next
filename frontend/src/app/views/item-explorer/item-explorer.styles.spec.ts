@@ -48,8 +48,6 @@ describe('ItemExplorer shared dialog styles', () => {
   it('uses WCAG-AA foreground colors for the audited status and player indicators', () => {
     expect(headerStyles).toMatch(/\.status-clean\s*\{[^}]*color:\s*#176b3a/s);
     expect(headerStyles).toMatch(/\.btn-clear-difficulties\s*\{[^}]*color:\s*#c0392b/s);
-    expect(featureStyles).toMatch(
-      /\.player-target-badge\.unmapped\s*\{[^}]*color:\s*#7a4a00/s,
-    );
+    expect(featureStyles).toMatch(/\.player-target-badge\.unmapped\s*\{[^}]*color:\s*#7a4a00/s);
   });
 });

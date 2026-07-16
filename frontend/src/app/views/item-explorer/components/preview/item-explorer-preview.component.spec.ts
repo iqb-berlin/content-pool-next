@@ -18,7 +18,7 @@ function createPreview() {
 describe('ItemExplorerPreviewComponent', () => {
   it('names the scroll region, player frame and paging selector', () => {
     expect(template).toContain('aria-label="Item-Vorschau"');
-    expect(template).toContain("[title]=\"'Player-Vorschau für Item ' + vm.selectedItem.itemId\"");
+    expect(template).toContain('[title]="\'Player-Vorschau für Item \' + vm.selectedItem.itemId"');
     expect(template).toContain('aria-label="Paging-Modus der Player-Vorschau"');
   });
 

@@ -36,9 +36,7 @@ function relativeLuminance(value: string): number | null {
   if (!rgb) return null;
   const [red, green, blue] = rgb.map((channel) => {
     const normalized = channel / 255;
-    return normalized <= 0.04045
-      ? normalized / 12.92
-      : Math.pow((normalized + 0.055) / 1.055, 2.4);
+    return normalized <= 0.04045 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
   });
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
 }
@@ -55,9 +53,7 @@ function contrastRatio(foreground: string, background: string): number {
 function pickAccessibleColor(candidates: string[], backgrounds: string[]): string {
   const uniqueCandidates = Array.from(new Set(candidates));
   const accessible = uniqueCandidates.find((candidate) =>
-    backgrounds.every(
-      (background) => contrastRatio(candidate, background) >= MIN_TEXT_CONTRAST,
-    ),
+    backgrounds.every((background) => contrastRatio(candidate, background) >= MIN_TEXT_CONTRAST),
   );
   if (accessible) return accessible;
   return uniqueCandidates.reduce((best, candidate) => {

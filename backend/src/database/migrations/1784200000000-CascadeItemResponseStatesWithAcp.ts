@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from "typeorm";
 
-export class CascadeItemResponseStatesWithAcp1784200000000
-  implements MigrationInterface
-{
+export class CascadeItemResponseStatesWithAcp1784200000000 implements MigrationInterface {
   name = "CascadeItemResponseStatesWithAcp1784200000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {

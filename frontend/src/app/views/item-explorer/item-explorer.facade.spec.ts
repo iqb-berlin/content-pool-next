@@ -3051,12 +3051,10 @@ describe('ItemExplorerFacade', () => {
       unavailableRowKeys: [],
       summary: {} as any,
     };
-    const getItemCollections = vi.fn().mockReturnValue(
-      of({ activeCollectionId: 'collection-1', collections: [freshCollection] }),
-    );
-    const updateItemCollection = vi.fn().mockReturnValue(
-      throwError(() => ({ status: 409 })),
-    );
+    const getItemCollections = vi
+      .fn()
+      .mockReturnValue(of({ activeCollectionId: 'collection-1', collections: [freshCollection] }));
+    const updateItemCollection = vi.fn().mockReturnValue(throwError(() => ({ status: 409 })));
     const component = createFacade({
       api: { getItemCollections, updateItemCollection },
       authService: { isLoggedIn: true },

@@ -104,7 +104,6 @@ export function projectItemExportRow(input: {
   rowKey: string;
   item?: VomdItemData;
   personalRow?: Record<string, unknown>;
-  meanDifficultyByUnit?: ReadonlyMap<string, number>;
 }): ItemExportProjection {
   const { item } = input;
   const personalRow = input.personalRow || {};
@@ -134,9 +133,7 @@ export function projectItemExportRow(input: {
     bookletPositions: occurrences.length
       ? occurrences.map((occurrence) => String(occurrence.position)).join(" | ")
       : null,
-    meanTaskDifficulty: item
-      ? (input.meanDifficultyByUnit?.get(item.unitId) ?? null)
-      : null,
+    meanTaskDifficulty: item?.meanTaskDifficulty ?? null,
   };
 }
 

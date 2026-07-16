@@ -17,6 +17,7 @@ import {
 import {
   ApiBody,
   ApiOperation,
+  ApiOkResponse,
   ApiProperty,
   ApiPropertyOptional,
   ApiTags,
@@ -40,6 +41,7 @@ import {
   requireStablePreferenceIdentity,
   resolveStablePreferenceIdentity,
 } from "../item-preferences/preference-identity";
+import { SimpleItemListEntryDto } from "./dto/simple-item-list-entry.dto";
 
 class SaveItemPreferencesDto {
   @ApiPropertyOptional({
@@ -276,6 +278,7 @@ export class ViewsController {
   @Get("acp/:acpId/items")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get item list for an ACP" })
+  @ApiOkResponse({ type: SimpleItemListEntryDto, isArray: true })
   async getItems(@Param("acpId") acpId: string, @Request() req: any) {
     if (!(await this.canUseFeature(acpId, req, "enableItemList", true))) {
       throw new ForbiddenException("Item list is not enabled for this ACP");

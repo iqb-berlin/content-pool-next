@@ -46,6 +46,7 @@ describe("item export projection", () => {
         unitId: "unit-1",
         unitLabel: "Aufgabe 1",
         empiricalDifficulty: -0.25,
+        meanTaskDifficulty: 0.5,
         infit: 1.05,
         discrimination: 0.4,
         solutionRate: 0.75,
@@ -61,7 +62,6 @@ describe("item export projection", () => {
         tags: ["Prüfen"],
         note: "Notiz",
       },
-      meanDifficultyByUnit: new Map([["unit-1", 0.5]]),
     });
 
     expect(projection).toEqual(

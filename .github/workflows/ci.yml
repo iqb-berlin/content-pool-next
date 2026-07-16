@@ -147,7 +147,6 @@ jobs:
       DB_SYNCHRONIZE: true
       DB_RUN_MIGRATIONS: false
       JWT_SECRET: ci-test-secret-at-least-32-characters
-      CORS_ORIGIN: http://127.0.0.1:4200
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -163,10 +162,11 @@ jobs:
         working-directory: frontend
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
-      - run: npm run test:e2e:seed-browser
-        working-directory: backend
       - run: npm run e2e
         working-directory: frontend
+        env:
+          BROWSER_E2E_USE_EXISTING_DATABASE: true
+          BROWSER_E2E_DATABASE_PORT: 5432
       - name: Upload Playwright diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

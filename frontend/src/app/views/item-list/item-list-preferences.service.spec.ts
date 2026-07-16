@@ -129,4 +129,35 @@ describe('ItemListPreferencesService', () => {
     expect(saveViewItemPreferences).toHaveBeenCalledTimes(2);
     service.ngOnDestroy();
   });
+
+  it('preserves server tags when the tag feature is disabled and UI preferences change', async () => {
+    vi.useFakeTimers();
+    const saveViewItemPreferences = vi.fn().mockReturnValue(of({}));
+    const service = new ItemListPreferencesService(
+      {
+        getViewItemPreferences: () =>
+          of({
+            ui: { filterText: 'before' },
+            tags: { item1: [' review ', 'review'] },
+          }),
+        saveViewItemPreferences,
+      } as never,
+      { isLoggedIn: true, currentUser: { id: 'user-1' } } as never,
+    );
+
+    const loaded = await firstValueFrom(
+      service.load({ acpId: 'acp-1', persist: true, enableTags: false }),
+    );
+    expect(loaded.tags).toEqual({ item1: ['review'] });
+
+    const changed = {
+      ...loaded,
+      ui: { ...loaded.ui, filterText: 'after' },
+    };
+    service.save(changed);
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(saveViewItemPreferences).toHaveBeenCalledWith('acp-1', changed, 'item-list');
+    service.ngOnDestroy();
+  });
 });

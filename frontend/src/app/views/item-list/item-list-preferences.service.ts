@@ -74,7 +74,9 @@ export class ItemListPreferencesService implements OnDestroy {
       map((preferences) =>
         this.normalizePreferences({
           ui: preferences?.ui,
-          tags: context.enableTags ? preferences?.tags : {},
+          // Keep hidden server-side tags in the complete preference snapshot so
+          // toggling the feature off does not erase them on the next UI save.
+          tags: preferences?.tags,
         }),
       ),
       catchError(() => {
@@ -104,7 +106,7 @@ export class ItemListPreferencesService implements OnDestroy {
   normalizePreferences(raw: { ui?: unknown; tags?: unknown }): ItemListPreferences {
     return {
       ui: this.normalizeUiPreferences(raw.ui),
-      tags: this.context.enableTags ? this.normalizeTags(raw.tags) : {},
+      tags: this.normalizeTags(raw.tags),
     };
   }
 

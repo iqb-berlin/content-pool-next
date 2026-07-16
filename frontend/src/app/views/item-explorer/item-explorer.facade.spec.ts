@@ -151,14 +151,16 @@ describe('ItemExplorerFacade', () => {
     sessionStorage.clear();
   });
 
-  it('initializes exactly once and ignores pending responses after destroy', () => {
+  it('initializes exactly once and ignores pending responses after destroy', async () => {
     const startPage$ = new Subject<any>();
+    const explorerState$ = new Subject<any>();
     const itemList$ = new Subject<any>();
     const currentUser$ = new Subject<unknown>();
     const getAcpStartPage = vi.fn(() => startPage$);
+    const getItemExplorerState = vi.fn(() => explorerState$);
     const getFileItemList = vi.fn(() => itemList$);
     const component = createFacade({
-      api: { getAcpStartPage, getFileItemList },
+      api: { getAcpStartPage, getItemExplorerState, getFileItemList },
       authService: { currentUser$ },
     });
 
@@ -167,10 +169,13 @@ describe('ItemExplorerFacade', () => {
 
     expect(getAcpStartPage).toHaveBeenCalledOnce();
     expect(getAcpStartPage).toHaveBeenCalledWith('');
-    expect(getFileItemList).toHaveBeenCalledOnce();
+    expect(getFileItemList).not.toHaveBeenCalled();
+
+    startPage$.next({ featureConfig: { enableItemListTags: true } });
+    explorerState$.next(createExplorerEnvelope());
+    await vi.waitFor(() => expect(getFileItemList).toHaveBeenCalledOnce());
 
     component.ngOnDestroy();
-    startPage$.next({ featureConfig: { enableItemListTags: true } });
     itemList$.next({
       items: [
         {
@@ -188,10 +193,70 @@ describe('ItemExplorerFacade', () => {
     });
     currentUser$.next(null);
 
-    expect(component.enableTags).toBe(false);
+    expect(component.enableTags).toBe(true);
     expect(component.items).toEqual([]);
     expect((component as any).personalDataSessionIdentity).toBeNull();
     expect((component as any).collectionSessionIdentity).toBeNull();
+  });
+
+  it('rejects an item list from another explorer-state version and reloads a consistent pair', async () => {
+    const firstEnvelope = createExplorerEnvelope();
+    const secondEnvelope = { ...createExplorerEnvelope(), version: 4 };
+    const getItemExplorerState = vi
+      .fn()
+      .mockReturnValueOnce(of(firstEnvelope))
+      .mockReturnValueOnce(of(secondEnvelope));
+    const getFileItemList = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          itemExplorerStateVersion: 2,
+          columns: [],
+          items: [
+            {
+              itemId: 'stale',
+              unitId: 'u1',
+              unitLabel: 'Unit 1',
+              description: '',
+              metadata: {},
+              meanTaskDifficulty: -1,
+            },
+          ],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          itemExplorerStateVersion: 4,
+          columns: [],
+          items: [
+            {
+              itemId: 'current',
+              unitId: 'u1',
+              unitLabel: 'Unit 1',
+              description: '',
+              metadata: {},
+              meanTaskDifficulty: 0.75,
+            },
+          ],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      );
+    const component = createFacade({ api: { getItemExplorerState, getFileItemList } });
+    component.acpId = 'acp-1';
+
+    await (component as any).reloadSharedExplorerStateAndItems();
+
+    expect(getItemExplorerState).toHaveBeenCalledTimes(2);
+    expect(getFileItemList).toHaveBeenCalledTimes(2);
+    expect(component.items).toEqual([
+      expect.objectContaining({
+        itemId: 'current',
+        meanTaskDifficulty: 0.75,
+      }),
+    ]);
   });
 
   it('suspends pending personal changes instead of saving after destroy', () => {

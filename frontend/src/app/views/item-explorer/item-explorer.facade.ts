@@ -62,6 +62,7 @@ import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+type ItemListLoadOutcome = 'loaded' | 'version-mismatch' | 'superseded' | 'error';
 const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'infit', label: 'Infit', kind: 'number' },
   { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
@@ -826,23 +827,25 @@ export class ItemExplorerFacade implements OnDestroy {
 
         // Load metadata column settings
         this.metadataSettings = this.resolveMetadataSettings(fc);
-        this.loadSharedExplorerState();
+        void this.reloadSharedExplorerStateAndItems();
         this.syncPersonalItemDataSession();
         this.syncItemCollectionSession();
         this.startPlayerIfReady();
       });
-
-    this.reloadItems();
   }
 
   // --- Reload Items ---
-  reloadItems(onSettled?: () => void) {
+  reloadItems(
+    onSettled?: (outcome: ItemListLoadOutcome) => void,
+    expectedExplorerState?: ItemExplorerStateEnvelope,
+  ) {
     const loadToken = ++this.itemListLoadToken;
     let settled = false;
+    let outcome: ItemListLoadOutcome = 'error';
     const settle = () => {
       if (settled) return;
       settled = true;
-      onSettled?.();
+      onSettled?.(outcome);
     };
     this.itemListError = '';
     this.itemListLoading = true;
@@ -856,6 +859,16 @@ export class ItemExplorerFacade implements OnDestroy {
       .subscribe({
         next: (result) => {
           if (loadToken !== this.itemListLoadToken) {
+            outcome = 'superseded';
+            settle();
+            return;
+          }
+          if (!this.itemListMatchesCurrentExplorerState(result, expectedExplorerState)) {
+            outcome = 'version-mismatch';
+            this.itemListLoading = false;
+            if (!onSettled) {
+              void this.reloadSharedExplorerStateAndItems();
+            }
             settle();
             return;
           }
@@ -871,7 +884,11 @@ export class ItemExplorerFacade implements OnDestroy {
           this.itemSubIdLabel = String(result.subIdLabel || this.itemSubIdLabel).trim() || 'Sub-ID';
           this.hasPartialCredit = this.items.some((item) => !!item.subId);
           this.hydrateItemTagsFromItems();
-          this.applyExplorerStateToItems();
+          if (expectedExplorerState) {
+            this.applySharedExplorerEnvelope(expectedExplorerState);
+          } else {
+            this.applyExplorerStateToItems();
+          }
           this.hasEmpiricalDifficulty = this.items.some(
             (item: any) =>
               item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
@@ -885,10 +902,12 @@ export class ItemExplorerFacade implements OnDestroy {
             this.recalculateCollectionSummaries();
           }
           this.itemListLoading = false;
+          outcome = 'loaded';
           settle();
         },
         error: (error) => {
           if (loadToken !== this.itemListLoadToken) {
+            outcome = 'superseded';
             settle();
             return;
           }
@@ -3688,7 +3707,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private loadPersistedTags() {
-    // Explorer uses shared ACP state; tags are loaded through loadSharedExplorerState().
+    // Explorer uses shared ACP state; tags are loaded with the versioned item-list snapshot.
     this.applyFilter(false);
   }
 
@@ -3800,9 +3819,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncEffectiveExplorerPermissions();
     this.itemListError = '';
 
-    await new Promise<void>((resolve) => this.reloadItems(resolve));
-    if (this.destroyed) return;
-    await this.loadSharedExplorerState();
+    await this.reloadSharedExplorerStateAndItems();
     if (this.destroyed) return;
     this.perspectiveSwitchBusy = false;
   }
@@ -4111,32 +4128,62 @@ export class ItemExplorerFacade implements OnDestroy {
     resolver?.(result);
   }
 
-  private async loadSharedExplorerState(preserveDraftOperationError = false): Promise<boolean> {
-    if (this.destroyed) return false;
-    const draftOperationError = preserveDraftOperationError ? this.lastDraftOperationError : '';
+  private async fetchSharedExplorerState(): Promise<ItemExplorerStateEnvelope | null> {
+    if (this.destroyed) return null;
     try {
       const envelope = await firstValueFrom(this.api.getItemExplorerState(this.acpId));
-      if (this.destroyed) return false;
-      this.applySharedExplorerEnvelope(envelope);
-      if (preserveDraftOperationError) {
-        this.lastDraftOperationError = draftOperationError;
-        this.explorerUiStatus = 'ERROR';
-      }
-      return true;
+      return this.destroyed ? null : envelope;
     } catch (error) {
-      if (this.destroyed) return false;
+      if (this.destroyed) return null;
       console.error('Failed to load shared explorer state', error);
       this.explorerUiStatus = 'ERROR';
-      return false;
+      return null;
     }
   }
 
   private async reloadSharedExplorerStateAndItems(
     preserveDraftOperationError = false,
   ): Promise<void> {
-    const stateLoaded = await this.loadSharedExplorerState(preserveDraftOperationError);
-    if (!stateLoaded || this.destroyed) return;
-    await new Promise<void>((resolve) => this.reloadItems(resolve));
+    const draftOperationError = preserveDraftOperationError ? this.lastDraftOperationError : '';
+    const maxAttempts = 3;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const envelope = await this.fetchSharedExplorerState();
+      if (!envelope || this.destroyed) return;
+      const outcome = await new Promise<ItemListLoadOutcome>((resolve) =>
+        this.reloadItems(resolve, envelope),
+      );
+      if (outcome === 'loaded' && preserveDraftOperationError) {
+        this.lastDraftOperationError = draftOperationError;
+        this.explorerUiStatus = 'ERROR';
+      }
+      if (outcome !== 'version-mismatch') return;
+    }
+
+    if (!this.destroyed) {
+      this.itemListError =
+        'Der Item-Explorer wurde während des Ladens mehrfach geändert. Bitte erneut laden.';
+      this.explorerUiStatus = 'ERROR';
+    }
+  }
+
+  private itemListMatchesCurrentExplorerState(
+    result: unknown,
+    expectedExplorerState: ItemExplorerStateEnvelope | undefined,
+  ): boolean {
+    if (!this.isRecord(result) || result['itemExplorerStateVersion'] === undefined) {
+      // Compatibility for older cached responses and focused unit tests. The
+      // current backend always supplies the version marker.
+      return true;
+    }
+    const explorerState = expectedExplorerState || this.latestExplorerState;
+    if (!explorerState) return false;
+
+    const responseVersion = Number(result['itemExplorerStateVersion']);
+    const expectedVersion =
+      explorerState.canEdit && this.viewPerspective === 'editor'
+        ? explorerState.version
+        : explorerState.publishedVersion;
+    return Number.isInteger(responseVersion) && responseVersion === expectedVersion;
   }
 
   private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {

@@ -152,11 +152,17 @@ export class FilesController {
       acpId,
       isManager,
     );
-    return this.unitParserService.getItemListFromFiles(acpId, {
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
       publishedItemPropertiesOverride:
         explorerState.publishedState.itemProperties,
     });
+    return {
+      ...itemList,
+      itemExplorerStateVersion: isManager
+        ? explorerState.version
+        : explorerState.publishedVersion,
+    };
   }
 
   @Post("item-list/renumber")

@@ -81,7 +81,10 @@ describe("FilesController", () => {
       validateUnitFiles: jest
         .fn()
         .mockResolvedValue([{ unitId: "u-1", valid: true }]),
-      getItemListFromFiles: jest.fn().mockResolvedValue([{ itemId: "item-1" }]),
+      getItemListFromFiles: jest.fn().mockResolvedValue({
+        columns: [],
+        items: [{ itemId: "item-1" }],
+      }),
       recalculatePublishedItemRowNumbers: jest
         .fn()
         .mockResolvedValue({ renumberedCount: 1 }),
@@ -136,6 +139,8 @@ describe("FilesController", () => {
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
         status: "CLEAN",
+        version: 4,
+        publishedVersion: 3,
         activeState: { itemProperties: {} },
         publishedState: { itemProperties: {} },
       }),
@@ -434,7 +439,11 @@ describe("FilesController", () => {
       undefined,
     );
 
-    expect(result).toEqual([{ itemId: "item-1" }]);
+    expect(result).toEqual({
+      columns: [],
+      items: [{ itemId: "item-1" }],
+      itemExplorerStateVersion: 4,
+    });
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
@@ -448,6 +457,8 @@ describe("FilesController", () => {
   it("passes the active manager draft to the centrally initialized item list", async () => {
     itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
       status: "DIRTY",
+      version: 8,
+      publishedVersion: 5,
       canEdit: true,
       activeState: { itemProperties: { draft: {} } },
       publishedState: { itemProperties: { published: {} } },
@@ -465,6 +476,32 @@ describe("FilesController", () => {
         itemPropertiesOverride: { draft: {} },
         publishedItemPropertiesOverride: { published: {} },
       },
+    );
+  });
+
+  it("returns the published state version for a read-only item list", async () => {
+    filesService.getFeatureConfig.mockResolvedValueOnce({
+      enableItemList: true,
+    });
+    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
+      status: "DIRTY",
+      version: 8,
+      publishedVersion: 5,
+      canEdit: false,
+      activeState: { itemProperties: { published: {} } },
+      publishedState: { itemProperties: { published: {} } },
+    });
+
+    const result = await controller.getItemList(
+      "acp-1",
+      { acpAccessLevel: "MANAGER" },
+      "read-only",
+    );
+
+    expect(result.itemExplorerStateVersion).toBe(5);
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      false,
     );
   });
 

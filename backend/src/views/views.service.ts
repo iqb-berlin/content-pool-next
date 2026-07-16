@@ -41,6 +41,8 @@ import {
   MEAN_DIFFICULTY_EXPORT_COLUMN,
   projectItemExportRow,
 } from "../item-explorer/item-export-projection";
+import { calculateMeanTaskDifficultyByUnit } from "../items/mean-task-difficulty";
+
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
 const MAX_EXPORT_ROW_KEY_LENGTH = 500;
 
@@ -290,12 +292,40 @@ export class ViewsService {
   /**
    * Get all items across all units in an ACP.
    */
-  async getItemList(acpId: string): Promise<any[]> {
+  async getItemList(
+    acpId: string,
+    canEditExplorerState = false,
+  ): Promise<any[]> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return [];
 
     const index = toRuntimeAcpIndex(acp.acpIndex);
-    const items: any[] = [];
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const parsedItemList = await this.unitParserService.getItemListFromFiles(
+      acpId,
+      {
+        itemPropertiesOverride: explorerState.activeState.itemProperties,
+        publishedItemPropertiesOverride:
+          explorerState.publishedState.itemProperties,
+      },
+    );
+    const parsedRowsByItem = new Map<string, VomdItemData[]>();
+    for (const row of parsedItemList.items || []) {
+      const key = `${row.unitId}\u0000${row.itemId}`;
+      parsedRowsByItem.set(key, [...(parsedRowsByItem.get(key) || []), row]);
+    }
+
+    const items: Array<{
+      itemId: string;
+      unitId: string;
+      unitName: string;
+      name?: string;
+      sourceVariable?: string;
+      meanTaskDifficulty?: number;
+    }> = [];
 
     for (const unit of getIndexUnits(index)) {
       for (const item of unit.items || []) {
@@ -303,14 +333,23 @@ export class ViewsService {
           item.useUnitAliasAsPrefix !== false
             ? `${unit.id}_${item.id}`
             : item.id;
-
-        items.push({
+        const parsedRows = parsedRowsByItem.get(`${unit.id}\u0000${item.id}`) || [];
+        const meanTaskDifficulty = parsedRows.find(
+          (row) => row.meanTaskDifficulty !== undefined,
+        )?.meanTaskDifficulty;
+        const projectedItem = {
           itemId,
           unitId: unit.id,
           unitName: unit.name,
           name: item.name,
           sourceVariable: item.sourceVariable,
-        });
+        };
+
+        items.push(
+          meanTaskDifficulty === undefined
+            ? projectedItem
+            : { ...projectedItem, meanTaskDifficulty },
+        );
       }
     }
 
@@ -491,7 +530,7 @@ export class ViewsService {
     const items = rowKeys
       .map((rowKey) => itemsByRowKey.get(rowKey))
       .filter((item): item is VomdItemData => Boolean(item));
-    const meanDifficultyByUnit = this.calculateMeanDifficultyByUnit(
+    const meanDifficultyByUnit = calculateMeanTaskDifficultyByUnit(
       itemList.items,
     );
     const personalTagColors = this.getPersonalTagColors(
@@ -542,7 +581,7 @@ export class ViewsService {
     const itemOrder = new Map(
       itemList.items.map((item, index) => [item.rowKey, index] as const),
     );
-    const meanDifficultyByUnit = this.calculateMeanDifficultyByUnit(
+    const meanDifficultyByUnit = calculateMeanTaskDifficultyByUnit(
       itemList.items,
     );
 
@@ -703,31 +742,6 @@ export class ViewsService {
       }
     }
     return rowKeys;
-  }
-
-  private calculateMeanDifficultyByUnit(
-    items: VomdItemData[],
-  ): Map<string, number> {
-    const totals = new Map<string, { sum: number; count: number }>();
-    for (const item of items) {
-      if (
-        item.empiricalDifficulty === undefined ||
-        !Number.isFinite(item.empiricalDifficulty)
-      ) {
-        continue;
-      }
-      const total = totals.get(item.unitId) || { sum: 0, count: 0 };
-      total.sum += item.empiricalDifficulty;
-      total.count += 1;
-      totals.set(item.unitId, total);
-    }
-
-    return new Map(
-      Array.from(totals.entries()).map(([unitId, total]) => [
-        unitId,
-        total.sum / total.count,
-      ]),
-    );
   }
 
   private getPersonalTagColors(rawFeatureConfig: unknown): Map<string, string> {

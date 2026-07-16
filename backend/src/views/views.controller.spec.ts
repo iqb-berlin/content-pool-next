@@ -185,6 +185,13 @@ describe("ViewsController", () => {
     await expect(
       controller.getItems("acp-1", { acpAccessLevel: "PUBLIC" }),
     ).resolves.toEqual([{ itemId: "item-1" }]);
+    expect(viewsService.getItemList).toHaveBeenCalledWith("acp-1", false);
+  });
+
+  it("uses the active Item Explorer state for manager item lists", async () => {
+    await controller.getItems("acp-1", { acpAccessLevel: "MANAGER" });
+
+    expect(viewsService.getItemList).toHaveBeenCalledWith("acp-1", true);
   });
 
   it("blocks item list when explicitly disabled", async () => {

@@ -791,6 +791,118 @@ describe("ViewsService", () => {
     await expect(service.getItemList("missing")).resolves.toEqual([]);
   });
 
+  it("projects mean task difficulty from the published Explorer item list", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      acpIndex: {
+        assessmentParts: [
+          {
+            units: [
+              {
+                id: "unit-1",
+                name: "Aufgabe 1",
+                items: [
+                  { id: "item-1", name: "Item 1" },
+                  { id: "item-2", name: "Item 2" },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValueOnce({
+      items: [
+        {
+          itemId: "item-1",
+          uuid: "uuid-1",
+          rowKey: "uuid-1",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "Item 1",
+          sourceVariable: "V1",
+          empiricalDifficulty: -1,
+          meanTaskDifficulty: -0.25,
+        },
+        {
+          itemId: "item-2",
+          uuid: "uuid-2",
+          rowKey: "uuid-2",
+          unitId: "unit-1",
+          unitLabel: "Aufgabe 1",
+          description: "Item 2",
+          sourceVariable: "V2",
+          meanTaskDifficulty: -0.25,
+        },
+      ],
+    });
+
+    await expect(service.getItemList("acp-1")).resolves.toEqual([
+      expect.objectContaining({
+        itemId: "unit-1_item-1",
+        meanTaskDifficulty: -0.25,
+      }),
+      expect.objectContaining({
+        itemId: "unit-1_item-2",
+        meanTaskDifficulty: -0.25,
+      }),
+    ]);
+    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
+      "acp-1",
+      false,
+    );
+  });
+
+  it("keeps one simple-list entry per index item for partial-credit rows", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      acpIndex: {
+        assessmentParts: [
+          {
+            units: [
+              {
+                id: "unit-1",
+                name: "Aufgabe 1",
+                items: [{ id: "item-1", name: "Item 1" }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValueOnce({
+      items: [
+        {
+          itemId: "item-1",
+          rowKey: "uuid-1::A",
+          subId: "A",
+          unitId: "unit-1",
+          sourceVariable: "V1",
+          meanTaskDifficulty: 0.25,
+        },
+        {
+          itemId: "item-1",
+          rowKey: "uuid-1::B",
+          subId: "B",
+          unitId: "unit-1",
+          sourceVariable: "V1",
+          meanTaskDifficulty: 0.25,
+        },
+      ],
+    });
+
+    await expect(service.getItemList("acp-1")).resolves.toEqual([
+      {
+        itemId: "unit-1_item-1",
+        unitId: "unit-1",
+        unitName: "Aufgabe 1",
+        name: "Item 1",
+        sourceVariable: undefined,
+        meanTaskDifficulty: 0.25,
+      },
+    ]);
+  });
+
   it("returns sorted sequence units and falls back to raw ids when units are missing", async () => {
     acpRepository.findOne.mockResolvedValue({
       id: "acp-1",

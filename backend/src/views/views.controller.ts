@@ -281,7 +281,9 @@ export class ViewsController {
       throw new ForbiddenException("Item list is not enabled for this ACP");
     }
 
-    return this.viewsService.getItemList(acpId);
+    const canEdit =
+      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    return this.viewsService.getItemList(acpId, canEdit);
   }
 
   @Get("acp/:acpId/item-explorer/state")

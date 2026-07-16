@@ -58,6 +58,7 @@ import {
   ItemExplorerShellDomPort,
   ItemExplorerTableDomPort,
 } from './item-explorer.dom-ports';
+import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -101,6 +102,7 @@ export class ItemExplorerFacade implements OnDestroy {
   items: ExplorerItem[] = [];
   filteredItems: ExplorerItem[] = [];
   hasEmpiricalDifficulty = false;
+  hasMeanTaskDifficulty = false;
   hasPartialCredit = false;
   itemSubIdLabel = 'Sub-ID';
   filterText = '';
@@ -874,6 +876,7 @@ export class ItemExplorerFacade implements OnDestroy {
             (item: any) =>
               item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
           );
+          this.updateMeanTaskDifficulties();
           this.filteredItems = [...this.items];
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
@@ -900,6 +903,7 @@ export class ItemExplorerFacade implements OnDestroy {
           this.filteredItems = [];
           this.itemTags = {};
           this.hasEmpiricalDifficulty = false;
+          this.hasMeanTaskDifficulty = false;
           this.hasPartialCredit = false;
           this.unitMetadataCache = {};
           this.codingSchemeCache = {};
@@ -1065,26 +1069,6 @@ export class ItemExplorerFacade implements OnDestroy {
       default:
         return item.metadata[column.id];
     }
-  }
-
-  private matchesNumericFilter(value: number, rawFilter: string): boolean {
-    const filter = rawFilter.trim().replace(/,/g, '.');
-    const range = filter.match(/^(-?\d+(?:\.\d+)?)?\.\.(-?\d+(?:\.\d+)?)?$/);
-    if (range) {
-      const minimum = range[1] === undefined ? -Infinity : Number(range[1]);
-      const maximum = range[2] === undefined ? Infinity : Number(range[2]);
-      return value >= minimum && value <= maximum;
-    }
-    const comparison = filter.match(/^(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
-    if (comparison) {
-      const expected = Number(comparison[2]);
-      if (comparison[1] === '>=') return value >= expected;
-      if (comparison[1] === '<=') return value <= expected;
-      if (comparison[1] === '>') return value > expected;
-      return value < expected;
-    }
-    const expected = Number(filter);
-    return Number.isFinite(expected) && value === expected;
   }
 
   private syncItemCollectionSession() {
@@ -1498,7 +1482,7 @@ export class ItemExplorerFacade implements OnDestroy {
         const matchesBooklet =
           !bookletFilter || occurrence.booklet.toLowerCase().includes(bookletFilter);
         const matchesPosition =
-          !positionFilter || this.matchesNumericFilter(occurrence.position, positionFilter);
+          !positionFilter || matchesNumericFilter(occurrence.position, positionFilter);
         return matchesBooklet && matchesPosition;
       });
       if (!matchesOccurrence) return false;
@@ -1523,14 +1507,17 @@ export class ItemExplorerFacade implements OnDestroy {
       } else if (colId === 'empiricalDifficulty') {
         if (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null)
           return false;
-        if (!this.matchesNumericFilter(item.empiricalDifficulty, filterValue)) return false;
+        if (!matchesNumericFilter(item.empiricalDifficulty, filterValue)) return false;
+      } else if (colId === 'meanTaskDifficulty') {
+        if (item.meanTaskDifficulty === undefined || item.meanTaskDifficulty === null) return false;
+        if (!matchesNumericFilter(item.meanTaskDifficulty, filterValue)) return false;
       } else if (colId === 'booklet' || colId === 'bookletPosition') {
         continue;
       } else {
         const column = this.allColumns.find((candidate) => candidate.id === colId);
         if (column?.kind === 'number') {
           const value = this.getMetadataColumnRawValue(item, column);
-          if (typeof value !== 'number' || !this.matchesNumericFilter(value, filterValue)) {
+          if (typeof value !== 'number' || !matchesNumericFilter(value, filterValue)) {
             return false;
           }
         } else {
@@ -1681,9 +1668,14 @@ export class ItemExplorerFacade implements OnDestroy {
         const column = this.allColumns.find((candidate) => candidate.id === this.sortField);
         aVal = column ? this.getMetadataColumnRawValue(a, column) : a.metadata[this.sortField];
         bVal = column ? this.getMetadataColumnRawValue(b, column) : b.metadata[this.sortField];
-      } else if (this.sortField === 'empiricalDifficulty') {
-        aVal = a.empiricalDifficulty;
-        bVal = b.empiricalDifficulty;
+      } else if (
+        this.sortField === 'empiricalDifficulty' ||
+        this.sortField === 'meanTaskDifficulty'
+      ) {
+        aVal =
+          this.sortField === 'empiricalDifficulty' ? a.empiricalDifficulty : a.meanTaskDifficulty;
+        bVal =
+          this.sortField === 'empiricalDifficulty' ? b.empiricalDifficulty : b.meanTaskDifficulty;
       } else {
         aVal = (a as any)[this.sortField] || '';
         bVal = (b as any)[this.sortField] || '';
@@ -4277,7 +4269,49 @@ export class ItemExplorerFacade implements OnDestroy {
     this.hasEmpiricalDifficulty = this.items.some(
       (item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
     );
+    this.updateMeanTaskDifficulties();
     this.applyFilter(false);
+  }
+
+  private updateMeanTaskDifficulties(): void {
+    const totals = new Map<string, { sum: number; count: number }>();
+
+    for (const item of this.items) {
+      if (item.empiricalDifficulty === undefined || !Number.isFinite(item.empiricalDifficulty)) {
+        continue;
+      }
+      const total = totals.get(item.unitId) || { sum: 0, count: 0 };
+      total.sum += item.empiricalDifficulty;
+      total.count += 1;
+      totals.set(item.unitId, total);
+    }
+
+    for (const item of this.items) {
+      const total = totals.get(item.unitId);
+      if (total) {
+        item.meanTaskDifficulty = total.sum / total.count;
+      } else {
+        delete item.meanTaskDifficulty;
+      }
+    }
+
+    this.hasMeanTaskDifficulty = this.items.some((item) => item.meanTaskDifficulty !== undefined);
+    if (!this.hasMeanTaskDifficulty) {
+      let uiStateChanged = false;
+      if (this.columnFilters['meanTaskDifficulty'] !== undefined) {
+        delete this.columnFilters['meanTaskDifficulty'];
+        uiStateChanged = true;
+      }
+      if (this.sortField === 'meanTaskDifficulty') {
+        this.sortField = DEFAULT_EXPLORER_SORT_FIELD;
+        this.sortIsMeta = false;
+        this.sortDir = DEFAULT_EXPLORER_SORT_DIR;
+        uiStateChanged = true;
+      }
+      if (uiStateChanged) {
+        this.saveUiPreferences();
+      }
+    }
   }
 
   private getItemStateKeys(item: ExplorerItem): string[] {

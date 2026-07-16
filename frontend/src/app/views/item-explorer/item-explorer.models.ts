@@ -30,6 +30,7 @@ export interface ExplorerItem {
   sourceVariable?: string;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;

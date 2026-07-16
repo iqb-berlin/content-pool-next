@@ -906,7 +906,7 @@ describe('ItemExplorerFacade', () => {
     expect(reloadItems).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads shared state after a renumbering conflict', () => {
+  it('reloads shared state and canonical item projections after a renumbering conflict', () => {
     const recalculateItemRowNumbers = vi.fn(() =>
       throwError(() => ({ status: 409, error: { message: 'Source files changed' } })),
     );
@@ -914,14 +914,14 @@ describe('ItemExplorerFacade', () => {
     component.acpId = 'acp-1';
     component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
     component.showRenumberDialog = true;
-    const loadSharedExplorerState = vi
-      .spyOn(component as any, 'loadSharedExplorerState')
+    const reloadSharedExplorerStateAndItems = vi
+      .spyOn(component as any, 'reloadSharedExplorerStateAndItems')
       .mockResolvedValue(undefined);
 
     component.confirmRenumber();
 
     expect(component.renumberError).toBe('Source files changed');
-    expect(loadSharedExplorerState).toHaveBeenCalledTimes(1);
+    expect(reloadSharedExplorerStateAndItems).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a draft patch conflict visible after reloading the shared state', async () => {
@@ -935,6 +935,9 @@ describe('ItemExplorerFacade', () => {
     component.canEditExplorer = true;
     component.explorerVersion = 3;
     (component as any).pendingDraftPatch = { tags: { 'row-1': ['QA'] } };
+    const reloadItems = vi
+      .spyOn(component, 'reloadItems')
+      .mockImplementation((onSettled) => onSettled?.());
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const flushed = await (component as any).flushDraftPatch();
@@ -944,6 +947,7 @@ describe('ItemExplorerFacade', () => {
       'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.',
     );
     expect(component.explorerUiStatus).toBe('ERROR');
+    expect(reloadItems).toHaveBeenCalledTimes(1);
     consoleError.mockRestore();
   });
 

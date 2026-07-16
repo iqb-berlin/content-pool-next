@@ -77,7 +77,10 @@ export class ItemListPreferencesService implements OnDestroy {
           tags: context.enableTags ? preferences?.tags : {},
         }),
       ),
-      catchError(() => of(this.loadLocalPreferences())),
+      catchError(() => {
+        this.useServerPreferences = false;
+        return of(this.loadLocalPreferences());
+      }),
     );
   }
 

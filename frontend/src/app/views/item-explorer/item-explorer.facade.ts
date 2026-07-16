@@ -1797,8 +1797,9 @@ export class ItemExplorerFacade implements OnDestroy {
           console.error(err);
           this.isUploading = false;
           if (err?.status === 409) {
-            this.errorMessage = 'Konflikt beim Speichern des Entwurfs. Bitte neu laden.';
-            this.loadSharedExplorerState();
+            this.errorMessage =
+              'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
+            void this.reloadSharedExplorerStateAndItems();
           } else {
             this.errorMessage =
               err.error?.message ||
@@ -1853,7 +1854,7 @@ export class ItemExplorerFacade implements OnDestroy {
             this.clearEmpiricalDifficultiesError =
               'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
             this.lastDraftOperationError = this.clearEmpiricalDifficultiesError;
-            void this.loadSharedExplorerState();
+            void this.reloadSharedExplorerStateAndItems();
             return;
           }
           this.clearEmpiricalDifficultiesError =
@@ -1908,7 +1909,7 @@ export class ItemExplorerFacade implements OnDestroy {
           this.renumberError =
             error?.error?.message || 'Die Nummerierung konnte nicht neu berechnet werden.';
           if (error?.status === 409) {
-            void this.loadSharedExplorerState();
+            void this.reloadSharedExplorerStateAndItems();
           }
         },
       });
@@ -4110,22 +4111,32 @@ export class ItemExplorerFacade implements OnDestroy {
     resolver?.(result);
   }
 
-  private async loadSharedExplorerState(preserveDraftOperationError = false): Promise<void> {
-    if (this.destroyed) return;
+  private async loadSharedExplorerState(preserveDraftOperationError = false): Promise<boolean> {
+    if (this.destroyed) return false;
     const draftOperationError = preserveDraftOperationError ? this.lastDraftOperationError : '';
     try {
       const envelope = await firstValueFrom(this.api.getItemExplorerState(this.acpId));
-      if (this.destroyed) return;
+      if (this.destroyed) return false;
       this.applySharedExplorerEnvelope(envelope);
       if (preserveDraftOperationError) {
         this.lastDraftOperationError = draftOperationError;
         this.explorerUiStatus = 'ERROR';
       }
+      return true;
     } catch (error) {
-      if (this.destroyed) return;
+      if (this.destroyed) return false;
       console.error('Failed to load shared explorer state', error);
       this.explorerUiStatus = 'ERROR';
+      return false;
     }
+  }
+
+  private async reloadSharedExplorerStateAndItems(
+    preserveDraftOperationError = false,
+  ): Promise<void> {
+    const stateLoaded = await this.loadSharedExplorerState(preserveDraftOperationError);
+    if (!stateLoaded || this.destroyed) return;
+    await new Promise<void>((resolve) => this.reloadItems(resolve));
   }
 
   private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {
@@ -4436,7 +4447,7 @@ export class ItemExplorerFacade implements OnDestroy {
         'Fehler beim Speichern der Änderungen.',
       );
       if (error?.status === 409) {
-        await this.loadSharedExplorerState(true);
+        await this.reloadSharedExplorerStateAndItems(true);
       }
       return false;
     }
@@ -4482,7 +4493,7 @@ export class ItemExplorerFacade implements OnDestroy {
         'Fehler beim Verwerfen der Änderungen.',
       );
       if (error?.status === 409) {
-        await this.loadSharedExplorerState(true);
+        await this.reloadSharedExplorerStateAndItems(true);
       }
       return false;
     }
@@ -4940,7 +4951,7 @@ export class ItemExplorerFacade implements OnDestroy {
       if (error?.status === 409) {
         this.lastDraftOperationError =
           'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
-        await this.loadSharedExplorerState(true);
+        await this.reloadSharedExplorerStateAndItems(true);
         return false;
       }
       this.lastDraftOperationError = this.extractDraftErrorMessage(

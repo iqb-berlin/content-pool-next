@@ -37,6 +37,22 @@ npm run lint
 
 The frontend uses Vitest for tests and Angular ESLint tooling for lint checks.
 
+### Full-stack browser tests
+
+The Playwright suite runs Chromium against the real Angular frontend, NestJS backend, and an
+isolated PostgreSQL database. Seed the dedicated E2E database from `backend/` and then run from
+`frontend/`:
+
+```bash
+(cd backend && npm run test:e2e:seed-browser)
+(cd frontend && npm run e2e)
+```
+
+The seed command refuses to run unless `NODE_ENV=test` and `DB_DATABASE` contains `e2e`. The
+Playwright configuration starts both application servers and retains trace, screenshot, and video
+diagnostics only for failed tests. CI performs the database setup and browser installation
+automatically.
+
 ## What to Test for Common Change Types
 
 ### Authentication or access changes

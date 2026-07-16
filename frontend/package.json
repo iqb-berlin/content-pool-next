@@ -7,6 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "vitest",
+    "e2e": "playwright test",
     "lint": "ng lint"
   },
   "private": true,
@@ -33,6 +34,7 @@
     "@angular/cli": "^21.2.7",
     "@angular/compiler-cli": "^21.2.7",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
     "@vitest/coverage-v8": "^4.1.2",
     "angular-eslint": "21.3.1",
     "eslint": "^10.0.3",

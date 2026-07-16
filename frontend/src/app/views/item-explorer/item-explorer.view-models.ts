@@ -108,6 +108,7 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'getPlayerTarget'
     | 'getSortIndicator'
     | 'hasEmpiricalDifficulty'
+    | 'hasMeanTaskDifficulty'
     | 'hasPartialCredit'
     | 'isItemExcluded'
     | 'isItemInActiveCollection'

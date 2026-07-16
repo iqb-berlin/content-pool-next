@@ -3,6 +3,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
+import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 
 @Component({
@@ -27,12 +28,23 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             placeholder="🔍 Items filtern..."
             (input)="applyFilter()"
           />
+          @if (hasMeanTaskDifficulty) {
+            <input
+              class="filter-input difficulty-filter"
+              [(ngModel)]="meanTaskDifficultyFilter"
+              placeholder="Mittlere Schwierigkeit: Min..Max"
+              (input)="applyFilter()"
+            />
+          }
         }
         @if (enableSort) {
           <select [(ngModel)]="sortField" (change)="applySort()" class="sort-select">
             <option value="itemId">Item-ID</option>
             <option value="unitId">Aufgabe</option>
             <option value="name">Name</option>
+            @if (hasMeanTaskDifficulty) {
+              <option value="meanTaskDifficulty">Mittlere Aufgabenschwierigkeit</option>
+            }
           </select>
           <button class="btn btn-sm btn-outline" (click)="toggleSortDir()">
             {{ sortDir === 'asc' ? '↑ A-Z' : '↓ Z-A' }}
@@ -55,6 +67,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               Name {{ sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
             </th>
             <th>Quellvariable</th>
+            @if (hasMeanTaskDifficulty) {
+              <th (click)="sortBy('meanTaskDifficulty')" class="sortable">
+                Mittlere Aufgabenschwierigkeit
+                {{ sortField === 'meanTaskDifficulty' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
+              </th>
+            }
             @if (enableTags) {
               <th>Tags</th>
             }
@@ -62,7 +80,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </tr>
         </thead>
         <tbody>
-          @for (item of filteredItems; track item.itemId) {
+          @for (item of filteredItems; track item.rowKey || item.itemId) {
             <tr [class.clickable]="enableClick" (click)="enableClick && navigateToItem(item)">
               <td>
                 <code>{{ item.itemId }}</code>
@@ -72,6 +90,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               <td>
                 <code>{{ item.sourceVariable || '–' }}</code>
               </td>
+              @if (hasMeanTaskDifficulty) {
+                <td>{{ item.meanTaskDifficulty ?? '' }}</td>
+              }
               @if (enableTags) {
                 <td class="tags-cell" (click)="$event.stopPropagation()">
                   @for (tag of itemTags[item.itemId] || []; track tag) {
@@ -176,6 +197,8 @@ export class ItemListComponent implements OnInit, OnDestroy {
   filterText = '';
   sortField = 'itemId';
   sortDir: 'asc' | 'desc' = 'asc';
+  meanTaskDifficultyFilter = '';
+  hasMeanTaskDifficulty = false;
   breadcrumbs: BreadcrumbItem[] = [];
 
   // Feature flags
@@ -193,6 +216,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
   private pendingServerUiPreferences: Record<string, unknown> = {};
   private pendingServerTagPreferences: Record<string, string[]> = {};
   private serverSaveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private itemListLoaded = false;
 
   constructor(
     private route: ActivatedRoute,
@@ -223,6 +247,11 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
     this.api.getViewItems(this.acpId).subscribe((items) => {
       this.items = items;
+      this.itemListLoaded = true;
+      this.hasMeanTaskDifficulty = items.some(
+        (item) => item.meanTaskDifficulty !== undefined && item.meanTaskDifficulty !== null,
+      );
+      this.reconcileMeanTaskDifficultyPreferences();
       this.filteredItems = [...items];
       this.applyFilter(false);
     });
@@ -237,13 +266,19 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
   applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
-    this.filteredItems = this.items.filter(
-      (i) =>
+    this.filteredItems = this.items.filter((i) => {
+      const matchesText =
         i.itemId.toLowerCase().includes(term) ||
         (i.name || '').toLowerCase().includes(term) ||
         (i.unitId || '').toLowerCase().includes(term) ||
-        (i.unitName || '').toLowerCase().includes(term),
-    );
+        (i.unitName || '').toLowerCase().includes(term);
+      if (!matchesText) return false;
+      if (!this.meanTaskDifficultyFilter) return true;
+      return (
+        typeof i.meanTaskDifficulty === 'number' &&
+        matchesNumericFilter(i.meanTaskDifficulty, this.meanTaskDifficultyFilter)
+      );
+    });
     this.applySort(false);
     if (shouldPersist) {
       this.saveUiPreferences();
@@ -270,9 +305,15 @@ export class ItemListComponent implements OnInit, OnDestroy {
 
   applySort(shouldPersist = true) {
     this.filteredItems.sort((a, b) => {
-      const aVal = (a[this.sortField] || '').toLowerCase();
-      const bVal = (b[this.sortField] || '').toLowerCase();
-      const cmp = aVal.localeCompare(bVal);
+      const aVal = a[this.sortField];
+      const bVal = b[this.sortField];
+      const aMissing = aVal === undefined || aVal === null || aVal === '';
+      const bMissing = bVal === undefined || bVal === null || bVal === '';
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
+      const cmp =
+        typeof aVal === 'number' && typeof bVal === 'number'
+          ? aVal - bVal
+          : String(aVal || '').localeCompare(String(bVal || ''), undefined, { numeric: true });
       return this.sortDir === 'asc' ? cmp : -cmp;
     });
 
@@ -431,6 +472,7 @@ export class ItemListComponent implements OnInit, OnDestroy {
   private buildUiPreferences(): Record<string, unknown> {
     return {
       filterText: this.filterText,
+      meanTaskDifficultyFilter: this.meanTaskDifficultyFilter,
       sortField: this.sortField,
       sortDir: this.sortDir,
     };
@@ -442,16 +484,42 @@ export class ItemListComponent implements OnInit, OnDestroy {
     const filterText = rawUi['filterText'];
     const sortField = rawUi['sortField'];
     const sortDir = rawUi['sortDir'];
+    const meanTaskDifficultyFilter = rawUi['meanTaskDifficultyFilter'];
 
     if (typeof filterText === 'string') {
       this.filterText = filterText;
     }
 
-    if (typeof sortField === 'string' && ['itemId', 'unitId', 'name'].includes(sortField)) {
+    if (
+      typeof sortField === 'string' &&
+      ['itemId', 'unitId', 'name', 'meanTaskDifficulty'].includes(sortField)
+    ) {
       this.sortField = sortField;
     }
 
+    if (typeof meanTaskDifficultyFilter === 'string') {
+      this.meanTaskDifficultyFilter = meanTaskDifficultyFilter;
+    }
+
     this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
+    this.reconcileMeanTaskDifficultyPreferences();
+  }
+
+  private reconcileMeanTaskDifficultyPreferences(): void {
+    if (!this.itemListLoaded || this.hasMeanTaskDifficulty) return;
+
+    let preferencesChanged = false;
+    if (this.meanTaskDifficultyFilter) {
+      this.meanTaskDifficultyFilter = '';
+      preferencesChanged = true;
+    }
+    if (this.sortField === 'meanTaskDifficulty') {
+      this.sortField = 'itemId';
+      preferencesChanged = true;
+    }
+    if (preferencesChanged) {
+      this.saveUiPreferences();
+    }
   }
 
   private parseJsonObject(raw: string): Record<string, unknown> {

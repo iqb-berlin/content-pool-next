@@ -3116,6 +3116,128 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
+  it('derives one mean task difficulty per unit and filters and sorts it numerically', () => {
+    const component = createFacade();
+    const baseItem = {
+      unitLabel: 'Aufgabe',
+      description: '',
+      variableId: 'v1',
+      metadata: {},
+    };
+    component.items = [
+      {
+        ...baseItem,
+        itemId: 'unit-1-a',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        empiricalDifficulty: -1,
+      },
+      {
+        ...baseItem,
+        itemId: 'unit-1-b',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-1',
+        empiricalDifficulty: 0.5,
+      },
+      {
+        ...baseItem,
+        itemId: 'unit-1-missing',
+        uuid: 'uuid-3',
+        rowKey: 'uuid-3',
+        unitId: 'unit-1',
+      },
+      {
+        ...baseItem,
+        itemId: 'unit-2',
+        uuid: 'uuid-4',
+        rowKey: 'uuid-4',
+        unitId: 'unit-2',
+        empiricalDifficulty: 1,
+      },
+      {
+        ...baseItem,
+        itemId: 'unit-3-missing',
+        uuid: 'uuid-5',
+        rowKey: 'uuid-5',
+        unitId: 'unit-3',
+      },
+    ];
+
+    (component as any).updateMeanTaskDifficulties();
+
+    expect(component.hasMeanTaskDifficulty).toBe(true);
+    expect(component.items.slice(0, 3).map((item) => item.meanTaskDifficulty)).toEqual([
+      -0.25, -0.25, -0.25,
+    ]);
+    expect(component.items[4].meanTaskDifficulty).toBeUndefined();
+
+    component.columnFilters = { meanTaskDifficulty: '-0.5..0' };
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.unitId)).toEqual([
+      'unit-1',
+      'unit-1',
+      'unit-1',
+    ]);
+
+    component.columnFilters = {};
+    component.applyFilter(false);
+    component.sortBy('meanTaskDifficulty');
+    expect(component.filteredItems.map((item) => item.unitId)).toEqual([
+      'unit-1',
+      'unit-1',
+      'unit-1',
+      'unit-2',
+      'unit-3',
+    ]);
+  });
+
+  it('removes a hidden mean task difficulty filter after all difficulties are cleared', () => {
+    const component = createFacade();
+    component.canEditExplorer = true;
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        empiricalDifficulty: 0.5,
+      },
+    ];
+    component.columnFilters = { meanTaskDifficulty: '0..1' };
+    component.sortField = 'meanTaskDifficulty';
+    component.sortIsMeta = false;
+    component.sortDir = 'desc';
+    const queueDraftPatch = vi.spyOn(component as any, 'queueDraftPatch');
+
+    (component as any).updateMeanTaskDifficulties();
+    component.applyFilter(false);
+    expect(component.filteredItems).toHaveLength(1);
+
+    delete component.items[0].empiricalDifficulty;
+    (component as any).updateMeanTaskDifficulties();
+    component.applyFilter(false);
+
+    expect(component.hasMeanTaskDifficulty).toBe(false);
+    expect(component.columnFilters['meanTaskDifficulty']).toBeUndefined();
+    expect(component.sortField).toBe('unitLabel');
+    expect(component.sortIsMeta).toBe(false);
+    expect(component.sortDir).toBe('asc');
+    expect(component.filteredItems).toHaveLength(1);
+    expect(queueDraftPatch).toHaveBeenCalledWith('UI_STATE_CHANGED', {
+      ui: expect.objectContaining({
+        sortField: 'unitLabel',
+        sortDir: 'asc',
+        columnFilters: {},
+      }),
+    });
+  });
+
   it('keeps all integrated parameter columns configurable when values are missing', () => {
     const component = createFacade();
 

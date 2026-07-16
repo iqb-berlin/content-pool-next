@@ -107,6 +107,11 @@
               Empirische Itemschwierigkeit {{ vm.getSortIndicator('empiricalDifficulty') }}
             </th>
           }
+          @if (vm.hasMeanTaskDifficulty) {
+            <th (click)="vm.sortBy('meanTaskDifficulty')" class="sortable">
+              Mittlere Aufgabenschwierigkeit {{ vm.getSortIndicator('meanTaskDifficulty') }}
+            </th>
+          }
           @for (col of vm.columns; track col.id) {
             <th (click)="vm.sortByMeta(col.id)" class="sortable">
               {{ col.label }} {{ vm.getMetaSortIndicator(col.id) }}
@@ -161,6 +166,17 @@
                 class="col-filter-input"
                 [ngModel]="vm.columnFilters['empiricalDifficulty']"
                 (ngModelChange)="vm.setColumnFilter('empiricalDifficulty', $event)"
+                placeholder="Min..Max"
+                (input)="vm.applyFilter()"
+              />
+            </th>
+          }
+          @if (vm.hasMeanTaskDifficulty) {
+            <th>
+              <input
+                class="col-filter-input"
+                [ngModel]="vm.columnFilters['meanTaskDifficulty']"
+                (ngModelChange)="vm.setColumnFilter('meanTaskDifficulty', $event)"
                 placeholder="Min..Max"
                 (input)="vm.applyFilter()"
               />
@@ -280,6 +296,9 @@
                     : ''
                 }}
               </td>
+            }
+            @if (vm.hasMeanTaskDifficulty) {
+              <td>{{ item.meanTaskDifficulty ?? '' }}</td>
             }
             @for (col of vm.columns; track col.id) {
               <td class="meta-cell">

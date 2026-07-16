@@ -31,6 +31,7 @@ import {
   FileDeletionResponse,
   ItemCollectionsPayload,
   ItemExplorerPerspective,
+  SimpleItemListEntry,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -425,8 +426,8 @@ export class ApiService {
   getViewUnit(acpId: string, unitId: string): Observable<UnitViewData> {
     return this.http.get<UnitViewData>(`${this.API}/view/acp/${acpId}/units/${unitId}`);
   }
-  getViewItems(acpId: string): Observable<any[]> {
-    return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/items`);
+  getViewItems(acpId: string): Observable<SimpleItemListEntry[]> {
+    return this.http.get<SimpleItemListEntry[]>(`${this.API}/view/acp/${acpId}/items`);
   }
   getViewItemPreferences(acpId: string, viewId = 'item-list'): Observable<ItemViewPreferences> {
     return this.http.get<ItemViewPreferences>(

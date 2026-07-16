@@ -41,7 +41,11 @@ import {
   MEAN_DIFFICULTY_EXPORT_COLUMN,
   projectItemExportRow,
 } from "../item-explorer/item-export-projection";
-import { calculateMeanTaskDifficultyByUnit } from "../items/mean-task-difficulty";
+import { SimpleItemListEntryDto } from "./dto/simple-item-list-entry.dto";
+import {
+  projectSimpleItemListEntry,
+  simpleItemListKey,
+} from "./simple-item-list-projection";
 
 const MAX_PERSONAL_ITEM_ROWS = 10_000;
 const MAX_EXPORT_ROW_KEY_LENGTH = 500;
@@ -295,7 +299,7 @@ export class ViewsService {
   async getItemList(
     acpId: string,
     canEditExplorerState = false,
-  ): Promise<any[]> {
+  ): Promise<SimpleItemListEntryDto[]> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return [];
 
@@ -312,45 +316,32 @@ export class ViewsService {
           explorerState.publishedState.itemProperties,
       },
     );
-    const parsedRowsByItem = new Map<string, VomdItemData[]>();
+    const meanDifficultyByItem = new Map<string, number>();
     for (const row of parsedItemList.items || []) {
-      const key = `${row.unitId}\u0000${row.itemId}`;
-      parsedRowsByItem.set(key, [...(parsedRowsByItem.get(key) || []), row]);
+      if (
+        row.meanTaskDifficulty === undefined ||
+        meanDifficultyByItem.has(simpleItemListKey(row.unitId, row.itemId))
+      ) {
+        continue;
+      }
+      meanDifficultyByItem.set(
+        simpleItemListKey(row.unitId, row.itemId),
+        row.meanTaskDifficulty,
+      );
     }
 
-    const items: Array<{
-      itemId: string;
-      unitId: string;
-      unitName: string;
-      name?: string;
-      sourceVariable?: string;
-      meanTaskDifficulty?: number;
-    }> = [];
+    const items: SimpleItemListEntryDto[] = [];
 
     for (const unit of getIndexUnits(index)) {
       for (const item of unit.items || []) {
-        const itemId =
+        const projectedItemId =
           item.useUnitAliasAsPrefix !== false
             ? `${unit.id}_${item.id}`
             : item.id;
-        const parsedRows =
-          parsedRowsByItem.get(`${unit.id}\u0000${item.id}`) || [];
-        const meanTaskDifficulty = parsedRows.find(
-          (row) => row.meanTaskDifficulty !== undefined,
-        )?.meanTaskDifficulty;
-        const projectedItem = {
-          itemId,
-          unitId: unit.id,
-          unitName: unit.name,
-          name: item.name,
-          sourceVariable: item.sourceVariable,
-        };
-
-        items.push(
-          meanTaskDifficulty === undefined
-            ? projectedItem
-            : { ...projectedItem, meanTaskDifficulty },
-        );
+        const meanTaskDifficulty =
+          meanDifficultyByItem.get(simpleItemListKey(unit.id, item.id)) ??
+          meanDifficultyByItem.get(simpleItemListKey(unit.id, projectedItemId));
+        items.push(projectSimpleItemListEntry(unit, item, meanTaskDifficulty));
       }
     }
 
@@ -531,9 +522,6 @@ export class ViewsService {
     const items = rowKeys
       .map((rowKey) => itemsByRowKey.get(rowKey))
       .filter((item): item is VomdItemData => Boolean(item));
-    const meanDifficultyByUnit = calculateMeanTaskDifficultyByUnit(
-      itemList.items,
-    );
     const personalTagColors = this.getPersonalTagColors(
       accessConfig?.featureConfig,
     );
@@ -543,7 +531,6 @@ export class ViewsService {
         rowKey: item.rowKey,
         item,
         personalRow: preferences.rowData[item.rowKey],
-        meanDifficultyByUnit,
       });
 
       return {
@@ -582,10 +569,6 @@ export class ViewsService {
     const itemOrder = new Map(
       itemList.items.map((item, index) => [item.rowKey, index] as const),
     );
-    const meanDifficultyByUnit = calculateMeanTaskDifficultyByUnit(
-      itemList.items,
-    );
-
     const rows = preferenceRecords.flatMap((record) => {
       const participant = this.getPreferenceParticipantIdentifier(record);
       if (!participant) return [];
@@ -598,7 +581,6 @@ export class ViewsService {
             rowKey,
             item,
             personalRow,
-            meanDifficultyByUnit,
           });
 
           return {

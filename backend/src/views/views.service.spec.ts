@@ -308,6 +308,7 @@ describe("ViewsService", () => {
           variableId: "var-1",
           metadata: {},
           empiricalDifficulty: 0.25,
+          meanTaskDifficulty: 0.6,
         },
         {
           itemId: "item-2",
@@ -320,6 +321,7 @@ describe("ViewsService", () => {
           variableId: "var-2",
           metadata: {},
           empiricalDifficulty: 0.75,
+          meanTaskDifficulty: 0.6,
         },
       ],
     });
@@ -384,7 +386,7 @@ describe("ViewsService", () => {
     expect(sheet!.getCell("F2").value).toBe("1");
     expect(sheet!.getCell("G2").value).toBe("uuid-2::1");
     expect(sheet!.getCell("H2").value).toBeNull();
-    expect(sheet!.getCell("S2").value).toBe(0.5);
+    expect(sheet!.getCell("S2").value).toBe(0.6);
     expect(sheet!.getCell("A3").value).toBe(2);
     expect(sheet!.getCell("E3").value).toBe("uuid-1");
     expect(sheet!.getCell("F3").value).toBe("1");
@@ -445,6 +447,7 @@ describe("ViewsService", () => {
           variableId: "var-1",
           metadata: {},
           empiricalDifficulty: -0.25,
+          meanTaskDifficulty: -0.125,
         },
         {
           itemId: "item-2",
@@ -456,6 +459,7 @@ describe("ViewsService", () => {
           variableId: "var-2",
           metadata: {},
           empiricalDifficulty: 0.75,
+          meanTaskDifficulty: -0.125,
         },
       ],
     });
@@ -477,10 +481,10 @@ describe("ViewsService", () => {
       '"Teilnehmerkennung";"Unit-ID";"Unit-Label";"Item-ID";"Sub-ID";"Zeilenschlüssel"',
     );
     expect(csv).toContain(
-      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"0.25"',
+      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).toContain(
-      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"0.25"',
+      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).not.toContain("ohne-eintrag");
   });
@@ -814,7 +818,7 @@ describe("ViewsService", () => {
     unitParserService.getItemListFromFiles.mockResolvedValueOnce({
       items: [
         {
-          itemId: "item-1",
+          itemId: "unit-1_item-1",
           uuid: "uuid-1",
           rowKey: "uuid-1",
           unitId: "unit-1",

@@ -151,14 +151,16 @@ describe('ItemExplorerFacade', () => {
     sessionStorage.clear();
   });
 
-  it('initializes exactly once and ignores pending responses after destroy', () => {
+  it('initializes exactly once and ignores pending responses after destroy', async () => {
     const startPage$ = new Subject<any>();
+    const explorerState$ = new Subject<any>();
     const itemList$ = new Subject<any>();
     const currentUser$ = new Subject<unknown>();
     const getAcpStartPage = vi.fn(() => startPage$);
+    const getItemExplorerState = vi.fn(() => explorerState$);
     const getFileItemList = vi.fn(() => itemList$);
     const component = createFacade({
-      api: { getAcpStartPage, getFileItemList },
+      api: { getAcpStartPage, getItemExplorerState, getFileItemList },
       authService: { currentUser$ },
     });
 
@@ -167,10 +169,13 @@ describe('ItemExplorerFacade', () => {
 
     expect(getAcpStartPage).toHaveBeenCalledOnce();
     expect(getAcpStartPage).toHaveBeenCalledWith('');
-    expect(getFileItemList).toHaveBeenCalledOnce();
+    expect(getFileItemList).not.toHaveBeenCalled();
+
+    startPage$.next({ featureConfig: { enableItemListTags: true } });
+    explorerState$.next(createExplorerEnvelope());
+    await vi.waitFor(() => expect(getFileItemList).toHaveBeenCalledOnce());
 
     component.ngOnDestroy();
-    startPage$.next({ featureConfig: { enableItemListTags: true } });
     itemList$.next({
       items: [
         {
@@ -188,10 +193,95 @@ describe('ItemExplorerFacade', () => {
     });
     currentUser$.next(null);
 
-    expect(component.enableTags).toBe(false);
+    expect(component.enableTags).toBe(true);
     expect(component.items).toEqual([]);
     expect((component as any).personalDataSessionIdentity).toBeNull();
     expect((component as any).collectionSessionIdentity).toBeNull();
+  });
+
+  it('shows a visible error and skips dependent loads when feature configuration fails', () => {
+    const error = new Error('configuration unavailable');
+    const getAcpStartPage = vi.fn(() => throwError(() => error));
+    const getItemExplorerState = vi.fn();
+    const getFileItemList = vi.fn();
+    const component = createFacade({
+      api: { getAcpStartPage, getItemExplorerState, getFileItemList },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    component.init('acp-1');
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to load Item Explorer feature configuration',
+      error,
+    );
+    expect(component.itemListError).toBe(
+      'Die Konfiguration des Item-Explorers konnte nicht geladen werden.',
+    );
+    expect(component.explorerUiStatus).toBe('ERROR');
+    expect(getItemExplorerState).not.toHaveBeenCalled();
+    expect(getFileItemList).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+  it('rejects an item list from another explorer-state version and reloads a consistent pair', async () => {
+    const firstEnvelope = createExplorerEnvelope();
+    const secondEnvelope = { ...createExplorerEnvelope(), version: 4 };
+    const getItemExplorerState = vi
+      .fn()
+      .mockReturnValueOnce(of(firstEnvelope))
+      .mockReturnValueOnce(of(secondEnvelope));
+    const getFileItemList = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          itemExplorerStateVersion: 2,
+          columns: [],
+          items: [
+            {
+              itemId: 'stale',
+              unitId: 'u1',
+              unitLabel: 'Unit 1',
+              description: '',
+              metadata: {},
+              meanTaskDifficulty: -1,
+            },
+          ],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          itemExplorerStateVersion: 4,
+          columns: [],
+          items: [
+            {
+              itemId: 'current',
+              unitId: 'u1',
+              unitLabel: 'Unit 1',
+              description: '',
+              metadata: {},
+              meanTaskDifficulty: 0.75,
+            },
+          ],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      );
+    const component = createFacade({ api: { getItemExplorerState, getFileItemList } });
+    component.acpId = 'acp-1';
+
+    await (component as any).reloadSharedExplorerStateAndItems();
+
+    expect(getItemExplorerState).toHaveBeenCalledTimes(2);
+    expect(getFileItemList).toHaveBeenCalledTimes(2);
+    expect(component.items).toEqual([
+      expect.objectContaining({
+        itemId: 'current',
+        meanTaskDifficulty: 0.75,
+      }),
+    ]);
   });
 
   it('suspends pending personal changes instead of saving after destroy', () => {
@@ -906,7 +996,7 @@ describe('ItemExplorerFacade', () => {
     expect(reloadItems).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads shared state after a renumbering conflict', () => {
+  it('reloads shared state and canonical item projections after a renumbering conflict', () => {
     const recalculateItemRowNumbers = vi.fn(() =>
       throwError(() => ({ status: 409, error: { message: 'Source files changed' } })),
     );
@@ -914,14 +1004,14 @@ describe('ItemExplorerFacade', () => {
     component.acpId = 'acp-1';
     component.latestExplorerState = createExplorerEnvelope({ status: 'CLEAN' });
     component.showRenumberDialog = true;
-    const loadSharedExplorerState = vi
-      .spyOn(component as any, 'loadSharedExplorerState')
+    const reloadSharedExplorerStateAndItems = vi
+      .spyOn(component as any, 'reloadSharedExplorerStateAndItems')
       .mockResolvedValue(undefined);
 
     component.confirmRenumber();
 
     expect(component.renumberError).toBe('Source files changed');
-    expect(loadSharedExplorerState).toHaveBeenCalledTimes(1);
+    expect(reloadSharedExplorerStateAndItems).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a draft patch conflict visible after reloading the shared state', async () => {
@@ -935,6 +1025,9 @@ describe('ItemExplorerFacade', () => {
     component.canEditExplorer = true;
     component.explorerVersion = 3;
     (component as any).pendingDraftPatch = { tags: { 'row-1': ['QA'] } };
+    const reloadItems = vi
+      .spyOn(component, 'reloadItems')
+      .mockImplementation((onSettled) => onSettled?.());
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const flushed = await (component as any).flushDraftPatch();
@@ -944,6 +1037,7 @@ describe('ItemExplorerFacade', () => {
       'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.',
     );
     expect(component.explorerUiStatus).toBe('ERROR');
+    expect(reloadItems).toHaveBeenCalledTimes(1);
     consoleError.mockRestore();
   });
 
@@ -3116,7 +3210,7 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('derives one mean task difficulty per unit and filters and sorts it numerically', () => {
+  it('uses backend-provided mean task difficulties without deriving replacements', () => {
     const component = createFacade();
     const baseItem = {
       unitLabel: 'Aufgabe',
@@ -3132,6 +3226,7 @@ describe('ItemExplorerFacade', () => {
         rowKey: 'uuid-1',
         unitId: 'unit-1',
         empiricalDifficulty: -1,
+        meanTaskDifficulty: 0.4,
       },
       {
         ...baseItem,
@@ -3140,6 +3235,7 @@ describe('ItemExplorerFacade', () => {
         rowKey: 'uuid-2',
         unitId: 'unit-1',
         empiricalDifficulty: 0.5,
+        meanTaskDifficulty: 0.4,
       },
       {
         ...baseItem,
@@ -3147,6 +3243,7 @@ describe('ItemExplorerFacade', () => {
         uuid: 'uuid-3',
         rowKey: 'uuid-3',
         unitId: 'unit-1',
+        meanTaskDifficulty: 0.4,
       },
       {
         ...baseItem,
@@ -3155,6 +3252,7 @@ describe('ItemExplorerFacade', () => {
         rowKey: 'uuid-4',
         unitId: 'unit-2',
         empiricalDifficulty: 1,
+        meanTaskDifficulty: -0.2,
       },
       {
         ...baseItem,
@@ -3165,15 +3263,15 @@ describe('ItemExplorerFacade', () => {
       },
     ];
 
-    (component as any).updateMeanTaskDifficulties();
+    (component as any).reconcileMeanTaskDifficultyState();
 
     expect(component.hasMeanTaskDifficulty).toBe(true);
     expect(component.items.slice(0, 3).map((item) => item.meanTaskDifficulty)).toEqual([
-      -0.25, -0.25, -0.25,
+      0.4, 0.4, 0.4,
     ]);
     expect(component.items[4].meanTaskDifficulty).toBeUndefined();
 
-    component.columnFilters = { meanTaskDifficulty: '-0.5..0' };
+    component.columnFilters = { meanTaskDifficulty: '0.3..0.5' };
     component.applyFilter(false);
     expect(component.filteredItems.map((item) => item.unitId)).toEqual([
       'unit-1',
@@ -3185,10 +3283,10 @@ describe('ItemExplorerFacade', () => {
     component.applyFilter(false);
     component.sortBy('meanTaskDifficulty');
     expect(component.filteredItems.map((item) => item.unitId)).toEqual([
-      'unit-1',
-      'unit-1',
-      'unit-1',
       'unit-2',
+      'unit-1',
+      'unit-1',
+      'unit-1',
       'unit-3',
     ]);
   });
@@ -3207,6 +3305,7 @@ describe('ItemExplorerFacade', () => {
         variableId: 'v1',
         metadata: {},
         empiricalDifficulty: 0.5,
+        meanTaskDifficulty: 0.5,
       },
     ];
     component.columnFilters = { meanTaskDifficulty: '0..1' };
@@ -3215,12 +3314,12 @@ describe('ItemExplorerFacade', () => {
     component.sortDir = 'desc';
     const queueDraftPatch = vi.spyOn(component as any, 'queueDraftPatch');
 
-    (component as any).updateMeanTaskDifficulties();
+    (component as any).reconcileMeanTaskDifficultyState();
     component.applyFilter(false);
     expect(component.filteredItems).toHaveLength(1);
 
-    delete component.items[0].empiricalDifficulty;
-    (component as any).updateMeanTaskDifficulties();
+    delete component.items[0].meanTaskDifficulty;
+    (component as any).reconcileMeanTaskDifficultyState();
     component.applyFilter(false);
 
     expect(component.hasMeanTaskDifficulty).toBe(false);

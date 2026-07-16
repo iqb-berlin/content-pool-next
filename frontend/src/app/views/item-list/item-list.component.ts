@@ -1,207 +1,33 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { forkJoin, Subject, switchMap, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { AuthService } from '../../core/services/auth.service';
+import { SimpleItemListEntry } from '../../core/models/api.models';
 import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
+import { ItemListPreferencesService } from './item-list-preferences.service';
+import { ItemListPreferences, ItemListSortField, ItemListUiPreferences } from './item-list.models';
 
 @Component({
   selector: 'app-item-list',
   standalone: true,
   imports: [RouterLink, FormsModule, BreadcrumbComponent],
-  template: `
-    <app-breadcrumb [items]="breadcrumbs" />
-
-    <div class="page-header">
-      <h1>Item-Liste</h1>
-      <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
-    </div>
-
-    <!-- Filter & Sort toolbar -->
-    @if (enableFilter || enableSort) {
-      <div class="toolbar">
-        @if (enableFilter) {
-          <input
-            class="filter-input"
-            [(ngModel)]="filterText"
-            placeholder="🔍 Items filtern..."
-            (input)="applyFilter()"
-          />
-          @if (hasMeanTaskDifficulty) {
-            <input
-              class="filter-input difficulty-filter"
-              [(ngModel)]="meanTaskDifficultyFilter"
-              placeholder="Mittlere Schwierigkeit: Min..Max"
-              (input)="applyFilter()"
-            />
-          }
-        }
-        @if (enableSort) {
-          <select [(ngModel)]="sortField" (change)="applySort()" class="sort-select">
-            <option value="itemId">Item-ID</option>
-            <option value="unitId">Aufgabe</option>
-            <option value="name">Name</option>
-            @if (hasMeanTaskDifficulty) {
-              <option value="meanTaskDifficulty">Mittlere Aufgabenschwierigkeit</option>
-            }
-          </select>
-          <button class="btn btn-sm btn-outline" (click)="toggleSortDir()">
-            {{ sortDir === 'asc' ? '↑ A-Z' : '↓ Z-A' }}
-          </button>
-        }
-      </div>
-    }
-
-    <div class="card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th (click)="sortBy('itemId')" class="sortable">
-              Item-ID {{ sortField === 'itemId' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
-            </th>
-            <th (click)="sortBy('unitId')" class="sortable">
-              Aufgabe {{ sortField === 'unitId' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
-            </th>
-            <th (click)="sortBy('name')" class="sortable">
-              Name {{ sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
-            </th>
-            <th>Quellvariable</th>
-            @if (hasMeanTaskDifficulty) {
-              <th (click)="sortBy('meanTaskDifficulty')" class="sortable">
-                Mittlere Aufgabenschwierigkeit
-                {{ sortField === 'meanTaskDifficulty' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
-              </th>
-            }
-            @if (enableTags) {
-              <th>Tags</th>
-            }
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (item of filteredItems; track item.rowKey || item.itemId) {
-            <tr [class.clickable]="enableClick" (click)="enableClick && navigateToItem(item)">
-              <td>
-                <code>{{ item.itemId }}</code>
-              </td>
-              <td>{{ item.unitName || item.unitId }}</td>
-              <td>{{ item.name || '–' }}</td>
-              <td>
-                <code>{{ item.sourceVariable || '–' }}</code>
-              </td>
-              @if (hasMeanTaskDifficulty) {
-                <td>{{ item.meanTaskDifficulty ?? '' }}</td>
-              }
-              @if (enableTags) {
-                <td class="tags-cell" (click)="$event.stopPropagation()">
-                  @for (tag of itemTags[item.itemId] || []; track tag) {
-                    <span
-                      class="badge badge-info tag-badge"
-                      (click)="removeItemTag(item.itemId, tag)"
-                      >{{ tag }} ✕</span
-                    >
-                  }
-                  <select class="tag-select" (change)="addItemTag(item.itemId, $event)">
-                    <option value="">+Tag</option>
-                    @for (tag of availableTags; track tag) {
-                      <option [value]="tag">{{ tag }}</option>
-                    }
-                  </select>
-                </td>
-              }
-              <td>
-                @if (enableClick) {
-                  <a
-                    [routerLink]="['/view', acpId, 'item', item.itemId]"
-                    class="btn btn-sm btn-outline"
-                    (click)="$event.stopPropagation()"
-                    >Ansehen</a
-                  >
-                } @else {
-                  <a
-                    [routerLink]="['/view', acpId, 'unit', item.unitId]"
-                    class="btn btn-sm btn-outline"
-                    (click)="$event.stopPropagation()"
-                    >Aufgabe</a
-                  >
-                }
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  `,
-  styles: [
-    `
-      .item-count {
-        font-size: 0.85rem;
-        color: var(--color-text-secondary);
-      }
-      .filter-input {
-        padding: 8px 12px;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius);
-        font-size: 0.9rem;
-        min-width: 250px;
-        font-family: inherit;
-      }
-      .sort-select {
-        padding: 6px 10px;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius);
-        font-size: 0.85rem;
-        font-family: inherit;
-      }
-      .sortable {
-        cursor: pointer;
-        user-select: none;
-      }
-      .sortable:hover {
-        color: var(--color-primary-light);
-      }
-      .clickable {
-        cursor: pointer;
-      }
-      .clickable:hover td {
-        background: rgba(41, 128, 185, 0.04);
-      }
-      .tags-cell {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-        align-items: center;
-      }
-      .tag-badge {
-        cursor: pointer;
-        font-size: 0.7rem;
-      }
-      .tag-badge:hover {
-        opacity: 0.7;
-      }
-      .tag-select {
-        padding: 2px 4px;
-        border: 1px solid var(--color-border);
-        border-radius: 4px;
-        font-size: 0.75rem;
-        background: white;
-      }
-    `,
-  ],
+  providers: [ItemListPreferencesService],
+  templateUrl: './item-list.component.html',
+  styleUrl: './item-list.component.scss',
 })
 export class ItemListComponent implements OnInit, OnDestroy {
   acpId = '';
-  items: any[] = [];
-  filteredItems: any[] = [];
+  items: SimpleItemListEntry[] = [];
+  filteredItems: SimpleItemListEntry[] = [];
   filterText = '';
-  sortField = 'itemId';
+  sortField: ItemListSortField = 'itemId';
   sortDir: 'asc' | 'desc' = 'asc';
   meanTaskDifficultyFilter = '';
   hasMeanTaskDifficulty = false;
   breadcrumbs: BreadcrumbItem[] = [];
 
-  // Feature flags
   enableFilter = true;
   enableSort = true;
   enableClick = true;
@@ -209,22 +35,16 @@ export class ItemListComponent implements OnInit, OnDestroy {
   availableTags: string[] = [];
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
-  useServerPreferences = false;
 
-  private readonly preferenceViewId = 'item-list';
-  private readonly serverPreferenceDebounceMs = 250;
-  private pendingServerUiPreferences: Record<string, unknown> = {};
-  private pendingServerTagPreferences: Record<string, string[]> = {};
-  private serverSaveTimeout: ReturnType<typeof setTimeout> | null = null;
-  private itemListLoaded = false;
+  private readonly destroy$ = new Subject<void>();
 
   constructor(
-    private route: ActivatedRoute,
-    private api: ApiService,
-    private auth: AuthService,
+    private readonly route: ActivatedRoute,
+    private readonly api: ApiService,
+    private readonly preferences: ItemListPreferencesService,
   ) {}
 
-  ngOnInit() {
+  ngOnInit(): void {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.breadcrumbs = [
       { label: 'Assessment Content Pool', route: ['/'] },
@@ -232,330 +52,167 @@ export class ItemListComponent implements OnInit, OnDestroy {
       { label: 'Item-Liste' },
     ];
 
-    // Load feature config
-    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      const fc = data?.featureConfig || {};
-      this.enableFilter = fc.enableItemListFilter !== false;
-      this.enableSort = fc.enableItemListSort !== false;
-      this.enableClick = fc.enableItemClick !== false;
-      this.enableTags = !!fc.enableItemListTags;
-      this.availableTags = fc.availableTags || [];
-      this.persistUserPreferences = !!fc.persistUserPreferences;
-      this.useServerPreferences = this.persistUserPreferences && this.auth.isLoggedIn;
-      this.loadPreferences();
-    });
+    this.api
+      .getAcpStartPage(this.acpId)
+      .pipe(
+        switchMap((data) => {
+          const featureConfig = data?.featureConfig || {};
+          this.enableFilter = featureConfig.enableItemListFilter !== false;
+          this.enableSort = featureConfig.enableItemListSort !== false;
+          this.enableClick = featureConfig.enableItemClick !== false;
+          this.enableTags = featureConfig.enableItemListTags === true;
+          this.availableTags = Array.isArray(featureConfig.availableTags)
+            ? featureConfig.availableTags
+            : [];
+          this.persistUserPreferences = featureConfig.persistUserPreferences === true;
 
-    this.api.getViewItems(this.acpId).subscribe((items) => {
-      this.items = items;
-      this.itemListLoaded = true;
-      this.hasMeanTaskDifficulty = items.some(
-        (item) => item.meanTaskDifficulty !== undefined && item.meanTaskDifficulty !== null,
-      );
-      this.reconcileMeanTaskDifficultyPreferences();
-      this.filteredItems = [...items];
-      this.applyFilter(false);
-    });
+          return forkJoin({
+            items: this.api.getViewItems(this.acpId),
+            preferences: this.preferences.load({
+              acpId: this.acpId,
+              persist: this.persistUserPreferences,
+              enableTags: this.enableTags,
+            }),
+          });
+        }),
+        takeUntil(this.destroy$),
+      )
+      .subscribe(({ items, preferences }) => this.initializeViewState(items, preferences));
   }
 
-  ngOnDestroy() {
-    if (this.serverSaveTimeout) {
-      clearTimeout(this.serverSaveTimeout);
-      this.serverSaveTimeout = null;
-    }
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
-  applyFilter(shouldPersist = true) {
+  applyFilter(shouldPersist = true): void {
     const term = this.filterText.toLowerCase();
-    this.filteredItems = this.items.filter((i) => {
+    this.filteredItems = this.items.filter((item) => {
       const matchesText =
-        i.itemId.toLowerCase().includes(term) ||
-        (i.name || '').toLowerCase().includes(term) ||
-        (i.unitId || '').toLowerCase().includes(term) ||
-        (i.unitName || '').toLowerCase().includes(term);
+        item.itemId.toLowerCase().includes(term) ||
+        (item.name || '').toLowerCase().includes(term) ||
+        item.unitId.toLowerCase().includes(term) ||
+        item.unitName.toLowerCase().includes(term);
       if (!matchesText) return false;
       if (!this.meanTaskDifficultyFilter) return true;
       return (
-        typeof i.meanTaskDifficulty === 'number' &&
-        matchesNumericFilter(i.meanTaskDifficulty, this.meanTaskDifficultyFilter)
+        typeof item.meanTaskDifficulty === 'number' &&
+        matchesNumericFilter(item.meanTaskDifficulty, this.meanTaskDifficultyFilter)
       );
     });
     this.applySort(false);
-    if (shouldPersist) {
-      this.saveUiPreferences();
-    }
+    if (shouldPersist) this.savePreferences();
   }
 
-  sortBy(field: string) {
+  sortBy(field: ItemListSortField): void {
     if (this.sortField === field) {
       this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     } else {
       this.sortField = field;
       this.sortDir = 'asc';
     }
-
     this.applySort(false);
-    this.saveUiPreferences();
+    this.savePreferences();
   }
 
-  toggleSortDir() {
+  toggleSortDir(): void {
     this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
     this.applySort(false);
-    this.saveUiPreferences();
+    this.savePreferences();
   }
 
-  applySort(shouldPersist = true) {
-    this.filteredItems.sort((a, b) => {
-      const aVal = a[this.sortField];
-      const bVal = b[this.sortField];
-      const aMissing = aVal === undefined || aVal === null || aVal === '';
-      const bMissing = bVal === undefined || bVal === null || bVal === '';
-      if (aMissing !== bMissing) return aMissing ? 1 : -1;
-      const cmp =
-        typeof aVal === 'number' && typeof bVal === 'number'
-          ? aVal - bVal
-          : String(aVal || '').localeCompare(String(bVal || ''), undefined, { numeric: true });
-      return this.sortDir === 'asc' ? cmp : -cmp;
+  applySort(shouldPersist = true): void {
+    this.filteredItems.sort((left, right) => {
+      const leftValue = left[this.sortField];
+      const rightValue = right[this.sortField];
+      const leftMissing = leftValue === undefined || leftValue === null || leftValue === '';
+      const rightMissing = rightValue === undefined || rightValue === null || rightValue === '';
+      if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+      const comparison =
+        typeof leftValue === 'number' && typeof rightValue === 'number'
+          ? leftValue - rightValue
+          : String(leftValue || '').localeCompare(String(rightValue || ''), undefined, {
+              numeric: true,
+            });
+      return this.sortDir === 'asc' ? comparison : -comparison;
     });
-
-    if (shouldPersist) {
-      this.saveUiPreferences();
-    }
+    if (shouldPersist) this.savePreferences();
   }
 
-  navigateToItem(_item: any) {
-    // Navigation handled by routerLink in template
+  navigateToItem(_item: SimpleItemListEntry): void {
+    // Navigation is handled by the routerLink in the template.
   }
 
-  addItemTag(itemId: string, event: Event) {
-    const tag = (event.target as HTMLSelectElement).value;
+  addItemTag(itemId: string, event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const tag = select.value;
     if (!tag) return;
 
-    if (!this.itemTags[itemId]) this.itemTags[itemId] = [];
-    if (!this.itemTags[itemId].includes(tag)) {
-      this.itemTags[itemId].push(tag);
-      this.saveTagPreferences();
+    const currentTags = this.itemTags[itemId] || [];
+    if (!currentTags.includes(tag)) {
+      this.itemTags = { ...this.itemTags, [itemId]: [...currentTags, tag] };
+      this.savePreferences();
       this.applyFilter(false);
     }
-
-    (event.target as HTMLSelectElement).value = '';
+    select.value = '';
   }
 
-  removeItemTag(itemId: string, tag: string) {
-    if (this.itemTags[itemId]) {
-      this.itemTags[itemId] = this.itemTags[itemId].filter((t) => t !== tag);
-      this.saveTagPreferences();
-      this.applyFilter(false);
-    }
-  }
-
-  private getUiPreferencesKey(): string {
-    const userId = this.auth.currentUser?.id || 'anonymous';
-    return `cp:item-list:prefs:${this.acpId}:${userId}`;
-  }
-
-  private loadUiPreferences() {
-    const raw = localStorage.getItem(this.getUiPreferencesKey());
-    if (!raw) return;
-
-    this.applyUiPreferences(this.parseJsonObject(raw));
-  }
-
-  private saveUiPreferences() {
-    if (!this.persistUserPreferences) {
-      return;
-    }
-
-    const ui = this.buildUiPreferences();
-    if (this.useServerPreferences) {
-      this.pendingServerUiPreferences = ui;
-      this.scheduleServerPreferenceSave();
-      return;
-    }
-
-    localStorage.setItem(this.getUiPreferencesKey(), JSON.stringify(ui));
-  }
-
-  private getTagPreferencesKey(): string {
-    const userId = this.auth.currentUser?.id || 'anonymous';
-    return `cp:item-list:tags:${this.acpId}:${userId}`;
-  }
-
-  private loadTagPreferences() {
-    const raw = localStorage.getItem(this.getTagPreferencesKey());
-    if (!raw) return;
-
-    this.itemTags = this.normalizeTags(this.parseJsonObject(raw));
-  }
-
-  private saveTagPreferences() {
-    const normalizedTags = this.normalizeTags(this.itemTags);
-    this.itemTags = normalizedTags;
-
-    if (!this.persistUserPreferences) {
-      return;
-    }
-
-    if (this.useServerPreferences) {
-      this.pendingServerTagPreferences = normalizedTags;
-      this.scheduleServerPreferenceSave();
-      return;
-    }
-
-    localStorage.setItem(this.getTagPreferencesKey(), JSON.stringify(normalizedTags));
-  }
-
-  private loadPreferences() {
-    if (!this.persistUserPreferences) {
-      this.itemTags = {};
-      this.applyFilter(false);
-      return;
-    }
-
-    if (this.useServerPreferences) {
-      this.api.getViewItemPreferences(this.acpId, this.preferenceViewId).subscribe({
-        next: (preferences) => {
-          this.applyUiPreferences(preferences?.ui);
-          this.itemTags = this.normalizeTags(preferences?.tags);
-          this.pendingServerUiPreferences = this.buildUiPreferences();
-          this.pendingServerTagPreferences = this.normalizeTags(this.itemTags);
-          this.applyFilter(false);
-        },
-        error: () => {
-          this.loadUiPreferences();
-          if (this.enableTags) {
-            this.loadTagPreferences();
-          }
-          this.applyFilter(false);
-        },
-      });
-      return;
-    }
-
-    this.loadUiPreferences();
-    if (this.enableTags) {
-      this.loadTagPreferences();
-    }
+  removeItemTag(itemId: string, tag: string): void {
+    if (!this.itemTags[itemId]) return;
+    this.itemTags = {
+      ...this.itemTags,
+      [itemId]: this.itemTags[itemId].filter((candidate) => candidate !== tag),
+    };
+    this.savePreferences();
     this.applyFilter(false);
   }
 
-  private scheduleServerPreferenceSave() {
-    if (this.serverSaveTimeout) {
-      clearTimeout(this.serverSaveTimeout);
-    }
+  private initializeViewState(
+    items: SimpleItemListEntry[],
+    preferences: ItemListPreferences,
+  ): void {
+    this.items = items;
+    this.hasMeanTaskDifficulty = items.some((item) => item.meanTaskDifficulty !== undefined);
 
-    this.serverSaveTimeout = setTimeout(() => {
-      this.serverSaveTimeout = null;
-      this.api
-        .saveViewItemPreferences(
-          this.acpId,
-          {
-            ui: this.pendingServerUiPreferences,
-            tags: this.pendingServerTagPreferences,
-          },
-          this.preferenceViewId,
-        )
-        .subscribe({
-          next: (savedPreferences) => {
-            this.pendingServerUiPreferences = this.isObject(savedPreferences?.ui)
-              ? savedPreferences.ui
-              : this.pendingServerUiPreferences;
-            this.pendingServerTagPreferences = this.normalizeTags(savedPreferences?.tags);
-            this.itemTags = this.pendingServerTagPreferences;
-          },
-          error: (err) => {
-            console.error('Failed to persist item list preferences', err);
-          },
-        });
-    }, this.serverPreferenceDebounceMs);
+    const reconciledUi = this.reconcileUiPreferences(preferences.ui);
+    this.applyUiPreferences(reconciledUi);
+    this.itemTags = preferences.tags;
+    this.filteredItems = [...items];
+    this.applyFilter(false);
+
+    if (reconciledUi !== preferences.ui) {
+      this.savePreferences();
+    }
   }
 
-  private buildUiPreferences(): Record<string, unknown> {
+  private reconcileUiPreferences(ui: ItemListUiPreferences): ItemListUiPreferences {
+    if (this.hasMeanTaskDifficulty) return ui;
+    if (!ui.meanTaskDifficultyFilter && ui.sortField !== 'meanTaskDifficulty') return ui;
+
     return {
-      filterText: this.filterText,
-      meanTaskDifficultyFilter: this.meanTaskDifficultyFilter,
-      sortField: this.sortField,
-      sortDir: this.sortDir,
+      ...ui,
+      meanTaskDifficultyFilter: '',
+      sortField: ui.sortField === 'meanTaskDifficulty' ? 'itemId' : ui.sortField,
     };
   }
 
-  private applyUiPreferences(rawUi: unknown) {
-    if (!this.isObject(rawUi)) return;
-
-    const filterText = rawUi['filterText'];
-    const sortField = rawUi['sortField'];
-    const sortDir = rawUi['sortDir'];
-    const meanTaskDifficultyFilter = rawUi['meanTaskDifficultyFilter'];
-
-    if (typeof filterText === 'string') {
-      this.filterText = filterText;
-    }
-
-    if (
-      typeof sortField === 'string' &&
-      ['itemId', 'unitId', 'name', 'meanTaskDifficulty'].includes(sortField)
-    ) {
-      this.sortField = sortField;
-    }
-
-    if (typeof meanTaskDifficultyFilter === 'string') {
-      this.meanTaskDifficultyFilter = meanTaskDifficultyFilter;
-    }
-
-    this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
-    this.reconcileMeanTaskDifficultyPreferences();
+  private applyUiPreferences(ui: ItemListUiPreferences): void {
+    this.filterText = ui.filterText;
+    this.meanTaskDifficultyFilter = ui.meanTaskDifficultyFilter;
+    this.sortField = ui.sortField;
+    this.sortDir = ui.sortDir;
   }
 
-  private reconcileMeanTaskDifficultyPreferences(): void {
-    if (!this.itemListLoaded || this.hasMeanTaskDifficulty) return;
-
-    let preferencesChanged = false;
-    if (this.meanTaskDifficultyFilter) {
-      this.meanTaskDifficultyFilter = '';
-      preferencesChanged = true;
-    }
-    if (this.sortField === 'meanTaskDifficulty') {
-      this.sortField = 'itemId';
-      preferencesChanged = true;
-    }
-    if (preferencesChanged) {
-      this.saveUiPreferences();
-    }
-  }
-
-  private parseJsonObject(raw: string): Record<string, unknown> {
-    try {
-      const parsed = JSON.parse(raw);
-      return this.isObject(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  private normalizeTags(rawTags: unknown): Record<string, string[]> {
-    if (!this.isObject(rawTags)) {
-      return {};
-    }
-
-    const tags: Record<string, string[]> = {};
-    for (const [itemId, values] of Object.entries(rawTags)) {
-      const normalizedItemId = String(itemId || '').trim();
-      if (!normalizedItemId || !Array.isArray(values)) continue;
-
-      const normalizedValues = Array.from(
-        new Set(
-          values.map((value) => String(value || '').trim()).filter((value) => value.length > 0),
-        ),
-      );
-
-      if (normalizedValues.length) {
-        tags[normalizedItemId] = normalizedValues;
-      }
-    }
-
-    return tags;
-  }
-
-  private isObject(value: unknown): value is Record<string, any> {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  private savePreferences(): void {
+    const normalized = this.preferences.save({
+      ui: {
+        filterText: this.filterText,
+        meanTaskDifficultyFilter: this.meanTaskDifficultyFilter,
+        sortField: this.sortField,
+        sortDir: this.sortDir,
+      },
+      tags: this.itemTags,
+    });
+    this.itemTags = normalized.tags;
   }
 }

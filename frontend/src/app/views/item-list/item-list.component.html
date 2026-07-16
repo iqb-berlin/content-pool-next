@@ -1,0 +1,118 @@
+<app-breadcrumb [items]="breadcrumbs" />
+
+<div class="page-header">
+  <h1>Item-Liste</h1>
+  <span class="item-count">{{ filteredItems.length }} von {{ items.length }} Items</span>
+</div>
+
+@if (enableFilter || enableSort) {
+  <div class="toolbar">
+    @if (enableFilter) {
+      <input
+        class="filter-input"
+        [(ngModel)]="filterText"
+        placeholder="🔍 Items filtern..."
+        (input)="applyFilter()"
+      />
+      @if (hasMeanTaskDifficulty) {
+        <input
+          class="filter-input difficulty-filter"
+          [(ngModel)]="meanTaskDifficultyFilter"
+          placeholder="Mittlere Schwierigkeit: Min..Max"
+          (input)="applyFilter()"
+        />
+      }
+    }
+    @if (enableSort) {
+      <select [(ngModel)]="sortField" (change)="applySort()" class="sort-select">
+        <option value="itemId">Item-ID</option>
+        <option value="unitId">Aufgabe</option>
+        <option value="name">Name</option>
+        @if (hasMeanTaskDifficulty) {
+          <option value="meanTaskDifficulty">Mittlere Aufgabenschwierigkeit</option>
+        }
+      </select>
+      <button class="btn btn-sm btn-outline" (click)="toggleSortDir()">
+        {{ sortDir === 'asc' ? '↑ A-Z' : '↓ Z-A' }}
+      </button>
+    }
+  </div>
+}
+
+<div class="card">
+  <table class="table">
+    <thead>
+      <tr>
+        <th (click)="sortBy('itemId')" class="sortable">
+          Item-ID {{ sortField === 'itemId' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
+        </th>
+        <th (click)="sortBy('unitId')" class="sortable">
+          Aufgabe {{ sortField === 'unitId' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
+        </th>
+        <th (click)="sortBy('name')" class="sortable">
+          Name {{ sortField === 'name' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
+        </th>
+        <th>Quellvariable</th>
+        @if (hasMeanTaskDifficulty) {
+          <th (click)="sortBy('meanTaskDifficulty')" class="sortable">
+            Mittlere Aufgabenschwierigkeit
+            {{ sortField === 'meanTaskDifficulty' ? (sortDir === 'asc' ? '↑' : '↓') : '' }}
+          </th>
+        }
+        @if (enableTags) {
+          <th>Tags</th>
+        }
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (item of filteredItems; track item.itemId) {
+        <tr [class.clickable]="enableClick" (click)="enableClick && navigateToItem(item)">
+          <td>
+            <code>{{ item.itemId }}</code>
+          </td>
+          <td>{{ item.unitName || item.unitId }}</td>
+          <td>{{ item.name || '–' }}</td>
+          <td>
+            <code>{{ item.sourceVariable || '–' }}</code>
+          </td>
+          @if (hasMeanTaskDifficulty) {
+            <td>{{ item.meanTaskDifficulty ?? '' }}</td>
+          }
+          @if (enableTags) {
+            <td class="tags-cell" (click)="$event.stopPropagation()">
+              @for (tag of itemTags[item.itemId] || []; track tag) {
+                <span class="badge badge-info tag-badge" (click)="removeItemTag(item.itemId, tag)"
+                  >{{ tag }} ✕</span
+                >
+              }
+              <select class="tag-select" (change)="addItemTag(item.itemId, $event)">
+                <option value="">+Tag</option>
+                @for (tag of availableTags; track tag) {
+                  <option [value]="tag">{{ tag }}</option>
+                }
+              </select>
+            </td>
+          }
+          <td>
+            @if (enableClick) {
+              <a
+                [routerLink]="['/view', acpId, 'item', item.itemId]"
+                class="btn btn-sm btn-outline"
+                (click)="$event.stopPropagation()"
+                >Ansehen</a
+              >
+            } @else {
+              <a
+                [routerLink]="['/view', acpId, 'unit', item.unitId]"
+                class="btn btn-sm btn-outline"
+                (click)="$event.stopPropagation()"
+                >Aufgabe</a
+              >
+            }
+          </td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

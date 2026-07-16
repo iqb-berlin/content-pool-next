@@ -452,6 +452,15 @@ export interface ItemViewPreferences {
   rowData?: Record<string, Record<string, unknown>>;
 }
 
+export interface SimpleItemListEntry {
+  itemId: string;
+  unitId: string;
+  unitName: string;
+  name?: string;
+  sourceVariable?: string;
+  meanTaskDifficulty?: number;
+}
+
 export type ItemExplorerPerspective = 'editor' | 'read-only';
 
 export interface ItemCollectionSummary {

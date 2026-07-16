@@ -876,7 +876,7 @@ export class ItemExplorerFacade implements OnDestroy {
             (item: any) =>
               item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
           );
-          this.updateMeanTaskDifficulties();
+          this.reconcileMeanTaskDifficultyState();
           this.filteredItems = [...this.items];
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
@@ -4269,32 +4269,11 @@ export class ItemExplorerFacade implements OnDestroy {
     this.hasEmpiricalDifficulty = this.items.some(
       (item: any) => item.empiricalDifficulty !== undefined && item.empiricalDifficulty !== null,
     );
-    this.updateMeanTaskDifficulties();
+    this.reconcileMeanTaskDifficultyState();
     this.applyFilter(false);
   }
 
-  private updateMeanTaskDifficulties(): void {
-    const totals = new Map<string, { sum: number; count: number }>();
-
-    for (const item of this.items) {
-      if (item.empiricalDifficulty === undefined || !Number.isFinite(item.empiricalDifficulty)) {
-        continue;
-      }
-      const total = totals.get(item.unitId) || { sum: 0, count: 0 };
-      total.sum += item.empiricalDifficulty;
-      total.count += 1;
-      totals.set(item.unitId, total);
-    }
-
-    for (const item of this.items) {
-      const total = totals.get(item.unitId);
-      if (total) {
-        item.meanTaskDifficulty = total.sum / total.count;
-      } else {
-        delete item.meanTaskDifficulty;
-      }
-    }
-
+  private reconcileMeanTaskDifficultyState(): void {
     this.hasMeanTaskDifficulty = this.items.some((item) => item.meanTaskDifficulty !== undefined);
     if (!this.hasMeanTaskDifficulty) {
       let uiStateChanged = false;

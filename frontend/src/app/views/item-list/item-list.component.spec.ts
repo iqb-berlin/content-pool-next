@@ -1,29 +1,46 @@
 import { of, Subject } from 'rxjs';
-import { afterEach, vi } from 'vitest';
+import { vi } from 'vitest';
+import { ItemListPreferencesService } from './item-list-preferences.service';
 import { ItemListComponent } from './item-list.component';
+import { ItemListPreferences } from './item-list.models';
+
+const emptyPreferences = (): ItemListPreferences => ({
+  ui: {
+    filterText: '',
+    meanTaskDifficultyFilter: '',
+    sortField: 'itemId',
+    sortDir: 'asc',
+  },
+  tags: {},
+});
 
 describe('ItemListComponent', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    localStorage.clear();
-  });
-
-  const createComponent = () =>
-    new ItemListComponent(
-      { snapshot: { paramMap: { get: () => 'acp-1' } } } as any,
+  const createComponent = (options?: {
+    getAcpStartPage?: () => unknown;
+    getViewItems?: () => unknown;
+    loadPreferences?: () => unknown;
+  }) => {
+    const preferences = {
+      load: vi.fn(options?.loadPreferences || (() => of(emptyPreferences()))),
+      save: vi.fn((value: ItemListPreferences) => value),
+    };
+    const component = new ItemListComponent(
+      { snapshot: { paramMap: { get: () => 'acp-1' } } } as never,
       {
-        getAcpStartPage: () => of({ featureConfig: {} }),
-        getViewItems: () => of([]),
-      } as any,
-      { isLoggedIn: false, currentUser: null } as any,
+        getAcpStartPage: options?.getAcpStartPage || (() => of({ featureConfig: {} })),
+        getViewItems: options?.getViewItems || (() => of([])),
+      } as never,
+      preferences as unknown as ItemListPreferencesService,
     );
+    return { component, preferences };
+  };
 
   it('filters and sorts mean task difficulty numerically with missing values last', () => {
-    const component = createComponent();
+    const { component } = createComponent();
     component.items = [
-      { itemId: 'a', unitId: 'A', meanTaskDifficulty: -0.25 },
-      { itemId: 'b', unitId: 'B', meanTaskDifficulty: 1 },
-      { itemId: 'c', unitId: 'C' },
+      { itemId: 'a', unitId: 'A', unitName: 'A', meanTaskDifficulty: -0.25 },
+      { itemId: 'b', unitId: 'B', unitName: 'B', meanTaskDifficulty: 1 },
+      { itemId: 'c', unitId: 'C', unitName: 'C' },
     ];
     component.meanTaskDifficultyFilter = '-0.5..0';
 
@@ -40,10 +57,10 @@ describe('ItemListComponent', () => {
   });
 
   it('uses the same numeric filter grammar as the Item Explorer', () => {
-    const component = createComponent();
+    const { component } = createComponent();
     component.items = [
-      { itemId: 'negative', unitId: 'A', meanTaskDifficulty: -0.25 },
-      { itemId: 'positive', unitId: 'B', meanTaskDifficulty: 1 },
+      { itemId: 'negative', unitId: 'A', unitName: 'A', meanTaskDifficulty: -0.25 },
+      { itemId: 'positive', unitId: 'B', unitName: 'B', meanTaskDifficulty: 1 },
     ];
 
     component.meanTaskDifficultyFilter = '-0,5..0,5';
@@ -59,115 +76,87 @@ describe('ItemListComponent', () => {
     expect(component.filteredItems.map((item) => item.itemId)).toEqual(['negative']);
   });
 
-  it('removes a restored mean filter when preferences arrive after a list without values', () => {
-    vi.useFakeTimers();
-    const startPage$ = new Subject<any>();
-    const items$ = new Subject<any[]>();
-    const preferences$ = new Subject<any>();
-    const saveViewItemPreferences = vi.fn((_: string, preferences: any) => of(preferences));
-    const component = new ItemListComponent(
-      { snapshot: { paramMap: { get: () => 'acp-1' } } } as any,
-      {
-        getAcpStartPage: () => startPage$,
+  it.each(['preferences-first', 'items-first'])(
+    'builds one reconciled state after %s initialization',
+    (responseOrder) => {
+      const items$ = new Subject<Array<{ itemId: string; unitId: string; unitName: string }>>();
+      const preferences$ = new Subject<ItemListPreferences>();
+      const { component, preferences } = createComponent({
+        getAcpStartPage: () =>
+          of({ featureConfig: { persistUserPreferences: true, enableItemListTags: true } }),
         getViewItems: () => items$,
-        getViewItemPreferences: () => preferences$,
-        saveViewItemPreferences,
-      } as any,
-      { isLoggedIn: true, currentUser: { id: 'user-1' } } as any,
-    );
+        loadPreferences: () => preferences$,
+      });
+      const restored: ItemListPreferences = {
+        ui: {
+          filterText: '',
+          meanTaskDifficultyFilter: '-0.5..0',
+          sortField: 'meanTaskDifficulty',
+          sortDir: 'desc',
+        },
+        tags: { a: ['review'] },
+      };
+      const items = [{ itemId: 'a', unitId: 'A', unitName: 'A' }];
 
-    component.ngOnInit();
-    items$.next([{ itemId: 'a', unitId: 'A' }]);
-    startPage$.next({ featureConfig: { persistUserPreferences: true } });
-    preferences$.next({
-      ui: {
-        meanTaskDifficultyFilter: '-0.5..0',
-        sortField: 'meanTaskDifficulty',
-        sortDir: 'desc',
-      },
-    });
+      component.ngOnInit();
+      if (responseOrder === 'preferences-first') {
+        preferences$.next(restored);
+        preferences$.complete();
+        expect(component.items).toEqual([]);
+        items$.next(items);
+        items$.complete();
+      } else {
+        items$.next(items);
+        items$.complete();
+        expect(component.items).toEqual([]);
+        preferences$.next(restored);
+        preferences$.complete();
+      }
 
-    expect(component.meanTaskDifficultyFilter).toBe('');
-    expect(component.sortField).toBe('itemId');
-    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['a']);
-
-    vi.advanceTimersByTime(250);
-    expect(saveViewItemPreferences).toHaveBeenCalledWith(
-      'acp-1',
-      {
-        ui: expect.objectContaining({
+      expect(component.items).toEqual(items);
+      expect(component.meanTaskDifficultyFilter).toBe('');
+      expect(component.sortField).toBe('itemId');
+      expect(component.sortDir).toBe('desc');
+      expect(component.filteredItems).toEqual(items);
+      expect(component.itemTags).toEqual({ a: ['review'] });
+      expect(preferences.save).toHaveBeenCalledWith({
+        ui: {
+          filterText: '',
           meanTaskDifficultyFilter: '',
           sortField: 'itemId',
-        }),
-        tags: {},
-      },
-      'item-list',
-    );
-    component.ngOnDestroy();
-  });
+          sortDir: 'desc',
+        },
+        tags: { a: ['review'] },
+      });
+      component.ngOnDestroy();
+    },
+  );
 
-  it('persists reconciled mean preferences in local storage', () => {
-    localStorage.setItem(
-      'cp:item-list:prefs:acp-1:anonymous',
-      JSON.stringify({
-        meanTaskDifficultyFilter: '-0.5..0',
-        sortField: 'meanTaskDifficulty',
-        sortDir: 'desc',
-      }),
-    );
-    const startPage$ = new Subject<any>();
-    const items$ = new Subject<any[]>();
-    const component = new ItemListComponent(
-      { snapshot: { paramMap: { get: () => 'acp-1' } } } as any,
-      {
-        getAcpStartPage: () => startPage$,
-        getViewItems: () => items$,
-      } as any,
-      { isLoggedIn: false, currentUser: null } as any,
-    );
-
-    component.ngOnInit();
-    items$.next([{ itemId: 'a', unitId: 'A' }]);
-    startPage$.next({ featureConfig: { persistUserPreferences: true } });
-
-    expect(JSON.parse(localStorage.getItem('cp:item-list:prefs:acp-1:anonymous') || '{}')).toEqual({
-      filterText: '',
-      meanTaskDifficultyFilter: '',
-      sortField: 'itemId',
-      sortDir: 'desc',
-    });
-  });
-
-  it('keeps a restored mean filter when preferences arrive before a list with values', () => {
-    const startPage$ = new Subject<any>();
-    const items$ = new Subject<any[]>();
-    const preferences$ = new Subject<any>();
-    const component = new ItemListComponent(
-      { snapshot: { paramMap: { get: () => 'acp-1' } } } as any,
-      {
-        getAcpStartPage: () => startPage$,
-        getViewItems: () => items$,
-        getViewItemPreferences: () => preferences$,
-      } as any,
-      { isLoggedIn: true, currentUser: { id: 'user-1' } } as any,
-    );
-
-    component.ngOnInit();
-    startPage$.next({ featureConfig: { persistUserPreferences: true } });
-    preferences$.next({
+  it('keeps valid mean preferences when the backend provides means', () => {
+    const restored: ItemListPreferences = {
       ui: {
+        filterText: '',
         meanTaskDifficultyFilter: '-0.5..0',
         sortField: 'meanTaskDifficulty',
         sortDir: 'asc',
       },
+      tags: {},
+    };
+    const { component, preferences } = createComponent({
+      getViewItems: () =>
+        of([
+          { itemId: 'a', unitId: 'A', unitName: 'A', meanTaskDifficulty: -0.25 },
+          { itemId: 'b', unitId: 'B', unitName: 'B', meanTaskDifficulty: 1 },
+        ]),
+      loadPreferences: () => of(restored),
     });
-    items$.next([
-      { itemId: 'a', unitId: 'A', meanTaskDifficulty: -0.25 },
-      { itemId: 'b', unitId: 'B', meanTaskDifficulty: 1 },
-    ]);
+
+    component.ngOnInit();
 
     expect(component.meanTaskDifficultyFilter).toBe('-0.5..0');
     expect(component.sortField).toBe('meanTaskDifficulty');
     expect(component.filteredItems.map((item) => item.itemId)).toEqual(['a']);
+    expect(preferences.save).not.toHaveBeenCalled();
+    component.ngOnDestroy();
   });
 });

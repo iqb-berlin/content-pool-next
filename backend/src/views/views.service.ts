@@ -333,7 +333,8 @@ export class ViewsService {
           item.useUnitAliasAsPrefix !== false
             ? `${unit.id}_${item.id}`
             : item.id;
-        const parsedRows = parsedRowsByItem.get(`${unit.id}\u0000${item.id}`) || [];
+        const parsedRows =
+          parsedRowsByItem.get(`${unit.id}\u0000${item.id}`) || [];
         const meanTaskDifficulty = parsedRows.find(
           (row) => row.meanTaskDifficulty !== undefined,
         )?.meanTaskDifficulty;

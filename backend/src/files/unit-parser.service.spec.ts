@@ -548,6 +548,7 @@ describe("UnitParserService", () => {
         uuid: "uuid-1",
         rowKey: "uuid-1",
         empiricalDifficulty: 0.75,
+        meanTaskDifficulty: 0.75,
         infit: 1.04,
         discrimination: 0.41,
         solutionRate: 0.68,
@@ -597,6 +598,7 @@ describe("UnitParserService", () => {
         subId: "1",
         subIdDisplay: "teilweise richtig",
         empiricalDifficulty: 0,
+        meanTaskDifficulty: 0.375,
       }),
       expect.objectContaining({
         uuid: "u1_i1",
@@ -604,6 +606,7 @@ describe("UnitParserService", () => {
         subId: "2",
         subIdDisplay: "vollständig richtig",
         empiricalDifficulty: 0.75,
+        meanTaskDifficulty: 0.375,
       }),
     ]);
   });

@@ -130,9 +130,7 @@ describe('ItemListComponent', () => {
     items$.next([{ itemId: 'a', unitId: 'A' }]);
     startPage$.next({ featureConfig: { persistUserPreferences: true } });
 
-    expect(
-      JSON.parse(localStorage.getItem('cp:item-list:prefs:acp-1:anonymous') || '{}'),
-    ).toEqual({
+    expect(JSON.parse(localStorage.getItem('cp:item-list:prefs:acp-1:anonymous') || '{}')).toEqual({
       filterText: '',
       meanTaskDifficultyFilter: '',
       sortField: 'itemId',

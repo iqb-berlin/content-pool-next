@@ -1,8 +1,6 @@
 export function matchesNumericFilter(value: number, rawFilter: string): boolean {
   const filter = rawFilter.trim().replace(/,/g, '.');
-  const range = filter.match(
-    /^(-?\d+(?:\.\d+)?)?\s*\.\.\s*(-?\d+(?:\.\d+)?)?$/,
-  );
+  const range = filter.match(/^(-?\d+(?:\.\d+)?)?\s*\.\.\s*(-?\d+(?:\.\d+)?)?$/);
   if (range) {
     const minimum = range[1] === undefined ? -Infinity : Number(range[1]);
     const maximum = range[2] === undefined ? Infinity : Number(range[2]);

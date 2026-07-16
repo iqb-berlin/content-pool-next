@@ -199,6 +199,31 @@ describe('ItemExplorerFacade', () => {
     expect((component as any).collectionSessionIdentity).toBeNull();
   });
 
+  it('shows a visible error and skips dependent loads when feature configuration fails', () => {
+    const error = new Error('configuration unavailable');
+    const getAcpStartPage = vi.fn(() => throwError(() => error));
+    const getItemExplorerState = vi.fn();
+    const getFileItemList = vi.fn();
+    const component = createFacade({
+      api: { getAcpStartPage, getItemExplorerState, getFileItemList },
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    component.init('acp-1');
+
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to load Item Explorer feature configuration',
+      error,
+    );
+    expect(component.itemListError).toBe(
+      'Die Konfiguration des Item-Explorers konnte nicht geladen werden.',
+    );
+    expect(component.explorerUiStatus).toBe('ERROR');
+    expect(getItemExplorerState).not.toHaveBeenCalled();
+    expect(getFileItemList).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
   it('rejects an item list from another explorer-state version and reloads a consistent pair', async () => {
     const firstEnvelope = createExplorerEnvelope();
     const secondEnvelope = { ...createExplorerEnvelope(), version: 4 };

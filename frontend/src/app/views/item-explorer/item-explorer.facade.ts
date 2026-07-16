@@ -801,36 +801,44 @@ export class ItemExplorerFacade implements OnDestroy {
     this.api
       .getAcpStartPage(this.acpId)
       .pipe(takeUntil(this.destroy$))
-      .subscribe((data) => {
-        const fc = data?.featureConfig || {};
-        this.enableTags = !!fc.enableItemListTags;
-        this.availableTags = fc.availableTags || [];
-        this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
-        this.itemExplorerConditionalVisibilityEnabled =
-          fc.enableItemExplorerConditionalVisibility === true;
-        this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
-        this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
-        this.showOnlyItemsWithEmpiricalDifficulty =
-          fc.showOnlyItemsWithEmpiricalDifficulty === true;
-        this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
-        this.enablePersonalItemData = fc.enablePersonalItemData === true;
-        this.enableItemCollections = fc.enableItemCollections === true;
-        this.personalItemCategoryLabel =
-          String(fc.personalItemCategoryLabel || 'Kompetenzstufe').trim() || 'Kompetenzstufe';
-        this.personalItemCategoryValues = this.normalizeStringList(fc.personalItemCategoryValues);
-        this.personalItemTagLabel =
-          String(fc.personalItemTagLabel || 'Markierungen').trim() || 'Markierungen';
-        this.personalItemTags = this.normalizePersonalItemTagConfig(fc.personalItemTags);
-        // Explorer uses ACP-shared draft/published state instead of per-user preferences.
-        this.persistUserPreferences = false;
-        this.useServerPreferences = false;
+      .subscribe({
+        next: (data) => {
+          const fc = data?.featureConfig || {};
+          this.enableTags = !!fc.enableItemListTags;
+          this.availableTags = fc.availableTags || [];
+          this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
+          this.itemExplorerConditionalVisibilityEnabled =
+            fc.enableItemExplorerConditionalVisibility === true;
+          this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
+          this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
+          this.showOnlyItemsWithEmpiricalDifficulty =
+            fc.showOnlyItemsWithEmpiricalDifficulty === true;
+          this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
+          this.enablePersonalItemData = fc.enablePersonalItemData === true;
+          this.enableItemCollections = fc.enableItemCollections === true;
+          this.personalItemCategoryLabel =
+            String(fc.personalItemCategoryLabel || 'Kompetenzstufe').trim() || 'Kompetenzstufe';
+          this.personalItemCategoryValues = this.normalizeStringList(fc.personalItemCategoryValues);
+          this.personalItemTagLabel =
+            String(fc.personalItemTagLabel || 'Markierungen').trim() || 'Markierungen';
+          this.personalItemTags = this.normalizePersonalItemTagConfig(fc.personalItemTags);
+          // Explorer uses ACP-shared draft/published state instead of per-user preferences.
+          this.persistUserPreferences = false;
+          this.useServerPreferences = false;
 
-        // Load metadata column settings
-        this.metadataSettings = this.resolveMetadataSettings(fc);
-        void this.reloadSharedExplorerStateAndItems();
-        this.syncPersonalItemDataSession();
-        this.syncItemCollectionSession();
-        this.startPlayerIfReady();
+          // Load metadata column settings
+          this.metadataSettings = this.resolveMetadataSettings(fc);
+          void this.reloadSharedExplorerStateAndItems();
+          this.syncPersonalItemDataSession();
+          this.syncItemCollectionSession();
+          this.startPlayerIfReady();
+        },
+        error: (error) => {
+          if (this.destroyed) return;
+          console.error('Failed to load Item Explorer feature configuration', error);
+          this.itemListError = 'Die Konfiguration des Item-Explorers konnte nicht geladen werden.';
+          this.explorerUiStatus = 'ERROR';
+        },
       });
   }
 

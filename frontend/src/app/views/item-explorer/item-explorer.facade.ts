@@ -1,4 +1,4 @@
-import { Injectable, OnDestroy } from '@angular/core';
+import { Injectable, OnDestroy, Optional } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
 import { ApiService } from '../../core/services/api.service';
@@ -11,7 +11,20 @@ import { AuthService } from '../../core/services/auth.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import { finalize, firstValueFrom, ReplaySubject, Subscription, takeUntil } from 'rxjs';
+import {
+  catchError,
+  finalize,
+  firstValueFrom,
+  forkJoin,
+  map,
+  of,
+  ReplaySubject,
+  Subject,
+  Subscription,
+  switchMap,
+  takeUntil,
+  tap,
+} from 'rxjs';
 import {
   ItemCollection,
   ItemCollectionSummary,
@@ -59,6 +72,14 @@ import {
   ItemExplorerTableDomPort,
 } from './item-explorer.dom-ports';
 import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
+import {
+  ItemExplorerPreviewAssets,
+  ItemExplorerPreviewLoader,
+} from './item-explorer-preview-loader.service';
+import {
+  ItemExplorerLoadDiagnostics,
+  ItemExplorerTimingToken,
+} from './item-explorer-load-diagnostics.service';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -216,9 +237,23 @@ export class ItemExplorerFacade implements OnDestroy {
   private definitionContent: string | null = null;
   private playerFrameReady = false;
   private responseStateReady = false;
+  private activePlayerSessionId: string | null = null;
   private unitLoadToken = 0;
   private itemListLoadToken = 0;
   private startSessionCounter = 0;
+  private readonly previewSelection$ = new Subject<{
+    item: ExplorerItem;
+    token: number;
+    reuseLoadedUnit: boolean;
+    timing: ItemExplorerTimingToken | null;
+  }>();
+  private itemListSlowTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewSlowTimer: ReturnType<typeof setTimeout> | null = null;
+  private playerReadyTiming: ItemExplorerTimingToken | null = null;
+  itemListSlow = false;
+  previewSlow = false;
+  previewLoadPhase = '';
+  previewUpdateInProgress = false;
 
   // File Upload
   showUploadReport = false;
@@ -535,7 +570,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.playerFrameRefreshPending ||
       this.playerHtmlLoadState === 'loading' ||
       this.definitionLoadState === 'loading' ||
-      !this.responseStateReady
+      (!this.responseStateReady && !this.previewUpdateInProgress)
     );
   }
 
@@ -638,7 +673,11 @@ export class ItemExplorerFacade implements OnDestroy {
     private voudService: VoudService,
     private authService: AuthService,
     private pendingPersonalSessionStorage: PendingPersonalSessionStorageService,
-  ) {}
+    @Optional() private readonly previewLoader?: ItemExplorerPreviewLoader,
+    @Optional() private readonly diagnostics?: ItemExplorerLoadDiagnostics,
+  ) {
+    this.initializePreviewSelectionPipeline();
+  }
 
   get headerViewModel(): ItemExplorerHeaderViewModel {
     return this;
@@ -848,15 +887,21 @@ export class ItemExplorerFacade implements OnDestroy {
     expectedExplorerState?: ItemExplorerStateEnvelope,
   ) {
     const loadToken = ++this.itemListLoadToken;
+    const timing = this.diagnostics?.start('item-list') || null;
     let settled = false;
     let outcome: ItemListLoadOutcome = 'error';
     const settle = () => {
       if (settled) return;
       settled = true;
+      this.diagnostics?.finish(timing, { outcome });
+      if (loadToken === this.itemListLoadToken) {
+        this.clearItemListSlowTimer();
+      }
       onSettled?.(outcome);
     };
     this.itemListError = '';
     this.itemListLoading = true;
+    this.startItemListSlowTimer();
 
     // Load item list from .vomd files
     this.api
@@ -957,6 +1002,10 @@ export class ItemExplorerFacade implements OnDestroy {
     this.authSessionSubscription?.unsubscribe();
     this.authSessionSubscription = null;
     this.playerDom?.stopAutoResize();
+    this.clearItemListSlowTimer();
+    this.clearPreviewSlowTimer();
+    this.cancelPlayerReadyTiming();
+    this.previewLoader?.clear();
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
     if (this.playerFrameRefreshTimeout) {
@@ -1991,11 +2040,53 @@ export class ItemExplorerFacade implements OnDestroy {
     this.definitionContent = null;
     this.playerFrameReady = false;
     this.responseStateReady = false;
+    this.activePlayerSessionId = null;
     this.previewUnavailableReason = '';
     this.playerHtmlLoadState = 'idle';
     this.definitionLoadState = 'idle';
     this.playerFrameRefreshPending = false;
     this.previewUserFacingMessage = '';
+    this.previewUpdateInProgress = false;
+  }
+
+  private startItemListSlowTimer(): void {
+    this.clearItemListSlowTimer();
+    this.itemListSlowTimer = setTimeout(() => {
+      this.itemListSlowTimer = null;
+      this.itemListSlow = true;
+    }, 1500);
+  }
+
+  private clearItemListSlowTimer(): void {
+    if (this.itemListSlowTimer) {
+      clearTimeout(this.itemListSlowTimer);
+      this.itemListSlowTimer = null;
+    }
+    this.itemListSlow = false;
+  }
+
+  private startPreviewSlowTimer(phase: string): void {
+    this.clearPreviewSlowTimer();
+    this.previewLoadPhase = phase;
+    this.previewSlowTimer = setTimeout(() => {
+      this.previewSlowTimer = null;
+      this.previewSlow = true;
+    }, 1500);
+  }
+
+  private clearPreviewSlowTimer(): void {
+    if (this.previewSlowTimer) {
+      clearTimeout(this.previewSlowTimer);
+      this.previewSlowTimer = null;
+    }
+    this.previewSlow = false;
+    this.previewLoadPhase = '';
+  }
+
+  private cancelPlayerReadyTiming(): void {
+    if (!this.playerReadyTiming) return;
+    this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'cancelled' });
+    this.playerReadyTiming = null;
   }
 
   // --- Item Selection ---
@@ -2010,18 +2101,34 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
 
+    this.cancelPlayerReadyTiming();
+    const reuseLoadedUnit =
+      this.unit?.id === item.unitId &&
+      this.playerHtmlLoadState === 'ready' &&
+      this.definitionLoadState === 'ready' &&
+      !!this.playerSrcDoc &&
+      !!this.definitionContent;
     this.selectedItem = item;
     this.selectedIndex = index;
-    this.resetPlayer();
+    if (!reuseLoadedUnit) {
+      this.resetPlayer();
+    }
     this.currentPage = 1;
     this.totalPages = 1;
-    this.loadingUnit = true;
+    this.loadingUnit = !reuseLoadedUnit;
     const token = ++this.unitLoadToken;
+    const selectionTiming = this.diagnostics?.start('item-selection-total') || null;
+    this.previewUpdateInProgress = reuseLoadedUnit;
+    this.startPreviewSlowTimer(
+      reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
+    );
 
     // Reset response state flags
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.currentResponseData = null;
+    this.responseStateReady = false;
+    this.activePlayerSessionId = null;
     this.previewUnavailableReason = '';
 
     // Load unit metadata and coding scheme from cache
@@ -2040,10 +2147,168 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!this.canPreviewItem(item)) {
       this.loadingUnit = false;
       this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      this.previewUpdateInProgress = false;
+      this.clearPreviewSlowTimer();
+      this.diagnostics?.finish(selectionTiming, { outcome: 'missing-target' });
       return;
     }
 
-    this.loadPreviewContext(item, token);
+    if (this.previewLoader) {
+      this.previewSelection$.next({
+        item,
+        token,
+        reuseLoadedUnit,
+        timing: selectionTiming,
+      });
+    } else {
+      this.loadPreviewContext(item, token);
+    }
+  }
+
+  private initializePreviewSelectionPipeline(): void {
+    if (!this.previewLoader) return;
+
+    this.previewSelection$
+      .pipe(
+        switchMap((request) => {
+          let selectionOutcome = 'cancelled';
+          const responseTiming = this.diagnostics?.start('response-state') || null;
+          let responseOutcome = 'cancelled';
+          const responseState$ = this.createResponseStateRequest(request.item).pipe(
+            tap(() => {
+              responseOutcome = 'loaded';
+            }),
+            catchError(() => {
+              responseOutcome = 'error';
+              return of(null);
+            }),
+            finalize(() => {
+              this.diagnostics?.finish(responseTiming, { outcome: responseOutcome });
+            }),
+          );
+          const assets$ = request.reuseLoadedUnit
+            ? of({
+                unit: this.unit,
+                playerHtml: null,
+                definition: null,
+                cacheStatus: 'hit' as const,
+              })
+            : this.previewLoader!.load(
+                this.acpId,
+                this.getPerspectiveForViewerRequests(),
+                request.item.unitId,
+              );
+
+          return forkJoin({ assets: assets$, responseState: responseState$ }).pipe(
+            map((result) => {
+              selectionOutcome = 'loaded';
+              return { request, ...result, error: null };
+            }),
+            catchError((error) => {
+              selectionOutcome = 'error';
+              return of({
+                request,
+                assets: null,
+                responseState: null,
+                error,
+              });
+            }),
+            finalize(() => {
+              this.diagnostics?.finish(request.timing, { outcome: selectionOutcome });
+            }),
+          );
+        }),
+        takeUntil(this.destroy$),
+      )
+      .subscribe((result) => {
+        const { request } = result;
+        if (request.token !== this.unitLoadToken || this.destroyed) return;
+
+        this.clearPreviewSlowTimer();
+        this.loadingUnit = false;
+        this.previewUpdateInProgress = false;
+
+        if (result.error || !result.assets) {
+          this.playerHtmlLoadState = 'error';
+          this.definitionLoadState = 'error';
+          this.previewUserFacingMessage =
+            (result.error as any)?.status === 403
+              ? this.getUnitViewAccessMessage()
+              : 'Die Aufgaben-Vorschau konnte nicht geladen werden.';
+          this.previewUnavailableReason = this.previewUserFacingMessage;
+          return;
+        }
+
+        if (!request.reuseLoadedUnit) {
+          this.applyPreviewAssets(result.assets);
+        }
+        this.applyResponseStateResult(result.responseState);
+        this.responseStateReady = true;
+        this.playerReadyTiming =
+          this.playerHtmlLoadState === 'ready' && this.definitionLoadState === 'ready'
+            ? this.diagnostics?.start('player-ready') || null
+            : null;
+        this.startPlayerIfReady();
+      });
+  }
+
+  private createResponseStateRequest(item: ExplorerItem) {
+    const itemList = this.filteredItems.map((candidate) => ({
+      itemId: candidate.itemId,
+      unitId: candidate.unitId,
+      rowKey: this.getStableRowKey(candidate),
+    }));
+    return item.rowKey
+      ? this.api.getResponseStateWithFallback(
+          this.acpId,
+          item.itemId,
+          item.unitId,
+          itemList,
+          item.rowKey,
+        )
+      : this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList);
+  }
+
+  private applyPreviewAssets(assets: ItemExplorerPreviewAssets): void {
+    this.unit = assets.unit;
+    if (!assets.unit) {
+      this.playerHtmlLoadState = 'missing';
+      this.definitionLoadState = 'missing';
+      this.playerSrcDoc = null;
+      this.definitionContent = null;
+      return;
+    }
+
+    if (assets.playerHtml === null) {
+      this.playerHtmlLoadState = 'missing';
+      this.playerSrcDoc = null;
+    } else {
+      this.playerHtmlLoadState = 'ready';
+      this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
+        rewriteGeoGebraAssetUrls(assets.playerHtml),
+      );
+    }
+
+    if (assets.definition === null) {
+      this.definitionLoadState = 'missing';
+      this.definitionContent = null;
+    } else {
+      this.definitionLoadState = 'ready';
+      this.definitionContent = assets.definition;
+    }
+  }
+
+  private applyResponseStateResult(result: any): void {
+    if (result?.state?.responseData && Object.keys(result.state.responseData).length > 0) {
+      this.currentResponseData = result.state.responseData;
+      this.hasResponseState = true;
+      this.isFallbackState = !!result.isFallback;
+      return;
+    }
+
+    this.currentResponseData = null;
+    this.hasResponseState = false;
+    this.isFallbackState = false;
   }
 
   // --- Response State ---
@@ -2145,6 +2410,12 @@ export class ItemExplorerFacade implements OnDestroy {
 
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
+    if (this.previewUpdateInProgress || !this.responseStateReady) {
+      this.confirmDialogError =
+        'Der Zustand des ausgewählten Items wird noch geladen. Bitte versuchen Sie es gleich erneut.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
     if (!this.selectedItem || !this.currentResponseData) {
       this.confirmDialogError =
         'Kein Zustand zum Speichern vorhanden. Bitte füllen Sie zuerst das Formular aus.';
@@ -2156,7 +2427,16 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   confirmSaveResponseState() {
-    if (!this.selectedItem || !this.currentResponseData) return;
+    if (
+      !this.selectedItem ||
+      !this.currentResponseData ||
+      this.previewUpdateInProgress ||
+      !this.responseStateReady
+    ) {
+      this.confirmDialogError =
+        'Der Zustand des ausgewählten Items ist noch nicht vollständig geladen.';
+      return;
+    }
 
     this.confirmDialogState = 'saving';
 
@@ -2322,6 +2602,21 @@ export class ItemExplorerFacade implements OnDestroy {
 
     switch (playerMessage['type']) {
       case 'vopStateChangedNotification':
+        if (
+          this.previewUpdateInProgress ||
+          !this.responseStateReady ||
+          !this.activePlayerSessionId
+        ) {
+          break;
+        }
+        {
+          const messageSessionId = String(
+            playerMessage['sessionId'] || playerMessage['playerState']?.sessionId || '',
+          ).trim();
+          if (messageSessionId !== this.activePlayerSessionId) {
+            break;
+          }
+        }
         if (playerMessage['playerState']?.currentPage !== undefined) {
           this.currentPage = playerMessage['playerState'].currentPage + 1;
         }
@@ -2455,6 +2750,8 @@ export class ItemExplorerFacade implements OnDestroy {
     const previewTarget = this.getEffectivePlayerTarget(selectedItem);
     if (!previewTarget) {
       this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'missing-target' });
+      this.playerReadyTiming = null;
       return;
     }
     const targetLocation = this.voudService.resolvePlayerTargetLocation(
@@ -2463,6 +2760,8 @@ export class ItemExplorerFacade implements OnDestroy {
     );
     if (!targetLocation) {
       this.previewUnavailableReason = `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
+      this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-target' });
+      this.playerReadyTiming = null;
       return;
     }
     const startPage = targetLocation.scrollPageIndex;
@@ -2472,6 +2771,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
+    this.activePlayerSessionId = sessionId;
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
@@ -2498,6 +2798,8 @@ export class ItemExplorerFacade implements OnDestroy {
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },
     });
+    this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'started' });
+    this.playerReadyTiming = null;
     this.scheduleLegacyPageNavigation(sessionId, startPage, usesPagedNavigation);
 
     if (usesPagedNavigation) {

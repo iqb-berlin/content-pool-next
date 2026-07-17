@@ -98,6 +98,7 @@ describe("FilesService", () => {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     };
     unitParserService = {
+      invalidateFileCaches: jest.fn(),
       parseUnitXml: jest.fn().mockImplementation((content: string) => ({
         unitId: content.match(/<Id>([^<]+)<\/Id>/)?.[1] || "",
         unitLabel: content.match(/<Label>([^<]+)<\/Label>/)?.[1] || "",
@@ -236,6 +237,9 @@ describe("FilesService", () => {
       await service.upload(acpId, multerFile);
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
+      expect(unitParserService.invalidateFileCaches).toHaveBeenCalledWith(
+        acpId,
+      );
     });
 
     it("should reject an unknown ACP before writing to disk", async () => {
@@ -645,6 +649,9 @@ describe("FilesService", () => {
       repo.findOne.mockResolvedValue(mockFile);
       await service.delete("file-1");
       expect(repo.remove).toHaveBeenCalledWith(mockFile);
+      expect(unitParserService.invalidateFileCaches).toHaveBeenCalledWith(
+        acpId,
+      );
     });
 
     it("should ignore unlink errors during delete operations", async () => {

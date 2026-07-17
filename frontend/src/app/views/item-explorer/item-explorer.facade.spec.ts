@@ -36,6 +36,8 @@ function createFacade(options?: {
   api?: Record<string, unknown>;
   authService?: Record<string, unknown>;
   pendingPersonalSessionStorage?: PendingPersonalSessionStorageService;
+  previewLoader?: Record<string, unknown>;
+  diagnostics?: Record<string, unknown>;
 }) {
   const api = options?.api || {};
   const sanitizer = { bypassSecurityTrustHtml: (html: string) => html };
@@ -76,6 +78,8 @@ function createFacade(options?: {
     voudService as any,
     authService as any,
     options?.pendingPersonalSessionStorage || new PendingPersonalSessionStorageService(),
+    options?.previewLoader as any,
+    options?.diagnostics as any,
   );
   (component as any).personalDataSessionIdentity = (
     component as any
@@ -979,6 +983,32 @@ describe('ItemExplorerFacade', () => {
     expect(component.items.map((item) => item.rowNumber)).toEqual([1]);
   });
 
+  it('shows and clears the slow-connection hint for a delayed item list', () => {
+    vi.useFakeTimers();
+    const itemList$ = new Subject<any>();
+    const component = createFacade({
+      api: { getFileItemList: vi.fn(() => itemList$) },
+    });
+    component.acpId = 'acp-1';
+
+    try {
+      component.reloadItems();
+      vi.advanceTimersByTime(1500);
+      expect(component.itemListSlow).toBe(true);
+
+      itemList$.next({
+        columns: [],
+        items: [],
+        unitMetadata: {},
+        codingSchemes: {},
+      });
+      expect(component.itemListSlow).toBe(false);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
   it('lets ACP managers recalculate the numbering and reloads the rows', () => {
     const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 1 }));
     const component = createFacade({ api: { recalculateItemRowNumbers } });
@@ -1027,7 +1057,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).pendingDraftPatch = { tags: { 'row-1': ['QA'] } };
     const reloadItems = vi
       .spyOn(component, 'reloadItems')
-      .mockImplementation((onSettled) => onSettled?.());
+      .mockImplementation((onSettled) => onSettled?.('loaded'));
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     const flushed = await (component as any).flushDraftPatch();
@@ -1147,6 +1177,301 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.selectedItem?.rowKey).toBe('uuid-1::2');
     expect(component.selectedIndex).toBe(1);
+  });
+
+  it('reuses the loaded player assets when selecting another item in the same unit', async () => {
+    const getResponseStateWithFallback = vi.fn(() => of({ state: null, isFallback: false }));
+    const previewLoader = { load: vi.fn(), clear: vi.fn() };
+    const diagnostics = {
+      start: vi.fn(() => ({ phase: 'test', id: 1, startedAt: 0, startMark: 'test' })),
+      finish: vi.fn(),
+    };
+    const component = createFacade({
+      api: { getResponseStateWithFallback },
+      previewLoader,
+      diagnostics,
+    });
+    component.acpId = 'acp-1';
+    component.unit = { id: 'UNIT_1', dependencies: [] };
+    component.playerSrcDoc = '<html>cached player</html>';
+    (component as any).definitionContent = '{"pages":[]}';
+    (component as any).playerHtmlLoadState = 'ready';
+    (component as any).definitionLoadState = 'ready';
+    const item = {
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 2',
+      variableId: 'VAR_2',
+      metadata: {},
+    } as any;
+    component.filteredItems = [item];
+
+    component.selectItem(item, 0);
+    await vi.waitFor(() => expect(getResponseStateWithFallback).toHaveBeenCalledOnce());
+
+    expect(previewLoader.load).not.toHaveBeenCalled();
+    expect(component.playerSrcDoc).toBe('<html>cached player</html>');
+    expect(component.previewUpdateInProgress).toBe(false);
+  });
+
+  it('ignores retained-player state while a same-unit response state is loading', async () => {
+    const responseState$ = new Subject<any>();
+    const getResponseStateWithFallback = vi.fn(() => responseState$);
+    const previewLoader = { load: vi.fn(), clear: vi.fn() };
+    const component = createFacade({
+      api: { getResponseStateWithFallback },
+      previewLoader,
+    });
+    component.acpId = 'acp-1';
+    component.unit = { id: 'UNIT_1', dependencies: [] };
+    component.playerSrcDoc = '<html>cached player</html>';
+    (component as any).definitionContent = '{"pages":[]}';
+    (component as any).playerHtmlLoadState = 'ready';
+    (component as any).definitionLoadState = 'ready';
+    (component as any).responseStateReady = true;
+    (component as any).activePlayerSessionId = 'old-session';
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 1',
+      variableId: 'VAR_1',
+      metadata: {},
+    } as any;
+    const nextItem = {
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 2',
+      variableId: 'VAR_2',
+      metadata: {},
+    } as any;
+    component.filteredItems = [component.selectedItem, nextItem] as any;
+
+    component.selectItem(nextItem, 1);
+    component.handlePlayerMessage({
+      type: 'vopStateChangedNotification',
+      sessionId: 'old-session',
+      unitState: { dataParts: { stale: true } },
+    });
+    component.saveCurrentResponseState();
+
+    expect(component.currentResponseData).toBeNull();
+    expect(component.confirmDialogError).toContain('noch geladen');
+
+    responseState$.next({
+      state: { responseData: { current: true } },
+      isFallback: false,
+    });
+    responseState$.complete();
+    await vi.waitFor(() => expect(component.currentResponseData).toEqual({ current: true }));
+    component.ngOnDestroy();
+  });
+
+  it('accepts player state only from the active Verona session', () => {
+    const component = createFacade();
+    (component as any).responseStateReady = true;
+    (component as any).activePlayerSessionId = 'active-session';
+
+    component.handlePlayerMessage({
+      type: 'vopStateChangedNotification',
+      unitState: { dataParts: { missingSession: true } },
+    });
+    component.handlePlayerMessage({
+      type: 'vopStateChangedNotification',
+      sessionId: 'stale-session',
+      unitState: { dataParts: { staleSession: true } },
+    });
+
+    expect(component.currentResponseData).toBeNull();
+
+    component.handlePlayerMessage({
+      type: 'vopStateChangedNotification',
+      sessionId: 'active-session',
+      unitState: { dataParts: { current: true } },
+    });
+
+    expect(component.currentResponseData).toEqual({ current: true });
+    component.ngOnDestroy();
+  });
+
+  it('cancels stale unit and response-state results after a newer selection', async () => {
+    const unitRequests = new Map<string, Subject<any>>();
+    const responseRequests = new Map<string, Subject<any>>();
+    const previewLoader = {
+      load: vi.fn((_acpId: string, _perspective: string, unitId: string) => {
+        const request = new Subject<any>();
+        unitRequests.set(unitId, request);
+        return request;
+      }),
+      clear: vi.fn(),
+    };
+    const component = createFacade({
+      api: {
+        getResponseStateWithFallback: vi.fn((_acpId: string, itemId: string) => {
+          const request = new Subject<any>();
+          responseRequests.set(itemId, request);
+          return request;
+        }),
+      },
+      previewLoader,
+    });
+    component.acpId = 'acp-1';
+    const firstItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 1',
+      variableId: 'VAR_1',
+      metadata: {},
+    } as any;
+    const secondItem = {
+      ...firstItem,
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      unitId: 'UNIT_2',
+      unitLabel: 'Unit 2',
+      variableId: 'VAR_2',
+    };
+    component.filteredItems = [firstItem, secondItem];
+
+    component.selectItem(firstItem, 0);
+    component.selectItem(secondItem, 1);
+
+    unitRequests.get('UNIT_1')?.next({
+      unit: { id: 'UNIT_1' },
+      playerHtml: '<html>stale</html>',
+      definition: '{"pages":[]}',
+      cacheStatus: 'miss',
+    });
+    unitRequests.get('UNIT_1')?.complete();
+    responseRequests.get('ITEM_1')?.next({
+      state: { responseData: { stale: true } },
+      isFallback: false,
+    });
+    responseRequests.get('ITEM_1')?.complete();
+
+    unitRequests.get('UNIT_2')?.next({
+      unit: { id: 'UNIT_2' },
+      playerHtml: '<html>current</html>',
+      definition: '{"pages":[]}',
+      cacheStatus: 'miss',
+    });
+    unitRequests.get('UNIT_2')?.complete();
+    responseRequests.get('ITEM_2')?.next({
+      state: { responseData: { current: true } },
+      isFallback: false,
+    });
+    responseRequests.get('ITEM_2')?.complete();
+
+    await vi.waitFor(() => expect(component.unit?.id).toBe('UNIT_2'));
+    expect(component.selectedItem?.itemId).toBe('ITEM_2');
+    expect(component.currentResponseData).toEqual({ current: true });
+    component.ngOnDestroy();
+  });
+
+  it('shows and clears the slow hint for a delayed same-unit response state', async () => {
+    vi.useFakeTimers();
+    const responseState$ = new Subject<any>();
+    const component = createFacade({
+      api: { getResponseStateWithFallback: vi.fn(() => responseState$) },
+      previewLoader: { load: vi.fn(), clear: vi.fn() },
+    });
+    component.acpId = 'acp-1';
+    component.unit = { id: 'UNIT_1', dependencies: [] };
+    component.playerSrcDoc = '<html>cached player</html>';
+    (component as any).definitionContent = '{"pages":[]}';
+    (component as any).playerHtmlLoadState = 'ready';
+    (component as any).definitionLoadState = 'ready';
+    const item = {
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 2',
+      variableId: 'VAR_2',
+      metadata: {},
+    } as any;
+    component.filteredItems = [item];
+
+    try {
+      component.selectItem(item, 0);
+      vi.advanceTimersByTime(1500);
+      expect(component.previewSlow).toBe(true);
+      expect(component.previewLoadPhase).toBe('gespeicherter Zustand');
+
+      responseState$.next({ state: null, isFallback: false });
+      responseState$.complete();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(component.previewSlow).toBe(false);
+      expect(component.previewLoadPhase).toBe('');
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it('finishes pending player-ready timings on a new selection and route destruction', () => {
+    const diagnostics = {
+      start: vi.fn(() => ({
+        phase: 'item-selection-total',
+        id: 2,
+        startedAt: 0,
+        startMark: 'selection',
+      })),
+      finish: vi.fn(),
+    };
+    const component = createFacade({ diagnostics });
+    const pendingSelection = {
+      phase: 'player-ready',
+      id: 1,
+      startedAt: 0,
+      startMark: 'player-ready-1',
+    };
+    (component as any).playerReadyTiming = pendingSelection;
+
+    component.selectItem(
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '',
+        metadata: {},
+      } as any,
+      0,
+    );
+
+    expect(diagnostics.finish).toHaveBeenCalledWith(pendingSelection, {
+      outcome: 'cancelled',
+    });
+
+    const pendingDestruction = {
+      phase: 'player-ready',
+      id: 3,
+      startedAt: 0,
+      startMark: 'player-ready-3',
+    };
+    (component as any).playerReadyTiming = pendingDestruction;
+    component.ngOnDestroy();
+
+    expect(diagnostics.finish).toHaveBeenCalledWith(pendingDestruction, {
+      outcome: 'cancelled',
+    });
+    expect((component as any).playerReadyTiming).toBeNull();
   });
 
   it('lets a partial-credit row clear inherited tags, exclusion and preview target', () => {
@@ -1858,6 +2183,7 @@ describe('ItemExplorerFacade', () => {
       component.selectedItem = {
         itemId: 'ITEM_1',
         uuid: 'uuid-1',
+        rowKey: 'uuid-1',
         unitId: 'UNIT_1',
         unitLabel: 'Unit 1',
         description: 'Item 1',
@@ -1923,6 +2249,7 @@ describe('ItemExplorerFacade', () => {
       component.selectedItem = {
         itemId: 'ITEM_2',
         uuid: 'uuid-2',
+        rowKey: 'uuid-2',
         unitId: 'UNIT_2',
         unitLabel: 'Unit 2',
         description: 'Item on second logical page',
@@ -1996,6 +2323,7 @@ describe('ItemExplorerFacade', () => {
       component.selectedItem = {
         itemId: 'ITEM_2A',
         uuid: 'uuid-2a',
+        rowKey: 'uuid-2a',
         unitId: 'UNIT_2',
         unitLabel: 'Unit 2',
         description: 'Item on always-visible page',

@@ -141,6 +141,26 @@ describe("ItemExplorerStateService", () => {
     expect(stateRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("loads only the version columns for unit-view cache signatures", async () => {
+    stateRepo.findOne.mockResolvedValue(
+      buildStateRecord({ version: 8, publishedVersion: 5 }),
+    );
+
+    await expect(service.getStateVersionForViewer("acp-1", true)).resolves.toBe(
+      8,
+    );
+    await expect(
+      service.getStateVersionForViewer("acp-1", false),
+    ).resolves.toBe(5);
+    expect(stateRepo.findOne).toHaveBeenCalledWith({
+      where: { acpId: "acp-1" },
+      select: {
+        version: true,
+        publishedVersion: true,
+      },
+    });
+  });
+
   it("returns state created by a concurrent initializer after locking the ACP", async () => {
     const concurrentlyCreated = buildStateRecord();
     stateRepo.findOne

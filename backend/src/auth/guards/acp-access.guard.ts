@@ -49,7 +49,7 @@ export class AcpAccessGuard implements CanActivate {
     // Try to resolve user from JWT even if no JwtAuthGuard is attached.
     // This keeps ACP routes compatible with optional-auth scenarios.
     if (!request.user) {
-      request.user = await this.resolveUserFromRequestToken(request);
+      request.user = await this.resolveUserFromRequestToken(request, acpId);
     }
     const user = request.user;
 
@@ -61,12 +61,6 @@ export class AcpAccessGuard implements CanActivate {
       }
 
       // Credential-based access
-      console.log("Checking credential access:", {
-        userType: user.type,
-        userAcpId: user.acpId,
-        requestedAcpId: acpId,
-        match: user.acpId === acpId,
-      });
       if (user.type === "credential" && user.acpId === acpId) {
         request.acpAccessLevel = "CREDENTIAL";
         return true;
@@ -74,9 +68,16 @@ export class AcpAccessGuard implements CanActivate {
 
       // User role-based access (local users and OIDC users)
       if (user.type === "user" || user.type === "oidc") {
-        const role = await this.acpUserRoleRepository.findOne({
-          where: { userId: user.sub, acpId },
-        });
+        const role = Object.prototype.hasOwnProperty.call(
+          user,
+          "resolvedAcpRole",
+        )
+          ? user.resolvedAcpRole
+            ? { role: user.resolvedAcpRole }
+            : null
+          : await this.acpUserRoleRepository.findOne({
+              where: { userId: user.sub, acpId },
+            });
         if (role) {
           request.acpAccessLevel =
             role.role === AcpRole.ACP_MANAGER ? "MANAGER" : "READ_ONLY";
@@ -102,7 +103,10 @@ export class AcpAccessGuard implements CanActivate {
     throw new ForbiddenException("No access to this ACP");
   }
 
-  private async resolveUserFromRequestToken(request: any): Promise<any | null> {
+  private async resolveUserFromRequestToken(
+    request: any,
+    acpId: string,
+  ): Promise<any | null> {
     const authHeader = request.headers?.authorization as string | undefined;
     const bearerToken =
       authHeader && authHeader.startsWith("Bearer ")
@@ -133,6 +137,49 @@ export class AcpAccessGuard implements CanActivate {
         };
       }
 
+      // Resolve the persisted user and the role relevant to this request in one
+      // compact query. Besides avoiding the former second role lookup, this
+      // intentionally keeps deleted users and revoked roles visible immediately.
+      if (typeof this.userRepository.query === "function") {
+        const rows = (await this.userRepository.query(
+          `
+            SELECT
+              u."is_app_admin" AS "isAppAdmin",
+              r."role" AS "acpRole"
+            FROM "users" u
+            LEFT JOIN "acp_user_roles" r
+              ON r."user_id" = u."id"
+             AND r."acp_id" = $2
+            WHERE u."id" = $1
+            LIMIT 1
+          `,
+          [payload.sub, acpId],
+        )) as Array<{
+          isAppAdmin: boolean;
+          acpRole: AcpRole | null;
+        }>;
+        const resolvedUser = rows[0];
+
+        if (!resolvedUser) {
+          return null;
+        }
+
+        return {
+          sub: payload.sub,
+          username: payload.username,
+          isAppAdmin: resolvedUser.isAppAdmin,
+          type: payload.type,
+          authType: payload.authType,
+          acpId: payload.acpId,
+          acpRoles: resolvedUser.acpRole
+            ? [{ acpId, role: resolvedUser.acpRole }]
+            : [],
+          resolvedAcpRole: resolvedUser.acpRole,
+        };
+      }
+
+      // Test doubles and non-PostgreSQL repository implementations retain the
+      // established relation-based fallback.
       const user = await this.userRepository.findOne({
         where: { id: payload.sub },
         relations: ["acpRoles", "acpRoles.acp"],

@@ -7,6 +7,8 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, Repository } from "typeorm";
 import * as fs from "fs/promises";
+import { createHash } from "crypto";
+import { performance } from "perf_hooks";
 import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
 import {
   getAssessmentParts,
@@ -91,6 +93,65 @@ export interface ItemListResult {
 interface ParsedItemListResult {
   itemList: ItemListResult;
   sourceFileSignature: string;
+  cacheIdentity: string;
+  cacheStatus: ItemExplorerCacheStatus;
+  sourceReadMs: number;
+  fileSignatureMs: number;
+  parseMs: number;
+  cacheable: boolean;
+}
+
+export type ItemExplorerCacheStatus = "hit" | "miss" | "coalesced";
+
+export interface ItemExplorerLoadDiagnostics {
+  cacheStatus: ItemExplorerCacheStatus;
+  rowCacheStatus: ItemExplorerCacheStatus;
+  sourceReadMs: number;
+  fileSignatureMs: number;
+  explorerStateMs?: number;
+  rowNumberRevisionMs: number;
+  parseMs: number;
+  rowNumberingMs: number;
+  totalMs: number;
+}
+
+interface ItemListParseContext {
+  allFiles: AcpFile[];
+  itemProps: Record<string, Record<string, unknown>>;
+  itemPropertiesSignature?: string;
+  normalizedFeatureConfig: Record<string, unknown>;
+  sourceFileSignature: string;
+}
+
+interface ItemListSourceContext {
+  allFiles: AcpFile[];
+  fallbackItemProperties: Record<string, Record<string, unknown>>;
+  normalizedFeatureConfig: Record<string, unknown>;
+  sourceFileSignature: string;
+  sourceReadMs: number;
+  fileSignatureMs: number;
+}
+
+interface FileCatalogSnapshot {
+  files: AcpFile[];
+  signature: string;
+}
+
+interface FileCatalogResult extends FileCatalogSnapshot {
+  cacheStatus: ItemExplorerCacheStatus;
+  sourceReadMs: number;
+  fileSignatureMs: number;
+}
+
+interface AsyncCacheEntry<T> {
+  promise: Promise<T>;
+  settled: boolean;
+}
+
+interface NumberedItemListCacheValue {
+  itemList: ItemListResult;
+  rowRevision: string;
+  rowNumberingMs: number;
 }
 
 interface PartialCreditRow {
@@ -124,7 +185,32 @@ export interface IndexDependencyCleanupReport {
 export class UnitParserService {
   private readonly logger = new Logger(UnitParserService.name);
   private readonly itemRowKeyCache = new Map<string, ItemRowKeyCacheEntry>();
+  private readonly parsedItemListCache = new Map<
+    string,
+    AsyncCacheEntry<
+      Omit<
+        ParsedItemListResult,
+        "cacheStatus" | "sourceReadMs" | "fileSignatureMs"
+      >
+    >
+  >();
+  private readonly numberedItemListCache = new Map<
+    string,
+    AsyncCacheEntry<NumberedItemListCacheValue>
+  >();
+  private readonly fileCatalogCache = new Map<
+    string,
+    AsyncCacheEntry<FileCatalogSnapshot>
+  >();
+  private readonly unitViewCache = new Map<
+    string,
+    AsyncCacheEntry<{ value: any; parseMs: number }>
+  >();
   private readonly maxItemRowKeyCacheEntries = 100;
+  private readonly maxParsedItemListCacheEntries = 100;
+  private readonly maxNumberedItemListCacheEntries = 100;
+  private readonly maxFileCatalogCacheEntries = 100;
+  private readonly maxUnitViewCacheEntries = 100;
 
   constructor(
     @InjectRepository(AcpFile)
@@ -655,12 +741,31 @@ export class UnitParserService {
     options: {
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
       publishedItemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      activeStateSignature?: string;
+      publishedStateSignature?: string;
+      onDiagnostics?: (diagnostics: ItemExplorerLoadDiagnostics) => void;
     } = {},
   ): Promise<ItemListResult> {
-    const { itemList } = await this.parseItemListFromFiles(
+    const totalStartedAt = performance.now();
+    const rowRevisionStartedAt = performance.now();
+    const rowRevisionPromise = this.itemRowNumberingService
+      .getRevision(acpId)
+      .then((rowRevision) => ({
+        rowRevision,
+        rowNumberRevisionMs: performance.now() - rowRevisionStartedAt,
+      }));
+    const sourceContext = await this.loadItemListSourceContext(
       acpId,
-      options.itemPropertiesOverride,
+      options.itemPropertiesOverride === undefined,
     );
+    const activeParse = await this.parseItemListFromContext(
+      acpId,
+      sourceContext,
+      options.itemPropertiesOverride || sourceContext.fallbackItemProperties,
+      options.activeStateSignature,
+    );
+    let parseDiagnostics = activeParse;
+    let publishedParse: ParsedItemListResult | undefined;
 
     if (
       options.publishedItemPropertiesOverride &&
@@ -669,34 +774,292 @@ export class UnitParserService {
         options.publishedItemPropertiesOverride,
       )
     ) {
-      const { itemList: publishedItemList } = await this.parseItemListFromFiles(
+      publishedParse = await this.parseItemListFromContext(
         acpId,
+        sourceContext,
         options.publishedItemPropertiesOverride,
+        options.publishedStateSignature,
       );
-      await this.applyItemRowNumbers(acpId, publishedItemList, {});
-      return this.applyItemRowNumbers(acpId, itemList, {
-        persistMissingRowNumbers: false,
-      });
+      parseDiagnostics = {
+        ...activeParse,
+        cacheStatus: this.combineCacheStatus(
+          activeParse.cacheStatus,
+          publishedParse.cacheStatus,
+        ),
+        parseMs: activeParse.parseMs + publishedParse.parseMs,
+      };
     }
 
-    return this.applyItemRowNumbers(acpId, itemList, {});
+    if (
+      !activeParse.cacheable ||
+      (publishedParse && !publishedParse.cacheable)
+    ) {
+      const { rowNumberRevisionMs } = await rowRevisionPromise;
+      const rowNumberingStartedAt = performance.now();
+      let result: ItemListResult;
+      if (publishedParse) {
+        await this.applyItemRowNumbers(acpId, publishedParse.itemList, {});
+        result = await this.applyItemRowNumbers(acpId, activeParse.itemList, {
+          persistMissingRowNumbers: false,
+        });
+      } else {
+        result = await this.applyItemRowNumbers(
+          acpId,
+          activeParse.itemList,
+          {},
+        );
+      }
+      options.onDiagnostics?.({
+        cacheStatus: parseDiagnostics.cacheStatus,
+        rowCacheStatus: "miss",
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+        rowNumberRevisionMs,
+        parseMs: parseDiagnostics.parseMs,
+        rowNumberingMs: performance.now() - rowNumberingStartedAt,
+        totalMs: performance.now() - totalStartedAt,
+      });
+      return result;
+    }
+
+    const { rowRevision, rowNumberRevisionMs } = await rowRevisionPromise;
+    const numberedCacheBaseKey = `${acpId}:${activeParse.cacheIdentity}:${
+      publishedParse?.cacheIdentity || activeParse.cacheIdentity
+    }`;
+    const numberedCacheKey = `${numberedCacheBaseKey}:${rowRevision}`;
+    const cached = this.numberedItemListCache.get(numberedCacheKey);
+    if (cached) {
+      this.touchCacheEntry(
+        this.numberedItemListCache,
+        numberedCacheKey,
+        cached,
+      );
+      const rowCacheStatus: ItemExplorerCacheStatus = cached.settled
+        ? "hit"
+        : "coalesced";
+      const cachedValue = await cached.promise;
+      options.onDiagnostics?.({
+        cacheStatus: parseDiagnostics.cacheStatus,
+        rowCacheStatus,
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+        rowNumberRevisionMs,
+        parseMs: parseDiagnostics.parseMs,
+        rowNumberingMs:
+          rowCacheStatus === "hit" ? 0 : cachedValue.rowNumberingMs,
+        totalMs: performance.now() - totalStartedAt,
+      });
+      return structuredClone(cachedValue.itemList);
+    }
+
+    const entry: AsyncCacheEntry<NumberedItemListCacheValue> = {
+      settled: false,
+      promise: Promise.resolve({
+        itemList: activeParse.itemList,
+        rowRevision,
+        rowNumberingMs: 0,
+      }),
+    };
+    entry.promise = (async () => {
+      const rowNumberingStartedAt = performance.now();
+      let result: ItemListResult;
+      if (publishedParse) {
+        await this.applyItemRowNumbers(acpId, publishedParse.itemList, {});
+        result = await this.applyItemRowNumbers(acpId, activeParse.itemList, {
+          persistMissingRowNumbers: false,
+        });
+      } else {
+        result = await this.applyItemRowNumbers(
+          acpId,
+          activeParse.itemList,
+          {},
+        );
+      }
+      const value: NumberedItemListCacheValue = {
+        itemList: structuredClone(result),
+        rowRevision: await this.itemRowNumberingService.getRevision(acpId),
+        rowNumberingMs: performance.now() - rowNumberingStartedAt,
+      };
+      entry.settled = true;
+      const finalKey = `${numberedCacheBaseKey}:${value.rowRevision}`;
+      if (
+        finalKey !== numberedCacheKey &&
+        this.numberedItemListCache.get(numberedCacheKey) === entry
+      ) {
+        this.numberedItemListCache.delete(numberedCacheKey);
+        this.setBoundedCacheEntry(
+          this.numberedItemListCache,
+          finalKey,
+          entry,
+          this.maxNumberedItemListCacheEntries,
+        );
+      }
+      return value;
+    })().catch((error) => {
+      this.deleteCacheEntryIfCurrent(
+        this.numberedItemListCache,
+        numberedCacheKey,
+        entry,
+      );
+      throw error;
+    });
+    this.setBoundedCacheEntry(
+      this.numberedItemListCache,
+      numberedCacheKey,
+      entry,
+      this.maxNumberedItemListCacheEntries,
+    );
+    const value = await entry.promise;
+    options.onDiagnostics?.({
+      cacheStatus: parseDiagnostics.cacheStatus,
+      rowCacheStatus: "miss",
+      sourceReadMs: sourceContext.sourceReadMs,
+      fileSignatureMs: sourceContext.fileSignatureMs,
+      rowNumberRevisionMs,
+      parseMs: parseDiagnostics.parseMs,
+      rowNumberingMs: value.rowNumberingMs,
+      totalMs: performance.now() - totalStartedAt,
+    });
+    return structuredClone(value.itemList);
   }
 
-  private async parseItemListFromFiles(
+  private async loadItemListSourceContext(
     acpId: string,
-    itemPropertiesOverride?: Record<string, Record<string, unknown>>,
+    loadFallbackItemProperties: boolean,
+  ): Promise<ItemListSourceContext> {
+    const sourceReadStartedAt = performance.now();
+    const [catalog, acp, accessConfig] = await Promise.all([
+      this.getFileCatalog(acpId),
+      loadFallbackItemProperties
+        ? this.acpRepository.findOne({ where: { id: acpId } })
+        : Promise.resolve(null),
+      this.accessConfigRepository.findOne({ where: { acpId } }),
+    ]);
+    return {
+      allFiles: catalog.files,
+      fallbackItemProperties: acp?.itemProperties || {},
+      normalizedFeatureConfig: normalizeFeatureConfig(
+        accessConfig?.featureConfig || {},
+      ) as Record<string, unknown>,
+      sourceFileSignature: catalog.signature,
+      sourceReadMs: performance.now() - sourceReadStartedAt,
+      fileSignatureMs: catalog.fileSignatureMs,
+    };
+  }
+
+  private async parseItemListFromContext(
+    acpId: string,
+    sourceContext: ItemListSourceContext,
+    itemProperties: Record<string, Record<string, unknown>>,
+    itemPropertiesSignature?: string,
     strictSourceReads = false,
   ): Promise<ParsedItemListResult> {
-    const allFiles = await this.fileRepository.find({ where: { acpId } });
-    const sourceFileSignature = this.buildSourceFileSignature(allFiles);
-    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
-    const accessConfig = await this.accessConfigRepository.findOne({
-      where: { acpId },
-    });
-    const itemProps = itemPropertiesOverride || acp?.itemProperties || {};
-    const normalizedFeatureConfig = normalizeFeatureConfig(
-      accessConfig?.featureConfig || {},
-    ) as Record<string, unknown>;
+    const context: ItemListParseContext = {
+      allFiles: sourceContext.allFiles,
+      itemProps: itemProperties,
+      itemPropertiesSignature,
+      normalizedFeatureConfig: sourceContext.normalizedFeatureConfig,
+      sourceFileSignature: sourceContext.sourceFileSignature,
+    };
+    const cacheKey = this.buildParsedItemListCacheKey(acpId, context);
+
+    if (strictSourceReads) {
+      const parsed = await this.parseItemListContext(context, true);
+      return {
+        ...parsed,
+        cacheIdentity: cacheKey,
+        cacheStatus: "miss",
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+      };
+    }
+
+    const cached = this.parsedItemListCache.get(cacheKey);
+    if (cached) {
+      this.touchCacheEntry(this.parsedItemListCache, cacheKey, cached);
+      const cacheStatus: ItemExplorerCacheStatus = cached.settled
+        ? "hit"
+        : "coalesced";
+      const parsed = await cached.promise;
+      return {
+        ...this.cloneParsedItemListResult(parsed),
+        cacheStatus,
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+        parseMs: cacheStatus === "hit" ? 0 : parsed.parseMs,
+      };
+    }
+
+    const entry: AsyncCacheEntry<
+      Omit<
+        ParsedItemListResult,
+        "cacheStatus" | "sourceReadMs" | "fileSignatureMs"
+      >
+    > = {
+      settled: false,
+      promise: Promise.resolve({
+        itemList: {
+          columns: [],
+          items: [],
+          subIdLabel: "Sub-ID",
+          subIdLabels: {},
+          unitMetadata: {},
+          codingSchemes: {},
+        },
+        sourceFileSignature: sourceContext.sourceFileSignature,
+        cacheIdentity: cacheKey,
+        parseMs: 0,
+        cacheable: false,
+      }),
+    };
+    entry.promise = this.parseItemListContext(context, false)
+      .then((parsed) => {
+        if (parsed.cacheable) {
+          entry.settled = true;
+        } else if (this.parsedItemListCache.get(cacheKey) === entry) {
+          this.parsedItemListCache.delete(cacheKey);
+        }
+        return { ...parsed, cacheIdentity: cacheKey };
+      })
+      .catch((error) => {
+        this.deleteCacheEntryIfCurrent(
+          this.parsedItemListCache,
+          cacheKey,
+          entry,
+        );
+        throw error;
+      });
+    this.setBoundedCacheEntry(
+      this.parsedItemListCache,
+      cacheKey,
+      entry,
+      this.maxParsedItemListCacheEntries,
+    );
+    const parsed = await entry.promise;
+    return {
+      ...this.cloneParsedItemListResult(parsed),
+      cacheStatus: "miss",
+      sourceReadMs: sourceContext.sourceReadMs,
+      fileSignatureMs: sourceContext.fileSignatureMs,
+    };
+  }
+
+  private async parseItemListContext(
+    context: ItemListParseContext,
+    strictSourceReads: boolean,
+  ): Promise<
+    Omit<
+      ParsedItemListResult,
+      "cacheStatus" | "sourceReadMs" | "fileSignatureMs" | "cacheIdentity"
+    >
+  > {
+    const parseStartedAt = performance.now();
+    const {
+      allFiles,
+      itemProps,
+      normalizedFeatureConfig,
+      sourceFileSignature,
+    } = context;
     const subIdLabel = String(
       normalizedFeatureConfig.itemSubIdLabel || "Sub-ID",
     );
@@ -710,6 +1073,7 @@ export class UnitParserService {
     const items: VomdItemData[] = [];
     const unitMetadata: Record<string, any[]> = {};
     const codingSchemes: Record<string, any> = {};
+    let cacheable = true;
 
     // First pass: find all .xml files to get unit IDs and references
     const xmlFiles = allFiles.filter(
@@ -731,6 +1095,7 @@ export class UnitParserService {
               `Invalid unit XML file: ${xmlFile.originalName}`,
             );
           }
+          cacheable = false;
           continue;
         }
 
@@ -750,6 +1115,7 @@ export class UnitParserService {
               `Referenced item metadata file is missing: ${vomdFileName}`,
             );
           }
+          cacheable = false;
           continue;
         }
 
@@ -761,6 +1127,7 @@ export class UnitParserService {
               `Invalid item metadata file: ${vomdFile.originalName}`,
             );
           }
+          cacheable = false;
           continue;
         }
 
@@ -780,16 +1147,20 @@ export class UnitParserService {
               const vocsContent = await fs.readFile(vocsFile.filePath, "utf-8");
               codingSchemes[parsed.unitId] = JSON.parse(vocsContent);
             } catch {
+              cacheable = false;
               this.logger.warn(
                 `Could not parse coding scheme ${parsed.codingSchemeRef}`,
               );
             }
+          } else {
+            cacheable = false;
           }
         }
 
         // Extract items and their profile entries
         for (const item of vomdData.items) {
           if (!this.isValidVomdItem(item)) {
+            cacheable = false;
             this.logger.warn(
               `Skipping invalid item metadata in ${vomdFile.originalName}`,
             );
@@ -926,6 +1297,7 @@ export class UnitParserService {
             "The ACP source files changed while row numbers were being recalculated",
           );
         }
+        cacheable = false;
       }
     }
 
@@ -948,7 +1320,12 @@ export class UnitParserService {
       codingSchemes,
     };
 
-    return { itemList, sourceFileSignature };
+    return {
+      itemList,
+      sourceFileSignature,
+      parseMs: performance.now() - parseStartedAt,
+      cacheable,
+    };
   }
 
   async recalculatePublishedItemRowNumbers(
@@ -956,13 +1333,17 @@ export class UnitParserService {
   ): Promise<{ renumberedCount: number }> {
     const publishedState =
       await this.itemExplorerStateService.getCleanPublishedState(acpId);
-    const { itemList, sourceFileSignature } = await this.parseItemListFromFiles(
-      acpId,
-      publishedState.publishedState.itemProperties,
-      true,
-    );
+    const sourceContext = await this.loadItemListSourceContext(acpId, false);
+    const { itemList, sourceFileSignature } =
+      await this.parseItemListFromContext(
+        acpId,
+        sourceContext,
+        publishedState.publishedState.itemProperties,
+        `published:${publishedState.publishedVersion}`,
+        true,
+      );
 
-    return this.itemExplorerStateService.runWithLockedCleanState(
+    const result = await this.itemExplorerStateService.runWithLockedCleanState(
       acpId,
       async (_explorerState, manager) => {
         const result = await this.applyItemRowNumbers(acpId, itemList, {
@@ -979,6 +1360,8 @@ export class UnitParserService {
       },
       publishedState.publishedVersion,
     );
+    this.deleteCacheEntriesForAcp(this.numberedItemListCache, acpId);
+    return result;
   }
 
   private async applyItemRowNumbers(
@@ -1058,6 +1441,241 @@ export class UnitParserService {
         ])
         .sort(([left], [right]) => String(left).localeCompare(String(right))),
     );
+  }
+
+  invalidateFileCaches(acpId: string): void {
+    this.deleteCacheEntriesForAcp(this.fileCatalogCache, acpId);
+    this.deleteCacheEntriesForAcp(this.parsedItemListCache, acpId);
+    this.deleteCacheEntriesForAcp(this.numberedItemListCache, acpId);
+    this.deleteCacheEntriesForAcp(this.unitViewCache, acpId);
+    this.itemRowKeyCache.delete(acpId);
+  }
+
+  private async getFileCatalog(acpId: string): Promise<FileCatalogResult> {
+    const totalStartedAt = performance.now();
+    const signatureStartedAt = performance.now();
+    const revision = await this.loadFileCatalogRevision(acpId);
+    const fileSignatureMs = performance.now() - signatureStartedAt;
+    const cacheKey = `${acpId}:${revision.signature}`;
+    const cached = this.fileCatalogCache.get(cacheKey);
+    if (cached) {
+      this.touchCacheEntry(this.fileCatalogCache, cacheKey, cached);
+      const cacheStatus: ItemExplorerCacheStatus = cached.settled
+        ? "hit"
+        : "coalesced";
+      const snapshot = await cached.promise;
+      return {
+        files: structuredClone(snapshot.files),
+        signature: snapshot.signature,
+        cacheStatus,
+        sourceReadMs: performance.now() - totalStartedAt,
+        fileSignatureMs,
+      };
+    }
+
+    const entry: AsyncCacheEntry<FileCatalogSnapshot> = {
+      settled: false,
+      promise: Promise.resolve({
+        files: [],
+        signature: revision.signature,
+      }),
+    };
+    entry.promise = (
+      revision.files
+        ? Promise.resolve(revision.files)
+        : this.loadFileCatalogRecords(acpId)
+    )
+      .then((files) => {
+        entry.settled = true;
+        return {
+          files: structuredClone(files),
+          signature: revision.signature,
+        };
+      })
+      .catch((error) => {
+        this.deleteCacheEntryIfCurrent(this.fileCatalogCache, cacheKey, entry);
+        throw error;
+      });
+    this.deleteCacheEntriesForAcp(this.fileCatalogCache, acpId);
+    this.setBoundedCacheEntry(
+      this.fileCatalogCache,
+      cacheKey,
+      entry,
+      this.maxFileCatalogCacheEntries,
+    );
+    const snapshot = await entry.promise;
+    return {
+      files: structuredClone(snapshot.files),
+      signature: snapshot.signature,
+      cacheStatus: "miss",
+      sourceReadMs: performance.now() - totalStartedAt,
+      fileSignatureMs,
+    };
+  }
+
+  private async loadFileCatalogRevision(
+    acpId: string,
+  ): Promise<{ signature: string; files?: AcpFile[] }> {
+    if (typeof this.fileRepository.query !== "function") {
+      const files = await this.loadFileCatalogRecords(acpId);
+      return {
+        signature: this.buildSourceFileSignature(files),
+        files,
+      };
+    }
+
+    const rows = (await this.fileRepository.query(
+      `
+        SELECT
+          COUNT(*)::text AS count,
+          COALESCE(
+            md5(
+              string_agg(
+                concat_ws(
+                  chr(31),
+                  id::text,
+                  original_name,
+                  file_path,
+                  COALESCE(checksum, ''),
+                  file_size::text,
+                  uploaded_at::text
+                ),
+                chr(30) ORDER BY id::text
+              )
+            ),
+            md5('')
+          ) AS hash
+        FROM acp_files
+        WHERE acp_id = $1
+      `,
+      [acpId],
+    )) as Array<{ count?: string; hash?: string }>;
+    return {
+      signature: `${rows[0]?.count || "0"}:${rows[0]?.hash || ""}`,
+    };
+  }
+
+  private loadFileCatalogRecords(acpId: string): Promise<AcpFile[]> {
+    return this.fileRepository.find({
+      where: { acpId },
+      select: {
+        id: true,
+        acpId: true,
+        filePath: true,
+        originalName: true,
+        fileType: true,
+        fileSize: true,
+        checksum: true,
+        uploadedAt: true,
+      },
+    });
+  }
+
+  private buildParsedItemListCacheKey(
+    acpId: string,
+    context: ItemListParseContext,
+  ): string {
+    return `${acpId}:${this.hashCanonicalValue({
+      files: context.sourceFileSignature,
+      itemProperties: context.itemPropertiesSignature
+        ? { version: context.itemPropertiesSignature }
+        : { value: context.itemProps },
+      itemSubIdLabel:
+        context.normalizedFeatureConfig.itemSubIdLabel || "Sub-ID",
+      itemSubIdLabels: context.normalizedFeatureConfig.itemSubIdLabels || {},
+    })}`;
+  }
+
+  private hashCanonicalValue(value: unknown): string {
+    return createHash("sha256")
+      .update(this.canonicalStringify(value))
+      .digest("hex");
+  }
+
+  private canonicalStringify(value: unknown): string {
+    if (Array.isArray(value)) {
+      return `[${value.map((entry) => this.canonicalStringify(entry)).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record)
+        .sort()
+        .map(
+          (key) =>
+            `${JSON.stringify(key)}:${this.canonicalStringify(record[key])}`,
+        )
+        .join(",")}}`;
+    }
+    return JSON.stringify(value) ?? "null";
+  }
+
+  private cloneParsedItemListResult(
+    value: Omit<
+      ParsedItemListResult,
+      "cacheStatus" | "sourceReadMs" | "fileSignatureMs"
+    >,
+  ): Omit<
+    ParsedItemListResult,
+    "cacheStatus" | "sourceReadMs" | "fileSignatureMs"
+  > {
+    return {
+      ...value,
+      itemList: structuredClone(value.itemList),
+    };
+  }
+
+  private touchCacheEntry<T>(
+    cache: Map<string, T>,
+    key: string,
+    entry: T,
+  ): void {
+    cache.delete(key);
+    cache.set(key, entry);
+  }
+
+  private deleteCacheEntriesForAcp<T>(
+    cache: Map<string, T>,
+    acpId: string,
+  ): void {
+    const prefix = `${acpId}:`;
+    for (const key of cache.keys()) {
+      if (key.startsWith(prefix)) {
+        cache.delete(key);
+      }
+    }
+  }
+
+  private setBoundedCacheEntry<T>(
+    cache: Map<string, T>,
+    key: string,
+    entry: T,
+    maxEntries: number,
+  ): void {
+    cache.set(key, entry);
+    while (cache.size > maxEntries) {
+      const oldestKey = cache.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      cache.delete(oldestKey);
+    }
+  }
+
+  private deleteCacheEntryIfCurrent<T>(
+    cache: Map<string, T>,
+    key: string,
+    entry: T,
+  ): void {
+    if (cache.get(key) === entry) {
+      cache.delete(key);
+    }
+  }
+
+  private combineCacheStatus(
+    left: ItemExplorerCacheStatus,
+    right: ItemExplorerCacheStatus,
+  ): ItemExplorerCacheStatus {
+    if (left === "miss" || right === "miss") return "miss";
+    if (left === "coalesced" || right === "coalesced") return "coalesced";
+    return "hit";
   }
 
   /**
@@ -1191,21 +1809,100 @@ export class UnitParserService {
    * Get unit view data (player + definition file references) directly from
    * uploaded files, without relying on the ACP-Index.
    */
-  async getUnitViewFromFiles(acpId: string, unitId: string): Promise<any> {
-    const allFiles = await this.fileRepository.find({ where: { acpId } });
+  async getUnitViewFromFiles(
+    acpId: string,
+    unitId: string,
+    onDiagnostics?: (diagnostics: ItemExplorerLoadDiagnostics) => void,
+    explorerStateSignature: string | Promise<string> = "",
+  ): Promise<any> {
+    const totalStartedAt = performance.now();
+    const [catalog, resolvedExplorerStateSignature] = await Promise.all([
+      this.getFileCatalog(acpId),
+      Promise.resolve(explorerStateSignature),
+    ]);
+    const allFiles = catalog.files;
+    const cacheKey = `${acpId}:${unitId}:${this.hashCanonicalValue({
+      files: catalog.signature,
+      explorerState: resolvedExplorerStateSignature,
+    })}`;
+    const cached = this.unitViewCache.get(cacheKey);
+    if (cached) {
+      this.touchCacheEntry(this.unitViewCache, cacheKey, cached);
+      const cacheStatus: ItemExplorerCacheStatus = cached.settled
+        ? "hit"
+        : "coalesced";
+      const result = await cached.promise;
+      onDiagnostics?.({
+        cacheStatus,
+        rowCacheStatus: "hit",
+        sourceReadMs: catalog.sourceReadMs,
+        fileSignatureMs: catalog.fileSignatureMs,
+        rowNumberRevisionMs: 0,
+        parseMs: 0,
+        rowNumberingMs: 0,
+        totalMs: performance.now() - totalStartedAt,
+      });
+      return structuredClone(result.value);
+    }
+
+    const entry: AsyncCacheEntry<{ value: any; parseMs: number }> = {
+      settled: false,
+      promise: Promise.resolve({ value: null, parseMs: 0 }),
+    };
+    entry.promise = this.buildUnitViewFromFiles(acpId, unitId, allFiles)
+      .then((value) => {
+        entry.settled = true;
+        return value;
+      })
+      .catch((error) => {
+        this.deleteCacheEntryIfCurrent(this.unitViewCache, cacheKey, entry);
+        throw error;
+      });
+    this.setBoundedCacheEntry(
+      this.unitViewCache,
+      cacheKey,
+      entry,
+      this.maxUnitViewCacheEntries,
+    );
+    const result = await entry.promise;
+    onDiagnostics?.({
+      cacheStatus: "miss",
+      rowCacheStatus: "hit",
+      sourceReadMs: catalog.sourceReadMs,
+      fileSignatureMs: catalog.fileSignatureMs,
+      rowNumberRevisionMs: 0,
+      parseMs: result.parseMs,
+      rowNumberingMs: 0,
+      totalMs: performance.now() - totalStartedAt,
+    });
+    return structuredClone(result.value);
+  }
+
+  private async buildUnitViewFromFiles(
+    acpId: string,
+    unitId: string,
+    allFiles: AcpFile[],
+  ): Promise<{ value: any; parseMs: number }> {
+    const parseStartedAt = performance.now();
 
     // Find the .xml file for this unit
     const xmlFile = allFiles.find((f: AcpFile) => {
       const baseName = f.originalName.replace(/\.xml$/i, "");
       return baseName === unitId;
     });
-    if (!xmlFile) return null;
+    if (!xmlFile) {
+      return { value: null, parseMs: performance.now() - parseStartedAt };
+    }
 
     const xmlContent = await fs.readFile(xmlFile.filePath, "utf-8");
-    if (!xmlContent.includes("<Unit")) return null;
+    if (!xmlContent.includes("<Unit")) {
+      return { value: null, parseMs: performance.now() - parseStartedAt };
+    }
 
     const parsed = this.parseUnitXml(xmlContent, xmlFile.originalName);
-    if (!parsed) return null;
+    if (!parsed) {
+      return { value: null, parseMs: performance.now() - parseStartedAt };
+    }
 
     // Build dependencies array (same structure as views.service getUnitViewData)
     const dependencies: any[] = [];
@@ -1277,10 +1974,13 @@ export class UnitParserService {
     }
 
     return {
-      id: parsed.unitId,
-      name: parsed.unitLabel,
-      description: parsed.description,
-      dependencies,
+      value: {
+        id: parsed.unitId,
+        name: parsed.unitLabel,
+        description: parsed.description,
+        dependencies,
+      },
+      parseMs: performance.now() - parseStartedAt,
     };
   }
 

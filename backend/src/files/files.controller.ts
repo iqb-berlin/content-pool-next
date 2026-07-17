@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Controller,
   Get,
+  Logger,
   Post,
   Delete,
   Param,
@@ -16,6 +17,7 @@ import {
   Sse,
 } from "@nestjs/common";
 import { Response } from "express";
+import { performance } from "perf_hooks";
 import { FilesInterceptor } from "@nestjs/platform-express";
 import {
   ApiBearerAuth,
@@ -25,7 +27,10 @@ import {
   ApiQuery,
 } from "@nestjs/swagger";
 import { FilesService } from "./files.service";
-import { UnitParserService } from "./unit-parser.service";
+import {
+  ItemExplorerLoadDiagnostics,
+  UnitParserService,
+} from "./unit-parser.service";
 import { ValidationService } from "../validation/validation.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
@@ -38,6 +43,8 @@ import { UuidParam } from "../common/uuid-param";
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
 export class FilesController {
+  private readonly logger = new Logger(FilesController.name);
+
   constructor(
     private readonly filesService: FilesService,
     private readonly unitParserService: UnitParserService,
@@ -141,7 +148,9 @@ export class FilesController {
     @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Query("perspective") perspective?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
+    const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
@@ -149,15 +158,32 @@ export class FilesController {
         throw new ForbiddenException("Item list is not enabled for this ACP");
       }
     }
+    const explorerStateStartedAt = performance.now();
     const explorerState = await this.itemExplorerStateService.getStateForViewer(
       acpId,
       isManager,
     );
+    const explorerStateMs = performance.now() - explorerStateStartedAt;
+    let diagnostics: ItemExplorerLoadDiagnostics | undefined;
     const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
       itemPropertiesOverride: explorerState.activeState.itemProperties,
       publishedItemPropertiesOverride:
         explorerState.publishedState.itemProperties,
+      activeStateSignature: isManager
+        ? `active:${explorerState.version}`
+        : `published:${explorerState.publishedVersion}`,
+      publishedStateSignature: `published:${explorerState.publishedVersion}`,
+      onDiagnostics: (value) => {
+        diagnostics = { ...value, explorerStateMs };
+      },
     });
+    this.attachItemExplorerTiming(
+      res,
+      "item-list",
+      diagnostics,
+      performance.now() - startedAt,
+      acpId,
+    );
     return {
       ...itemList,
       itemExplorerStateVersion: isManager
@@ -187,7 +213,9 @@ export class FilesController {
     @Param("unitId") unitId: string,
     @Request() req: any,
     @Query("perspective") perspective?: string,
+    @Res({ passthrough: true }) res?: Response,
   ) {
+    const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
@@ -195,7 +223,34 @@ export class FilesController {
         throw new ForbiddenException("Unit view is not enabled for this ACP");
       }
     }
-    return this.unitParserService.getUnitViewFromFiles(acpId, unitId);
+    const explorerStateStartedAt = performance.now();
+    const explorerStateResolution = this.itemExplorerStateService
+      .getStateVersionForViewer(acpId, isManager)
+      .then((version) => ({
+        signature: isManager ? `active:${version}` : `published:${version}`,
+        durationMs: performance.now() - explorerStateStartedAt,
+      }));
+    let diagnostics: ItemExplorerLoadDiagnostics | undefined;
+    const unitView = await this.unitParserService.getUnitViewFromFiles(
+      acpId,
+      unitId,
+      (value) => {
+        diagnostics = value;
+      },
+      explorerStateResolution.then(({ signature }) => signature),
+    );
+    const { durationMs: explorerStateMs } = await explorerStateResolution;
+    diagnostics = diagnostics
+      ? { ...diagnostics, explorerStateMs }
+      : diagnostics;
+    this.attachItemExplorerTiming(
+      res,
+      "unit-view",
+      diagnostics,
+      performance.now() - startedAt,
+      acpId,
+    );
+    return unitView;
   }
 
   @Get("jobs/:jobId")
@@ -420,16 +475,50 @@ export class FilesController {
     @Request() req: any,
     @Res() res: Response,
   ) {
+    const startedAt = performance.now();
     const file = await this.filesService.findByIdForAcp(acpId, fileId);
     await this.ensureFileContentAccess(acpId, file.originalName, req);
 
+    const etagValue = String(
+      file.checksum ||
+        `${file.id}-${file.fileSize}-${file.uploadedAt?.toISOString?.() || ""}`,
+    ).replace(/["\\]/g, "");
+    const etag = `"${etagValue}"`;
+    res.setHeader("Cache-Control", "private, no-cache");
+    res.setHeader("ETag", etag);
+    if (this.matchesIfNoneMatch(req?.headers?.["if-none-match"], etag)) {
+      res.setHeader(
+        "Server-Timing",
+        `file-download;dur=${(performance.now() - startedAt).toFixed(1)}, cache;desc="not-modified"`,
+      );
+      res.status(304).end();
+      return;
+    }
+
+    const fileReadStartedAt = performance.now();
     const { buffer } = await this.filesService.downloadForAcp(acpId, fileId);
+    const fileReadMs = performance.now() - fileReadStartedAt;
     const resolvedDisposition = this.resolveDisposition(disposition);
     res.setHeader(
       "Content-Disposition",
       `${resolvedDisposition}; filename="${file.originalName}"`,
     );
     res.setHeader("Content-Type", file.fileType || "application/octet-stream");
+    const totalMs = performance.now() - startedAt;
+    res.setHeader(
+      "Server-Timing",
+      `file-read;dur=${fileReadMs.toFixed(1)}, file-download;dur=${totalMs.toFixed(1)}, cache;desc="miss"`,
+    );
+    if (totalMs > 1500) {
+      this.logger.warn(
+        JSON.stringify({
+          event: "item-explorer-slow-load",
+          phase: "file-download",
+          acpId,
+          durationMs: Math.round(totalMs),
+        }),
+      );
+    }
     res.send(buffer);
   }
 
@@ -501,6 +590,60 @@ export class FilesController {
       .toLowerCase();
 
     return normalizedPerspective !== "read-only";
+  }
+
+  private attachItemExplorerTiming(
+    res: Response | undefined,
+    phase: "item-list" | "unit-view",
+    diagnostics: ItemExplorerLoadDiagnostics | undefined,
+    totalMs: number,
+    acpId: string,
+  ): void {
+    const cacheStatus = diagnostics?.cacheStatus || "miss";
+    res?.setHeader(
+      "Server-Timing",
+      [
+        `file-signature;dur=${(diagnostics?.fileSignatureMs || 0).toFixed(1)}`,
+        `explorer-state;dur=${(diagnostics?.explorerStateMs || 0).toFixed(1)}`,
+        `source-read;dur=${(diagnostics?.sourceReadMs || 0).toFixed(1)}`,
+        `parse;dur=${(diagnostics?.parseMs || 0).toFixed(1)}`,
+        `row-revision;dur=${(diagnostics?.rowNumberRevisionMs || 0).toFixed(1)}`,
+        `row-numbering;dur=${(diagnostics?.rowNumberingMs || 0).toFixed(1)}`,
+        `${phase};dur=${totalMs.toFixed(1)}`,
+        `cache;desc="${cacheStatus}"`,
+        `row-cache;desc="${diagnostics?.rowCacheStatus || "miss"}"`,
+      ].join(", "),
+    );
+    if (totalMs <= 1500) return;
+
+    this.logger.warn(
+      JSON.stringify({
+        event: "item-explorer-slow-load",
+        phase,
+        acpId,
+        durationMs: Math.round(totalMs),
+        cacheStatus,
+      }),
+    );
+  }
+
+  private matchesIfNoneMatch(headerValue: unknown, etag: string): boolean {
+    const rawHeader = Array.isArray(headerValue)
+      ? headerValue.join(",")
+      : typeof headerValue === "string"
+        ? headerValue
+        : "";
+    if (!rawHeader) return false;
+
+    const currentOpaqueTag = etag.replace(/^W\//, "");
+    const entityTagPattern = /(?:^|,)\s*(\*|(?:W\/)?"[^"]*")\s*(?=,|$)/g;
+    let match: RegExpExecArray | null;
+    while ((match = entityTagPattern.exec(rawHeader)) !== null) {
+      const candidate = match[1];
+      if (candidate === "*") return true;
+      if (candidate.replace(/^W\//, "") === currentOpaqueTag) return true;
+    }
+    return false;
   }
 
   private resolveDisposition(

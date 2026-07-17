@@ -1,6 +1,6 @@
 import { Injectable, ForbiddenException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Like, Not, Repository } from "typeorm";
+import { In, Like, Not, Repository } from "typeorm";
 import { ItemResponseState } from "../database/entities";
 
 @Injectable()
@@ -80,24 +80,36 @@ export class ItemResponseStateService {
     isFallback: boolean;
     fallbackItemId?: string;
   }> {
-    // First try to get direct state
-    const directState = await this.getResponseState(
-      acpId,
-      itemId,
-      unitId,
-      rowKey,
-    );
-    if (directState) {
-      return { state: directState, isFallback: false };
-    }
-
-    // Find position of current item in the list
     const currentIndex = itemList.findIndex(
       (i) =>
         i.itemId === itemId &&
         i.unitId === unitId &&
         (!rowKey || i.rowKey === rowKey),
     );
+    const candidateItemIds = Array.from(
+      new Set([
+        itemId,
+        ...(currentIndex > 0
+          ? itemList
+              .slice(0, currentIndex)
+              .filter((candidate) => candidate.unitId === unitId)
+              .map((candidate) => candidate.itemId)
+          : []),
+      ]),
+    );
+    const unitStates = await this.stateRepository.find({
+      where: { acpId, unitId, itemId: In(candidateItemIds) },
+    });
+    const directState = this.findStateInLoadedSet(
+      unitStates,
+      itemId,
+      unitId,
+      this.normalizeRowKey(rowKey),
+    );
+    if (directState) {
+      return { state: directState, isFallback: false };
+    }
+
     if (currentIndex <= 0) {
       return { state: null, isFallback: false };
     }
@@ -106,11 +118,11 @@ export class ItemResponseStateService {
     for (let i = currentIndex - 1; i >= 0; i--) {
       const prevItem = itemList[i];
       if (prevItem.unitId === unitId) {
-        const prevState = await this.getResponseState(
-          acpId,
+        const prevState = this.findStateInLoadedSet(
+          unitStates,
           prevItem.itemId,
           prevItem.unitId,
-          prevItem.rowKey,
+          this.normalizeRowKey(prevItem.rowKey),
         );
         if (prevState) {
           return {
@@ -236,5 +248,41 @@ export class ItemResponseStateService {
       where: { acpId, itemId, unitId, rowKey: legacyRowKey },
     });
     return legacy;
+  }
+
+  private findStateInLoadedSet(
+    states: ItemResponseState[],
+    itemId: string,
+    unitId: string,
+    explicitRowKey?: string,
+  ): ItemResponseState | null {
+    const matchingStates = states.filter(
+      (state) => state.itemId === itemId && state.unitId === unitId,
+    );
+    const legacyRowKey = `${unitId}::${itemId}`;
+    const requestedRowKey = explicitRowKey || legacyRowKey;
+    const direct =
+      matchingStates.find((state) => state.rowKey === requestedRowKey) || null;
+    if (direct) return direct;
+
+    if (!explicitRowKey) {
+      return (
+        matchingStates
+          .filter((state) => !String(state.rowKey || "").includes("::"))
+          .sort(
+            (left, right) =>
+              new Date(right.updatedAt).getTime() -
+              new Date(left.updatedAt).getTime(),
+          )[0] || null
+      );
+    }
+
+    if (explicitRowKey.includes("::")) {
+      return null;
+    }
+
+    return (
+      matchingStates.find((state) => state.rowKey === legacyRowKey) || null
+    );
   }
 }

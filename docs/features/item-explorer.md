@@ -119,6 +119,95 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 - If the selected item disappears from the current result set, the explorer falls back to the
   first visible item so keyboard navigation remains continuous.
 
+## Performance and load diagnostics
+
+The main Explorer load costs are the initial XML/VOMD/VOCS parsing and, for the first preview of a
+unit, resolving the unit dependencies plus downloading the Player HTML and VOUD definition.
+Response-state lookup remains item-specific.
+
+The backend keeps bounded in-process caches for file catalogs, parsed and fully numbered item lists,
+and resolved unit views. The database validates file catalogs with a compact aggregate signature
+over file identity, checksum, size, path, and upload timestamp; complete file records are loaded only
+after that signature changes. Item-list keys use that file signature, the relevant feature
+configuration, and the active and published Explorer version tokens. Numbered results additionally
+use an aggregate revision of the persisted row-number assignments. Unit-view keys include the file
+signature, unit ID, and the lightweight version of the active or published Explorer state for the
+requested perspective.
+
+File mutations proactively invalidate the local process while the database signatures detect
+changes made by another backend process. Each cache is limited to 100 least-recently-used entries.
+Identical in-flight catalog, parse, and numbering work shares one Promise, and failed computations
+are never retained.
+
+The browser keeps the resolved unit, Player HTML, and definition for the lifetime of the Explorer
+route. Selecting another item in the same unit reuses the existing iframe and assets and requests
+only the item's response state. Concurrent requests for the same unit share one in-flight load.
+
+| Interaction                           | Before                                           | After the first successful unit load |
+| ------------------------------------- | ------------------------------------------------ | ------------------------------------ |
+| Select another item in the same unit  | Unit view + response state + Player + definition | Response state only                  |
+| Repeat an unchanged item-list request | Parse every referenced source file               | Signature check + cached parse       |
+| Repeat an unchanged file download     | Full response body                               | Browser cache or conditional `304`   |
+
+The UI shows an immediate loading state. If a list or preview phase exceeds 1.5 seconds, it adds a
+polite hint that WLAN or VPN latency may be involved. The hint disappears as soon as the current
+request settles and is not carried over to the next selection.
+
+Backend responses expose `Server-Timing` entries for file-signature and Explorer-version reads,
+source reads, parsing, row-number revision and assignment, total endpoint time, parsed-cache status,
+and numbered-result cache status. File downloads additionally use private `ETag` caching. Calls over
+1.5 seconds produce a structured `item-explorer-slow-load` warning containing the ACP ID, phase,
+duration, and cache status, but no item or file contents.
+
+For detailed browser measurements, enable diagnostics in the browser console and reload the
+Explorer:
+
+```js
+localStorage.setItem("cp.itemExplorer.performance", "1");
+```
+
+The console then reports `item-list`, `item-selection-total`, `unit-view`, `response-state`,
+`player-html`, `definition`, and `player-ready` measurements. They are also available as Performance
+API measures named `item-explorer:<phase>`. Disable the console output with:
+
+```js
+localStorage.removeItem("cp.itemExplorer.performance");
+```
+
+### Performance acceptance baseline
+
+The reproducible local benchmark compares the working tree with commit `c85fcf3` on the same
+PostgreSQL instance and synthetic fixture of 50 units, 2,000 items, and 151 files. Warm measurements
+alternate baseline and candidate over five independent backend starts and collect 30 requests per
+endpoint and start. Cold measurements likewise alternate both variants.
+
+The acceptance thresholds distinguish the direct technical endpoint from the user-visible reuse
+path:
+
+- warm item-list median improves by at least 50%,
+- warm direct unit-view median improves by at least 40%,
+- a second selection in the same unit improves by at least 30% and requests response state only,
+- cold item-list median regresses by no more than 15%,
+- optimized warm p95 values remain below 1.5 seconds,
+- response bodies remain identical and conditional file requests return `304` without a body.
+
+The direct unit-view threshold is intentionally 40% rather than 50% because every request still
+performs current authorization and cross-process database-revision checks. Those correctness checks
+must not be replaced with stale process-local authorization data merely to cross a sub-millisecond
+benchmark boundary.
+
+The alternating reference run on 2026-07-17 produced these results:
+
+| Path                              | Baseline median | Optimized median | Improvement |
+| --------------------------------- | --------------: | ---------------: | ----------: |
+| Warm item list                    |        52.55 ms |         22.49 ms |      57.21% |
+| Warm direct unit view             |        14.11 ms |          7.16 ms |      49.27% |
+| Second selection in the same unit |       336.33 ms |        167.19 ms |      50.29% |
+
+The cold item-list median increased by 8.60%, warm p95 values were 38.29 ms for the item list and
+14.72 ms for unit view, and all compared response bodies remained equal. Across five candidate
+starts, 100 conditional downloads returned `304` and transferred no body bytes.
+
 ## Supported Change Types
 
 The client sends a `changeType` label with draft patches. This improves the usefulness of

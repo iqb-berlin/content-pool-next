@@ -25,6 +25,8 @@ jest.mock("fs/promises", () => ({
 }));
 
 describe("FilesService", () => {
+  const acpId = "11111111-1111-4111-8111-111111111111";
+  const unknownAcpId = "99999999-9999-4999-8999-999999999999";
   let service: FilesService;
   let repo: any;
   let acpRepo: any;
@@ -35,7 +37,7 @@ describe("FilesService", () => {
 
   const mockFile = {
     id: "file-1",
-    acpId: "acp-1",
+    acpId: acpId,
     filePath: "/uploads/acp-1/test.json",
     originalName: "test.json",
     fileType: "application/json",
@@ -57,7 +59,7 @@ describe("FilesService", () => {
     };
     acpRepo = {
       findOne: jest.fn().mockResolvedValue({
-        id: "acp-1",
+        id: acpId,
         acpIndex: {
           units: [
             {
@@ -166,9 +168,26 @@ describe("FilesService", () => {
 
   describe("findByAcp", () => {
     it("should return files for ACP", async () => {
-      const result = await service.findByAcp("acp-1");
+      const result = await service.findByAcp(acpId);
       expect(result).toHaveLength(1);
       expect(result[0].originalName).toBe("test.json");
+    });
+
+    it("should reject an unknown ACP before querying files", async () => {
+      acpRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findByAcp(unknownAcpId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(repo.find).not.toHaveBeenCalled();
+    });
+
+    it("should reject a malformed ACP ID before querying repositories", async () => {
+      await expect(
+        service.findByAcp("__coding-box-connection-test__"),
+      ).rejects.toThrow(BadRequestException);
+      expect(acpRepo.findOne).not.toHaveBeenCalled();
+      expect(repo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -185,7 +204,7 @@ describe("FilesService", () => {
 
     it("should throw when ACP-scoped lookup does not match ACP", async () => {
       repo.findOne.mockResolvedValue({ ...mockFile, acpId: "other-acp" });
-      await expect(service.findByIdForAcp("acp-1", "file-1")).rejects.toThrow(
+      await expect(service.findByIdForAcp(acpId, "file-1")).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -200,9 +219,28 @@ describe("FilesService", () => {
         buffer: Buffer.from('{"test": true}'),
       } as Express.Multer.File;
 
-      await service.upload("acp-1", multerFile);
+      await service.upload(acpId, multerFile);
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
+    });
+
+    it("should reject an unknown ACP before writing to disk", async () => {
+      acpRepo.findOne.mockResolvedValue(null);
+      (fs.mkdir as jest.Mock).mockClear();
+      (fs.writeFile as jest.Mock).mockClear();
+      const incoming = {
+        originalname: "test.json",
+        mimetype: "application/json",
+        size: 2,
+        buffer: Buffer.from("{}"),
+      } as Express.Multer.File;
+
+      await expect(service.upload(unknownAcpId, incoming)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(fs.mkdir).not.toHaveBeenCalled();
+      expect(fs.writeFile).not.toHaveBeenCalled();
+      expect(repo.save).not.toHaveBeenCalled();
     });
   });
 
@@ -213,6 +251,19 @@ describe("FilesService", () => {
       size: 128,
       buffer: Buffer.from('{"fresh": true}'),
     } as Express.Multer.File;
+
+    it("should reject an unknown ACP before processing uploads", async () => {
+      acpRepo.findOne.mockResolvedValue(null);
+      (fs.mkdir as jest.Mock).mockClear();
+      (fs.writeFile as jest.Mock).mockClear();
+
+      await expect(
+        service.uploadMultiple(unknownAcpId, [incoming]),
+      ).rejects.toThrow(NotFoundException);
+      expect(repo.find).not.toHaveBeenCalled();
+      expect(fs.mkdir).not.toHaveBeenCalled();
+      expect(fs.writeFile).not.toHaveBeenCalled();
+    });
 
     it("should extract ZIP uploads before storing metadata", async () => {
       repo.find.mockResolvedValue([]);
@@ -225,24 +276,7 @@ describe("FilesService", () => {
       zip.file(".DS_Store", "ignore");
       const buffer = await zip.generateAsync({ type: "nodebuffer" });
 
-      const uploadSpy = jest
-        .spyOn(service, "upload")
-        .mockResolvedValueOnce({
-          ...mockFile,
-          id: "file-xml",
-          originalName: "unit-1.xml",
-          fileType: "application/xml",
-          fileSize: 8,
-        } as unknown as AcpFile)
-        .mockResolvedValueOnce({
-          ...mockFile,
-          id: "file-vomd",
-          originalName: "unit-1.vomd",
-          fileType: "application/json",
-          fileSize: 12,
-        } as unknown as AcpFile);
-
-      const result = await service.uploadMultiple("acp-1", [
+      const result = await service.uploadMultiple(acpId, [
         {
           originalname: "bundle.zip",
           mimetype: "application/zip",
@@ -251,38 +285,81 @@ describe("FilesService", () => {
         } as Express.Multer.File,
       ]);
 
-      expect(uploadSpy).toHaveBeenCalledTimes(2);
-      expect(uploadSpy).toHaveBeenNthCalledWith(
+      expect(repo.create).toHaveBeenCalledTimes(2);
+      expect(repo.create).toHaveBeenNthCalledWith(
         1,
-        "acp-1",
         expect.objectContaining({
-          originalname: "unit-1.xml",
-          mimetype: "application/xml",
-          size: 8,
-          buffer: Buffer.from("<Unit />"),
+          acpId: acpId,
+          originalName: "unit-1.xml",
+          fileType: "application/xml",
+          fileSize: 8,
         }),
       );
-      expect(uploadSpy).toHaveBeenNthCalledWith(
+      expect(repo.create).toHaveBeenNthCalledWith(
         2,
-        "acp-1",
         expect.objectContaining({
-          originalname: "unit-1.vomd",
-          mimetype: "application/json",
-          size: 12,
-          buffer: Buffer.from('{"items":[]}'),
+          acpId: acpId,
+          originalName: "unit-1.vomd",
+          fileType: "application/json",
+          fileSize: 12,
         }),
       );
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
       expect(result.map((file) => file.originalName)).toEqual([
         "unit-1.xml",
         "unit-1.vomd",
       ]);
     });
 
+    it("should preserve archive-like uploads when expansion is disabled", async () => {
+      const JSZip = require("jszip");
+      const zip = new JSZip();
+      zip.file("arbitrary.json", '{"unexpected":true}');
+      const buffer = await zip.generateAsync({ type: "nodebuffer" });
+      const existingVocs = {
+        ...mockFile,
+        id: "vocs-file",
+        originalName: "UNIT-1.VOCS",
+      };
+      repo.find.mockResolvedValue([existingVocs]);
+      const deleteSpy = jest
+        .spyOn(service, "deleteForAcp")
+        .mockResolvedValue(undefined);
+      (fs.writeFile as jest.Mock).mockClear();
+
+      const result = await service.uploadMultiple(
+        acpId,
+        [
+          {
+            originalname: "UNIT-1.VOCS",
+            mimetype: "application/zip",
+            size: buffer.length,
+            buffer,
+          } as Express.Multer.File,
+        ],
+        "overwrite",
+        { expandArchives: false },
+      );
+
+      expect(deleteSpy).toHaveBeenCalledWith(acpId, "vocs-file");
+      expect(repo.create).toHaveBeenCalledTimes(1);
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acpId: acpId,
+          originalName: "UNIT-1.VOCS",
+          fileType: "application/zip",
+          fileSize: buffer.length,
+        }),
+      );
+      expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), buffer);
+      expect(result.map((file) => file.originalName)).toEqual(["UNIT-1.VOCS"]);
+    });
+
     it("should reject invalid ZIP uploads", async () => {
       repo.find.mockResolvedValue([]);
 
       await expect(
-        service.uploadMultiple("acp-1", [
+        service.uploadMultiple(acpId, [
           {
             originalname: "broken.zip",
             mimetype: "application/zip",
@@ -294,7 +371,7 @@ describe("FilesService", () => {
     });
 
     it("should reject conflicts by default", async () => {
-      await expect(service.uploadMultiple("acp-1", [incoming])).rejects.toThrow(
+      await expect(service.uploadMultiple(acpId, [incoming])).rejects.toThrow(
         ConflictException,
       );
     });
@@ -303,20 +380,21 @@ describe("FilesService", () => {
       const deleteSpy = jest
         .spyOn(service, "deleteForAcp")
         .mockResolvedValue(undefined);
-      const uploadSpy = jest.spyOn(service, "upload").mockResolvedValue({
-        ...mockFile,
-        id: "new-file",
-        originalName: "test.json",
-      } as unknown as AcpFile);
 
       const result = await service.uploadMultiple(
-        "acp-1",
+        acpId,
         [incoming],
         "overwrite",
       );
 
-      expect(deleteSpy).toHaveBeenCalledWith("acp-1", "file-1");
-      expect(uploadSpy).toHaveBeenCalledWith("acp-1", incoming);
+      expect(deleteSpy).toHaveBeenCalledWith(acpId, "file-1");
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acpId: acpId,
+          originalName: incoming.originalname,
+        }),
+      );
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
       expect(result).toHaveLength(1);
     });
 
@@ -324,31 +402,32 @@ describe("FilesService", () => {
       const deleteSpy = jest
         .spyOn(service, "deleteForAcp")
         .mockResolvedValue(undefined);
-      const uploadSpy = jest.spyOn(service, "upload").mockResolvedValue({
-        ...mockFile,
-        id: "new-file",
-        originalName: "test.json",
-      } as unknown as AcpFile);
 
       const result = await service.uploadMultiple(
-        "acp-1",
+        acpId,
         [incoming],
         "keep-both",
       );
 
       expect(deleteSpy).not.toHaveBeenCalled();
-      expect(uploadSpy).toHaveBeenCalledWith("acp-1", incoming);
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acpId: acpId,
+          originalName: incoming.originalname,
+        }),
+      );
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
       expect(result).toHaveLength(1);
     });
 
     it("should reject invalid conflict strategy", async () => {
       await expect(
-        service.uploadMultiple("acp-1", [incoming], "invalid-strategy"),
+        service.uploadMultiple(acpId, [incoming], "invalid-strategy"),
       ).rejects.toThrow(BadRequestException);
     });
 
     it("should require at least one file", async () => {
-      await expect(service.uploadMultiple("acp-1", [])).rejects.toThrow(
+      await expect(service.uploadMultiple(acpId, [])).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -360,7 +439,7 @@ describe("FilesService", () => {
       } as Express.Multer.File;
 
       await expect(
-        service.uploadMultiple("acp-1", [invalidFile]),
+        service.uploadMultiple(acpId, [invalidFile]),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -380,14 +459,14 @@ describe("FilesService", () => {
     });
 
     it("should download ACP-scoped file and fail on missing disk file", async () => {
-      await expect(service.downloadForAcp("acp-1", "file-1")).resolves.toEqual(
+      await expect(service.downloadForAcp(acpId, "file-1")).resolves.toEqual(
         expect.objectContaining({
           file: expect.objectContaining({ id: "file-1" }),
         }),
       );
 
       (fs.readFile as jest.Mock).mockRejectedValueOnce(new Error("missing"));
-      await expect(service.downloadForAcp("acp-1", "file-1")).rejects.toThrow(
+      await expect(service.downloadForAcp(acpId, "file-1")).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -398,17 +477,18 @@ describe("FilesService", () => {
         { ...mockFile, id: "file-2", originalName: "second.json" },
       ]);
 
-      await expect(service.createFilesZip("acp-1")).resolves.toEqual(
+      await expect(service.createFilesZip(acpId)).resolves.toEqual(
         expect.objectContaining({
-          fileName: "acp-acp-1-all-files.zip",
+          fileName: "acp-11111111-1111-4111-8111-111111111111-all-files.zip",
         }),
       );
 
       await expect(
-        service.createFilesZip("acp-1", ["file-2", "file-1", "file-2"]),
+        service.createFilesZip(acpId, ["file-2", "file-1", "file-2"]),
       ).resolves.toEqual(
         expect.objectContaining({
-          fileName: "acp-acp-1-selected-files.zip",
+          fileName:
+            "acp-11111111-1111-4111-8111-111111111111-selected-files.zip",
         }),
       );
     });
@@ -417,7 +497,7 @@ describe("FilesService", () => {
       repo.find.mockResolvedValue([{ ...mockFile, id: "file-1" }]);
 
       await expect(
-        service.createFilesZip("acp-1", ["missing-file"]),
+        service.createFilesZip(acpId, ["missing-file"]),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -447,10 +527,11 @@ describe("FilesService", () => {
       };
 
       await expect(
-        service.createFilesZipArchive("acp-1", ["file-1", "file-2"], progress),
+        service.createFilesZipArchive(acpId, ["file-1", "file-2"], progress),
       ).resolves.toEqual(
         expect.objectContaining({
-          fileName: "acp-acp-1-selected-files.zip",
+          fileName:
+            "acp-11111111-1111-4111-8111-111111111111-selected-files.zip",
         }),
       );
 
@@ -487,7 +568,7 @@ describe("FilesService", () => {
 
     it("should delete by ACP and remove all files", async () => {
       await expect(
-        service.deleteForAcp("acp-1", "file-1"),
+        service.deleteForAcp(acpId, "file-1"),
       ).resolves.toBeUndefined();
       expect(repo.remove).toHaveBeenCalledWith(mockFile);
 
@@ -499,7 +580,7 @@ describe("FilesService", () => {
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error("missing"));
 
-      await expect(service.deleteAll("acp-1")).resolves.toBeUndefined();
+      await expect(service.deleteAll(acpId)).resolves.toBeUndefined();
       expect(repo.remove).toHaveBeenCalledWith([
         expect.objectContaining({ id: "file-1" }),
         expect.objectContaining({ id: "file-2" }),
@@ -512,7 +593,7 @@ describe("FilesService", () => {
         { ...mockFile, id: "file-2", filePath: "/x/2" },
       ]);
 
-      const result = await service.deleteManyForAcp("acp-1", [
+      const result = await service.deleteManyForAcp(acpId, [
         "file-1",
         "file-2",
         "file-1",
@@ -526,14 +607,14 @@ describe("FilesService", () => {
     });
 
     it("should reject empty and unknown IDs during bulk delete", async () => {
-      await expect(service.deleteManyForAcp("acp-1", [])).rejects.toThrow(
+      await expect(service.deleteManyForAcp(acpId, [])).rejects.toThrow(
         BadRequestException,
       );
 
       repo.find.mockResolvedValue([{ ...mockFile, id: "file-1" }]);
 
       await expect(
-        service.deleteManyForAcp("acp-1", ["missing-file"]),
+        service.deleteManyForAcp(acpId, ["missing-file"]),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -567,7 +648,7 @@ describe("FilesService", () => {
         codingSchemes: {},
       });
 
-      const result = await service.cleanupOrphanedResponseStates("acp-1");
+      const result = await service.cleanupOrphanedResponseStates(acpId);
 
       expect(stateRepo.delete).toHaveBeenCalledWith(["state-2"]);
       expect(result).toEqual({
@@ -580,7 +661,7 @@ describe("FilesService", () => {
     it("returns zero cleanup when no response states exist", async () => {
       stateRepo.find.mockResolvedValueOnce([]);
 
-      const result = await service.cleanupOrphanedResponseStates("acp-1");
+      const result = await service.cleanupOrphanedResponseStates(acpId);
 
       expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
       expect(stateRepo.delete).not.toHaveBeenCalled();
@@ -620,7 +701,7 @@ describe("FilesService", () => {
         codingSchemes: {},
       });
 
-      const result = await service.cleanupOrphanedResponseStates("acp-1");
+      const result = await service.cleanupOrphanedResponseStates(acpId);
 
       expect(stateRepo.delete).toHaveBeenCalledWith(["state-orphaned-partial"]);
       expect(result).toEqual({
@@ -633,13 +714,13 @@ describe("FilesService", () => {
 
   describe("cleanupReferencesAfterFileMutation", () => {
     it("runs dependency, response state, and validation cleanup", async () => {
-      const result = await service.cleanupReferencesAfterFileMutation("acp-1");
+      const result = await service.cleanupReferencesAfterFileMutation(acpId);
 
       expect(unitParserService.pruneMissingDependencies).toHaveBeenCalledWith(
-        "acp-1",
+        acpId,
       );
       expect(validationService.autoValidateUploadedFiles).toHaveBeenCalledWith(
-        "acp-1",
+        acpId,
         expect.any(Array),
       );
       expect(result).toEqual(
@@ -664,12 +745,12 @@ describe("FilesService", () => {
     });
 
     it("can skip validation step for bulk mutation flows", async () => {
-      const result = await service.cleanupReferencesAfterFileMutation("acp-1", {
+      const result = await service.cleanupReferencesAfterFileMutation(acpId, {
         skipValidation: true,
       });
 
       expect(unitParserService.pruneMissingDependencies).toHaveBeenCalledWith(
-        "acp-1",
+        acpId,
       );
       expect(
         validationService.autoValidateUploadedFiles,
@@ -702,7 +783,7 @@ describe("FilesService", () => {
         valid: true,
       });
       await expect(
-        service.getValidationResultForAcp("acp-1", "file-1"),
+        service.getValidationResultForAcp(acpId, "file-1"),
       ).resolves.toEqual({ valid: true });
     });
   });
@@ -724,7 +805,7 @@ describe("FilesService", () => {
   <Reference>unit-1.vomd</Reference>
 </Unit>`);
 
-      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+      const preview = await service.getPreviewForAcp(acpId, "file-1");
 
       expect(preview).toEqual(
         expect.objectContaining({
@@ -780,7 +861,7 @@ describe("FilesService", () => {
         }),
       );
 
-      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+      const preview = await service.getPreviewForAcp(acpId, "file-1");
 
       expect(preview).toEqual(
         expect.objectContaining({
@@ -821,7 +902,7 @@ describe("FilesService", () => {
         JSON.stringify({ variableCodings: variables }),
       );
 
-      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+      const preview = await service.getPreviewForAcp(acpId, "file-1");
 
       expect(preview).toEqual(
         expect.objectContaining({
@@ -849,7 +930,7 @@ describe("FilesService", () => {
       });
       (fs.readFile as jest.Mock).mockClear();
 
-      const preview = await service.getPreviewForAcp("acp-1", "file-1");
+      const preview = await service.getPreviewForAcp(acpId, "file-1");
 
       expect(preview).toEqual(
         expect.objectContaining({
@@ -867,14 +948,16 @@ describe("FilesService", () => {
         { ...mockFile, id: "f1", originalName: "test.json" },
         { ...mockFile, id: "f2", originalName: "unit-1.xml" },
       ]);
-      const result = await service.createUnitZip("acp-1", "unit-1");
-      expect(result.fileName).toBe("acp-acp-1-unit-unit-1.zip");
+      const result = await service.createUnitZip(acpId, "unit-1");
+      expect(result.fileName).toBe(
+        "acp-11111111-1111-4111-8111-111111111111-unit-unit-1.zip",
+      );
       expect(result.buffer.length).toBeGreaterThan(0);
     });
 
     it("should throw when unit has no files", async () => {
       repo.find.mockResolvedValue([]);
-      await expect(service.createUnitZip("acp-1", "unit-1")).rejects.toThrow(
+      await expect(service.createUnitZip(acpId, "unit-1")).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -888,20 +971,22 @@ describe("FilesService", () => {
         { ...mockFile, id: "f3", originalName: "second.json" },
         { ...mockFile, id: "f4", originalName: "unit-2.xml" },
       ]);
-      const result = await service.createSequenceZip("acp-1", "seq-1");
-      expect(result.fileName).toBe("acp-acp-1-sequence-seq-1.zip");
+      const result = await service.createSequenceZip(acpId, "seq-1");
+      expect(result.fileName).toBe(
+        "acp-11111111-1111-4111-8111-111111111111-sequence-seq-1.zip",
+      );
       expect(result.buffer.length).toBeGreaterThan(0);
     });
 
     it("should throw when sequence does not exist", async () => {
       await expect(
-        service.createSequenceZip("acp-1", "unknown-seq"),
+        service.createSequenceZip(acpId, "unknown-seq"),
       ).rejects.toThrow(NotFoundException);
     });
 
     it("should throw when sequence exists but no files are available", async () => {
       repo.find.mockResolvedValue([]);
-      await expect(service.createSequenceZip("acp-1", "seq-1")).rejects.toThrow(
+      await expect(service.createSequenceZip(acpId, "seq-1")).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -915,7 +1000,7 @@ describe("FilesService", () => {
         },
       });
 
-      await expect(service.getFeatureConfig("acp-1")).resolves.toEqual(
+      await expect(service.getFeatureConfig(acpId)).resolves.toEqual(
         expect.objectContaining({
           metadataColumns: {
             visible: ["metaA"],
@@ -927,13 +1012,13 @@ describe("FilesService", () => {
 
     it("detects dependency files from ACP index", async () => {
       await expect(
-        service.isUnitDependencyFile("acp-1", "unit-1.xml"),
+        service.isUnitDependencyFile(acpId, "unit-1.xml"),
       ).resolves.toBe(true);
       await expect(
-        service.isUnitDependencyFile("acp-1", "test.json"),
+        service.isUnitDependencyFile(acpId, "test.json"),
       ).resolves.toBe(true);
       await expect(
-        service.isUnitDependencyFile("acp-1", "missing.json"),
+        service.isUnitDependencyFile(acpId, "missing.json"),
       ).resolves.toBe(false);
     });
   });

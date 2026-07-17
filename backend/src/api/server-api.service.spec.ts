@@ -201,7 +201,7 @@ describe("ServerApiService", () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it("replaces existing coding schemes and creates a snapshot with changelog", async () => {
+  it("replaces multiple coding schemes in one batch and creates a snapshot with changelog", async () => {
     acpRepository.findOne.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
       packageId: "pkg-1",
@@ -215,17 +215,33 @@ describe("ServerApiService", () => {
         acpId: "11111111-1111-4111-8111-111111111111",
         originalName: "UNIT-1.VOCS",
       },
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-2.VOCS",
+      },
     ]);
 
-    filesService.upload.mockResolvedValue({
-      id: "44444444-4444-4444-8444-444444444444",
-      acpId: "11111111-1111-4111-8111-111111111111",
-      originalName: "UNIT-1.VOCS",
-      fileType: "application/json",
-      fileSize: 10,
-      checksum: "abc",
-      uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
-    });
+    filesService.uploadMultiple.mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-1.VOCS",
+        fileType: "application/json",
+        fileSize: 10,
+        checksum: "abc",
+        uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-2.VOCS",
+        fileType: "application/json",
+        fileSize: 12,
+        checksum: "def",
+        uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    ]);
 
     snapshotsService.create.mockResolvedValue({
       id: "88888888-8888-4888-8888-888888888888",
@@ -243,6 +259,12 @@ describe("ServerApiService", () => {
           size: 2,
           mimetype: "application/json",
         } as Express.Multer.File,
+        {
+          originalname: "unit-2.vocs",
+          buffer: Buffer.from('{"two":true}'),
+          size: 12,
+          mimetype: "application/json",
+        } as Express.Multer.File,
       ],
       {
         changelog: "Kodierschema aktualisiert",
@@ -250,14 +272,18 @@ describe("ServerApiService", () => {
       },
     );
 
-    expect(filesService.deleteForAcp).toHaveBeenCalledWith(
+    expect(filesService.deleteForAcp).not.toHaveBeenCalled();
+    expect(filesService.uploadMultiple).toHaveBeenCalledTimes(1);
+    expect(filesService.uploadMultiple).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
-      "33333333-3333-4333-8333-333333333333",
+      [
+        expect.objectContaining({ originalname: "UNIT-1.VOCS" }),
+        expect.objectContaining({ originalname: "UNIT-2.VOCS" }),
+      ],
+      "overwrite",
+      { expandArchives: false },
     );
-    expect(filesService.upload).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
-      expect.objectContaining({ originalname: "UNIT-1.VOCS" }),
-    );
+    expect(filesService.upload).not.toHaveBeenCalled();
     expect(
       filesService.cleanupReferencesAfterFileMutation,
     ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
@@ -268,7 +294,42 @@ describe("ServerApiService", () => {
       "Kodierschema aktualisiert",
     );
     expect(result.snapshot.versionNumber).toBe(7);
-    expect(result.replacedFiles).toHaveLength(1);
+    expect(result.replacedFiles).toHaveLength(2);
+  });
+
+  it("does not delete coding schemes before a failed replacement batch", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      packageId: "pkg-1",
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      acpIndex: {},
+    });
+    fileRepository.find.mockResolvedValue([
+      {
+        id: "33333333-3333-4333-8333-333333333333",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-1.VOCS",
+      },
+      {
+        id: "55555555-5555-4555-8555-555555555555",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-2.VOCS",
+      },
+    ]);
+    filesService.uploadMultiple.mockRejectedValue(new Error("upload failed"));
+
+    await expect(
+      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+        { originalname: "unit-1.vocs" } as Express.Multer.File,
+        { originalname: "unit-2.vocs" } as Express.Multer.File,
+      ]),
+    ).rejects.toThrow("upload failed");
+
+    expect(filesService.deleteForAcp).not.toHaveBeenCalled();
+    expect(
+      filesService.cleanupReferencesAfterFileMutation,
+    ).not.toHaveBeenCalled();
+    expect(snapshotsService.create).not.toHaveBeenCalled();
   });
 
   it("fails replacement if coding scheme does not exist in ACP", async () => {
@@ -559,13 +620,29 @@ describe("ServerApiService", () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it("returns not found for invalid ACP ids before querying Postgres", async () => {
+  it("returns bad request for invalid ACP ids before querying Postgres", async () => {
     await expect(
       service.listFiles("__coding-box-connection-test__"),
-    ).rejects.toThrow(NotFoundException);
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.listFiles("__coding-box-connection-test__", [
+        "11111111-1111-4111-8111-111111111111",
+      ]),
+    ).rejects.toThrow(BadRequestException);
 
     expect(acpRepository.findOne).not.toHaveBeenCalled();
     expect(fileRepository.find).not.toHaveBeenCalled();
+  });
+
+  it("returns bad request for invalid file ids before querying Postgres", async () => {
+    await expect(
+      service.getFile(
+        "11111111-1111-4111-8111-111111111111",
+        "not-a-file-uuid",
+      ),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(fileRepository.findOne).not.toHaveBeenCalled();
   });
 
   it("downloads files through FilesService when ACP exists", async () => {
@@ -745,15 +822,17 @@ describe("ServerApiService", () => {
         originalName: "UNIT-1.VOCS",
       },
     ]);
-    filesService.upload.mockResolvedValue({
-      id: "44444444-4444-4444-8444-444444444444",
-      acpId: "11111111-1111-4111-8111-111111111111",
-      originalName: "UNIT-1.VOCS",
-      fileType: "application/json",
-      fileSize: 10,
-      checksum: "abc",
-      uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
-    });
+    filesService.uploadMultiple.mockResolvedValue([
+      {
+        id: "44444444-4444-4444-8444-444444444444",
+        acpId: "11111111-1111-4111-8111-111111111111",
+        originalName: "UNIT-1.VOCS",
+        fileType: "application/json",
+        fileSize: 10,
+        checksum: "abc",
+        uploadedAt: new Date("2026-01-02T00:00:00.000Z"),
+      },
+    ]);
     snapshotsService.create.mockResolvedValue({
       id: "88888888-8888-4888-8888-888888888888",
       versionNumber: 7,

@@ -3,6 +3,8 @@ import { Observable, of, Subject, throwError } from 'rxjs';
 import { ItemExplorerFacade } from './item-explorer.facade';
 import { VoudService } from '../../core/services/voud.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
+import { ItemExplorerPreviewLoader } from './item-explorer-preview-loader.service';
+import { ItemExplorerPreviewCoordinator } from './item-explorer-preview-coordinator.service';
 
 function createJwt(sub: string, type = 'user', acpId = ''): string {
   const payload = btoa(
@@ -72,14 +74,26 @@ function createFacade(options?: {
     ...authOverrides,
   };
 
+  const diagnostics = {
+    start: vi.fn(() => ({ phase: 'test', id: 1, startedAt: 0, startMark: 'test' })),
+    finish: vi.fn(),
+    ...(options?.diagnostics || {}),
+  };
+  const previewLoader =
+    options?.previewLoader || new ItemExplorerPreviewLoader(api as any, diagnostics as any);
+  const previewCoordinator = new ItemExplorerPreviewCoordinator(
+    api as any,
+    previewLoader as any,
+    diagnostics as any,
+  );
   const component = new ItemExplorerFacade(
     api as any,
     sanitizer as any,
     voudService as any,
     authService as any,
     options?.pendingPersonalSessionStorage || new PendingPersonalSessionStorageService(),
-    options?.previewLoader as any,
-    options?.diagnostics as any,
+    previewCoordinator,
+    diagnostics as any,
   );
   (component as any).personalDataSessionIdentity = (
     component as any
@@ -100,6 +114,31 @@ function registerPlayerDom(component: ItemExplorerFacade, postMessage = vi.fn())
   };
   component.registerPlayerDom(port);
   return port;
+}
+
+function setPreviewStatus(
+  component: ItemExplorerFacade,
+  kind: 'idle' | 'loading-unit' | 'loading-response' | 'ready',
+) {
+  const item =
+    component.selectedItem ||
+    ({
+      itemId: 'test-item',
+      unitId: 'test-unit',
+      rowKey: 'test-row',
+      uuid: 'test-row',
+      unitLabel: 'Test unit',
+      description: '',
+      variableId: 'test-variable',
+      metadata: {},
+    } as any);
+  if (kind === 'idle') {
+    (component as any).previewCoordinator.status = { kind: 'idle' };
+  } else if (kind === 'loading-response') {
+    (component as any).previewCoordinator.status = { kind, item, reuseUnit: true };
+  } else {
+    (component as any).previewCoordinator.status = { kind, item };
+  }
 }
 
 function createExplorerEnvelope(
@@ -1195,8 +1234,6 @@ describe('ItemExplorerFacade', () => {
     component.unit = { id: 'UNIT_1', dependencies: [] };
     component.playerSrcDoc = '<html>cached player</html>';
     (component as any).definitionContent = '{"pages":[]}';
-    (component as any).playerHtmlLoadState = 'ready';
-    (component as any).definitionLoadState = 'ready';
     const item = {
       itemId: 'ITEM_2',
       uuid: 'uuid-2',
@@ -1229,9 +1266,7 @@ describe('ItemExplorerFacade', () => {
     component.unit = { id: 'UNIT_1', dependencies: [] };
     component.playerSrcDoc = '<html>cached player</html>';
     (component as any).definitionContent = '{"pages":[]}';
-    (component as any).playerHtmlLoadState = 'ready';
-    (component as any).definitionLoadState = 'ready';
-    (component as any).responseStateReady = true;
+    setPreviewStatus(component, 'ready');
     (component as any).activePlayerSessionId = 'old-session';
     component.selectedItem = {
       itemId: 'ITEM_1',
@@ -1256,6 +1291,10 @@ describe('ItemExplorerFacade', () => {
     component.filteredItems = [component.selectedItem, nextItem] as any;
 
     component.selectItem(nextItem, 1);
+    expect(component.previewUpdateInProgress).toBe(true);
+    expect(component.isPreviewLoading).toBe(false);
+    expect(component.shouldRenderPlayerFrame).toBe(true);
+
     component.handlePlayerMessage({
       type: 'vopStateChangedNotification',
       sessionId: 'old-session',
@@ -1277,7 +1316,7 @@ describe('ItemExplorerFacade', () => {
 
   it('accepts player state only from the active Verona session', () => {
     const component = createFacade();
-    (component as any).responseStateReady = true;
+    setPreviewStatus(component, 'ready');
     (component as any).activePlayerSessionId = 'active-session';
 
     component.handlePlayerMessage({
@@ -1491,8 +1530,6 @@ describe('ItemExplorerFacade', () => {
     component.unit = { id: 'UNIT_1', dependencies: [] };
     component.playerSrcDoc = '<html>cached player</html>';
     (component as any).definitionContent = '{"pages":[]}';
-    (component as any).playerHtmlLoadState = 'ready';
-    (component as any).definitionLoadState = 'ready';
     const item = {
       itemId: 'ITEM_2',
       uuid: 'uuid-2',
@@ -2199,21 +2236,18 @@ describe('ItemExplorerFacade', () => {
       variableId: 'VAR_1',
       metadata: {},
     } as any;
-    (component as any).loadingUnit = false;
-    (component as any).responseStateReady = true;
-    (component as any).playerHtmlLoadState = 'loading';
-    (component as any).definitionLoadState = 'loading';
+    setPreviewStatus(component, 'loading-unit');
 
     expect(component.isPreviewLoading).toBe(true);
     expect(component.shouldRenderPlayerFrame).toBe(false);
 
-    (component as any).playerHtmlLoadState = 'ready';
     component.playerSrcDoc = '<html></html>';
 
     expect(component.isPreviewLoading).toBe(true);
     expect(component.shouldRenderPlayerFrame).toBe(false);
 
-    (component as any).definitionLoadState = 'ready';
+    (component as any).definitionContent = '{"pages":[]}';
+    setPreviewStatus(component, 'ready');
 
     expect(component.isPreviewLoading).toBe(false);
     expect(component.shouldRenderPlayerFrame).toBe(true);
@@ -2231,10 +2265,7 @@ describe('ItemExplorerFacade', () => {
       variableId: 'VAR_2',
       metadata: {},
     } as any;
-    (component as any).loadingUnit = false;
-    (component as any).responseStateReady = false;
-    (component as any).playerHtmlLoadState = 'missing';
-    (component as any).definitionLoadState = 'ready';
+    (component as any).previewCoordinator.markUnavailable('Player fehlt');
 
     expect(component.isPreviewLoading).toBe(false);
     expect(component.shouldRenderPlayerFrame).toBe(false);
@@ -2254,11 +2285,9 @@ describe('ItemExplorerFacade', () => {
         variableId: 'VAR_3',
         metadata: {},
       } as any;
-      (component as any).loadingUnit = false;
-      (component as any).responseStateReady = true;
-      (component as any).playerHtmlLoadState = 'ready';
-      (component as any).definitionLoadState = 'ready';
       component.playerSrcDoc = '<html></html>';
+      (component as any).definitionContent = '{"pages":[]}';
+      setPreviewStatus(component, 'ready');
 
       component.onPagingModeChange();
 
@@ -2294,12 +2323,12 @@ describe('ItemExplorerFacade', () => {
       (component as any).unit = { id: 'UNIT_1', dependencies: [] };
       (component as any).definitionContent = JSON.stringify({ pages: [] });
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = false;
+      setPreviewStatus(component, 'loading-response');
 
       (component as any).startPlayerIfReady();
       expect(postMessage).not.toHaveBeenCalled();
 
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
       (component as any).startPlayerIfReady();
 
       expect(postMessage).toHaveBeenCalledTimes(1);
@@ -2373,7 +2402,7 @@ describe('ItemExplorerFacade', () => {
         ],
       });
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
 
       (component as any).startPlayerIfReady();
 
@@ -2444,7 +2473,7 @@ describe('ItemExplorerFacade', () => {
         ],
       });
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
 
       (component as any).startPlayerIfReady();
 
@@ -2486,7 +2515,7 @@ describe('ItemExplorerFacade', () => {
       (component as any).unit = { id: 'UNIT_1', dependencies: [] };
       (component as any).definitionContent = 'original-definition';
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
 
       (component as any).startPlayerIfReady();
 
@@ -2526,7 +2555,7 @@ describe('ItemExplorerFacade', () => {
       (component as any).unit = { id: 'UNIT_1', dependencies: [] };
       (component as any).definitionContent = 'original-definition';
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
 
       (component as any).startPlayerIfReady();
 
@@ -2793,7 +2822,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).unit = { id: 'UNIT_3', dependencies: [] };
     (component as any).definitionContent = JSON.stringify({ pages: [] });
     (component as any).playerFrameReady = true;
-    (component as any).responseStateReady = true;
+    setPreviewStatus(component, 'ready');
 
     (component as any).startPlayerIfReady();
 
@@ -2911,7 +2940,7 @@ describe('ItemExplorerFacade', () => {
     };
     (component as any).queueDraftPatch = queueDraftPatch;
     (component as any).startPlayerIfReady = startPlayerIfReady;
-    (component as any).loadingUnit = true;
+    setPreviewStatus(component, 'loading-unit');
 
     (component as any).syncPreviewTargetResolution(component.selectedItem);
     component.selectedPreviewTargetId = 'BASE_B';
@@ -2956,7 +2985,7 @@ describe('ItemExplorerFacade', () => {
       },
     };
     (component as any).queueDraftPatch = queueDraftPatch;
-    (component as any).loadingUnit = true;
+    setPreviewStatus(component, 'loading-unit');
 
     component.customPreviewTargetDraft = '  alias.custom.target  ';
     component.applyCustomPreviewTarget();
@@ -3002,7 +3031,7 @@ describe('ItemExplorerFacade', () => {
       },
     };
     (component as any).queueDraftPatch = queueDraftPatch;
-    (component as any).loadingUnit = true;
+    setPreviewStatus(component, 'loading-unit');
 
     component.resetPreviewTargetSelection();
 
@@ -3082,6 +3111,55 @@ describe('ItemExplorerFacade', () => {
     expect(component.selectedPreviewTarget).toBe('BASE_B');
   });
 
+  it('reloads the response state when shared state repairs an unavailable preview target', () => {
+    const responseState$ = new Subject<any>();
+    const getResponseStateWithFallback = vi.fn(() => responseState$);
+    const previewLoader = { load: vi.fn(), clear: vi.fn() };
+    const component = createFacade({
+      api: { getResponseStateWithFallback },
+      previewLoader,
+    });
+    const item = {
+      itemId: 'ITEM_6',
+      uuid: 'uuid-6',
+      rowKey: 'uuid-6',
+      unitId: 'UNIT_6',
+      unitLabel: 'Unit 6',
+      description: 'Preview target recovery',
+      variableId: 'VAR_BAD',
+      previewTargetId: 'VAR_BAD',
+      metadata: {},
+    } as any;
+    component.acpId = 'acp-1';
+    component.items = [item];
+    component.filteredItems = [item];
+    component.selectedItem = item;
+    component.selectedIndex = 0;
+    component.unit = { id: 'UNIT_6', dependencies: [] };
+    component.playerSrcDoc = '<html>cached player</html>';
+    (component as any).definitionContent = '{"pages":[]}';
+    (component as any).playerFrameReady = true;
+    (component as any).previewCoordinator.markUnavailable(
+      'Das Player-Ziel "VAR_BAD" kommt in der Unit-Definition nicht vor.',
+    );
+
+    const envelope = createExplorerEnvelope();
+    for (const state of [envelope.activeState, envelope.draftState, envelope.publishedState]) {
+      state.ui = { filterText: '' };
+      state.itemProperties = {
+        'uuid-6': { previewTargetId: 'VAR_GOOD' },
+      };
+    }
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.selectedPreviewTarget).toBe('VAR_GOOD');
+    expect(getResponseStateWithFallback).toHaveBeenCalledOnce();
+    expect(previewLoader.load).not.toHaveBeenCalled();
+    expect(component.previewUpdateInProgress).toBe(true);
+    component.ngOnDestroy();
+  });
+
   it('restarts the preview when a different base variable is chosen', () => {
     vi.useFakeTimers();
     const component = createFacade({
@@ -3118,9 +3196,10 @@ describe('ItemExplorerFacade', () => {
       (component as any).syncPreviewTargetResolution(component.selectedItem);
       registerPlayerDom(component, postMessage);
       (component as any).unit = { id: 'UNIT_6', dependencies: [] };
+      component.playerSrcDoc = '<html></html>';
       (component as any).definitionContent = JSON.stringify({ pages: [] });
       (component as any).playerFrameReady = true;
-      (component as any).responseStateReady = true;
+      setPreviewStatus(component, 'ready');
 
       (component as any).startPlayerIfReady();
 
@@ -3266,8 +3345,6 @@ describe('ItemExplorerFacade', () => {
     component.unit = { id: 'UNIT_9', dependencies: [] };
     component.playerSrcDoc = '<html>cached player</html>';
     (component as any).definitionContent = '{"pages":[]}';
-    (component as any).playerHtmlLoadState = 'ready';
-    (component as any).definitionLoadState = 'ready';
     (component as any).syncPreviewTargetResolution(item);
 
     component.customPreviewTargetDraft = 'BASE_A';
@@ -3285,8 +3362,9 @@ describe('ItemExplorerFacade', () => {
 
     component.canEditExplorer = false;
     component.itemExplorerPlayerTargetInfoEnabled = true;
-    component.previewUnavailableReason =
-      'Das Player-Ziel "VAR_404" kommt in der Unit-Definition nicht vor.';
+    (component as any).previewCoordinator.markUnavailable(
+      'Das Player-Ziel "VAR_404" kommt in der Unit-Definition nicht vor.',
+    );
 
     expect(component.previewUnavailableMessage).toBe(
       'Für dieses Item ist keine zielgenaue Player-Vorschau verfügbar.',

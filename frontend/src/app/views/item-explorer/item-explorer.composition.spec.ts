@@ -7,6 +7,9 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
+import { ItemExplorerPreviewLoader } from './item-explorer-preview-loader.service';
+import { ItemExplorerPreviewCoordinator } from './item-explorer-preview-coordinator.service';
+import { ItemExplorerLoadDiagnostics } from './item-explorer-load-diagnostics.service';
 import { BreadcrumbComponent } from '../../shared/components/breadcrumb.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 import { SplitPaneComponent } from '../../shared/components/split-pane.component';
@@ -175,8 +178,12 @@ class ItemExplorerShellTemplateHarness implements OnInit {
 }
 
 function createFacade(): ItemExplorerFacade {
+  const api = {} as any;
+  const diagnostics = new ItemExplorerLoadDiagnostics();
+  const previewLoader = new ItemExplorerPreviewLoader(api, diagnostics);
+  const previewCoordinator = new ItemExplorerPreviewCoordinator(api, previewLoader, diagnostics);
   return new ItemExplorerFacade(
-    {} as any,
+    api,
     { bypassSecurityTrustHtml: (html: string) => html } as any,
     {} as any,
     {
@@ -187,6 +194,8 @@ function createFacade(): ItemExplorerFacade {
       getToken: () => null,
     } as any,
     new PendingPersonalSessionStorageService(),
+    previewCoordinator,
+    diagnostics,
   );
 }
 

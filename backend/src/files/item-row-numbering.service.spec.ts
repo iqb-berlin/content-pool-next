@@ -98,6 +98,45 @@ describe("ItemRowNumberingService", () => {
     ]);
   });
 
+  it("returns the persisted revision from the numbering transaction", async () => {
+    const assignment = await service.assignNumbersWithRevision("acp-1", [
+      row("uuid-1", "UNIT_1", "ITEM_1"),
+      row("uuid-2", "UNIT_1", "ITEM_2"),
+    ]);
+
+    expect(Array.from(assignment.numbers.entries())).toEqual([
+      ["uuid-1", 1],
+      ["uuid-2", 2],
+    ]);
+    expect(assignment.revision).toBe(await service.getRevision("acp-1"));
+    expect(rootTransaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads the compact revision after persisting within the transaction", async () => {
+    repository.query = jest
+      .fn()
+      .mockResolvedValue([{ count: "1", hash: "transaction-hash" }]);
+
+    const assignment = await service.assignNumbersWithRevision("acp-1", [
+      row("uuid-1", "UNIT_1", "ITEM_1"),
+    ]);
+
+    expect(assignment.revision).toBe("1:transaction-hash");
+    expect(repository.save.mock.invocationCallOrder[0]).toBeLessThan(
+      repository.query.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not calculate a revision when only row numbers are requested", async () => {
+    repository.query = jest
+      .fn()
+      .mockResolvedValue([{ count: "1", hash: "unused" }]);
+
+    await service.assignNumbers("acp-1", [row("uuid-1", "UNIT_1", "ITEM_1")]);
+
+    expect(repository.query).not.toHaveBeenCalled();
+  });
+
   it("derives a deterministic revision from persisted row assignments", async () => {
     persisted = [
       {

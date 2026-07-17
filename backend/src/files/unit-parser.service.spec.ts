@@ -138,6 +138,11 @@ describe("UnitParserService", () => {
         },
       ),
     };
+    itemRowNumberingService.assignNumbersWithRevision = jest.fn(
+      async (acpId: string, rows: any[]) => ({
+        numbers: await itemRowNumberingService.assignNumbers(acpId, rows),
+      }),
+    );
     itemExplorerStateService = {
       getStateForViewer: jest.fn().mockResolvedValue({
         publishedState: { itemProperties: {} },
@@ -636,6 +641,21 @@ describe("UnitParserService", () => {
     expect(result).toEqual({ renumberedCount: 1 });
   });
 
+  it("recalculates row numbers when PostgreSQL provides a compact catalog revision", async () => {
+    fileRepo.query = jest
+      .fn()
+      .mockResolvedValue([{ count: "5", hash: "catalog-hash" }]);
+
+    await expect(
+      service.recalculatePublishedItemRowNumbers("acp-1"),
+    ).resolves.toEqual({ renumberedCount: 1 });
+
+    expect(fileRepo.query).toHaveBeenCalledWith(
+      expect.stringContaining("FROM acp_files"),
+      ["acp-1"],
+    );
+  });
+
   it("rejects recalculation when the source file snapshot changed", async () => {
     const changedFiles = [
       ...files,
@@ -857,6 +877,78 @@ describe("UnitParserService", () => {
     });
 
     expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches the revision returned by the numbering transaction without repeating numbering", async () => {
+    itemRowNumberingService.getRevision
+      .mockResolvedValue("revision-2")
+      .mockResolvedValueOnce("revision-1");
+    itemRowNumberingService.assignNumbersWithRevision.mockResolvedValueOnce({
+      numbers: new Map([["u1_i1", 7]]),
+      revision: "revision-2",
+    });
+
+    const first = await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+    const second = await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+
+    expect(
+      itemRowNumberingService.assignNumbersWithRevision,
+    ).toHaveBeenCalledTimes(1);
+    expect(itemRowNumberingService.assignNumbers).not.toHaveBeenCalled();
+    expect(first.items[0].rowNumber).toBe(7);
+    expect(second.items[0].rowNumber).toBe(7);
+  });
+
+  it("repeats numbering before caching when the revision changes during numbering", async () => {
+    itemRowNumberingService.getRevision
+      .mockResolvedValue("revision-2")
+      .mockResolvedValueOnce("revision-1")
+      .mockResolvedValueOnce("revision-2")
+      .mockResolvedValueOnce("revision-2");
+    itemRowNumberingService.assignNumbers
+      .mockResolvedValueOnce(new Map([["u1_i1", 7]]))
+      .mockResolvedValueOnce(new Map([["u1_i1", 2]]));
+
+    const first = await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+    const second = await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(2);
+    expect(first.items[0].rowNumber).toBe(2);
+    expect(second.items[0].rowNumber).toBe(2);
+  });
+
+  it("rejects and does not cache numbering results while the row revision remains unstable", async () => {
+    itemRowNumberingService.getRevision
+      .mockResolvedValue("revision-3")
+      .mockResolvedValueOnce("revision-0")
+      .mockResolvedValueOnce("revision-1")
+      .mockResolvedValueOnce("revision-2")
+      .mockResolvedValueOnce("revision-3");
+    itemRowNumberingService.assignNumbers
+      .mockResolvedValueOnce(new Map([["u1_i1", 1]]))
+      .mockResolvedValueOnce(new Map([["u1_i1", 2]]))
+      .mockResolvedValueOnce(new Map([["u1_i1", 3]]))
+      .mockResolvedValueOnce(new Map([["u1_i1", 4]]));
+
+    await expect(
+      service.getItemListFromFiles("acp-1", {
+        activeStateSignature: "active:1",
+      }),
+    ).rejects.toThrow(ConflictException);
+    const stable = await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(4);
+    expect(stable.items[0].rowNumber).toBe(4);
   });
 
   it("does not cache partial item lists after a source read failure", async () => {

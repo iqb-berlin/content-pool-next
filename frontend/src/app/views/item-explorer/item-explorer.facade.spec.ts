@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { of, Subject, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { ItemExplorerFacade } from './item-explorer.facade';
 import { VoudService } from '../../core/services/voud.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
@@ -1377,6 +1377,106 @@ describe('ItemExplorerFacade', () => {
     await vi.waitFor(() => expect(component.unit?.id).toBe('UNIT_2'));
     expect(component.selectedItem?.itemId).toBe('ITEM_2');
     expect(component.currentResponseData).toEqual({ current: true });
+    component.ngOnDestroy();
+  });
+
+  it('cancels in-flight preview requests when the next item has no player target', () => {
+    const cancelAssets = vi.fn();
+    const cancelResponseState = vi.fn();
+    const previewLoader = {
+      load: vi.fn(
+        () =>
+          new Observable<any>(() => {
+            return cancelAssets;
+          }),
+      ),
+      clear: vi.fn(),
+    };
+    const component = createFacade({
+      api: {
+        getResponseStateWithFallback: vi.fn(
+          () =>
+            new Observable<any>(() => {
+              return cancelResponseState;
+            }),
+        ),
+      },
+      previewLoader,
+    });
+    component.acpId = 'acp-1';
+    const previewableItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 1',
+      variableId: 'VAR_1',
+      metadata: {},
+    } as any;
+    const itemWithoutTarget = {
+      ...previewableItem,
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      variableId: '',
+    };
+    component.filteredItems = [previewableItem, itemWithoutTarget];
+
+    component.selectItem(previewableItem, 0);
+    component.selectItem(itemWithoutTarget, 1);
+
+    expect(cancelAssets).toHaveBeenCalledOnce();
+    expect(cancelResponseState).toHaveBeenCalledOnce();
+    expect(previewLoader.load).toHaveBeenCalledOnce();
+    expect(component.selectedItem?.itemId).toBe('ITEM_2');
+    expect(component.previewUnavailableReason).toContain('keine Player-Variable');
+    component.ngOnDestroy();
+  });
+
+  it('cancels in-flight preview requests when the selection is cleared', () => {
+    const cancelAssets = vi.fn();
+    const cancelResponseState = vi.fn();
+    const component = createFacade({
+      api: {
+        getResponseStateWithFallback: vi.fn(
+          () =>
+            new Observable<any>(() => {
+              return cancelResponseState;
+            }),
+        ),
+      },
+      previewLoader: {
+        load: vi.fn(
+          () =>
+            new Observable<any>(() => {
+              return cancelAssets;
+            }),
+        ),
+        clear: vi.fn(),
+      },
+    });
+    component.acpId = 'acp-1';
+    const item = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Item 1',
+      variableId: 'VAR_1',
+      metadata: {},
+    } as any;
+    component.filteredItems = [item];
+
+    component.selectItem(item, 0);
+    (component as any).clearSelectedItem();
+
+    expect(cancelAssets).toHaveBeenCalledOnce();
+    expect(cancelResponseState).toHaveBeenCalledOnce();
+    expect(component.selectedItem).toBeNull();
+    expect(component.selectedIndex).toBe(-1);
+    expect(component.loadingUnit).toBe(false);
     component.ngOnDestroy();
   });
 
@@ -3083,6 +3183,101 @@ describe('ItemExplorerFacade', () => {
     expect(getFileUnitView).toHaveBeenCalledWith('acp-1', 'UNIT_9', {
       perspective: 'read-only',
     });
+  });
+
+  it('cancels a manual-target preview reload when the target is removed', () => {
+    const cancelAssets = vi.fn();
+    const cancelResponseState = vi.fn();
+    const previewLoader = {
+      load: vi.fn(
+        () =>
+          new Observable<any>(() => {
+            return cancelAssets;
+          }),
+      ),
+      clear: vi.fn(),
+    };
+    const component = createFacade({
+      api: {
+        getResponseStateWithFallback: vi.fn(
+          () =>
+            new Observable<any>(() => {
+              return cancelResponseState;
+            }),
+        ),
+      },
+      previewLoader,
+    });
+    component.acpId = 'acp-1';
+    const item = {
+      itemId: 'ITEM_9',
+      uuid: 'uuid-9',
+      unitId: 'UNIT_9',
+      unitLabel: 'Unit 9',
+      description: 'Item without mapped target',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.selectedItem = item;
+    component.filteredItems = [item];
+    component.currentCodingScheme = {
+      variableCodings: [{ id: 'BASE_A', label: 'Teil A', sourceType: 'BASE', deriveSources: [] }],
+    };
+    component.currentCodingSchemeAsText = [{ id: 'BASE_A', label: 'Teil A', codes: [] }] as any;
+    component.selectedIndex = 0;
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    component.customPreviewTargetDraft = 'BASE_A';
+    component.applyCustomPreviewTarget();
+    expect(previewLoader.load).toHaveBeenCalledWith('acp-1', 'read-only', 'UNIT_9');
+    expect(component.loadingUnit).toBe(true);
+
+    component.resetPreviewTargetSelection();
+
+    expect(cancelAssets).toHaveBeenCalledOnce();
+    expect(cancelResponseState).toHaveBeenCalledOnce();
+    expect(component.loadingUnit).toBe(false);
+    expect(component.previewUnavailableReason).toContain('keine Player-Variable');
+    component.ngOnDestroy();
+  });
+
+  it('reuses same-unit assets when a manual target enables the preview', () => {
+    const responseState$ = new Subject<any>();
+    const getResponseStateWithFallback = vi.fn(() => responseState$);
+    const previewLoader = { load: vi.fn(), clear: vi.fn() };
+    const component = createFacade({
+      api: { getResponseStateWithFallback },
+      previewLoader,
+    });
+    component.acpId = 'acp-1';
+    const item = {
+      itemId: 'ITEM_9',
+      uuid: 'uuid-9',
+      rowKey: 'uuid-9',
+      unitId: 'UNIT_9',
+      unitLabel: 'Unit 9',
+      description: 'Item without mapped target',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.selectedItem = item;
+    component.filteredItems = [item];
+    component.selectedIndex = 0;
+    component.unit = { id: 'UNIT_9', dependencies: [] };
+    component.playerSrcDoc = '<html>cached player</html>';
+    (component as any).definitionContent = '{"pages":[]}';
+    (component as any).playerHtmlLoadState = 'ready';
+    (component as any).definitionLoadState = 'ready';
+    (component as any).syncPreviewTargetResolution(item);
+
+    component.customPreviewTargetDraft = 'BASE_A';
+    component.applyCustomPreviewTarget();
+
+    expect(getResponseStateWithFallback).toHaveBeenCalledOnce();
+    expect(previewLoader.load).not.toHaveBeenCalled();
+    expect(component.playerSrcDoc).toBe('<html>cached player</html>');
+    expect(component.previewUpdateInProgress).toBe(true);
+    component.ngOnDestroy();
   });
 
   it('uses a generic preview warning when diagnostics are hidden', () => {

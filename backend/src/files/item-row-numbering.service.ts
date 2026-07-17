@@ -15,6 +15,11 @@ export interface NumberableItemRow {
   subId?: string;
 }
 
+export interface ItemRowNumberAssignmentResult {
+  numbers: Map<string, number>;
+  revision?: string;
+}
+
 @Injectable()
 export class ItemRowNumberingService {
   private readonly collator = new Intl.Collator("de", {
@@ -28,8 +33,15 @@ export class ItemRowNumberingService {
   ) {}
 
   async getRevision(acpId: string): Promise<string> {
-    if (typeof this.rowNumberRepository.query === "function") {
-      const rows = (await this.rowNumberRepository.query(
+    return this.getRevisionFromRepository(this.rowNumberRepository, acpId);
+  }
+
+  private async getRevisionFromRepository(
+    repository: Repository<AcpItemRowNumber>,
+    acpId: string,
+  ): Promise<string> {
+    if (typeof repository.query === "function") {
+      const rows = (await repository.query(
         `
           SELECT
             COUNT(*)::text AS count,
@@ -50,7 +62,7 @@ export class ItemRowNumberingService {
       return `${rows[0]?.count || "0"}:${rows[0]?.hash || ""}`;
     }
 
-    const persisted = await this.rowNumberRepository.find({
+    const persisted = await repository.find({
       where: { acpId },
     });
     const revisionSource = persisted
@@ -67,9 +79,24 @@ export class ItemRowNumberingService {
     acpId: string,
     rows: NumberableItemRow[],
   ): Promise<Map<string, number>> {
+    return (await this.assignNumbersInternal(acpId, rows, false)).numbers;
+  }
+
+  async assignNumbersWithRevision(
+    acpId: string,
+    rows: NumberableItemRow[],
+  ): Promise<ItemRowNumberAssignmentResult> {
+    return this.assignNumbersInternal(acpId, rows, true);
+  }
+
+  private async assignNumbersInternal(
+    acpId: string,
+    rows: NumberableItemRow[],
+    includeRevision: boolean,
+  ): Promise<ItemRowNumberAssignmentResult> {
     const normalizedRows = this.normalizeRows(rows);
     if (!normalizedRows.length) {
-      return new Map();
+      return { numbers: new Map() };
     }
 
     const numbersWithoutLock = await this.findAssignedNumbers(
@@ -78,7 +105,7 @@ export class ItemRowNumberingService {
       normalizedRows,
     );
     if (normalizedRows.every((row) => numbersWithoutLock.has(row.rowKey))) {
-      return numbersWithoutLock;
+      return { numbers: numbersWithoutLock };
     }
 
     return this.withAcpLock(acpId, async (repository) => {
@@ -107,7 +134,14 @@ export class ItemRowNumberingService {
         await repository.save(created);
       }
 
-      return numbers;
+      const result: ItemRowNumberAssignmentResult = { numbers };
+      if (includeRevision) {
+        result.revision = await this.getRevisionFromRepository(
+          repository,
+          acpId,
+        );
+      }
+      return result;
     });
   }
 

@@ -862,22 +862,15 @@ export class UnitParserService {
     };
     entry.promise = (async () => {
       const rowNumberingStartedAt = performance.now();
-      let result: ItemListResult;
-      if (publishedParse) {
-        await this.applyItemRowNumbers(acpId, publishedParse.itemList, {});
-        result = await this.applyItemRowNumbers(acpId, activeParse.itemList, {
-          persistMissingRowNumbers: false,
-        });
-      } else {
-        result = await this.applyItemRowNumbers(
-          acpId,
-          activeParse.itemList,
-          {},
-        );
-      }
+      const numberedResult = await this.applyItemRowNumbersWithStableRevision(
+        acpId,
+        activeParse.itemList,
+        publishedParse?.itemList,
+        rowRevision,
+      );
       const value: NumberedItemListCacheValue = {
-        itemList: structuredClone(result),
-        rowRevision: await this.itemRowNumberingService.getRevision(acpId),
+        itemList: structuredClone(numberedResult.itemList),
+        rowRevision: numberedResult.rowRevision,
         rowNumberingMs: performance.now() - rowNumberingStartedAt,
       };
       entry.settled = true;
@@ -887,12 +880,14 @@ export class UnitParserService {
         this.numberedItemListCache.get(numberedCacheKey) === entry
       ) {
         this.numberedItemListCache.delete(numberedCacheKey);
-        this.setBoundedCacheEntry(
-          this.numberedItemListCache,
-          finalKey,
-          entry,
-          this.maxNumberedItemListCacheEntries,
-        );
+        if (!this.numberedItemListCache.has(finalKey)) {
+          this.setBoundedCacheEntry(
+            this.numberedItemListCache,
+            finalKey,
+            entry,
+            this.maxNumberedItemListCacheEntries,
+          );
+        }
       }
       return value;
     })().catch((error) => {
@@ -1334,14 +1329,16 @@ export class UnitParserService {
     const publishedState =
       await this.itemExplorerStateService.getCleanPublishedState(acpId);
     const sourceContext = await this.loadItemListSourceContext(acpId, false);
-    const { itemList, sourceFileSignature } =
-      await this.parseItemListFromContext(
-        acpId,
-        sourceContext,
-        publishedState.publishedState.itemProperties,
-        `published:${publishedState.publishedVersion}`,
-        true,
-      );
+    const expectedSourceFileSignature = this.buildSourceFileSignature(
+      sourceContext.allFiles,
+    );
+    const { itemList } = await this.parseItemListFromContext(
+      acpId,
+      sourceContext,
+      publishedState.publishedState.itemProperties,
+      `published:${publishedState.publishedVersion}`,
+      true,
+    );
 
     const result = await this.itemExplorerStateService.runWithLockedCleanState(
       acpId,
@@ -1352,7 +1349,7 @@ export class UnitParserService {
           validateSourceFiles: (lockedManager) =>
             this.assertSourceFilesUnchanged(
               acpId,
-              sourceFileSignature,
+              expectedSourceFileSignature,
               lockedManager,
             ),
         });
@@ -1362,6 +1359,86 @@ export class UnitParserService {
     );
     this.deleteCacheEntriesForAcp(this.numberedItemListCache, acpId);
     return result;
+  }
+
+  private async applyItemRowNumbersWithStableRevision(
+    acpId: string,
+    activeItemList: ItemListResult,
+    publishedItemList: ItemListResult | undefined,
+    initialRevision: string,
+  ): Promise<{
+    itemList: ItemListResult;
+    rowRevision: string;
+  }> {
+    let expectedRevision = initialRevision;
+    let result = activeItemList;
+    const maxRevisionChecks = 3;
+
+    for (let attempt = 0; attempt < maxRevisionChecks; attempt += 1) {
+      if (publishedItemList) {
+        const publishedResult = await this.applyPersistedItemRowNumbers(
+          acpId,
+          publishedItemList,
+        );
+        result = await this.applyItemRowNumbers(acpId, activeItemList, {
+          persistMissingRowNumbers: false,
+        });
+        const observedRevision =
+          await this.itemRowNumberingService.getRevision(acpId);
+        if (
+          observedRevision === (publishedResult.rowRevision || expectedRevision)
+        ) {
+          return {
+            itemList: result,
+            rowRevision: observedRevision,
+          };
+        }
+        expectedRevision = observedRevision;
+        continue;
+      } else {
+        const activeResult = await this.applyPersistedItemRowNumbers(
+          acpId,
+          activeItemList,
+        );
+        result = activeResult.itemList;
+        if (activeResult.rowRevision) {
+          return {
+            itemList: result,
+            rowRevision: activeResult.rowRevision,
+          };
+        }
+      }
+
+      const observedRevision =
+        await this.itemRowNumberingService.getRevision(acpId);
+      if (observedRevision === expectedRevision) {
+        return {
+          itemList: result,
+          rowRevision: observedRevision,
+        };
+      }
+      expectedRevision = observedRevision;
+    }
+
+    throw new ConflictException(
+      "Item row numbers changed repeatedly while the item list was loading",
+    );
+  }
+
+  private async applyPersistedItemRowNumbers(
+    acpId: string,
+    itemList: ItemListResult,
+  ): Promise<{ itemList: ItemListResult; rowRevision?: string }> {
+    const assignment =
+      await this.itemRowNumberingService.assignNumbersWithRevision(
+        acpId,
+        this.getNumberableItemRows(itemList),
+      );
+    this.setItemRowNumbers(itemList, assignment.numbers);
+    return {
+      itemList,
+      rowRevision: assignment.revision,
+    };
   }
 
   private async applyItemRowNumbers(
@@ -1374,14 +1451,7 @@ export class UnitParserService {
       persistMissingRowNumbers?: boolean;
     },
   ): Promise<ItemListResult> {
-    const numberableRows = itemList.items.map((item) => {
-      return {
-        rowKey: item.rowKey,
-        itemId: item.itemId,
-        unitId: item.unitId,
-        subId: item.subId,
-      };
-    });
+    const numberableRows = this.getNumberableItemRows(itemList);
 
     const rowNumbers = options.recalculateRowNumbers
       ? await this.itemRowNumberingService.recalculateNumbers(
@@ -1399,11 +1469,27 @@ export class UnitParserService {
             acpId,
             numberableRows,
           );
+    this.setItemRowNumbers(itemList, rowNumbers);
+
+    return itemList;
+  }
+
+  private getNumberableItemRows(itemList: ItemListResult) {
+    return itemList.items.map((item) => ({
+      rowKey: item.rowKey,
+      itemId: item.itemId,
+      unitId: item.unitId,
+      subId: item.subId,
+    }));
+  }
+
+  private setItemRowNumbers(
+    itemList: ItemListResult,
+    rowNumbers: Map<string, number>,
+  ): void {
     for (const item of itemList.items) {
       item.rowNumber = rowNumbers.get(item.rowKey)!;
     }
-
-    return itemList;
   }
 
   private async assertSourceFilesUnchanged(

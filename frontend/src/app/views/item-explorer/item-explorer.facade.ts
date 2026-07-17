@@ -13,6 +13,7 @@ import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
 import {
   catchError,
+  EMPTY,
   finalize,
   firstValueFrom,
   forkJoin,
@@ -246,7 +247,7 @@ export class ItemExplorerFacade implements OnDestroy {
     token: number;
     reuseLoadedUnit: boolean;
     timing: ItemExplorerTimingToken | null;
-  }>();
+  } | null>();
   private itemListSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private previewSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private playerReadyTiming: ItemExplorerTimingToken | null = null;
@@ -2145,6 +2146,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncPreviewTargetResolution(item);
 
     if (!this.canPreviewItem(item)) {
+      this.previewSelection$.next(null);
       this.loadingUnit = false;
       this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
       this.previewUpdateInProgress = false;
@@ -2171,6 +2173,8 @@ export class ItemExplorerFacade implements OnDestroy {
     this.previewSelection$
       .pipe(
         switchMap((request) => {
+          if (!request) return EMPTY;
+
           let selectionOutcome = 'cancelled';
           const responseTiming = this.diagnostics?.start('response-state') || null;
           let responseOutcome = 'cancelled';
@@ -2555,12 +2559,18 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncPreviewTargetResolution(this.selectedItem);
 
     if (!this.canPreviewItem(this.selectedItem)) {
+      this.unitLoadToken += 1;
+      this.previewSelection$.next(null);
+      this.clearPreviewSlowTimer();
+      this.cancelPlayerReadyTiming();
+      this.loadingUnit = false;
+      this.previewUpdateInProgress = false;
       this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
       return;
     }
 
     if (!this.loadingUnit && (!this.unit || !this.responseStateReady)) {
-      this.loadPreviewContext(this.selectedItem, this.unitLoadToken);
+      this.reloadPreviewAfterTargetChange(this.selectedItem);
       return;
     }
 
@@ -2573,6 +2583,44 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
     this.startPlayerIfReady();
+  }
+
+  private reloadPreviewAfterTargetChange(item: ExplorerItem): void {
+    const reuseLoadedUnit =
+      this.unit?.id === item.unitId &&
+      this.playerHtmlLoadState === 'ready' &&
+      this.definitionLoadState === 'ready' &&
+      !!this.playerSrcDoc &&
+      !!this.definitionContent;
+
+    this.cancelPlayerReadyTiming();
+    if (!reuseLoadedUnit) {
+      this.resetPlayer();
+    }
+    this.loadingUnit = !reuseLoadedUnit;
+    const token = ++this.unitLoadToken;
+    this.previewUpdateInProgress = reuseLoadedUnit;
+    this.hasResponseState = false;
+    this.isFallbackState = false;
+    this.currentResponseData = null;
+    this.responseStateReady = false;
+    this.activePlayerSessionId = null;
+
+    if (this.previewLoader) {
+      const selectionTiming = this.diagnostics?.start('item-selection-total') || null;
+      this.startPreviewSlowTimer(
+        reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
+      );
+      this.previewSelection$.next({
+        item,
+        token,
+        reuseLoadedUnit,
+        timing: selectionTiming,
+      });
+      return;
+    }
+
+    this.loadPreviewContext(item, token);
   }
 
   onPlayerLoaded() {
@@ -5109,6 +5157,11 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
 
+    this.unitLoadToken += 1;
+    this.previewSelection$.next(null);
+    this.clearPreviewSlowTimer();
+    this.cancelPlayerReadyTiming();
+    this.loadingUnit = false;
     this.selectedItem = null;
     this.selectedIndex = -1;
     this.currentUnitMetadata = [];

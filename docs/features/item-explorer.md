@@ -178,7 +178,7 @@ localStorage.removeItem("cp.itemExplorer.performance");
 
 ### Performance acceptance baseline
 
-The reproducible local benchmark compares the working tree with commit `c85fcf3` on the same
+The reproducible local benchmark compares the working tree with commit `5cb549b` on the same
 PostgreSQL instance and synthetic fixture of 50 units, 2,000 items, and 151 files. Warm measurements
 alternate baseline and candidate over five independent backend starts and collect 30 requests per
 endpoint and start. Cold measurements likewise alternate both variants.
@@ -204,7 +204,7 @@ Prepare the reference revision as a worktree with backend and frontend dependenc
 run the complete counterbalanced browser benchmark from the candidate checkout:
 
 ```bash
-ITEM_EXPLORER_BENCHMARK_BASELINE_ROOT=/path/to/c85fcf3-worktree \
+ITEM_EXPLORER_BENCHMARK_BASELINE_ROOT=/path/to/5cb549b-worktree \
   npm run benchmark:item-explorer
 ```
 
@@ -220,7 +220,7 @@ Raw runs and `summary.json` are written to a timestamped directory below
 `frontend/benchmark-results/`. Set `ITEM_EXPLORER_BENCHMARK_RUNS` to override the default of six
 paired runs; the value must remain even so both variants occupy each start position equally often.
 The runner verifies that the baseline worktree has no tracked changes and is checked out at
-`c85fcf3`; set `ITEM_EXPLORER_BENCHMARK_BASELINE_REVISION` when intentionally comparing against
+`5cb549b`; set `ITEM_EXPLORER_BENCHMARK_BASELINE_REVISION` when intentionally comparing against
 another reference. The benchmark spec and configuration live outside the regular Playwright test
 directory and are therefore not part of `npm run e2e` or CI.
 

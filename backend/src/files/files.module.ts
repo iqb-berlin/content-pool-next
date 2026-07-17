@@ -18,6 +18,9 @@ import { ValidationModule } from "../validation/validation.module";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 import { ItemRowNumberingService } from "./item-row-numbering.service";
+import { ArchiveExpansionService } from "./archive-expansion.service";
+import { FileMutationService } from "./file-mutation.service";
+import { FileStorageService } from "./file-storage.service";
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
@@ -42,6 +45,9 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
   controllers: [FilesController],
   providers: [
     FilesService,
+    ArchiveExpansionService,
+    FileMutationService,
+    FileStorageService,
     UnitParserService,
     FileProcessingJobsService,
     ItemRowNumberingService,

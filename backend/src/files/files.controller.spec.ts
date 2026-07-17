@@ -619,7 +619,7 @@ describe("FilesController", () => {
     expect(filesService.uploadMultiple).toHaveBeenCalledWith(
       "acp-1",
       [{ originalname: "unit-1.xml" }],
-      "overwrite",
+      { conflictStrategy: "overwrite" },
     );
     expect(payload).toEqual({
       files: [baseFile],

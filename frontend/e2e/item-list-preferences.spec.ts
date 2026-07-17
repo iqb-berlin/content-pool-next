@@ -117,15 +117,22 @@ test('reuses preview assets and requests only response state within one unit', a
     responseState: 0,
     previewAssets: 0,
   };
+  const sameUnitReuseRequests: Array<keyof typeof requestCounts> = [];
+  let trackSameUnitReuse = false;
   page.on('request', (browserRequest) => {
     const pathname = new URL(browserRequest.url()).pathname;
+    let requestType: keyof typeof requestCounts | null = null;
     if (pathname.includes('/files/unit-view/')) {
-      requestCounts.unitView += 1;
+      requestType = 'unitView';
     } else if (pathname.endsWith('/response-state/with-fallback')) {
-      requestCounts.responseState += 1;
+      requestType = 'responseState';
     } else if (/\/files\/[^/]+\/download$/.test(pathname)) {
-      requestCounts.previewAssets += 1;
+      requestType = 'previewAssets';
     }
+    if (!requestType) return;
+
+    requestCounts[requestType] += 1;
+    if (trackSameUnitReuse) sameUnitReuseRequests.push(requestType);
   });
 
   await page.goto(`/view/${ACP_ID}/item-explorer`);
@@ -137,7 +144,9 @@ test('reuses preview assets and requests only response state within one unit', a
   await expect.poll(() => requestCounts.previewAssets).toBe(2);
   await expect.poll(() => requestCounts.responseState).toBe(1);
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
+  expect(requestCounts).toEqual({ unitView: 1, responseState: 1, previewAssets: 2 });
 
+  trackSameUnitReuse = true;
   await rows.nth(1).click();
   await expect.poll(() => requestCounts.responseState).toBe(2);
   await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true');
@@ -148,6 +157,7 @@ test('reuses preview assets and requests only response state within one unit', a
   await expect.poll(() => requestCounts.responseState).toBe(3);
   expect(requestCounts.unitView).toBe(1);
   expect(requestCounts.previewAssets).toBe(2);
+  expect(sameUnitReuseRequests).toEqual(['responseState', 'responseState']);
 });
 
 test('reconciles mean filters across clear, reimport, reload and credential relogin', async ({

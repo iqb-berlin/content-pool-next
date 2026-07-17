@@ -7,10 +7,10 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { In, Repository } from "typeorm";
-import { validate as isUuid } from "uuid";
 import { Acp, AcpFile } from "../database/entities";
 import { FilesService } from "../files/files.service";
 import { SnapshotsService } from "../snapshots/snapshots.service";
+import { assertUuidParam } from "../common/uuid-param";
 
 export type ConflictStrategy = "reject" | "overwrite" | "merge";
 export type IndexUpdateStrategy = "overwrite" | "merge";
@@ -181,9 +181,7 @@ export class ServerApiService {
   }> {
     this.assertAcpAllowed(acpId, allowedAcpIds);
     this.assertValidAcpId(acpId);
-    if (!isUuid(fileId)) {
-      throw new NotFoundException("File not found");
-    }
+    assertUuidParam(fileId, "File ID");
 
     const file = await this.fileRepository.findOne({
       where: { id: fileId, acpId },
@@ -201,9 +199,7 @@ export class ServerApiService {
   ): Promise<{ buffer: Buffer; file: AcpFile }> {
     this.assertAcpAllowed(acpId, allowedAcpIds);
     await this.getAcpOrFail(acpId);
-    if (!isUuid(fileId)) {
-      throw new NotFoundException("File not found");
-    }
+    assertUuidParam(fileId, "File ID");
     return this.filesService.downloadForAcp(acpId, fileId);
   }
 
@@ -302,7 +298,6 @@ export class ServerApiService {
     const seenIncoming = new Set<string>();
     const replacementPlan: Array<{
       incoming: Express.Multer.File;
-      matches: AcpFile[];
       canonicalName: string;
     }> = [];
 
@@ -334,32 +329,27 @@ export class ServerApiService {
 
       replacementPlan.push({
         incoming,
-        matches,
         canonicalName: matches[0].originalName,
       });
     }
 
-    const replacedFiles: AcpFile[] = [];
-    let deletedAny = false;
-    for (const plan of replacementPlan) {
-      for (const existing of plan.matches) {
-        await this.filesService.deleteForAcp(acpId, existing.id);
-        deletedAny = true;
-      }
+    const uploadPayloads = replacementPlan.map(
+      (plan) =>
+        ({
+          ...plan.incoming,
+          originalname: plan.canonicalName,
+        }) as Express.Multer.File,
+    );
+    const replacedFiles = await this.filesService.uploadMultiple(
+      acpId,
+      uploadPayloads,
+      "overwrite",
+      { expandArchives: false },
+    );
 
-      const uploadPayload = {
-        ...plan.incoming,
-        originalname: plan.canonicalName,
-      } as Express.Multer.File;
-      const saved = await this.filesService.upload(acpId, uploadPayload);
-      replacedFiles.push(saved);
-    }
-
-    if (deletedAny) {
-      await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
-        skipValidation: true,
-      });
-    }
+    await this.filesService.cleanupReferencesAfterFileMutation(acpId, {
+      skipValidation: true,
+    });
 
     const resolvedChangelog = this.resolveCodingSchemeChangelog(
       options.changelog,
@@ -475,6 +465,7 @@ export class ServerApiService {
   }
 
   private assertAcpAllowed(acpId: string, allowedAcpIds?: AllowedAcpIds): void {
+    this.assertValidAcpId(acpId);
     if (!this.isAcpRestricted(allowedAcpIds)) {
       return;
     }
@@ -500,9 +491,7 @@ export class ServerApiService {
   }
 
   private assertValidAcpId(acpId: string): void {
-    if (!isUuid(acpId)) {
-      throw new NotFoundException(`ACP with ID ${acpId} not found`);
-    }
+    assertUuidParam(acpId, "ACP ID");
   }
 
   private toTransferFileMeta(file: AcpFile): {

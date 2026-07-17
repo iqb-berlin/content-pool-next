@@ -10,6 +10,7 @@ import {
   AcpSnapshotFile,
   AcpFile,
 } from "../database/entities";
+import { assertUuidParam } from "../common/uuid-param";
 
 @Injectable()
 export class SnapshotsService {
@@ -33,6 +34,7 @@ export class SnapshotsService {
   }
 
   async findByAcp(acpId: string): Promise<AcpSnapshot[]> {
+    await this.getAcpOrFail(acpId);
     return this.snapshotRepository.find({
       where: { acpId },
       order: { versionNumber: "DESC" },
@@ -93,10 +95,7 @@ export class SnapshotsService {
   }
 
   async create(acpId: string, changelog?: string): Promise<AcpSnapshot> {
-    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
-    if (!acp) {
-      throw new NotFoundException(`ACP with ID ${acpId} not found`);
-    }
+    const acp = await this.getAcpOrFail(acpId);
 
     // Determine next version number
     const latestSnapshot = await this.snapshotRepository.findOne({
@@ -347,5 +346,14 @@ export class SnapshotsService {
       modified,
       unchanged,
     };
+  }
+
+  private async getAcpOrFail(acpId: string): Promise<Acp> {
+    assertUuidParam(acpId, "ACP ID");
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
+    return acp;
   }
 }

@@ -30,8 +30,12 @@ import {
 } from "../validation/validation.service";
 import { FileProcessingProgressReporter } from "./file-processing-progress";
 import { parseItemRowKeyParts } from "../items/item-row-key.util";
+import { assertUuidParam } from "../common/uuid-param";
 
 type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
+type UploadMultipleOptions = {
+  expandArchives?: boolean;
+};
 export type FilePreviewMode =
   | "text"
   | "image"
@@ -165,6 +169,11 @@ export class FilesService {
   }
 
   async findByAcp(acpId: string): Promise<AcpFile[]> {
+    await this.getAcpOrFail(acpId);
+    return this.findFileRecordsByAcp(acpId);
+  }
+
+  private async findFileRecordsByAcp(acpId: string): Promise<AcpFile[]> {
     return this.fileRepository.find({
       where: { acpId },
       order: { originalName: "ASC" },
@@ -193,41 +202,15 @@ export class FilesService {
     acpId: string,
     uploadedFile: Express.Multer.File,
   ): Promise<AcpFile> {
-    // Ensure directory exists
-    const acpDir = path.join(this.storagePath, acpId);
-    await fs.mkdir(acpDir, { recursive: true });
-
-    // Generate unique filename
-    const ext = path.extname(uploadedFile.originalname);
-    const uniqueName = `${crypto.randomUUID()}${ext}`;
-    const filePath = path.join(acpDir, uniqueName);
-
-    // Write file
-    await fs.writeFile(filePath, uploadedFile.buffer);
-
-    // Compute checksum
-    const checksum = crypto
-      .createHash("sha256")
-      .update(uploadedFile.buffer)
-      .digest("hex");
-
-    // Save metadata
-    const file = this.fileRepository.create({
-      acpId,
-      filePath,
-      originalName: uploadedFile.originalname,
-      fileType: uploadedFile.mimetype,
-      fileSize: uploadedFile.size,
-      checksum,
-    });
-
-    return this.fileRepository.save(file);
+    await this.getAcpOrFail(acpId);
+    return this.persistUpload(acpId, uploadedFile);
   }
 
   async uploadMultiple(
     acpId: string,
     files: Express.Multer.File[],
     conflictStrategyInput?: string,
+    options: UploadMultipleOptions = {},
   ): Promise<AcpFile[]> {
     const conflictStrategy = this.resolveUploadConflictStrategy(
       conflictStrategyInput,
@@ -237,8 +220,12 @@ export class FilesService {
       throw new BadRequestException("At least one file is required");
     }
 
-    const normalizedFiles = await this.expandUploadedFiles(files);
-    const existingFiles = await this.findByAcp(acpId);
+    await this.getAcpOrFail(acpId);
+    const normalizedFiles =
+      options.expandArchives === false
+        ? files
+        : await this.expandUploadedFiles(files);
+    const existingFiles = await this.findFileRecordsByAcp(acpId);
     const existingByName = new Map<string, AcpFile[]>();
     for (const existing of existingFiles) {
       const key = this.normalizeFileName(existing.originalName);
@@ -289,7 +276,7 @@ export class FilesService {
         existingByName.delete(key);
       }
 
-      results.push(await this.upload(acpId, file));
+      results.push(await this.persistUpload(acpId, file));
 
       if (conflictStrategy === "keep-both") {
         const bucket = existingByName.get(key) || [];
@@ -709,6 +696,7 @@ export class FilesService {
   }
 
   async getFeatureConfig(acpId: string): Promise<Record<string, any>> {
+    await this.getAcpOrFail(acpId);
     const config = await this.accessConfigRepository.findOne({
       where: { acpId },
     });
@@ -735,6 +723,45 @@ export class FilesService {
       }
     }
     return false;
+  }
+
+  private async getAcpOrFail(acpId: string): Promise<Acp> {
+    assertUuidParam(acpId, "ACP ID");
+    const acp = await this.acpRepository.findOne({ where: { id: acpId } });
+    if (!acp) {
+      throw new NotFoundException(`ACP with ID ${acpId} not found`);
+    }
+    return acp;
+  }
+
+  private async persistUpload(
+    acpId: string,
+    uploadedFile: Express.Multer.File,
+  ): Promise<AcpFile> {
+    const acpDir = path.join(this.storagePath, acpId);
+    await fs.mkdir(acpDir, { recursive: true });
+
+    const ext = path.extname(uploadedFile.originalname);
+    const uniqueName = `${crypto.randomUUID()}${ext}`;
+    const filePath = path.join(acpDir, uniqueName);
+
+    await fs.writeFile(filePath, uploadedFile.buffer);
+
+    const checksum = crypto
+      .createHash("sha256")
+      .update(uploadedFile.buffer)
+      .digest("hex");
+
+    const file = this.fileRepository.create({
+      acpId,
+      filePath,
+      originalName: uploadedFile.originalname,
+      fileType: uploadedFile.mimetype,
+      fileSize: uploadedFile.size,
+      checksum,
+    });
+
+    return this.fileRepository.save(file);
   }
 
   private buildBasePreview(

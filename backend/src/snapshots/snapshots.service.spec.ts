@@ -1,6 +1,6 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { SnapshotsService } from "./snapshots.service";
 import {
@@ -21,6 +21,8 @@ jest.mock("fs/promises", () => ({
 }));
 
 describe("SnapshotsService", () => {
+  const acpId = "11111111-1111-4111-8111-111111111111";
+  const unknownAcpId = "99999999-9999-4999-8999-999999999999";
   let service: SnapshotsService;
   let snapshotRepo: any;
   let snapshotFileRepo: any;
@@ -29,13 +31,13 @@ describe("SnapshotsService", () => {
   let configService: any;
 
   const mockAcp = {
-    id: "acp-1",
+    id: acpId,
     acpIndex: { packageId: "test", version: "1.0", units: [{ id: "u1" }] },
   };
 
   const mockSnapshot = {
     id: "snap-1",
-    acpId: "acp-1",
+    acpId: acpId,
     versionNumber: 1,
     acpIndexSnapshot: {
       packageId: "test",
@@ -112,13 +114,30 @@ describe("SnapshotsService", () => {
 
   describe("findByAcp", () => {
     it("should return snapshots ordered by version descending", async () => {
-      const result = await service.findByAcp("acp-1");
+      const result = await service.findByAcp(acpId);
       expect(result).toHaveLength(1);
       expect(snapshotRepo.find).toHaveBeenCalledWith(
         expect.objectContaining({
           order: { versionNumber: "DESC" },
         }),
       );
+    });
+
+    it("should reject an unknown ACP before querying snapshots", async () => {
+      acpRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.findByAcp(unknownAcpId)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(snapshotRepo.find).not.toHaveBeenCalled();
+    });
+
+    it("should reject a malformed ACP ID before querying repositories", async () => {
+      await expect(
+        service.findByAcp("__coding-box-connection-test__"),
+      ).rejects.toThrow(BadRequestException);
+      expect(acpRepo.findOne).not.toHaveBeenCalled();
+      expect(snapshotRepo.find).not.toHaveBeenCalled();
     });
   });
 
@@ -132,7 +151,7 @@ describe("SnapshotsService", () => {
           snapshotFiles: [],
         }); // findById after save
 
-      await service.create("acp-1", "Test changelog");
+      await service.create(acpId, "Test changelog");
       expect(snapshotRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           versionNumber: 3,
@@ -146,7 +165,7 @@ describe("SnapshotsService", () => {
         .mockResolvedValueOnce(null) // no latest snapshot
         .mockResolvedValueOnce({ ...mockSnapshot, snapshotFiles: [] }); // findById after save
 
-      await service.create("acp-1");
+      await service.create(acpId);
       expect(snapshotRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           versionNumber: 1,
@@ -159,7 +178,7 @@ describe("SnapshotsService", () => {
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({ ...mockSnapshot, snapshotFiles: [] });
 
-      await service.create("acp-1");
+      await service.create(acpId);
       expect(snapshotFileRepo.create).toHaveBeenCalled();
       expect(snapshotFileRepo.save).toHaveBeenCalled();
     });
@@ -171,11 +190,11 @@ describe("SnapshotsService", () => {
         snapshotFiles: [],
       });
 
-      await service.create("acp-1");
+      await service.create(acpId);
 
       const snapshotDir = path.join(
         "/tmp/uploads-test",
-        "acp-1",
+        acpId,
         "snapshots",
         "new-snap",
       );
@@ -192,7 +211,15 @@ describe("SnapshotsService", () => {
 
     it("should throw NotFoundException for unknown ACP", async () => {
       acpRepo.findOne.mockResolvedValue(null);
-      await expect(service.create("bad")).rejects.toThrow(NotFoundException);
+      await expect(service.create(unknownAcpId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it("should reject malformed ACP IDs before creating a snapshot", async () => {
+      await expect(service.create("bad")).rejects.toThrow(BadRequestException);
+      expect(acpRepo.findOne).not.toHaveBeenCalled();
+      expect(snapshotRepo.save).not.toHaveBeenCalled();
     });
   });
 
@@ -220,10 +247,12 @@ describe("SnapshotsService", () => {
           acpIndex: snapshotWithFiles.acpIndexSnapshot,
         }),
       );
-      expect(fileRepo.delete).toHaveBeenCalledWith({ acpId: "acp-1" });
+      expect(fileRepo.delete).toHaveBeenCalledWith({
+        acpId: acpId,
+      });
       expect(fileRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          acpId: "acp-1",
+          acpId: acpId,
           originalName: "f1.json",
         }),
       );
@@ -279,7 +308,7 @@ describe("SnapshotsService", () => {
       snapshotRepo.findOne.mockImplementation((query: any) => {
         if (query?.where?.id === "snap-2")
           return Promise.resolve(currentSnapshot);
-        if (query?.where?.acpId === "acp-1" && query?.where?.versionNumber) {
+        if (query?.where?.acpId === acpId && query?.where?.versionNumber) {
           return Promise.resolve(previousSnapshot);
         }
         return Promise.resolve(null);
@@ -315,11 +344,11 @@ describe("SnapshotsService", () => {
         }),
       );
       expect(fs.rm).toHaveBeenCalledWith(
-        path.join("/tmp/uploads-test", "acp-1", "snapshots", "snap-1"),
+        path.join("/tmp/uploads-test", acpId, "snapshots", "snap-1"),
         { recursive: true, force: true },
       );
       expect(fs.rm).toHaveBeenCalledWith(
-        path.join("/tmp/uploads-test", "acp-1", "snapshot-restore", "snap-1"),
+        path.join("/tmp/uploads-test", acpId, "snapshot-restore", "snap-1"),
         { recursive: true, force: true },
       );
     });
@@ -338,11 +367,11 @@ describe("SnapshotsService", () => {
       await service.delete("snap-1");
 
       expect(fs.rm).toHaveBeenCalledWith(
-        path.join("/tmp/uploads-test", "acp-1", "snapshots", "snap-1"),
+        path.join("/tmp/uploads-test", acpId, "snapshots", "snap-1"),
         { recursive: true, force: true },
       );
       expect(fs.rm).toHaveBeenCalledWith(
-        path.join("/tmp/uploads-test", "acp-1", "snapshot-restore", "snap-1"),
+        path.join("/tmp/uploads-test", acpId, "snapshot-restore", "snap-1"),
         { recursive: true, force: true },
       );
     });

@@ -10,6 +10,7 @@ import {
   Matches,
   IsInt,
   Min,
+  IsUUID,
 } from "class-validator";
 import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
@@ -50,8 +51,7 @@ export class UpdateAcpDto {
 
 export class AssignRoleDto {
   @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
+  @IsUUID("all")
   userId!: string;
 
   @ApiProperty({ enum: ["ACP_MANAGER", "READ_ONLY"] })

@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from "class-validator";
+import { IsString, IsNotEmpty, IsUUID } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 
 export class LoginDto {
@@ -15,8 +15,7 @@ export class LoginDto {
 
 export class CredentialLoginDto {
   @ApiProperty({ description: "ACP ID to access" })
-  @IsString()
-  @IsNotEmpty()
+  @IsUUID("all")
   acpId!: string;
 
   @ApiProperty({ example: "reviewer1" })

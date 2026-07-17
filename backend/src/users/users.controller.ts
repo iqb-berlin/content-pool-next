@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  UsePipes,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
@@ -14,10 +15,12 @@ import { CreateUserDto, UpdateUserDto } from "./dto/user.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 @ApiTags("Users")
 @Controller("users")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UsePipes(new UuidRouteParamsPipe())
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

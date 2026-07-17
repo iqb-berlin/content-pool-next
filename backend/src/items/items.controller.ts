@@ -14,6 +14,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  UsePipes,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -33,6 +34,7 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { IsObject } from "class-validator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 type ItemParameterImportKind = "item-parameters" | "empirical-difficulty";
 type ItemParameterImportTarget = "draft" | "published";
@@ -58,6 +60,7 @@ class SaveItemTagsDto {
 
 @ApiTags("Items")
 @Controller("acp/:acpId/items")
+@UsePipes(new UuidRouteParamsPipe())
 export class ItemsController {
   constructor(
     private readonly itemsService: ItemsService,

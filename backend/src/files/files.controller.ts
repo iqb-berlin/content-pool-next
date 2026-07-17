@@ -14,6 +14,7 @@ import {
   Request,
   Res,
   Sse,
+  UsePipes,
 } from "@nestjs/common";
 import { Response } from "express";
 import { FilesInterceptor } from "@nestjs/platform-express";
@@ -33,9 +34,11 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
+@UsePipes(new UuidRouteParamsPipe())
 export class FilesController {
   constructor(
     private readonly filesService: FilesService,

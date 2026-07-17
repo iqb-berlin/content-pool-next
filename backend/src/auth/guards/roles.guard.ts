@@ -6,6 +6,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { assertUuidParam } from "../../common/uuid-param";
 
 export const ROLES_KEY = "roles";
 
@@ -34,6 +35,11 @@ export class RolesGuard implements CanActivate {
 
     if (!user) {
       throw new ForbiddenException("Not authenticated");
+    }
+
+    const routeUuid = params.acpId || params.id;
+    if (routeUuid) {
+      assertUuidParam(routeUuid, params.acpId ? "ACP ID" : "Resource ID");
     }
 
     // Check if user is App Admin - App Admins have access to everything

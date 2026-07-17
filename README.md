@@ -262,6 +262,7 @@ Application admins can create, inspect and revoke integration tokens in the UI u
 
 ### Core Endpoints
 
+- `GET /api/server/capabilities`: Inspect the authenticated token's scopes and ACP restriction without addressing an ACP
 - `GET /api/server/acp`: List transferable ACPs
 - `GET /api/server/acp/:acpId`: Full transfer payload (index + files metadata)
 - `GET /api/server/acp/:acpId/export`: Alias for full transfer payload
@@ -304,6 +305,12 @@ Tokens can be scoped per integration client. Supported scopes:
 - `files.read`
 - `files.write`
 - `audit.read`
+
+`GET /api/server/capabilities` requires a valid integration token but no
+particular scope. It returns the token's granted `scopes`, a capability map for
+all supported scopes, and its `allowedAcpIds` restriction. Integrations should
+use this endpoint for connection and permission checks instead of probing an
+ACP route with a synthetic ID.
 
 ## OIDC / Keycloak Integration
 

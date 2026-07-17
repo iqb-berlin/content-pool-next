@@ -3,6 +3,8 @@ import { Reflector } from "@nestjs/core";
 import { RolesGuard, ROLES_KEY } from "./roles.guard";
 
 describe("RolesGuard", () => {
+  const acpId = "11111111-1111-4111-8111-111111111111";
+  const otherAcpId = "22222222-2222-4222-8222-222222222222";
   let guard: RolesGuard;
   let reflector: { getAllAndOverride: jest.Mock };
 
@@ -43,7 +45,7 @@ describe("RolesGuard", () => {
 
     const request = {
       user: { isAppAdmin: true },
-      params: { id: "acp-1" },
+      params: { id: acpId },
     };
 
     expect(guard.canActivate(createContext(request))).toBe(true);
@@ -55,9 +57,9 @@ describe("RolesGuard", () => {
     const request = {
       user: {
         isAppAdmin: false,
-        acpRoles: [{ acpId: "acp-1", role: "ACP_MANAGER" }],
+        acpRoles: [{ acpId, role: "ACP_MANAGER" }],
       },
-      params: { id: "acp-1" },
+      params: { id: acpId },
     };
 
     expect(guard.canActivate(createContext(request))).toBe(true);
@@ -69,9 +71,9 @@ describe("RolesGuard", () => {
     const request = {
       user: {
         isAppAdmin: false,
-        acpRoles: [{ acpId: "acp-1", role: "ACP_MANAGER" }],
+        acpRoles: [{ acpId, role: "ACP_MANAGER" }],
       },
-      params: { acpId: "acp-1" },
+      params: { acpId },
     };
 
     expect(guard.canActivate(createContext(request))).toBe(true);
@@ -83,13 +85,26 @@ describe("RolesGuard", () => {
     const request = {
       user: {
         isAppAdmin: false,
-        acpRoles: [{ acpId: "acp-2", role: "READ_ONLY" }],
+        acpRoles: [{ acpId: otherAcpId, role: "READ_ONLY" }],
       },
-      params: { id: "acp-1" },
+      params: { id: acpId },
     };
 
     expect(() => guard.canActivate(createContext(request))).toThrow(
       ForbiddenException,
     );
+  });
+
+  it("rejects malformed resource ids after authentication", () => {
+    reflector.getAllAndOverride.mockReturnValue(["ACP_MANAGER"]);
+
+    expect(() =>
+      guard.canActivate(
+        createContext({
+          user: { isAppAdmin: true },
+          params: { id: "not-a-uuid" },
+        }),
+      ),
+    ).toThrow("Resource ID must be a valid UUID");
   });
 });

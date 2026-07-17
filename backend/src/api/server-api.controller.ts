@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Param,
   Post,
   Put,
   Query,
@@ -31,6 +30,8 @@ import { ServerApiAuthGuard } from "./server-api-auth.guard";
 import { ServerApiScopes } from "./server-api-scopes.decorator";
 import { ServerApiAudit } from "./server-api-audit.decorator";
 import { ServerApiAuditInterceptor } from "./server-api-audit.interceptor";
+import { ALL_SERVER_API_SCOPES, ServerApiScope } from "./server-api-scopes";
+import { UuidParam } from "../common/uuid-param";
 
 class ServerImportAcpDto {
   @ApiProperty()
@@ -108,6 +109,32 @@ export class ServerApiController {
     private readonly serverApiAuditService: ServerApiAuditService,
   ) {}
 
+  @Get("capabilities")
+  @ServerApiScopes()
+  @ServerApiAudit("server.capabilities.read", "server-api-client")
+  @ApiOperation({
+    summary: "Inspect the authenticated integration token capabilities",
+  })
+  getCapabilities(@Req() req: any): {
+    clientId: string;
+    scopes: string[];
+    capabilities: Record<ServerApiScope, boolean>;
+    allowedAcpIds: string[] | null;
+  } {
+    const client = req.serverApiClient;
+    const grantedScopes = new Set<string>(client.scopes);
+    const capabilities = Object.fromEntries(
+      ALL_SERVER_API_SCOPES.map((scope) => [scope, grantedScopes.has(scope)]),
+    ) as Record<ServerApiScope, boolean>;
+
+    return {
+      clientId: client.id,
+      scopes: [...client.scopes],
+      capabilities,
+      allowedAcpIds: client.allowedAcpIds,
+    };
+  }
+
   @Get("acp")
   @ServerApiScopes("acp.read")
   @ServerApiAudit("acp.list", "acp")
@@ -120,7 +147,7 @@ export class ServerApiController {
   @ServerApiScopes("transfer.read")
   @ServerApiAudit("acp.transfer.read", "acp")
   @ApiOperation({ summary: "Get full ACP transfer payload (index + files)" })
-  async getAcp(@Param("acpId") acpId: string, @Req() req?: any) {
+  async getAcp(@UuidParam("acpId") acpId: string, @Req() req?: any) {
     return this.serverApiService.getAcpTransferData(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -131,7 +158,7 @@ export class ServerApiController {
   @ServerApiScopes("transfer.read")
   @ServerApiAudit("acp.transfer.export", "acp")
   @ApiOperation({ summary: "Export full ACP transfer payload (index + files)" })
-  async exportAcp(@Param("acpId") acpId: string, @Req() req?: any) {
+  async exportAcp(@UuidParam("acpId") acpId: string, @Req() req?: any) {
     return this.serverApiService.getAcpTransferData(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -142,7 +169,7 @@ export class ServerApiController {
   @ServerApiScopes("index.read")
   @ServerApiAudit("acp.index.read", "acp-index")
   @ApiOperation({ summary: "Get only ACP index payload" })
-  async getAcpIndex(@Param("acpId") acpId: string, @Req() req?: any) {
+  async getAcpIndex(@UuidParam("acpId") acpId: string, @Req() req?: any) {
     return this.serverApiService.getAcpIndex(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -159,7 +186,7 @@ export class ServerApiController {
     description: "overwrite | merge",
   })
   async updateAcpIndex(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() body: UpdateIndexDto,
     @Query("strategy") strategy?: string,
     @Req() req?: any,
@@ -177,7 +204,7 @@ export class ServerApiController {
   @ServerApiScopes("files.read")
   @ServerApiAudit("acp.files.list", "file")
   @ApiOperation({ summary: "List transfer-relevant file metadata for an ACP" })
-  async listFiles(@Param("acpId") acpId: string, @Req() req?: any) {
+  async listFiles(@UuidParam("acpId") acpId: string, @Req() req?: any) {
     return this.serverApiService.listFiles(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -189,8 +216,8 @@ export class ServerApiController {
   @ServerApiAudit("acp.files.read", "file")
   @ApiOperation({ summary: "Get transfer metadata of one file" })
   async getFile(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
     @Req() req?: any,
   ) {
     return this.serverApiService.getFile(
@@ -205,8 +232,8 @@ export class ServerApiController {
   @ServerApiAudit("acp.files.download", "file")
   @ApiOperation({ summary: "Download one ACP file for transfer" })
   async downloadFile(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
     @Res() res: Response,
     @Req() req?: any,
   ) {
@@ -247,7 +274,7 @@ export class ServerApiController {
   })
   @UseInterceptors(FilesInterceptor("files", 100))
   async uploadFiles(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Query("conflictStrategy") conflictStrategy?: string,
     @Req() req?: any,
@@ -292,7 +319,7 @@ export class ServerApiController {
   })
   @UseInterceptors(FilesInterceptor("files", 100))
   async replaceCodingSchemes(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Body() body: ReplaceCodingSchemeDto,
     @Req() req: any,

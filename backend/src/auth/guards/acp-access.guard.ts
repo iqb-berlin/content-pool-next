@@ -15,6 +15,7 @@ import {
   AccessModel,
 } from "../../database/entities";
 import { User } from "../../database/entities/user.entity";
+import { assertUuidParam } from "../../common/uuid-param";
 
 /**
  * Guard that checks if the current user has access to the ACP specified by :acpId param.
@@ -43,6 +44,7 @@ export class AcpAccessGuard implements CanActivate {
     if (!acpId) {
       throw new NotFoundException("ACP ID not found in request");
     }
+    assertUuidParam(acpId, "ACP ID");
 
     // Try to resolve user from JWT even if no JwtAuthGuard is attached.
     // This keeps ACP routes compatible with optional-auth scenarios.

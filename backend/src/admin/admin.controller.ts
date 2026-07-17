@@ -3,9 +3,7 @@ import {
   Controller,
   Delete,
   Get,
-  Param,
   Patch,
-  ParseUUIDPipe,
   Post,
   Put,
   Query,
@@ -38,6 +36,7 @@ import { OidcAuthGuard } from "../auth/guards/oidc-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { ALL_SERVER_API_SCOPES } from "../api/server-api-scopes";
+import { UuidParam } from "../common/uuid-param";
 
 class CreateApplicationTokenDto {
   @ApiProperty({ description: "Human-readable application name" })
@@ -69,7 +68,7 @@ class CreateApplicationTokenDto {
   })
   @IsOptional()
   @IsArray()
-  @IsUUID("4", { each: true })
+  @IsUUID("all", { each: true })
   allowedAcpIds?: string[] | null;
 }
 
@@ -118,10 +117,7 @@ export class AdminController {
 
   @Patch("application-tokens/:id/revoke")
   @ApiOperation({ summary: "Revoke an application token" })
-  async revokeApplicationToken(
-    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
-    @Req() req: any,
-  ) {
+  async revokeApplicationToken(@UuidParam("id") id: string, @Req() req: any) {
     return this.adminService.revokeApplicationToken(id, req?.user?.sub);
   }
 

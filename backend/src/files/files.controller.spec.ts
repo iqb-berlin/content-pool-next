@@ -144,6 +144,9 @@ describe("FilesController", () => {
         activeState: { itemProperties: {} },
         publishedState: { itemProperties: {} },
       }),
+      getStateVersionForViewer: jest.fn(
+        async (_acpId: string, canEdit: boolean) => (canEdit ? 4 : 3),
+      ),
       runWithLockedCleanState: jest.fn(
         async (_acpId: string, operation: (state: any, manager: any) => any) =>
           operation(
@@ -447,10 +450,47 @@ describe("FilesController", () => {
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
-      {
+      expect.objectContaining({
         itemPropertiesOverride: {},
         publishedItemPropertiesOverride: {},
+        activeStateSignature: "active:4",
+        publishedStateSignature: "published:3",
+      }),
+    );
+  });
+
+  it("exposes item-list server timing diagnostics", async () => {
+    unitParserService.getItemListFromFiles.mockImplementationOnce(
+      async (_acpId: string, options: any) => {
+        options.onDiagnostics({
+          cacheStatus: "hit",
+          rowCacheStatus: "hit",
+          fileSignatureMs: 1,
+          sourceReadMs: 2,
+          rowNumberRevisionMs: 1,
+          parseMs: 0,
+          rowNumberingMs: 3,
+          totalMs: 5,
+        });
+        return { columns: [], items: [] };
       },
+    );
+    const res = { setHeader: jest.fn() } as any;
+
+    await controller.getItemList(
+      "acp-1",
+      { acpAccessLevel: "MANAGER" },
+      undefined,
+      res,
+    );
+
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Server-Timing",
+      expect.stringContaining('cache;desc="hit"'),
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Server-Timing",
+      expect.stringContaining('row-cache;desc="hit"'),
     );
   });
 
@@ -472,10 +512,12 @@ describe("FilesController", () => {
 
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
-      {
+      expect.objectContaining({
         itemPropertiesOverride: { draft: {} },
         publishedItemPropertiesOverride: { published: {} },
-      },
+        activeStateSignature: "active:8",
+        publishedStateSignature: "published:5",
+      }),
     );
   });
 
@@ -576,6 +618,32 @@ describe("FilesController", () => {
         undefined,
       ),
     ).resolves.toEqual({ unitId: "u-1" });
+    const unitViewCall =
+      unitParserService.getUnitViewFromFiles.mock.calls.at(-1);
+    expect(unitViewCall?.slice(0, 3)).toEqual([
+      "acp-1",
+      "unit-1",
+      expect.any(Function),
+    ]);
+    await expect(unitViewCall?.[3]).resolves.toBe("published:3");
+  });
+
+  it("uses the active Explorer version for manager unit-view caching", async () => {
+    await controller.getUnitView(
+      "acp-1",
+      "unit-1",
+      { acpAccessLevel: "MANAGER" },
+      undefined,
+    );
+
+    const unitViewCall =
+      unitParserService.getUnitViewFromFiles.mock.calls.at(-1);
+    expect(unitViewCall?.slice(0, 3)).toEqual([
+      "acp-1",
+      "unit-1",
+      expect.any(Function),
+    ]);
+    await expect(unitViewCall?.[3]).resolves.toBe("active:4");
   });
 
   it("applies read-only perspective checks for managers in unit view", async () => {
@@ -800,6 +868,57 @@ describe("FilesController", () => {
     expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
     expect(filesService.downloadForAcp).toHaveBeenCalledWith("acp-1", "file-1");
   });
+
+  it("returns 304 for a matching private file ETag", async () => {
+    const res = {
+      setHeader: jest.fn(),
+      send: jest.fn(),
+      status: jest.fn().mockReturnThis(),
+      end: jest.fn(),
+    } as any;
+
+    await controller.download(
+      "acp-1",
+      "file-1",
+      undefined,
+      {
+        acpAccessLevel: "MANAGER",
+        headers: { "if-none-match": '"file-1-123-"' },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(304);
+    expect(res.end).toHaveBeenCalled();
+    expect(filesService.downloadForAcp).not.toHaveBeenCalled();
+  });
+
+  it.each([['W/"file-1-123-"'], ['"different", W/"file-1-123-"'], ["*"]])(
+    "returns 304 for If-None-Match value %s",
+    async (ifNoneMatch) => {
+      const res = {
+        setHeader: jest.fn(),
+        send: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+        end: jest.fn(),
+      } as any;
+
+      await controller.download(
+        "acp-1",
+        "file-1",
+        undefined,
+        {
+          acpAccessLevel: "MANAGER",
+          headers: { "if-none-match": ifNoneMatch },
+        },
+        res,
+      );
+
+      expect(res.status).toHaveBeenCalledWith(304);
+      expect(res.end).toHaveBeenCalled();
+      expect(filesService.downloadForAcp).not.toHaveBeenCalled();
+    },
+  );
 
   it("supports inline disposition for previews", async () => {
     const res = { setHeader: jest.fn(), send: jest.fn() } as any;

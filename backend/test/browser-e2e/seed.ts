@@ -165,9 +165,20 @@ async function seed(): Promise<void> {
         },
       ],
     });
+    const unitDefinition = JSON.stringify({
+      pages: [{ elements: [{ id: "V1" }] }, { elements: [{ id: "V2" }] }],
+    });
+    const playerHtml =
+      "<!doctype html><html><body>Browser E2E Player</body></html>";
     const files = [
       { name: "u1.xml", content: unitXml, type: "UNIT_XML" },
       { name: "u1.vomd", content: itemMetadata, type: "ITEM_METADATA" },
+      { name: "u1.voud", content: unitDefinition, type: "UNIT_DEFINITION" },
+      {
+        name: "iqb-player-aspect-2.11.6.html",
+        content: playerHtml,
+        type: "PLAYER",
+      },
     ];
     for (const file of files) {
       const filePath = join(fixtureDirectory, file.name);

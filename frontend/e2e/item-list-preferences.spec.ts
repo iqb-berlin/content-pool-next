@@ -40,6 +40,114 @@ async function loginWithCredential(page: Page): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`/view/${ACP_ID}`));
 }
 
+test('shows a slow-connection hint while the Explorer item list is delayed', async ({
+  page,
+  request,
+}) => {
+  const login = await request.post('/api/auth/login', {
+    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
+  });
+  expect(login.ok()).toBeTruthy();
+  const token = (await login.json()).accessToken as string;
+  await page.addInitScript((accessToken) => {
+    localStorage.setItem('cp_token', accessToken);
+    localStorage.setItem('cp_auth_type', 'local');
+  }, token);
+  await page.route('**/api/acp/*/files/item-list*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    await route.continue();
+  });
+
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+
+  const slowHint = page.getByText(/Das Laden dauert länger als erwartet/);
+  await expect(slowHint).toBeVisible();
+  await expect(slowHint).toBeHidden({ timeout: 10_000 });
+  await expect(page.locator('tbody tr').first()).toBeVisible();
+});
+
+test('shows and clears the slow-connection hint for a delayed preview phase', async ({
+  page,
+  request,
+}) => {
+  const login = await request.post('/api/auth/login', {
+    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
+  });
+  expect(login.ok()).toBeTruthy();
+  const token = (await login.json()).accessToken as string;
+  await page.addInitScript((accessToken) => {
+    localStorage.setItem('cp_token', accessToken);
+    localStorage.setItem('cp_auth_type', 'local');
+  }, token);
+  await page.route('**/api/acp/*/files/unit-view/*', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    await route.continue();
+  });
+
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  const firstRow = page.locator('tbody tr').first();
+  await expect(firstRow).toBeVisible();
+  await firstRow.click();
+
+  const slowHint = page.getByText(/Aktuelle Phase:/);
+  await expect(slowHint).toBeVisible();
+  await expect(slowHint).toContainText('Aufgabendaten, Player und Definition');
+  await expect(slowHint).toBeHidden({ timeout: 10_000 });
+  await expect(page.locator('iframe.player-iframe')).toBeVisible();
+});
+
+test('reuses preview assets and requests only response state within one unit', async ({
+  page,
+  request,
+}) => {
+  const login = await request.post('/api/auth/login', {
+    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
+  });
+  expect(login.ok()).toBeTruthy();
+  const token = (await login.json()).accessToken as string;
+  await page.addInitScript((accessToken) => {
+    localStorage.setItem('cp_token', accessToken);
+    localStorage.setItem('cp_auth_type', 'local');
+  }, token);
+
+  const requestCounts = {
+    unitView: 0,
+    responseState: 0,
+    previewAssets: 0,
+  };
+  page.on('request', (browserRequest) => {
+    const pathname = new URL(browserRequest.url()).pathname;
+    if (pathname.includes('/files/unit-view/')) {
+      requestCounts.unitView += 1;
+    } else if (pathname.endsWith('/response-state/with-fallback')) {
+      requestCounts.responseState += 1;
+    } else if (/\/files\/[^/]+\/download$/.test(pathname)) {
+      requestCounts.previewAssets += 1;
+    }
+  });
+
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  const rows = page.locator('tbody tr');
+  await expect(rows).toHaveCount(2);
+
+  await rows.nth(0).click();
+  await expect.poll(() => requestCounts.unitView).toBe(1);
+  await expect.poll(() => requestCounts.previewAssets).toBe(2);
+  await expect.poll(() => requestCounts.responseState).toBe(1);
+  await expect(page.locator('iframe.player-iframe')).toBeVisible();
+
+  await rows.nth(1).click();
+  await expect.poll(() => requestCounts.responseState).toBe(2);
+  await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true');
+  expect(requestCounts.unitView).toBe(1);
+  expect(requestCounts.previewAssets).toBe(2);
+
+  await rows.nth(0).click();
+  await expect.poll(() => requestCounts.responseState).toBe(3);
+  expect(requestCounts.unitView).toBe(1);
+  expect(requestCounts.previewAssets).toBe(2);
+});
+
 test('reconciles mean filters across clear, reimport, reload and credential relogin', async ({
   browser,
   page,

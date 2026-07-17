@@ -98,6 +98,47 @@ describe("ItemRowNumberingService", () => {
     ]);
   });
 
+  it("derives a deterministic revision from persisted row assignments", async () => {
+    persisted = [
+      {
+        id: "1",
+        acpId: "acp-1",
+        rowKey: "first",
+        rowKeyHash: hash("first"),
+        rowNumber: 2,
+      } as AcpItemRowNumber,
+      {
+        id: "2",
+        acpId: "acp-1",
+        rowKey: "second",
+        rowKeyHash: hash("second"),
+        rowNumber: 1,
+      } as AcpItemRowNumber,
+    ];
+
+    const first = await service.getRevision("acp-1");
+    persisted.reverse();
+    const second = await service.getRevision("acp-1");
+    persisted[0].rowNumber = 3;
+    const changed = await service.getRevision("acp-1");
+
+    expect(first).toBe(second);
+    expect(changed).not.toBe(first);
+  });
+
+  it("uses the compact database revision query when available", async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValue([{ count: "2", hash: "database-hash" }]);
+    (service as any).rowNumberRepository.query = query;
+
+    await expect(service.getRevision("acp-1")).resolves.toBe("2:database-hash");
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining("FROM acp_item_row_numbers"),
+      ["acp-1"],
+    );
+  });
+
   it("sorts globally by Item-ID before using Unit-ID as a tie-breaker", async () => {
     const numbers = await service.assignNumbers("acp-1", [
       row("unit-1-item-10", "UNIT_1", "ITEM_10"),

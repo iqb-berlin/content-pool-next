@@ -48,6 +48,13 @@ export interface ExplorerStateEnvelope {
   draftState: ExplorerSharedStatePayload;
 }
 
+export interface ItemListStateProjection {
+  activeItemProperties: Record<string, Record<string, unknown>>;
+  publishedItemProperties: Record<string, Record<string, unknown>>;
+  activeVersion: number;
+  publishedVersion: number;
+}
+
 export interface ExplorerDraftPatch {
   ui?: Record<string, unknown>;
   tags?: Record<string, string[]>;
@@ -61,10 +68,14 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface ViewerStateCacheEntry {
+  status: ItemExplorerDraftStatus;
   version: number;
   publishedVersion: number;
-  editor: ExplorerStateEnvelope;
-  readOnly: ExplorerStateEnvelope;
+  updatedAt: Date;
+  updatedByUsername?: string | null;
+  updatedByRole?: string | null;
+  draftState: ExplorerSharedStatePayload;
+  publishedState: ExplorerSharedStatePayload;
 }
 
 @Injectable()
@@ -87,6 +98,28 @@ export class ItemExplorerStateService {
     acpId: string,
     canEdit: boolean,
   ): Promise<ExplorerStateEnvelope> {
+    const state = await this.getCachedViewerState(acpId);
+    return structuredClone(this.toViewerEnvelope(state, canEdit));
+  }
+
+  async getItemListStateProjection(
+    acpId: string,
+    canEdit: boolean,
+  ): Promise<ItemListStateProjection> {
+    const state = await this.getCachedViewerState(acpId);
+    return structuredClone({
+      activeItemProperties: canEdit
+        ? state.draftState.itemProperties
+        : state.publishedState.itemProperties,
+      publishedItemProperties: state.publishedState.itemProperties,
+      activeVersion: canEdit ? state.version : state.publishedVersion,
+      publishedVersion: state.publishedVersion,
+    });
+  }
+
+  private async getCachedViewerState(
+    acpId: string,
+  ): Promise<ViewerStateCacheEntry> {
     const cached = this.viewerStateCache.get(acpId);
     if (cached) {
       const version = await this.stateRepository.findOne({
@@ -103,18 +136,13 @@ export class ItemExplorerStateService {
       ) {
         this.viewerStateCache.delete(acpId);
         this.viewerStateCache.set(acpId, cached);
-        return structuredClone(canEdit ? cached.editor : cached.readOnly);
+        return cached;
       }
       this.viewerStateCache.delete(acpId);
     }
 
     const record = await this.ensureStateRecord(acpId);
-    const entry: ViewerStateCacheEntry = {
-      version: record.version,
-      publishedVersion: record.publishedVersion,
-      editor: this.toEnvelope(record, true),
-      readOnly: this.toEnvelope(record, false),
-    };
+    const entry = this.toViewerStateCacheEntry(record);
     this.viewerStateCache.set(acpId, entry);
     while (this.viewerStateCache.size > this.maxViewerStateCacheEntries) {
       const oldestKey = this.viewerStateCache.keys().next().value as
@@ -123,7 +151,7 @@ export class ItemExplorerStateService {
       if (!oldestKey) break;
       this.viewerStateCache.delete(oldestKey);
     }
-    return structuredClone(canEdit ? entry.editor : entry.readOnly);
+    return entry;
   }
 
   async getStateVersionForViewer(
@@ -695,21 +723,40 @@ export class ItemExplorerStateService {
     record: AcpItemExplorerState,
     canEdit: boolean,
   ): ExplorerStateEnvelope {
-    const publishedState = this.normalizeStatePayload(record.publishedState);
-    const draftState = this.normalizeStatePayload(record.draftState);
+    return this.toViewerEnvelope(this.toViewerStateCacheEntry(record), canEdit);
+  }
 
+  private toViewerEnvelope(
+    state: ViewerStateCacheEntry,
+    canEdit: boolean,
+  ): ExplorerStateEnvelope {
+    return {
+      status: state.status,
+      version: state.version,
+      publishedVersion: state.publishedVersion,
+      canEdit,
+      canPublish: canEdit,
+      updatedAt: state.updatedAt,
+      updatedByUsername: state.updatedByUsername,
+      updatedByRole: state.updatedByRole,
+      activeState: canEdit ? state.draftState : state.publishedState,
+      publishedState: state.publishedState,
+      draftState: state.draftState,
+    };
+  }
+
+  private toViewerStateCacheEntry(
+    record: AcpItemExplorerState,
+  ): ViewerStateCacheEntry {
     return {
       status: record.status,
       version: record.version,
       publishedVersion: record.publishedVersion,
-      canEdit,
-      canPublish: canEdit,
       updatedAt: record.updatedAt,
       updatedByUsername: record.updatedByUsername,
       updatedByRole: record.updatedByRole,
-      activeState: canEdit ? draftState : publishedState,
-      publishedState,
-      draftState,
+      draftState: this.normalizeStatePayload(record.draftState),
+      publishedState: this.normalizeStatePayload(record.publishedState),
     };
   }
 

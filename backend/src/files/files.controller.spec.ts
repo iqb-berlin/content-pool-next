@@ -144,6 +144,12 @@ describe("FilesController", () => {
         activeState: { itemProperties: {} },
         publishedState: { itemProperties: {} },
       }),
+      getItemListStateProjection: jest.fn().mockResolvedValue({
+        activeItemProperties: {},
+        publishedItemProperties: {},
+        activeVersion: 4,
+        publishedVersion: 3,
+      }),
       getStateVersionForViewer: jest.fn(
         async (_acpId: string, canEdit: boolean) => (canEdit ? 4 : 3),
       ),
@@ -495,13 +501,11 @@ describe("FilesController", () => {
   });
 
   it("passes the active manager draft to the centrally initialized item list", async () => {
-    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
-      status: "DIRTY",
-      version: 8,
+    itemExplorerStateService.getItemListStateProjection.mockResolvedValueOnce({
+      activeItemProperties: { draft: {} },
+      publishedItemProperties: { published: {} },
+      activeVersion: 8,
       publishedVersion: 5,
-      canEdit: true,
-      activeState: { itemProperties: { draft: {} } },
-      publishedState: { itemProperties: { published: {} } },
     });
 
     await controller.getItemList(
@@ -525,13 +529,11 @@ describe("FilesController", () => {
     filesService.getFeatureConfig.mockResolvedValueOnce({
       enableItemList: true,
     });
-    itemExplorerStateService.getStateForViewer.mockResolvedValueOnce({
-      status: "DIRTY",
-      version: 8,
+    itemExplorerStateService.getItemListStateProjection.mockResolvedValueOnce({
+      activeItemProperties: { published: {} },
+      publishedItemProperties: { published: {} },
+      activeVersion: 5,
       publishedVersion: 5,
-      canEdit: false,
-      activeState: { itemProperties: { published: {} } },
-      publishedState: { itemProperties: { published: {} } },
     });
 
     const result = await controller.getItemList(
@@ -541,10 +543,9 @@ describe("FilesController", () => {
     );
 
     expect(result.itemExplorerStateVersion).toBe(5);
-    expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
-      "acp-1",
-      false,
-    );
+    expect(
+      itemExplorerStateService.getItemListStateProjection,
+    ).toHaveBeenCalledWith("acp-1", false);
   });
 
   it("delegates row-number recalculation to the published item-list workflow", async () => {

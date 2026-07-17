@@ -159,19 +159,19 @@ export class FilesController {
       }
     }
     const explorerStateStartedAt = performance.now();
-    const explorerState = await this.itemExplorerStateService.getStateForViewer(
-      acpId,
-      isManager,
-    );
+    const explorerState =
+      await this.itemExplorerStateService.getItemListStateProjection(
+        acpId,
+        isManager,
+      );
     const explorerStateMs = performance.now() - explorerStateStartedAt;
     let diagnostics: ItemExplorerLoadDiagnostics | undefined;
     const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
-      itemPropertiesOverride: explorerState.activeState.itemProperties,
-      publishedItemPropertiesOverride:
-        explorerState.publishedState.itemProperties,
+      itemPropertiesOverride: explorerState.activeItemProperties,
+      publishedItemPropertiesOverride: explorerState.publishedItemProperties,
       activeStateSignature: isManager
-        ? `active:${explorerState.version}`
-        : `published:${explorerState.publishedVersion}`,
+        ? `active:${explorerState.activeVersion}`
+        : `published:${explorerState.activeVersion}`,
       publishedStateSignature: `published:${explorerState.publishedVersion}`,
       onDiagnostics: (value) => {
         diagnostics = { ...value, explorerStateMs };
@@ -186,9 +186,7 @@ export class FilesController {
     );
     return {
       ...itemList,
-      itemExplorerStateVersion: isManager
-        ? explorerState.version
-        : explorerState.publishedVersion,
+      itemExplorerStateVersion: explorerState.activeVersion,
     };
   }
 

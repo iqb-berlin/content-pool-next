@@ -11,6 +11,7 @@ import {
 } from "../database/entities";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { TEST_UUIDS, createAcpFixture } from "../testing/test-fixtures";
 
 jest.mock("fs/promises", () => ({
   access: jest.fn(),
@@ -21,8 +22,8 @@ jest.mock("fs/promises", () => ({
 }));
 
 describe("SnapshotsService", () => {
-  const acpId = "11111111-1111-4111-8111-111111111111";
-  const unknownAcpId = "99999999-9999-4999-8999-999999999999";
+  const acpId = TEST_UUIDS.acp;
+  const unknownAcpId = TEST_UUIDS.unknownAcp;
   let service: SnapshotsService;
   let snapshotRepo: any;
   let snapshotFileRepo: any;
@@ -30,10 +31,9 @@ describe("SnapshotsService", () => {
   let fileRepo: any;
   let configService: any;
 
-  const mockAcp = {
-    id: acpId,
+  const mockAcp = createAcpFixture({
     acpIndex: { packageId: "test", version: "1.0", units: [{ id: "u1" }] },
-  };
+  });
 
   const mockSnapshot = {
     id: "snap-1",

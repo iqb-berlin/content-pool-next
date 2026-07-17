@@ -1,8 +1,40 @@
-import { ArgumentMetadata, BadRequestException } from "@nestjs/common";
-import { UuidRouteParamsPipe, assertUuidParam } from "./uuid-param";
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  INestApplication,
+  Param,
+} from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import * as request from "supertest";
+import { assertUuidParam, UuidParam } from "./uuid-param";
+
+@Controller("uuid-test/:acpId")
+class ExplicitUuidTestController {
+  @Get("items/:itemId")
+  read(
+    @UuidParam("acpId") acpId: string,
+    @Param("itemId") itemId: string,
+  ): { acpId: string; itemId: string } {
+    return { acpId, itemId };
+  }
+}
 
 describe("UUID route parameter validation", () => {
   const validUuid = "11111111-1111-4111-8111-111111111111";
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      controllers: [ExplicitUuidTestController],
+    }).compile();
+    app = module.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
 
   it("accepts syntactically valid UUID values independent of version", () => {
     expect(() => assertUuidParam(validUuid, "ACP ID")).not.toThrow();
@@ -17,23 +49,14 @@ describe("UUID route parameter validation", () => {
     ).toThrow(BadRequestException);
   });
 
-  it("validates UUID route parameters but preserves semantic identifiers", () => {
-    const pipe = new UuidRouteParamsPipe();
-    const acpMetadata: ArgumentMetadata = {
-      type: "param",
-      metatype: String,
-      data: "acpId",
-    };
-    const itemMetadata: ArgumentMetadata = {
-      type: "param",
-      metatype: String,
-      data: "itemId",
-    };
+  it("validates only explicitly decorated UUID parameters", async () => {
+    await request(app.getHttpServer())
+      .get(`/uuid-test/${validUuid}/items/DE_ITEM_01`)
+      .expect(200)
+      .expect({ acpId: validUuid, itemId: "DE_ITEM_01" });
 
-    expect(pipe.transform(validUuid, acpMetadata)).toBe(validUuid);
-    expect(() =>
-      pipe.transform("__coding-box-connection-test__", acpMetadata),
-    ).toThrow(BadRequestException);
-    expect(pipe.transform("DE_ITEM_01", itemMetadata)).toBe("DE_ITEM_01");
+    await request(app.getHttpServer())
+      .get("/uuid-test/not-a-uuid/items/DE_ITEM_01")
+      .expect(400);
   });
 });

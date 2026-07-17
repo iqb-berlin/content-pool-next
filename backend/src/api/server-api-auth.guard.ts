@@ -8,6 +8,8 @@ import {
 import { Reflector } from "@nestjs/core";
 import { ServerApiAuthService } from "./server-api-auth.service";
 import { SERVER_API_SCOPES_KEY } from "./server-api-scopes.decorator";
+import { Request } from "express";
+import { ServerApiRequest } from "./server-api.types";
 
 @Injectable()
 export class ServerApiAuthGuard implements CanActivate {
@@ -17,7 +19,7 @@ export class ServerApiAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const req = context.switchToHttp().getRequest();
+    const req = context.switchToHttp().getRequest<ServerApiRequest>();
     const token = this.extractToken(req);
     if (!token) {
       throw new UnauthorizedException("Missing server API token");
@@ -49,7 +51,7 @@ export class ServerApiAuthGuard implements CanActivate {
     return true;
   }
 
-  private extractToken(req: any): string | null {
+  private extractToken(req: Request): string | null {
     const xServerToken =
       (req.headers?.["x-server-token"] as string | undefined) ||
       (req.headers?.["x-integration-token"] as string | undefined);

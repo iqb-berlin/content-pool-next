@@ -16,6 +16,7 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
+  ApiOkResponse,
   ApiProperty,
   ApiPropertyOptional,
   ApiQuery,
@@ -32,6 +33,11 @@ import { ServerApiAudit } from "./server-api-audit.decorator";
 import { ServerApiAuditInterceptor } from "./server-api-audit.interceptor";
 import { ALL_SERVER_API_SCOPES, ServerApiScope } from "./server-api-scopes";
 import { UuidParam } from "../common/uuid-param";
+import {
+  AuthenticatedServerApiRequest,
+  ServerApiCapabilities,
+} from "./server-api.types";
+import { ServerApiCapabilitiesDto } from "./dto/server-api-capabilities.dto";
 
 class ServerImportAcpDto {
   @ApiProperty()
@@ -115,12 +121,10 @@ export class ServerApiController {
   @ApiOperation({
     summary: "Inspect the authenticated integration token capabilities",
   })
-  getCapabilities(@Req() req: any): {
-    clientId: string;
-    scopes: string[];
-    capabilities: Record<ServerApiScope, boolean>;
-    allowedAcpIds: string[] | null;
-  } {
+  @ApiOkResponse({ type: ServerApiCapabilitiesDto })
+  getCapabilities(
+    @Req() req: AuthenticatedServerApiRequest,
+  ): ServerApiCapabilities {
     const client = req.serverApiClient;
     const grantedScopes = new Set<string>(client.scopes);
     const capabilities = Object.fromEntries(
@@ -139,7 +143,7 @@ export class ServerApiController {
   @ServerApiScopes("acp.read")
   @ServerApiAudit("acp.list", "acp")
   @ApiOperation({ summary: "List all ACPs for server transfer" })
-  async listAcps(@Req() req?: any) {
+  async listAcps(@Req() req?: AuthenticatedServerApiRequest) {
     return this.serverApiService.listAcps(req?.serverApiClient?.allowedAcpIds);
   }
 
@@ -147,7 +151,10 @@ export class ServerApiController {
   @ServerApiScopes("transfer.read")
   @ServerApiAudit("acp.transfer.read", "acp")
   @ApiOperation({ summary: "Get full ACP transfer payload (index + files)" })
-  async getAcp(@UuidParam("acpId") acpId: string, @Req() req?: any) {
+  async getAcp(
+    @UuidParam("acpId") acpId: string,
+    @Req() req?: AuthenticatedServerApiRequest,
+  ) {
     return this.serverApiService.getAcpTransferData(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -158,7 +165,10 @@ export class ServerApiController {
   @ServerApiScopes("transfer.read")
   @ServerApiAudit("acp.transfer.export", "acp")
   @ApiOperation({ summary: "Export full ACP transfer payload (index + files)" })
-  async exportAcp(@UuidParam("acpId") acpId: string, @Req() req?: any) {
+  async exportAcp(
+    @UuidParam("acpId") acpId: string,
+    @Req() req?: AuthenticatedServerApiRequest,
+  ) {
     return this.serverApiService.getAcpTransferData(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -169,7 +179,10 @@ export class ServerApiController {
   @ServerApiScopes("index.read")
   @ServerApiAudit("acp.index.read", "acp-index")
   @ApiOperation({ summary: "Get only ACP index payload" })
-  async getAcpIndex(@UuidParam("acpId") acpId: string, @Req() req?: any) {
+  async getAcpIndex(
+    @UuidParam("acpId") acpId: string,
+    @Req() req?: AuthenticatedServerApiRequest,
+  ) {
     return this.serverApiService.getAcpIndex(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -189,7 +202,7 @@ export class ServerApiController {
     @UuidParam("acpId") acpId: string,
     @Body() body: UpdateIndexDto,
     @Query("strategy") strategy?: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.updateAcpIndex(
       acpId,
@@ -204,7 +217,10 @@ export class ServerApiController {
   @ServerApiScopes("files.read")
   @ServerApiAudit("acp.files.list", "file")
   @ApiOperation({ summary: "List transfer-relevant file metadata for an ACP" })
-  async listFiles(@UuidParam("acpId") acpId: string, @Req() req?: any) {
+  async listFiles(
+    @UuidParam("acpId") acpId: string,
+    @Req() req?: AuthenticatedServerApiRequest,
+  ) {
     return this.serverApiService.listFiles(
       acpId,
       req?.serverApiClient?.allowedAcpIds,
@@ -218,7 +234,7 @@ export class ServerApiController {
   async getFile(
     @UuidParam("acpId") acpId: string,
     @UuidParam("fileId") fileId: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.getFile(
       acpId,
@@ -235,7 +251,7 @@ export class ServerApiController {
     @UuidParam("acpId") acpId: string,
     @UuidParam("fileId") fileId: string,
     @Res() res: Response,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     const { buffer, file } = await this.serverApiService.downloadFile(
       acpId,
@@ -277,7 +293,7 @@ export class ServerApiController {
     @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Query("conflictStrategy") conflictStrategy?: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.uploadFiles(
       acpId,
@@ -322,7 +338,7 @@ export class ServerApiController {
     @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Body() body: ReplaceCodingSchemeDto,
-    @Req() req: any,
+    @Req() req: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.replaceCodingSchemeFiles(
       acpId,
@@ -350,7 +366,7 @@ export class ServerApiController {
   async importAcp(
     @Body() body: ServerImportAcpDto,
     @Query("conflictStrategy") conflictStrategy?: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.receiveAcp(
       body,
@@ -373,7 +389,7 @@ export class ServerApiController {
   async receiveAcp(
     @Body() body: ServerImportAcpDto,
     @Query("conflictStrategy") conflictStrategy?: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     return this.serverApiService.receiveAcp(
       body,
@@ -390,7 +406,7 @@ export class ServerApiController {
     @Query("limit") limit?: string,
     @Query("action") action?: string,
     @Query("clientId") clientId?: string,
-    @Req() req?: any,
+    @Req() req?: AuthenticatedServerApiRequest,
   ) {
     const parsedLimit = Number.parseInt(limit || "100", 10);
     return this.serverApiAuditService.list(

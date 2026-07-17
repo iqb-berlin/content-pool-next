@@ -13,6 +13,7 @@ import {
   Request,
   Res,
   UseGuards,
+  UsePipes,
 } from "@nestjs/common";
 import {
   ApiBody,
@@ -42,6 +43,7 @@ import {
   resolveStablePreferenceIdentity,
 } from "../item-preferences/preference-identity";
 import { SimpleItemListEntryDto } from "./dto/simple-item-list-entry.dto";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 class SaveItemPreferencesDto {
   @ApiPropertyOptional({
@@ -194,6 +196,7 @@ class ActivateItemCollectionDto {
 
 @ApiTags("Public Views")
 @Controller("view")
+@UsePipes(new UuidRouteParamsPipe())
 export class ViewsController {
   constructor(
     private readonly viewsService: ViewsService,

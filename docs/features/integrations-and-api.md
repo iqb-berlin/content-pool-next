@@ -170,6 +170,38 @@ must also be part of the token's `allowedAcpIds`.
 
 ## Main Server API Workflows
 
+### Inspect token capabilities
+
+Endpoint:
+
+```text
+GET /api/server/capabilities
+```
+
+This endpoint requires a valid server API token but no particular scope and no
+ACP ID. It is intended for integration connection tests and returns:
+
+```json
+{
+  "clientId": "coding-box",
+  "scopes": ["acp.read", "files.read", "files.write"],
+  "capabilities": {
+    "acp.read": true,
+    "transfer.read": false,
+    "transfer.write": false,
+    "index.read": false,
+    "index.write": false,
+    "files.read": true,
+    "files.write": true,
+    "audit.read": false
+  },
+  "allowedAcpIds": null
+}
+```
+
+Clients should use this endpoint instead of probing an ACP resource with a
+synthetic or malformed ACP ID.
+
 ### List ACPs
 
 Endpoint:

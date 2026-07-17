@@ -14,6 +14,7 @@ import {
   Header,
   Logger,
   ForbiddenException,
+  UsePipes,
 } from "@nestjs/common";
 import {
   ArrayNotEmpty,
@@ -50,6 +51,7 @@ import { Roles } from "../auth/roles.decorator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { AdminService } from "../admin/admin.service";
 import { ALL_SERVER_API_SCOPES } from "../api/server-api-scopes";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 class CreateAcpApplicationTokenDto {
   @ApiProperty({ description: "Human-readable application name" })
@@ -78,6 +80,7 @@ class CreateAcpApplicationTokenDto {
 @ApiTags("ACP Management")
 @Controller("acp")
 @UseGuards(JwtAuthGuard)
+@UsePipes(new UuidRouteParamsPipe())
 @ApiBearerAuth()
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);

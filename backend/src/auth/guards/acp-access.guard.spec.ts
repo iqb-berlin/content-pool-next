@@ -7,6 +7,7 @@ import { AcpAccessConfig, AcpRole, AcpUserRole } from "../../database/entities";
 import { User } from "../../database/entities/user.entity";
 
 describe("AcpAccessGuard", () => {
+  const acpId = "11111111-1111-4111-8111-111111111111";
   let guard: AcpAccessGuard;
   let acpUserRoleRepository: { findOne: jest.Mock };
   let accessConfigRepository: { findOne: jest.Mock };
@@ -62,7 +63,7 @@ describe("AcpAccessGuard", () => {
     });
 
     const request: any = {
-      params: { acpId: "acp-www" },
+      params: { acpId },
       user: {
         sub: "julian-user-id",
         username: "julian",
@@ -73,7 +74,7 @@ describe("AcpAccessGuard", () => {
 
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
     expect(acpUserRoleRepository.findOne).toHaveBeenCalledWith({
-      where: { userId: "julian-user-id", acpId: "acp-www" },
+      where: { userId: "julian-user-id", acpId },
     });
     expect(request.acpAccessLevel).toBe("MANAGER");
   });
@@ -84,12 +85,12 @@ describe("AcpAccessGuard", () => {
     });
     accessConfigRepository.findOne.mockResolvedValue({
       id: "public-config",
-      acpId: "acp-www",
+      acpId,
       accessModel: "PUBLIC",
     });
 
     const request: any = {
-      params: { acpId: "acp-www" },
+      params: { acpId },
       user: {
         sub: "julian-user-id",
         username: "julian",
@@ -106,12 +107,12 @@ describe("AcpAccessGuard", () => {
   it("allows anonymous access when ACP is PUBLIC", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       id: "public-config",
-      acpId: "acp-public",
+      acpId,
       accessModel: "PUBLIC",
     });
 
     const request: any = {
-      params: { acpId: "acp-public" },
+      params: { acpId },
       user: null,
       headers: {},
       query: {},
@@ -125,7 +126,7 @@ describe("AcpAccessGuard", () => {
     accessConfigRepository.findOne.mockResolvedValue(null);
 
     const request: any = {
-      params: { acpId: "acp-private" },
+      params: { acpId },
       user: null,
       headers: {},
       query: {},
@@ -134,5 +135,21 @@ describe("AcpAccessGuard", () => {
     await expect(guard.canActivate(createContext(request))).rejects.toThrow(
       "Authentication required",
     );
+  });
+
+  it("rejects malformed ACP ids before querying repositories", async () => {
+    const request: any = {
+      params: { acpId: "__coding-box-connection-test__" },
+      user: null,
+      headers: {},
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(
+      "ACP ID must be a valid UUID",
+    );
+    expect(acpUserRoleRepository.findOne).not.toHaveBeenCalled();
+    expect(accessConfigRepository.findOne).not.toHaveBeenCalled();
+    expect(userRepository.findOne).not.toHaveBeenCalled();
   });
 });

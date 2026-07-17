@@ -9,6 +9,7 @@ import {
   Request,
   Res,
   ForbiddenException,
+  UsePipes,
 } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
@@ -18,6 +19,7 @@ import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { CommentTargetType } from "../database/entities";
 import { IsString, IsNotEmpty, IsEnum } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 export class CreateCommentDto {
   @ApiProperty({ enum: CommentTargetType })
@@ -37,6 +39,7 @@ export class CreateCommentDto {
 
 @ApiTags("Comments")
 @Controller("acp/:acpId/comments")
+@UsePipes(new UuidRouteParamsPipe())
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 

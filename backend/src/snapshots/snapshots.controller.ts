@@ -6,6 +6,7 @@ import {
   Param,
   Body,
   UseGuards,
+  UsePipes,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { SnapshotsService } from "./snapshots.service";
@@ -13,10 +14,12 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { CreateSnapshotDto } from "../acp/dto/acp.dto";
+import { UuidRouteParamsPipe } from "../common/uuid-param";
 
 @ApiTags("ACP Snapshots")
 @Controller("acp/:acpId/snapshots")
 @UseGuards(JwtAuthGuard, RolesGuard)
+@UsePipes(new UuidRouteParamsPipe())
 @Roles("ACP_MANAGER")
 @ApiBearerAuth()
 export class SnapshotsController {

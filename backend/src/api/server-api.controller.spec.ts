@@ -1,4 +1,5 @@
 import { ServerApiController } from "./server-api.controller";
+import { SERVER_API_SCOPES_KEY } from "./server-api-scopes.decorator";
 
 describe("ServerApiController", () => {
   let controller: ServerApiController;
@@ -76,6 +77,35 @@ describe("ServerApiController", () => {
       "acp-1",
       undefined,
     );
+  });
+
+  it("reports authenticated token scopes without requiring an ACP", () => {
+    expect(
+      Reflect.getMetadata(SERVER_API_SCOPES_KEY, controller.getCapabilities),
+    ).toEqual([]);
+    expect(
+      controller.getCapabilities({
+        serverApiClient: {
+          id: "coding-box",
+          scopes: ["acp.read", "files.read"],
+          allowedAcpIds: ["11111111-1111-4111-8111-111111111111"],
+        },
+      }),
+    ).toEqual({
+      clientId: "coding-box",
+      scopes: ["acp.read", "files.read"],
+      capabilities: {
+        "acp.read": true,
+        "transfer.read": false,
+        "transfer.write": false,
+        "index.read": false,
+        "index.write": false,
+        "files.read": true,
+        "files.write": false,
+        "audit.read": false,
+      },
+      allowedAcpIds: ["11111111-1111-4111-8111-111111111111"],
+    });
   });
 
   it("updates ACP index using strategy and optimistic timestamp", async () => {

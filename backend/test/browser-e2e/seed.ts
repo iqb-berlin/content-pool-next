@@ -13,10 +13,12 @@ import {
   AcpItemExplorerState,
   AcpRole,
   AcpUserRole,
+  ItemResponseState,
   User,
 } from "../../src/database/entities";
 
 const ACP_ID = "10000000-0000-4000-8000-000000000001";
+const REGRESSION_ACP_ID = "10000000-0000-4000-8000-000000000101";
 const MANAGER_ID = "10000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "e2e-manager";
 const MANAGER_PASSWORD = "Manager-E2E-123!";
@@ -194,9 +196,315 @@ async function seed(): Promise<void> {
       );
     }
 
+    const regressionItemProperties = {
+      "regression-item-uuid-1": { empiricalDifficulty: -0.8 },
+      "regression-item-uuid-2": { empiricalDifficulty: -0.2 },
+      "regression-item-uuid-3::A": {
+        itemUuid: "regression-item-uuid-3",
+        subId: "A",
+        empiricalDifficulty: 0.1,
+      },
+      "regression-item-uuid-3::B": {
+        itemUuid: "regression-item-uuid-3",
+        subId: "B",
+        empiricalDifficulty: 0.4,
+      },
+      "regression-item-uuid-4": { empiricalDifficulty: 0.7 },
+      "regression-item-uuid-5": { empiricalDifficulty: 0.9 },
+    };
+    const regressionAcp = await dataSource.getRepository(Acp).save(
+      dataSource.getRepository(Acp).create({
+        id: REGRESSION_ACP_ID,
+        packageId: "browser-e2e-regression-package",
+        name: "Browser E2E Regression ACP",
+        description: "Extended Item Explorer Playwright fixture",
+        acpIndex: {
+          version: "0.5.0",
+          packageId: "browser-e2e-regression-package",
+          assessmentParts: [
+            {
+              id: "part-regression",
+              name: "Regression",
+              units: [
+                {
+                  id: "u1",
+                  name: "Regression Aufgabe 1",
+                  items: [
+                    {
+                      id: "i1",
+                      name: "Direkter Zustand",
+                      sourceVariable: "V1",
+                    },
+                    {
+                      id: "i2",
+                      name: "Fallback-Zustand",
+                      sourceVariable: "V2",
+                    },
+                    { id: "i3", name: "Partial Credit", sourceVariable: "V3" },
+                    { id: "i4", name: "Legacy-Zustand", sourceVariable: "V4" },
+                  ],
+                },
+                {
+                  id: "u2",
+                  name: "Regression Aufgabe 2",
+                  items: [
+                    { id: "i5", name: "Unit-Wechsel", sourceVariable: "V5" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        itemProperties: regressionItemProperties,
+        settings: {},
+      }),
+    );
+    await dataSource.getRepository(AcpUserRole).save(
+      dataSource.getRepository(AcpUserRole).create({
+        userId: manager.id,
+        acpId: regressionAcp.id,
+        role: AcpRole.ACP_MANAGER,
+      }),
+    );
+    await dataSource.getRepository(AcpAccessConfig).save(
+      dataSource.getRepository(AcpAccessConfig).create({
+        acpId: regressionAcp.id,
+        accessModel: AccessModel.REGISTERED,
+        allowRegistered: true,
+        featureConfig: {
+          enableItemList: true,
+          enableItemListFilter: true,
+          enableItemListSort: true,
+          enableItemClick: true,
+          enableUnitView: true,
+          enableTags: true,
+          itemSubIdLabel: "Niveaustufe",
+          itemSubIdLabels: {
+            A: "Basis",
+            B: "Erweitert",
+          },
+        },
+      }),
+    );
+    const regressionSharedState = {
+      ui: {},
+      tags: {},
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: regressionItemProperties,
+    };
+    await dataSource.getRepository(AcpItemExplorerState).save(
+      dataSource.getRepository(AcpItemExplorerState).create({
+        acpId: regressionAcp.id,
+        publishedState: regressionSharedState,
+        draftState: regressionSharedState,
+        status: "CLEAN",
+        version: 1,
+        publishedVersion: 1,
+      }),
+    );
+
+    await dataSource.getRepository(ItemResponseState).save([
+      dataSource.getRepository(ItemResponseState).create({
+        acpId: regressionAcp.id,
+        itemId: "i1",
+        unitId: "u1",
+        rowKey: "regression-item-uuid-1",
+        responseData: { marker: "direct-i1" },
+      }),
+      dataSource.getRepository(ItemResponseState).create({
+        acpId: regressionAcp.id,
+        itemId: "i3",
+        unitId: "u1",
+        rowKey: "regression-item-uuid-3::A",
+        responseData: { marker: "partial-i3-A" },
+      }),
+      dataSource.getRepository(ItemResponseState).create({
+        acpId: regressionAcp.id,
+        itemId: "i4",
+        unitId: "u1",
+        rowKey: "u1::i4",
+        responseData: { marker: "legacy-i4" },
+      }),
+    ]);
+
+    const regressionDirectory = join(fixtureDirectory, "regression");
+    await mkdir(regressionDirectory, { recursive: true });
+    const regressionFiles = [
+      {
+        name: "u1.xml",
+        type: "UNIT_XML",
+        content: `<?xml version="1.0" encoding="UTF-8"?>
+<Unit>
+  <Id>u1</Id>
+  <Label>Regression Aufgabe 1</Label>
+  <Description>Response state and coding regression unit</Description>
+  <DefinitionRef player="iqb-player-aspect@2.11">u1.voud</DefinitionRef>
+  <CodingSchemeRef>u1.vocs</CodingSchemeRef>
+  <Reference>u1.vomd</Reference>
+</Unit>`,
+      },
+      {
+        name: "u1.vomd",
+        type: "ITEM_METADATA",
+        content: JSON.stringify({
+          profiles: [],
+          items: [
+            {
+              id: "i1",
+              uuid: "regression-item-uuid-1",
+              description: "Direkter Zustand",
+              variableId: "V1",
+              useUnitAliasAsPrefix: true,
+              profiles: [],
+            },
+            {
+              id: "i2",
+              uuid: "regression-item-uuid-2",
+              description: "Fallback-Zustand",
+              variableId: "V2",
+              useUnitAliasAsPrefix: true,
+              profiles: [],
+            },
+            {
+              id: "i3",
+              uuid: "regression-item-uuid-3",
+              description: "Partial Credit",
+              variableId: "V3",
+              useUnitAliasAsPrefix: true,
+              profiles: [],
+            },
+            {
+              id: "i4",
+              uuid: "regression-item-uuid-4",
+              description: "Legacy-Zustand",
+              variableId: "V4",
+              useUnitAliasAsPrefix: true,
+              profiles: [],
+            },
+          ],
+        }),
+      },
+      {
+        name: "u1.voud",
+        type: "UNIT_DEFINITION",
+        content: JSON.stringify({
+          pages: [
+            {
+              elements: [
+                { id: "V1" },
+                { id: "V2" },
+                { id: "V3" },
+                { id: "V4" },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        name: "u1.vocs",
+        type: "CODING_SCHEME",
+        content: JSON.stringify({
+          variableCodings: [
+            {
+              id: "V1",
+              label: "Direkte Antwort",
+              sourceType: "BASE",
+              deriveSources: [],
+              codes: [
+                {
+                  id: "1",
+                  score: 1,
+                  label: "Richtig",
+                  ruleSets: [],
+                },
+              ],
+            },
+            {
+              id: "V2",
+              label: "Fallback-Antwort",
+              sourceType: "BASE",
+              deriveSources: [],
+              codes: [],
+            },
+            {
+              id: "V3",
+              label: "Partial-Credit-Antwort",
+              sourceType: "BASE",
+              deriveSources: [],
+              codes: [],
+            },
+            {
+              id: "V4",
+              label: "Legacy-Antwort",
+              sourceType: "BASE",
+              deriveSources: [],
+              codes: [],
+            },
+          ],
+        }),
+      },
+      {
+        name: "u2.xml",
+        type: "UNIT_XML",
+        content: `<?xml version="1.0" encoding="UTF-8"?>
+<Unit>
+  <Id>u2</Id>
+  <Label>Regression Aufgabe 2</Label>
+  <Description>Rapid unit switch regression unit</Description>
+  <DefinitionRef player="iqb-player-aspect@2.11">u2.voud</DefinitionRef>
+  <Reference>u2.vomd</Reference>
+</Unit>`,
+      },
+      {
+        name: "u2.vomd",
+        type: "ITEM_METADATA",
+        content: JSON.stringify({
+          profiles: [],
+          items: [
+            {
+              id: "i5",
+              uuid: "regression-item-uuid-5",
+              description: "Unit-Wechsel",
+              variableId: "V5",
+              useUnitAliasAsPrefix: true,
+              profiles: [],
+            },
+          ],
+        }),
+      },
+      {
+        name: "u2.voud",
+        type: "UNIT_DEFINITION",
+        content: JSON.stringify({
+          pages: [{ elements: [{ id: "V5" }] }],
+        }),
+      },
+      {
+        name: "iqb-player-aspect-2.11.6.html",
+        type: "PLAYER",
+        content:
+          "<!doctype html><html><body>Regression E2E Player</body></html>",
+      },
+    ];
+    for (const file of regressionFiles) {
+      const filePath = join(regressionDirectory, file.name);
+      await writeFile(filePath, file.content, "utf8");
+      await dataSource.getRepository(AcpFile).save(
+        dataSource.getRepository(AcpFile).create({
+          acpId: regressionAcp.id,
+          filePath,
+          originalName: file.name,
+          fileType: file.type,
+          fileSize: Buffer.byteLength(file.content),
+        }),
+      );
+    }
+
     process.stdout.write(
       JSON.stringify({
         acpId: ACP_ID,
+        regressionAcpId: REGRESSION_ACP_ID,
         managerUsername: MANAGER_USERNAME,
         credentialUsername: CREDENTIAL_USERNAME,
       }) + "\n",

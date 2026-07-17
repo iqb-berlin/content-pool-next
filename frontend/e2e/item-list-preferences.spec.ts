@@ -62,6 +62,7 @@ test('shows a slow-connection hint while the Explorer item list is delayed', asy
 
   const slowHint = page.getByText(/Das Laden dauert länger als erwartet/);
   await expect(slowHint).toBeVisible();
+  await expect(page.locator('.item-list-loading')).toHaveAttribute('aria-live', 'polite');
   await expect(slowHint).toBeHidden({ timeout: 10_000 });
   await expect(page.locator('tbody tr').first()).toBeVisible();
 });
@@ -92,6 +93,7 @@ test('shows and clears the slow-connection hint for a delayed preview phase', as
   const slowHint = page.getByText(/Aktuelle Phase:/);
   await expect(slowHint).toBeVisible();
   await expect(slowHint).toContainText('Aufgabendaten, Player und Definition');
+  await expect(page.locator('.slow-load-hint')).toHaveAttribute('aria-live', 'polite');
   await expect(slowHint).toBeHidden({ timeout: 10_000 });
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 });

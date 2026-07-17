@@ -141,6 +141,67 @@ describe("ItemExplorerStateService", () => {
     expect(stateRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("caches one normalized state pair and returns isolated item-list projections", async () => {
+    const record = buildStateRecord({
+      status: "DIRTY",
+      version: 8,
+      publishedVersion: 5,
+      draftState: {
+        ...baseSharedState,
+        ui: { filterText: "draft filter" },
+        itemProperties: {
+          draft: { empiricalDifficulty: "1.5" },
+        },
+      },
+      publishedState: {
+        ...baseSharedState,
+        ui: { filterText: "published filter" },
+        itemProperties: {
+          published: { empiricalDifficulty: "0.5" },
+        },
+      },
+    });
+    stateRepo.findOne.mockResolvedValue(record);
+    const normalizeSpy = jest.spyOn(service as any, "normalizeStatePayload");
+
+    const first = await service.getItemListStateProjection("acp-1", true);
+
+    expect(first).toEqual({
+      activeItemProperties: {
+        draft: { empiricalDifficulty: 1.5 },
+      },
+      publishedItemProperties: {
+        published: { empiricalDifficulty: 0.5 },
+      },
+      activeVersion: 8,
+      publishedVersion: 5,
+    });
+    expect(normalizeSpy).toHaveBeenCalledTimes(2);
+
+    first.activeItemProperties.draft.empiricalDifficulty = 99;
+    const second = await service.getItemListStateProjection("acp-1", true);
+    expect(second.activeItemProperties.draft.empiricalDifficulty).toBe(1.5);
+    expect(normalizeSpy).toHaveBeenCalledTimes(2);
+
+    const readOnly = await service.getItemListStateProjection("acp-1", false);
+    expect(readOnly).toEqual({
+      activeItemProperties: {
+        published: { empiricalDifficulty: 0.5 },
+      },
+      publishedItemProperties: {
+        published: { empiricalDifficulty: 0.5 },
+      },
+      activeVersion: 5,
+      publishedVersion: 5,
+    });
+
+    const envelope = await service.getStateForViewer("acp-1", true);
+    expect(envelope.activeState.ui).toEqual({
+      filterText: "draft filter",
+    });
+    expect(normalizeSpy).toHaveBeenCalledTimes(2);
+  });
+
   it("loads only the version columns for unit-view cache signatures", async () => {
     stateRepo.findOne.mockResolvedValue(
       buildStateRecord({ version: 8, publishedVersion: 5 }),

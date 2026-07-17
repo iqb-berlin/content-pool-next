@@ -6,13 +6,14 @@ import {
 import { Reflector } from "@nestjs/core";
 import { ServerApiAuthGuard } from "./server-api-auth.guard";
 import { SERVER_API_SCOPES_KEY } from "./server-api-scopes.decorator";
+import { ServerApiRequest } from "./server-api.types";
 
 describe("ServerApiAuthGuard", () => {
   let guard: ServerApiAuthGuard;
   let reflector: { getAllAndOverride: jest.Mock };
   let authService: { validateToken: jest.Mock; hasScopes: jest.Mock };
 
-  const createContext = (req: any): ExecutionContext =>
+  const createContext = (req: Partial<ServerApiRequest>): ExecutionContext =>
     ({
       switchToHttp: () => ({ getRequest: () => req }),
       getHandler: () => function handler() {},
@@ -72,7 +73,7 @@ describe("ServerApiAuthGuard", () => {
   });
 
   it("accepts x-server-token and enriches request with client identity", async () => {
-    const req: any = {
+    const req: Partial<ServerApiRequest> = {
       headers: { "x-server-token": "  token-a  " },
     };
 
@@ -97,7 +98,7 @@ describe("ServerApiAuthGuard", () => {
     authService.validateToken.mockResolvedValue({ id: "client-b", scopes: [] });
     authService.hasScopes.mockReturnValue(true);
 
-    const req: any = {
+    const req: Partial<ServerApiRequest> = {
       headers: { "x-integration-token": "integration-token" },
     };
     await expect(guard.canActivate(createContext(req))).resolves.toBe(true);

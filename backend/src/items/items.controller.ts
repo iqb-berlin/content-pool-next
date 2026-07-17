@@ -14,7 +14,6 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
-  UsePipes,
 } from "@nestjs/common";
 import {
   ApiBearerAuth,
@@ -34,7 +33,7 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { IsObject } from "class-validator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 type ItemParameterImportKind = "item-parameters" | "empirical-difficulty";
 type ItemParameterImportTarget = "draft" | "published";
@@ -60,7 +59,6 @@ class SaveItemTagsDto {
 
 @ApiTags("Items")
 @Controller("acp/:acpId/items")
-@UsePipes(new UuidRouteParamsPipe())
 export class ItemsController {
   constructor(
     private readonly itemsService: ItemsService,
@@ -77,7 +75,7 @@ export class ItemsController {
   @ApiQuery({ name: "sortBy", required: false })
   @ApiQuery({ name: "sortDir", required: false, enum: ["asc", "desc"] })
   async getItems(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Query("filter") filter?: string,
     @Query("sortBy") sortBy?: string,
     @Query("sortDir") sortDir?: "asc" | "desc",
@@ -91,7 +89,7 @@ export class ItemsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get persisted item tags for an ACP" })
-  async getItemTags(@Param("acpId") acpId: string, @Request() req: any) {
+  async getItemTags(@UuidParam("acpId") acpId: string, @Request() req: any) {
     const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
     if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
       throw new ForbiddenException("Item tags are not enabled for this ACP");
@@ -104,7 +102,7 @@ export class ItemsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Persist item tags for an ACP" })
   async saveItemTags(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: SaveItemTagsDto,
     @Request() req: any,
   ) {
@@ -128,7 +126,7 @@ export class ItemsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get a single item by ID" })
   async getItem(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Request() req?: any,
   ) {
@@ -154,7 +152,7 @@ export class ItemsController {
   })
   @UseInterceptors(FileInterceptor("file"))
   async uploadItemParameters(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @UploadedFile() file: Express.Multer.File,
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
@@ -194,7 +192,7 @@ export class ItemsController {
   })
   @UseInterceptors(FileInterceptor("file"))
   async uploadEmpiricalDifficulties(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @UploadedFile() file: Express.Multer.File,
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
@@ -216,7 +214,7 @@ export class ItemsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Clear all empirical difficulties for an ACP" })
   async clearEmpiricalDifficulties(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
@@ -303,7 +301,7 @@ export class ItemsController {
     summary: "Get all response states for an ACP (Manager only)",
   })
   async getAllResponseStates(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() _req: any,
   ) {
     return this.stateService.getAllStatesForAcp(acpId, true);
@@ -317,7 +315,7 @@ export class ItemsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Save response state for an item (Manager only)" })
   async saveResponseState(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Body()
     body: {
@@ -341,7 +339,7 @@ export class ItemsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get response state for an item" })
   async getResponseState(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Query("unitId") unitId?: string,
     @Query("rowKey") rowKey?: string,
@@ -365,7 +363,7 @@ export class ItemsController {
       "Get response state for an item with fallback to previous items in same unit",
   })
   async getResponseStateWithFallback(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Body()
     body: {
@@ -389,7 +387,7 @@ export class ItemsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete response state for an item (Manager only)" })
   async deleteResponseState(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("itemId") itemId: string,
     @Query("unitId") unitId: string | undefined,
     @Request() _req: any,

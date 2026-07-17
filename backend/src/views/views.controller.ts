@@ -13,7 +13,6 @@ import {
   Request,
   Res,
   UseGuards,
-  UsePipes,
 } from "@nestjs/common";
 import {
   ApiBody,
@@ -43,7 +42,7 @@ import {
   resolveStablePreferenceIdentity,
 } from "../item-preferences/preference-identity";
 import { SimpleItemListEntryDto } from "./dto/simple-item-list-entry.dto";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 class SaveItemPreferencesDto {
   @ApiPropertyOptional({
@@ -196,7 +195,6 @@ class ActivateItemCollectionDto {
 
 @ApiTags("Public Views")
 @Controller("view")
-@UsePipes(new UuidRouteParamsPipe())
 export class ViewsController {
   constructor(
     private readonly viewsService: ViewsService,
@@ -221,14 +219,14 @@ export class ViewsController {
   @Get("acp/:acpId")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "ACP start page data" })
-  async getAcpStartPage(@Param("acpId") acpId: string) {
+  async getAcpStartPage(@UuidParam("acpId") acpId: string) {
     return this.viewsService.getAcpStartPage(acpId);
   }
 
   @Get("acp/:acpId/index")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get ACP-Index for read-only view" })
-  async getAcpIndex(@Param("acpId") acpId: string) {
+  async getAcpIndex(@UuidParam("acpId") acpId: string) {
     return this.viewsService.getAcpIndex(acpId);
   }
 
@@ -236,7 +234,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Export ACP-Index JSON for read-only view" })
   async exportAcpIndex(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Res() res: Response,
   ) {
@@ -258,7 +256,7 @@ export class ViewsController {
   @Get("acp/:acpId/units")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "List all units in an ACP" })
-  async getUnits(@Param("acpId") acpId: string) {
+  async getUnits(@UuidParam("acpId") acpId: string) {
     const data = await this.viewsService.getAcpStartPage(acpId);
     return data?.units || [];
   }
@@ -267,7 +265,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get unit view data" })
   async getUnit(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("unitId") unitId: string,
     @Request() req: any,
   ) {
@@ -282,7 +280,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get item list for an ACP" })
   @ApiOkResponse({ type: SimpleItemListEntryDto, isArray: true })
-  async getItems(@Param("acpId") acpId: string, @Request() req: any) {
+  async getItems(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (!(await this.canUseFeature(acpId, req, "enableItemList", true))) {
       throw new ForbiddenException("Item list is not enabled for this ACP");
     }
@@ -296,7 +294,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get shared Item Explorer state for ACP" })
   async getItemExplorerState(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() req: any,
   ) {
     const canEdit =
@@ -308,7 +306,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get persisted user preferences for item views" })
   async getItemPreferences(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Query("viewId") viewId?: string,
   ) {
@@ -329,7 +327,7 @@ export class ViewsController {
   @ApiOperation({ summary: "Save persisted user preferences for item views" })
   @ApiBody({ type: SaveItemPreferencesDto })
   async saveItemPreferences(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: SaveItemPreferencesDto,
     @Request() req: any,
   ) {
@@ -360,7 +358,7 @@ export class ViewsController {
   @ApiOperation({ summary: "Patch personal working data for one item row" })
   @ApiBody({ type: PatchPersonalItemRowDto })
   async patchPersonalItemRow(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: PatchPersonalItemRowDto,
     @Request() req: any,
   ) {
@@ -386,7 +384,7 @@ export class ViewsController {
   @ApiOperation({ summary: "Export personal Item Explorer working data" })
   @ApiBody({ type: ExportPersonalItemDataDto })
   async exportPersonalItemDataXlsx(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: ExportPersonalItemDataDto,
     @Request() req: any,
     @Res() res: Response,
@@ -428,7 +426,7 @@ export class ViewsController {
   })
   @ApiBody({ type: ExportAllPersonalItemDataDto })
   async exportAllPersonalItemDataCsv(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: ExportAllPersonalItemDataDto,
     @Request() req: any,
     @Res() res: Response,
@@ -460,7 +458,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "List the caller's personal item collections" })
   async getItemCollections(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Query("perspective") perspective: "editor" | "read-only" | undefined,
     @Request() req: any,
   ) {
@@ -476,7 +474,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Create a personal item collection" })
   async createItemCollection(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: CreateItemCollectionDto,
     @Request() req: any,
   ) {
@@ -493,8 +491,8 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Update a personal item collection" })
   async updateItemCollection(
-    @Param("acpId") acpId: string,
-    @Param("collectionId") collectionId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
     @Body() dto: UpdateItemCollectionDto,
     @Request() req: any,
   ) {
@@ -512,7 +510,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Persist the active personal item collection" })
   async activateItemCollection(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: ActivateItemCollectionDto,
     @Request() req: any,
   ) {
@@ -529,8 +527,8 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Delete a personal item collection" })
   async deleteItemCollection(
-    @Param("acpId") acpId: string,
-    @Param("collectionId") collectionId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
     @Query("perspective") perspective: "editor" | "read-only" | undefined,
     @Request() req: any,
   ) {
@@ -547,8 +545,8 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Export one personal item collection as CSV" })
   async exportItemCollectionCsv(
-    @Param("acpId") acpId: string,
-    @Param("collectionId") collectionId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
     @Query("perspective") perspective: "editor" | "read-only" | undefined,
     @Request() req: any,
     @Res() res: Response,
@@ -571,7 +569,7 @@ export class ViewsController {
   @Get("acp/:acpId/sequences")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "List task sequences for an ACP" })
-  async getSequences(@Param("acpId") acpId: string, @Request() req: any) {
+  async getSequences(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (
       !(await this.canUseFeature(acpId, req, "enableSequenceNavigation", true))
     ) {
@@ -588,7 +586,7 @@ export class ViewsController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get task sequence with ordered units" })
   async getSequence(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("sequenceId") sequenceId: string,
     @Request() req: any,
   ) {

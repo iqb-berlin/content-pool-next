@@ -6,7 +6,6 @@ import {
   Patch,
   Delete,
   Body,
-  Param,
   Query,
   UseGuards,
   Request,
@@ -14,7 +13,6 @@ import {
   Header,
   Logger,
   ForbiddenException,
-  UsePipes,
 } from "@nestjs/common";
 import {
   ArrayNotEmpty,
@@ -51,7 +49,7 @@ import { Roles } from "../auth/roles.decorator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { AdminService } from "../admin/admin.service";
 import { ALL_SERVER_API_SCOPES } from "../api/server-api-scopes";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 class CreateAcpApplicationTokenDto {
   @ApiProperty({ description: "Human-readable application name" })
@@ -80,7 +78,6 @@ class CreateAcpApplicationTokenDto {
 @ApiTags("ACP Management")
 @Controller("acp")
 @UseGuards(JwtAuthGuard)
-@UsePipes(new UuidRouteParamsPipe())
 @ApiBearerAuth()
 export class AcpController {
   private readonly logger = new Logger(AcpController.name);
@@ -104,7 +101,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get ACP by ID" })
-  async findOne(@Param("id") id: string) {
+  async findOne(@UuidParam("id") id: string) {
     return this.acpService.findById(id);
   }
 
@@ -122,7 +119,7 @@ export class AcpController {
   @ApiOperation({
     summary: "Update ACP name/description (ACP Manager or Admin only)",
   })
-  async update(@Param("id") id: string, @Body() dto: UpdateAcpDto) {
+  async update(@UuidParam("id") id: string, @Body() dto: UpdateAcpDto) {
     return this.acpService.update(id, dto);
   }
 
@@ -130,7 +127,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("APP_ADMIN")
   @ApiOperation({ summary: "Delete ACP (Admin only)" })
-  async delete(@Param("id") id: string) {
+  async delete(@UuidParam("id") id: string) {
     return this.acpService.delete(id);
   }
 
@@ -139,7 +136,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get ACP-Index" })
-  async getIndex(@Param("id") id: string) {
+  async getIndex(@UuidParam("id") id: string) {
     return this.acpService.getIndex(id);
   }
 
@@ -148,7 +145,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Update ACP-Index" })
   async updateIndex(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() index: Record<string, unknown>,
   ) {
     return this.acpService.updateIndex(id, index);
@@ -159,7 +156,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Import ACP-Index from JSON (replaces existing)" })
   async importIndex(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() index: Record<string, unknown>,
   ) {
     return this.acpService.importIndex(id, index);
@@ -169,7 +166,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Reset ACP-Index to defaults" })
-  async deleteIndex(@Param("id") id: string) {
+  async deleteIndex(@UuidParam("id") id: string) {
     return this.acpService.deleteIndex(id);
   }
 
@@ -178,7 +175,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @Header("Content-Type", "application/json")
   @ApiOperation({ summary: "Export ACP-Index as JSON file download" })
-  async exportIndex(@Param("id") id: string, @Res() res: Response) {
+  async exportIndex(@UuidParam("id") id: string, @Res() res: Response) {
     const index = await this.acpService.getIndex(id);
     res.setHeader(
       "Content-Disposition",
@@ -193,7 +190,7 @@ export class AcpController {
   @ApiOperation({
     summary: "List users that can be assigned read access by ACP managers",
   })
-  async getAssignableUsers(@Param("id") id: string) {
+  async getAssignableUsers(@UuidParam("id") id: string) {
     return this.acpService.getAssignableUsers(id);
   }
 
@@ -202,7 +199,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "List role assignments for ACP" })
-  async getRoles(@Param("id") id: string) {
+  async getRoles(@UuidParam("id") id: string) {
     return this.acpService.getRoles(id);
   }
 
@@ -213,7 +210,7 @@ export class AcpController {
     summary: "Assign user role for ACP (ACP Manager can assign READ_ONLY only)",
   })
   async assignRole(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: AssignRoleDto,
     @Request() req: any,
   ) {
@@ -233,8 +230,8 @@ export class AcpController {
     summary: "Remove user role for ACP (ACP Manager can remove READ_ONLY only)",
   })
   async removeRole(
-    @Param("id") id: string,
-    @Param("userId") userId: string,
+    @UuidParam("id") id: string,
+    @UuidParam("userId") userId: string,
     @Request() req: any,
   ) {
     // If user is not App Admin, check if they're removing an ACP_MANAGER role (which is forbidden)
@@ -255,7 +252,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "List application tokens limited to this ACP" })
   async listApplicationTokens(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Query("limit") limit?: string,
     @Query("offset") offset?: string,
   ) {
@@ -271,7 +268,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Create an application token limited to this ACP" })
   async createApplicationToken(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: CreateAcpApplicationTokenDto,
     @Request() req: any,
   ) {
@@ -296,8 +293,8 @@ export class AcpController {
     summary: "Revoke an application token exclusively limited to this ACP",
   })
   async revokeApplicationToken(
-    @Param("id") id: string,
-    @Param("tokenId") tokenId: string,
+    @UuidParam("id") id: string,
+    @UuidParam("tokenId") tokenId: string,
     @Request() req: any,
   ) {
     return this.adminService.revokeApplicationToken(tokenId, req?.user?.sub, {
@@ -313,7 +310,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get access configuration for ACP" })
-  async getAccessConfig(@Param("id") id: string) {
+  async getAccessConfig(@UuidParam("id") id: string) {
     return this.acpService.getAccessConfig(id);
   }
 
@@ -322,7 +319,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Update access configuration for ACP" })
   async updateAccessConfig(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: UpdateAccessConfigDto,
   ) {
     return this.acpService.updateAccessConfig(id, dto);
@@ -333,7 +330,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Upload credentials list for ACP" })
   async uploadCredentials(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Query("mode") mode: "replace" | "append" | "upsert" = "replace",
     @Body() dto: UploadCredentialsDto,
   ) {
@@ -352,7 +349,7 @@ export class AcpController {
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get credentials list for ACP" })
-  async getCredentials(@Param("id") id: string) {
+  async getCredentials(@UuidParam("id") id: string) {
     return this.acpService.getCredentials(id);
   }
 
@@ -361,8 +358,8 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Delete a credential from ACP" })
   async deleteCredential(
-    @Param("id") id: string,
-    @Param("credentialId") credentialId: string,
+    @UuidParam("id") id: string,
+    @UuidParam("credentialId") credentialId: string,
   ) {
     await this.acpService.deleteCredential(id, credentialId);
     return { message: "Credential deleted successfully" };
@@ -373,7 +370,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Create a single credential for ACP" })
   async createCredential(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: CreateCredentialDto,
   ) {
     return this.acpService.createCredential(id, dto);
@@ -384,8 +381,8 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Update a credential" })
   async updateCredential(
-    @Param("id") id: string,
-    @Param("credentialId") credentialId: string,
+    @UuidParam("id") id: string,
+    @UuidParam("credentialId") credentialId: string,
     @Body() dto: UpdateCredentialDto,
   ) {
     return this.acpService.updateCredential(id, credentialId, dto);
@@ -398,7 +395,7 @@ export class AcpController {
     summary: "Update metadata column visibility and order (ACP Manager only)",
   })
   async updateMetadataColumns(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: UpdateMetadataColumnsDto,
     @Request() req: any,
   ) {
@@ -431,7 +428,7 @@ export class AcpController {
     summary: "Patch Item Explorer draft state (ACP Manager or Admin)",
   })
   async patchItemExplorerDraft(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: PatchItemExplorerDraftDto,
     @Request() req: any,
   ) {
@@ -452,7 +449,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Publish Item Explorer draft state" })
   async saveItemExplorerDraft(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: VersionedItemExplorerActionDto,
     @Request() req: any,
   ) {
@@ -470,7 +467,7 @@ export class AcpController {
     summary: "Discard Item Explorer draft state and reset to published",
   })
   async discardItemExplorerDraft(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body() dto: VersionedItemExplorerActionDto,
     @Request() req: any,
   ) {
@@ -486,7 +483,7 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "List Item Explorer change log entries" })
   async getItemExplorerChanges(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Query("limit") limit?: string,
   ) {
     const parsedLimit = parseInt(limit || "", 10);

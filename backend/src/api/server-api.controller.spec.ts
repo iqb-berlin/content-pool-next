@@ -1,5 +1,6 @@
 import { ServerApiController } from "./server-api.controller";
 import { SERVER_API_SCOPES_KEY } from "./server-api-scopes.decorator";
+import { createServerApiRequest, TEST_UUIDS } from "../testing/test-fixtures";
 
 describe("ServerApiController", () => {
   let controller: ServerApiController;
@@ -84,13 +85,13 @@ describe("ServerApiController", () => {
       Reflect.getMetadata(SERVER_API_SCOPES_KEY, controller.getCapabilities),
     ).toEqual([]);
     expect(
-      controller.getCapabilities({
-        serverApiClient: {
+      controller.getCapabilities(
+        createServerApiRequest({
           id: "coding-box",
           scopes: ["acp.read", "files.read"],
-          allowedAcpIds: ["11111111-1111-4111-8111-111111111111"],
-        },
-      }),
+          allowedAcpIds: [TEST_UUIDS.acp],
+        }),
+      ),
     ).toEqual({
       clientId: "coding-box",
       scopes: ["acp.read", "files.read"],
@@ -104,7 +105,7 @@ describe("ServerApiController", () => {
         "files.write": false,
         "audit.read": false,
       },
-      allowedAcpIds: ["11111111-1111-4111-8111-111111111111"],
+      allowedAcpIds: [TEST_UUIDS.acp],
     });
   });
 
@@ -190,7 +191,7 @@ describe("ServerApiController", () => {
         changelog: "new scheme",
         expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
       } as any,
-      { serverApiClient: { id: "sync-client" } },
+      createServerApiRequest({ id: "sync-client" }),
     );
 
     expect(result).toEqual({ replacedFiles: [] });
@@ -202,7 +203,7 @@ describe("ServerApiController", () => {
         expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
         sourceClientId: "sync-client",
       },
-      undefined,
+      null,
     );
   });
 
@@ -234,9 +235,12 @@ describe("ServerApiController", () => {
 
   it("uses parsed audit limit and defaults to 100 for invalid values", async () => {
     await expect(
-      controller.getAuditLogs("50", "acp.read", "client-1", {
-        serverApiClient: { allowedAcpIds: ["acp-1"] },
-      }),
+      controller.getAuditLogs(
+        "50",
+        "acp.read",
+        "client-1",
+        createServerApiRequest({ allowedAcpIds: [TEST_UUIDS.acp] }),
+      ),
     ).resolves.toEqual([{ id: "log-1" }]);
     await expect(
       controller.getAuditLogs("NaN", undefined, undefined),
@@ -247,7 +251,7 @@ describe("ServerApiController", () => {
       50,
       "acp.read",
       "client-1",
-      ["acp-1"],
+      [TEST_UUIDS.acp],
     );
     expect(serverApiAuditService.list).toHaveBeenNthCalledWith(
       2,

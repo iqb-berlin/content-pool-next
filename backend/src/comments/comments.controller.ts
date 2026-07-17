@@ -3,13 +3,11 @@ import {
   Get,
   Post,
   Delete,
-  Param,
   Body,
   UseGuards,
   Request,
   Res,
   ForbiddenException,
-  UsePipes,
 } from "@nestjs/common";
 import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
@@ -19,7 +17,7 @@ import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { CommentTargetType } from "../database/entities";
 import { IsString, IsNotEmpty, IsEnum } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 export class CreateCommentDto {
   @ApiProperty({ enum: CommentTargetType })
@@ -39,7 +37,6 @@ export class CreateCommentDto {
 
 @ApiTags("Comments")
 @Controller("acp/:acpId/comments")
-@UsePipes(new UuidRouteParamsPipe())
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
 
@@ -47,7 +44,7 @@ export class CommentsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List all comments for an ACP (Manager only)" })
-  async findAll(@Param("acpId") acpId: string, @Request() req: any) {
+  async findAll(@UuidParam("acpId") acpId: string, @Request() req: any) {
     this.assertManagerAccess(req);
     return this.commentsService.findByAcp(acpId);
   }
@@ -56,7 +53,7 @@ export class CommentsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List my comments for an ACP" })
-  async findMine(@Param("acpId") acpId: string, @Request() req: any) {
+  async findMine(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (req.user.type === "credential") {
       return this.commentsService.findByCredential(acpId, req.user.username);
     }
@@ -68,7 +65,7 @@ export class CommentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a comment" })
   async create(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
@@ -100,7 +97,7 @@ export class CommentsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete all comments for an ACP (Manager only)" })
-  async deleteAll(@Param("acpId") acpId: string, @Request() req: any) {
+  async deleteAll(@UuidParam("acpId") acpId: string, @Request() req: any) {
     this.assertManagerAccess(req);
     const count = await this.commentsService.deleteByAcp(acpId);
     return { message: `${count} comments deleted` };
@@ -110,7 +107,7 @@ export class CommentsController {
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Export comments as JSON" })
-  async exportComments(@Param("acpId") acpId: string, @Request() req: any) {
+  async exportComments(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (req.user.isAppAdmin || req.acpAccessLevel === "MANAGER") {
       return this.commentsService.exportComments(acpId);
     }
@@ -128,7 +125,7 @@ export class CommentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Export comments as XLSX" })
   async exportCommentsXlsx(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Res() res: Response,
   ) {

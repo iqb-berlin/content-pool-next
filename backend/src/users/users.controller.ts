@@ -5,9 +5,7 @@ import {
   Patch,
   Delete,
   Body,
-  Param,
   UseGuards,
-  UsePipes,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { UsersService } from "./users.service";
@@ -15,12 +13,11 @@ import { CreateUserDto, UpdateUserDto } from "./dto/user.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 @ApiTags("Users")
 @Controller("users")
 @UseGuards(JwtAuthGuard, RolesGuard)
-@UsePipes(new UuidRouteParamsPipe())
 @ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -35,7 +32,7 @@ export class UsersController {
   @Get(":id")
   @Roles("APP_ADMIN")
   @ApiOperation({ summary: "Get user by ID (Admin only)" })
-  async findOne(@Param("id") id: string) {
+  async findOne(@UuidParam("id") id: string) {
     return this.usersService.findById(id);
   }
 
@@ -49,14 +46,14 @@ export class UsersController {
   @Patch(":id")
   @Roles("APP_ADMIN")
   @ApiOperation({ summary: "Update user (Admin only)" })
-  async update(@Param("id") id: string, @Body() dto: UpdateUserDto) {
+  async update(@UuidParam("id") id: string, @Body() dto: UpdateUserDto) {
     return this.usersService.update(id, dto);
   }
 
   @Delete(":id")
   @Roles("APP_ADMIN")
   @ApiOperation({ summary: "Delete user (Admin only)" })
-  async delete(@Param("id") id: string) {
+  async delete(@UuidParam("id") id: string) {
     return this.usersService.delete(id);
   }
 
@@ -64,7 +61,7 @@ export class UsersController {
   @Roles("APP_ADMIN")
   @ApiOperation({ summary: "Toggle App-Admin role (Admin only)" })
   async setAppAdmin(
-    @Param("id") id: string,
+    @UuidParam("id") id: string,
     @Body("isAppAdmin") isAppAdmin: boolean,
   ) {
     return this.usersService.setAppAdmin(id, isAppAdmin);

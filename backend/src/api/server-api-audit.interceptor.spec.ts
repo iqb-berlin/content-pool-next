@@ -3,13 +3,19 @@ import { Reflector } from "@nestjs/core";
 import { lastValueFrom, of, throwError } from "rxjs";
 import { SERVER_API_AUDIT_KEY } from "./server-api-audit.decorator";
 import { ServerApiAuditInterceptor } from "./server-api-audit.interceptor";
+import { ServerApiRequest } from "./server-api.types";
+import { Response } from "express";
+import { createServerApiRequest } from "../testing/test-fixtures";
 
 describe("ServerApiAuditInterceptor", () => {
   let interceptor: ServerApiAuditInterceptor;
   let reflector: { getAllAndOverride: jest.Mock };
   let auditService: { log: jest.Mock };
 
-  const createContext = (req: any, res: any): ExecutionContext =>
+  const createContext = (
+    req: Partial<ServerApiRequest>,
+    res: Partial<Response>,
+  ): ExecutionContext =>
     ({
       switchToHttp: () => ({
         getRequest: () => req,
@@ -56,13 +62,12 @@ describe("ServerApiAuditInterceptor", () => {
       resourceType: "file",
     });
 
-    const req = {
-      serverApiClient: { id: "client-1" },
+    const req = Object.assign(createServerApiRequest({ id: "client-1" }), {
       method: "GET",
       originalUrl: "/server/acp/acp-1/files/file-1",
       params: { acpId: "acp-1", fileId: "file-1" },
       query: { verbose: "1" },
-    };
+    });
     const res = { statusCode: 200 };
 
     const next: CallHandler = {
@@ -91,13 +96,12 @@ describe("ServerApiAuditInterceptor", () => {
       resourceType: "file",
     });
 
-    const req = {
-      serverApiClient: { id: "client-2" },
+    const req = Object.assign(createServerApiRequest({ id: "client-2" }), {
       method: "POST",
       url: "/server/acp/acp-1/files/upload",
       params: { acpId: "acp-1" },
       query: {},
-    };
+    });
     const res = { statusCode: 500 };
 
     const err = new Error("boom");

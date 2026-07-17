@@ -21,6 +21,10 @@ import { ItemRowNumberingService } from "./item-row-numbering.service";
 import { ArchiveExpansionService } from "./archive-expansion.service";
 import { FileMutationService } from "./file-mutation.service";
 import { FileStorageService } from "./file-storage.service";
+import { FileCatalogCache } from "./file-catalog.cache";
+import { ItemListParser } from "./item-list.parser";
+import { NumberedItemListCache } from "./numbered-item-list.cache";
+import { UnitViewResolver } from "./unit-view.resolver";
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
@@ -48,6 +52,10 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     ArchiveExpansionService,
     FileMutationService,
     FileStorageService,
+    FileCatalogCache,
+    ItemListParser,
+    NumberedItemListCache,
+    UnitViewResolver,
     UnitParserService,
     FileProcessingJobsService,
     ItemRowNumberingService,

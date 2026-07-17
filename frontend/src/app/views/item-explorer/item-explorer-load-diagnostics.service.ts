@@ -20,6 +20,7 @@ export interface ItemExplorerTimingToken {
 export class ItemExplorerLoadDiagnostics {
   private sequence = 0;
   private readonly flagKey = 'cp.itemExplorer.performance';
+  private readonly diagnosticMeasureLimit = 100;
 
   start(phase: ItemExplorerLoadPhase): ItemExplorerTimingToken {
     const id = ++this.sequence;
@@ -37,13 +38,15 @@ export class ItemExplorerLoadDiagnostics {
 
     const endMark = `item-explorer:${token.phase}:${token.id}:end`;
     const measureName = `item-explorer:${token.phase}`;
+    const diagnosticsEnabled = this.isEnabled();
+    this.prepareMeasureSlot(measureName, diagnosticsEnabled ? this.diagnosticMeasureLimit : 1);
     performance.mark(endMark);
     performance.measure(measureName, token.startMark, endMark);
     const durationMs = performance.now() - token.startedAt;
     performance.clearMarks(token.startMark);
     performance.clearMarks(endMark);
 
-    if (this.isEnabled()) {
+    if (diagnosticsEnabled) {
       console.debug('[ItemExplorer performance]', {
         phase: token.phase,
         durationMs: Math.round(durationMs * 10) / 10,
@@ -51,6 +54,21 @@ export class ItemExplorerLoadDiagnostics {
       });
     }
     return durationMs;
+  }
+
+  private prepareMeasureSlot(measureName: string, limit: number): void {
+    const measures = performance.getEntriesByName(measureName, 'measure');
+    if (measures.length < limit) return;
+
+    const retainedMeasures =
+      limit > 1
+        ? measures.slice(-(limit - 1)).map((measure) => ({
+            start: measure.startTime,
+            duration: measure.duration,
+          }))
+        : [];
+    performance.clearMeasures(measureName);
+    retainedMeasures.forEach((measure) => performance.measure(measureName, measure));
   }
 
   private isEnabled(): boolean {

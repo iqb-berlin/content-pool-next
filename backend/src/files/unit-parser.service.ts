@@ -742,10 +742,10 @@ export class UnitParserService {
     rowRevision: string;
   }> {
     let expectedRevision = initialRevision;
-    let result = activeItemList;
     const maxRevisionChecks = 3;
 
     for (let attempt = 0; attempt < maxRevisionChecks; attempt += 1) {
+      let result: ItemListResult;
       if (publishedItemList) {
         const publishedResult = await this.applyPersistedItemRowNumbers(
           acpId,

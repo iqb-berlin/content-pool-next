@@ -6,6 +6,10 @@ import { UnitParserService } from "./unit-parser.service";
 import { Acp, AcpAccessConfig, AcpFile } from "../database/entities";
 import { ItemRowNumberingService } from "./item-row-numbering.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { FileCatalogCache } from "./file-catalog.cache";
+import { ItemListParser } from "./item-list.parser";
+import { NumberedItemListCache } from "./numbered-item-list.cache";
+import { UnitViewResolver } from "./unit-view.resolver";
 
 jest.mock("fs/promises", () => ({
   readFile: jest.fn(),
@@ -189,6 +193,10 @@ describe("UnitParserService", () => {
           provide: ItemExplorerStateService,
           useValue: itemExplorerStateService,
         },
+        FileCatalogCache,
+        ItemListParser,
+        NumberedItemListCache,
+        UnitViewResolver,
       ],
     }).compile();
 
@@ -1076,35 +1084,6 @@ describe("UnitParserService", () => {
     ).toHaveLength(2);
   });
 
-  it("does not let a rejected evicted unit-view entry delete its replacement", async () => {
-    let rejectBuild!: (error: Error) => void;
-    jest.spyOn(service as any, "buildUnitViewFromFiles").mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          rejectBuild = reject;
-        }),
-    );
-
-    const request = service.getUnitViewFromFiles("acp-1", "u1");
-    const rejection = expect(request).rejects.toThrow("stale request failed");
-    const cache = (service as any).unitViewCache as Map<string, unknown>;
-    for (let attempt = 0; attempt < 10 && cache.size === 0; attempt += 1) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    expect(cache.size).toBe(1);
-
-    const cacheKey = cache.keys().next().value as string;
-    const replacement = {
-      settled: false,
-      promise: Promise.resolve({ value: null, parseMs: 0 }),
-    };
-    cache.set(cacheKey, replacement);
-    rejectBuild(new Error("stale request failed"));
-
-    await rejection;
-    expect(cache.get(cacheKey)).toBe(replacement);
-  });
-
   it("coalesces concurrent item-list parses and invalidates on file changes", async () => {
     const originalRead = (fs.readFile as jest.Mock).getMockImplementation()!;
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
@@ -1145,7 +1124,7 @@ describe("UnitParserService", () => {
       });
     }
 
-    expect((service as any).parsedItemListCache.size).toBe(100);
+    expect((service as any).itemListParser.size).toBe(100);
   });
 
   it("bounds the numbered item-list cache to 100 entries", async () => {

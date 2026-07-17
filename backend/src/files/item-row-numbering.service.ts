@@ -27,6 +27,42 @@ export class ItemRowNumberingService {
     private readonly rowNumberRepository: Repository<AcpItemRowNumber>,
   ) {}
 
+  async getRevision(acpId: string): Promise<string> {
+    if (typeof this.rowNumberRepository.query === "function") {
+      const rows = (await this.rowNumberRepository.query(
+        `
+          SELECT
+            COUNT(*)::text AS count,
+            COALESCE(
+              md5(
+                string_agg(
+                  row_key_hash || ':' || row_number::text,
+                  ',' ORDER BY row_key_hash
+                )
+              ),
+              md5('')
+            ) AS hash
+          FROM acp_item_row_numbers
+          WHERE acp_id = $1
+        `,
+        [acpId],
+      )) as Array<{ count?: string; hash?: string }>;
+      return `${rows[0]?.count || "0"}:${rows[0]?.hash || ""}`;
+    }
+
+    const persisted = await this.rowNumberRepository.find({
+      where: { acpId },
+    });
+    const revisionSource = persisted
+      .map((entry) => `${entry.rowKeyHash}:${entry.rowNumber}`)
+      .sort()
+      .join(",");
+    return `${persisted.length}:${crypto
+      .createHash("md5")
+      .update(revisionSource, "utf8")
+      .digest("hex")}`;
+  }
+
   async assignNumbers(
     acpId: string,
     rows: NumberableItemRow[],

@@ -86,6 +86,7 @@ describe("UnitParserService", () => {
   ];
 
   beforeEach(async () => {
+    (fs.readFile as jest.Mock).mockReset();
     const lockedFileQueryBuilder = {
       setLock: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -116,6 +117,7 @@ describe("UnitParserService", () => {
       }),
     };
     itemRowNumberingService = {
+      getRevision: jest.fn().mockResolvedValue("0:empty"),
       assignNumbers: jest.fn(
         async (_acpId: string, rows: any[]) =>
           new Map(rows.map((row, index) => [row.rowKey, index + 1])),
@@ -164,6 +166,7 @@ describe("UnitParserService", () => {
     (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
       if (path === "/tmp/u1.xml") return xmlContent;
       if (path === "/tmp/u1.vomd") return vomdContent;
+      if (path === "/tmp/u1.vocs") return "{}";
       return "";
     });
 
@@ -787,6 +790,280 @@ describe("UnitParserService", () => {
       "acp-1",
       [],
     );
+  });
+
+  it("reuses parsed item lists without sharing mutable response objects", async () => {
+    const first = await service.getItemListFromFiles("acp-1");
+    const readsAfterFirstLoad = (fs.readFile as jest.Mock).mock.calls.length;
+    first.items[0].description = "mutated response";
+
+    const second = await service.getItemListFromFiles("acp-1");
+
+    expect((fs.readFile as jest.Mock).mock.calls).toHaveLength(
+      readsAfterFirstLoad,
+    );
+    expect(second.items[0].description).toBe("Item 1");
+  });
+
+  it("reuses fully numbered item lists without repeating database numbering", async () => {
+    await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+    await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces numbering for ten concurrent identical item-list requests", async () => {
+    let releaseNumbering!: () => void;
+    itemRowNumberingService.assignNumbers.mockImplementationOnce(
+      async (_acpId: string, rows: any[]) => {
+        await new Promise<void>((resolve) => {
+          releaseNumbering = resolve;
+        });
+        return new Map(rows.map((row, index) => [row.rowKey, index + 1]));
+      },
+    );
+
+    const requests = Array.from({ length: 10 }, () =>
+      service.getItemListFromFiles("acp-1", {
+        activeStateSignature: "active:1",
+      }),
+    );
+    for (let attempt = 0; attempt < 10 && !releaseNumbering; attempt += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    releaseNumbering();
+    const results = await Promise.all(requests);
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(1);
+    expect(results.every((result) => result.items.length === 1)).toBe(true);
+  });
+
+  it("invalidates numbered item lists when the row-number revision changes", async () => {
+    itemRowNumberingService.getRevision
+      .mockResolvedValueOnce("revision-1")
+      .mockResolvedValueOnce("revision-1")
+      .mockResolvedValueOnce("revision-2")
+      .mockResolvedValueOnce("revision-2");
+
+    await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+    await service.getItemListFromFiles("acp-1", {
+      activeStateSignature: "active:1",
+    });
+
+    expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not cache partial item lists after a source read failure", async () => {
+    const originalRead = (fs.readFile as jest.Mock).getMockImplementation()!;
+    let xmlReadAttempts = 0;
+    jest
+      .spyOn((service as any).logger, "error")
+      .mockImplementation(() => undefined);
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml" && xmlReadAttempts++ === 0) {
+        throw new Error("temporary read failure");
+      }
+      return originalRead(path);
+    });
+
+    const partial = await service.getItemListFromFiles("acp-1");
+    const recovered = await service.getItemListFromFiles("acp-1");
+
+    expect(partial.items).toEqual([]);
+    expect(recovered.items).toHaveLength(1);
+    expect(
+      (fs.readFile as jest.Mock).mock.calls.filter(
+        ([path]) => path === "/tmp/u1.xml",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("caches unit-view dependency resolution by source signature", async () => {
+    const firstDiagnostics = jest.fn();
+    const secondDiagnostics = jest.fn();
+
+    const first = await service.getUnitViewFromFiles(
+      "acp-1",
+      "u1",
+      firstDiagnostics,
+    );
+    const second = await service.getUnitViewFromFiles(
+      "acp-1",
+      "u1",
+      secondDiagnostics,
+    );
+
+    expect(first).toEqual(second);
+    expect(
+      (fs.readFile as jest.Mock).mock.calls.filter(
+        ([path]) => path === "/tmp/u1.xml",
+      ),
+    ).toHaveLength(1);
+    expect(firstDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ cacheStatus: "miss" }),
+    );
+    expect(secondDiagnostics).toHaveBeenCalledWith(
+      expect.objectContaining({ cacheStatus: "hit" }),
+    );
+  });
+
+  it("resolves the file catalog while the Explorer version is pending", async () => {
+    let resolveStateSignature!: (value: string) => void;
+    const stateSignature = new Promise<string>((resolve) => {
+      resolveStateSignature = resolve;
+    });
+
+    const request = service.getUnitViewFromFiles(
+      "acp-1",
+      "u1",
+      undefined,
+      stateSignature,
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(fileRepo.find).toHaveBeenCalled();
+    resolveStateSignature("active:4");
+    await expect(request).resolves.toEqual(
+      expect.objectContaining({ id: "u1" }),
+    );
+  });
+
+  it("loads full file catalogs only when the database revision changes", async () => {
+    fileRepo.query = jest
+      .fn()
+      .mockResolvedValueOnce([{ count: "5", hash: "revision-1" }])
+      .mockResolvedValueOnce([{ count: "5", hash: "revision-1" }])
+      .mockResolvedValueOnce([{ count: "5", hash: "revision-2" }]);
+
+    await service.getUnitViewFromFiles("acp-1", "u1");
+    await service.getUnitViewFromFiles("acp-1", "u1");
+    await service.getUnitViewFromFiles("acp-1", "u1");
+
+    expect(fileRepo.query).toHaveBeenCalledTimes(3);
+    expect(fileRepo.find).toHaveBeenCalledTimes(2);
+    expect(
+      (fs.readFile as jest.Mock).mock.calls.filter(
+        ([path]) => path === "/tmp/u1.xml",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("removes failed file-catalog loads so a retry can recover", async () => {
+    fileRepo.query = jest
+      .fn()
+      .mockResolvedValue([{ count: "5", hash: "revision-1" }]);
+    fileRepo.find
+      .mockRejectedValueOnce(new Error("catalog unavailable"))
+      .mockResolvedValueOnce(files);
+
+    await expect(service.getUnitViewFromFiles("acp-1", "u1")).rejects.toThrow(
+      "catalog unavailable",
+    );
+    await expect(service.getUnitViewFromFiles("acp-1", "u1")).resolves.toEqual(
+      expect.objectContaining({ id: "u1" }),
+    );
+
+    expect(fileRepo.find).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates unit-view resolution when the Explorer state changes", async () => {
+    await service.getUnitViewFromFiles("acp-1", "u1", undefined, "active:4");
+    await service.getUnitViewFromFiles("acp-1", "u1", undefined, "active:4");
+    await service.getUnitViewFromFiles("acp-1", "u1", undefined, "active:5");
+
+    expect(
+      (fs.readFile as jest.Mock).mock.calls.filter(
+        ([path]) => path === "/tmp/u1.xml",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("does not let a rejected evicted unit-view entry delete its replacement", async () => {
+    let rejectBuild!: (error: Error) => void;
+    jest.spyOn(service as any, "buildUnitViewFromFiles").mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectBuild = reject;
+        }),
+    );
+
+    const request = service.getUnitViewFromFiles("acp-1", "u1");
+    const rejection = expect(request).rejects.toThrow("stale request failed");
+    const cache = (service as any).unitViewCache as Map<string, unknown>;
+    for (let attempt = 0; attempt < 10 && cache.size === 0; attempt += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(cache.size).toBe(1);
+
+    const cacheKey = cache.keys().next().value as string;
+    const replacement = {
+      settled: false,
+      promise: Promise.resolve({ value: null, parseMs: 0 }),
+    };
+    cache.set(cacheKey, replacement);
+    rejectBuild(new Error("stale request failed"));
+
+    await rejection;
+    expect(cache.get(cacheKey)).toBe(replacement);
+  });
+
+  it("coalesces concurrent item-list parses and invalidates on file changes", async () => {
+    const originalRead = (fs.readFile as jest.Mock).getMockImplementation()!;
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      await Promise.resolve();
+      return originalRead(path);
+    });
+
+    await Promise.all([
+      service.getItemListFromFiles("acp-1"),
+      service.getItemListFromFiles("acp-1"),
+    ]);
+    const xmlReads = (fs.readFile as jest.Mock).mock.calls.filter(
+      ([path]) => path === "/tmp/u1.xml",
+    );
+    expect(xmlReads).toHaveLength(1);
+
+    fileRepo.find.mockResolvedValue(
+      files.map((file, index) =>
+        index === 0 ? { ...file, checksum: "changed" } : file,
+      ),
+    );
+    await service.getItemListFromFiles("acp-1");
+    const invalidatedXmlReads = (fs.readFile as jest.Mock).mock.calls.filter(
+      ([path]) => path === "/tmp/u1.xml",
+    );
+    expect(invalidatedXmlReads).toHaveLength(2);
+  });
+
+  it("bounds the parsed item-list cache to 100 entries", async () => {
+    for (let index = 0; index < 101; index += 1) {
+      await service.getItemListFromFiles("acp-1", {
+        itemPropertiesOverride: {
+          [`u1_i1::${index}`]: {
+            itemUuid: "u1_i1",
+            subId: String(index),
+          },
+        },
+      });
+    }
+
+    expect((service as any).parsedItemListCache.size).toBe(100);
+  });
+
+  it("bounds the numbered item-list cache to 100 entries", async () => {
+    for (let index = 0; index < 101; index += 1) {
+      await service.getItemListFromFiles("acp-1", {
+        activeStateSignature: `active:${index}`,
+      });
+    }
+
+    expect((service as any).numberedItemListCache.size).toBe(100);
   });
 
   it("caches valid row keys and invalidates them when source files change", async () => {

@@ -23,6 +23,8 @@ import { ItemExplorerResponseStateDialogsComponent } from './components/response
 import { ItemExplorerHistoryDialogComponent } from './components/history-dialog/item-explorer-history-dialog.component';
 import { ItemExplorerDraftDialogsComponent } from './components/draft-dialogs/item-explorer-draft-dialogs.component';
 import { ItemExplorerShellDomPort } from './item-explorer.dom-ports';
+import { ItemExplorerPreviewLoader } from './item-explorer-preview-loader.service';
+import { ItemExplorerLoadDiagnostics } from './item-explorer-load-diagnostics.service';
 
 @Component({
   selector: 'app-item-explorer',
@@ -41,7 +43,7 @@ import { ItemExplorerShellDomPort } from './item-explorer.dom-ports';
     ItemExplorerHistoryDialogComponent,
     ItemExplorerDraftDialogsComponent,
   ],
-  providers: [ItemExplorerFacade],
+  providers: [ItemExplorerFacade, ItemExplorerPreviewLoader, ItemExplorerLoadDiagnostics],
   templateUrl: './item-explorer.component.html',
   styleUrl: './item-explorer.component.css',
   encapsulation: ViewEncapsulation.None,

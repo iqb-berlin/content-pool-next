@@ -149,6 +149,17 @@
           <p>Aufgabe wird geladen...</p>
         </div>
       } @else if (vm.shouldRenderPlayerFrame) {
+        @if (vm.previewUpdateInProgress) {
+          <div class="preview-update-status" role="status" aria-live="polite">
+            <div class="spinner"></div>
+            <span>
+              Gespeicherter Zustand wird geladen …
+              @if (vm.previewSlow) {
+                Das dauert länger als erwartet, möglicherweise wegen WLAN oder VPN.
+              }
+            </span>
+          </div>
+        }
         <iframe
           #playerFrame
           [srcdoc]="vm.playerSrcDoc"
@@ -165,6 +176,12 @@
           <div style="font-size: 2.5rem; margin-bottom: 12px">🎮</div>
           <h3>Kein Player verfügbar</h3>
         </div>
+      }
+      @if (vm.isPreviewLoading && vm.previewSlow) {
+        <p class="slow-load-hint" role="status" aria-live="polite">
+          Das Laden dauert länger als erwartet, möglicherweise wegen WLAN oder VPN. Aktuelle Phase:
+          {{ vm.previewLoadPhase }}.
+        </p>
       }
     </div>
 
@@ -232,6 +249,7 @@
         <button
           class="btn btn-outline btn-sm"
           (click)="vm.saveCurrentResponseState()"
+          [disabled]="vm.previewUpdateInProgress"
           title="Aktuellen Zustand speichern"
         >
           💾 Zustand speichern

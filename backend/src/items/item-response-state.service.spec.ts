@@ -206,7 +206,15 @@ describe("ItemResponseStateService", () => {
   });
 
   it("returns direct response state when available", async () => {
-    stateRepository.findOne.mockResolvedValueOnce({ id: "state-direct" });
+    stateRepository.find.mockResolvedValueOnce([
+      {
+        id: "state-direct",
+        acpId: "acp-1",
+        itemId: "item-2",
+        unitId: "unit-1",
+        rowKey: "unit-1::item-2",
+      },
+    ]);
 
     const result = await service.getResponseStateWithFallback(
       "acp-1",
@@ -219,16 +227,23 @@ describe("ItemResponseStateService", () => {
     );
 
     expect(result).toEqual({
-      state: { id: "state-direct" },
+      state: expect.objectContaining({ id: "state-direct" }),
       isFallback: false,
     });
+    expect(stateRepository.find).toHaveBeenCalledTimes(1);
+    expect(stateRepository.findOne).not.toHaveBeenCalled();
   });
 
   it("returns fallback state from previous item in same unit", async () => {
-    stateRepository.findOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: "state-prev", itemId: "item-1" });
+    stateRepository.find.mockResolvedValueOnce([
+      {
+        id: "state-prev",
+        acpId: "acp-1",
+        itemId: "item-1",
+        unitId: "unit-1",
+        rowKey: "unit-1::item-1",
+      },
+    ]);
 
     const result = await service.getResponseStateWithFallback(
       "acp-1",
@@ -241,14 +256,18 @@ describe("ItemResponseStateService", () => {
     );
 
     expect(result).toEqual({
-      state: { id: "state-prev", itemId: "item-1" },
+      state: expect.objectContaining({
+        id: "state-prev",
+        itemId: "item-1",
+      }),
       isFallback: true,
       fallbackItemId: "item-1",
     });
+    expect(stateRepository.find).toHaveBeenCalledTimes(1);
   });
 
   it("returns no fallback when item is first in sequence or no previous state exists", async () => {
-    stateRepository.findOne.mockResolvedValue(null);
+    stateRepository.find.mockResolvedValue([]);
 
     await expect(
       service.getResponseStateWithFallback("acp-1", "item-1", "unit-1", [

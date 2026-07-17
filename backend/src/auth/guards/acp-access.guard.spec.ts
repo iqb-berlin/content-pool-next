@@ -11,7 +11,8 @@ describe("AcpAccessGuard", () => {
   let guard: AcpAccessGuard;
   let acpUserRoleRepository: { findOne: jest.Mock };
   let accessConfigRepository: { findOne: jest.Mock };
-  let userRepository: { findOne: jest.Mock };
+  let userRepository: { findOne: jest.Mock; query?: jest.Mock };
+  let jwtService: { verifyAsync: jest.Mock };
 
   const createContext = (request: any): ExecutionContext =>
     ({
@@ -29,6 +30,9 @@ describe("AcpAccessGuard", () => {
     };
     userRepository = {
       findOne: jest.fn(),
+    };
+    jwtService = {
+      verifyAsync: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -48,7 +52,7 @@ describe("AcpAccessGuard", () => {
         },
         {
           provide: JwtService,
-          useValue: { verifyAsync: jest.fn() },
+          useValue: jwtService,
         },
       ],
     }).compile();
@@ -102,6 +106,63 @@ describe("AcpAccessGuard", () => {
     await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
     expect(request.acpAccessLevel).toBe("MANAGER");
     expect(accessConfigRepository.findOne).not.toHaveBeenCalled();
+  });
+
+  it("resolves a bearer user and its requested ACP role in one query", async () => {
+    userRepository.query = jest.fn().mockResolvedValue([
+      {
+        isAppAdmin: false,
+        acpRole: AcpRole.ACP_MANAGER,
+      },
+    ]);
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "julian-user-id",
+      username: "julian",
+      type: "oidc",
+      authType: "oidc",
+    });
+
+    const request: any = {
+      params: { acpId },
+      headers: { authorization: "Bearer explorer-token" },
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).resolves.toBe(true);
+    expect(userRepository.query).toHaveBeenCalledWith(
+      expect.stringContaining('LEFT JOIN "acp_user_roles"'),
+      ["julian-user-id", acpId],
+    );
+    expect(userRepository.findOne).not.toHaveBeenCalled();
+    expect(acpUserRoleRepository.findOne).not.toHaveBeenCalled();
+    expect(request.acpAccessLevel).toBe("MANAGER");
+  });
+
+  it("does not reuse a role for a different ACP", async () => {
+    userRepository.query = jest.fn().mockResolvedValue([
+      {
+        isAppAdmin: false,
+        acpRole: null,
+      },
+    ]);
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "julian-user-id",
+      username: "julian",
+      type: "oidc",
+      authType: "oidc",
+    });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+
+    const request: any = {
+      params: { acpId },
+      headers: { authorization: "Bearer explorer-token" },
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(
+      "No access to this ACP",
+    );
+    expect(acpUserRoleRepository.findOne).not.toHaveBeenCalled();
   });
 
   it("allows anonymous access when ACP is PUBLIC", async () => {

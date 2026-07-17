@@ -22,6 +22,19 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.item-list-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.item-list-loading p {
+  margin: 4px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
 .table-scroll {
   flex: 1;
   overflow: auto;

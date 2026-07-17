@@ -74,6 +74,21 @@
 
   <app-item-explorer-collections />
 
+  @if (vm.itemListLoading) {
+    <div class="item-list-loading" role="status" aria-live="polite">
+      <div class="spinner"></div>
+      <div>
+        <strong>Item-Liste wird geladen …</strong>
+        @if (vm.itemListSlow) {
+          <p>
+            Das Laden dauert länger als erwartet. Eine langsame WLAN- oder VPN-Verbindung kann die
+            Ursache sein.
+          </p>
+        }
+      </div>
+    </div>
+  }
+
   <div
     #tableScroll
     class="table-scroll"

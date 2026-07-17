@@ -57,4 +57,8 @@ fi
 
 (cd "$REPOSITORY_ROOT/frontend" && npx playwright install chromium)
 (cd "$REPOSITORY_ROOT/backend" && npm run test:e2e:seed-browser)
+# The seed process has already synchronized the complete schema. Repeating
+# synchronization during the Playwright backend startup is redundant and makes
+# TypeORM issue concurrent pg queries on one schema-inspection client.
+export DB_SYNCHRONIZE=false
 (cd "$REPOSITORY_ROOT/frontend" && npm run e2e:playwright)

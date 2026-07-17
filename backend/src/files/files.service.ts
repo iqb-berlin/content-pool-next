@@ -203,7 +203,9 @@ export class FilesService {
     acpId: string,
     uploadedFile: Express.Multer.File,
   ): Promise<AcpFile> {
-    return this.fileMutationService.upload(acpId, uploadedFile);
+    const file = await this.fileMutationService.upload(acpId, uploadedFile);
+    this.unitParserService.invalidateFileCaches(acpId);
+    return file;
   }
 
   async uploadMultiple(
@@ -211,7 +213,13 @@ export class FilesService {
     files: Express.Multer.File[],
     options: UploadMultipleOptions = {},
   ): Promise<AcpFile[]> {
-    return this.fileMutationService.uploadMultiple(acpId, files, options);
+    const savedFiles = await this.fileMutationService.uploadMultiple(
+      acpId,
+      files,
+      options,
+    );
+    this.unitParserService.invalidateFileCaches(acpId);
+    return savedFiles;
   }
 
   async download(id: string): Promise<{ buffer: Buffer; file: AcpFile }> {
@@ -241,12 +249,14 @@ export class FilesService {
     const file = await this.findById(id);
     await this.fileRepository.remove(file);
     await this.fileStorageService.removePhysicalFile(file);
+    this.unitParserService.invalidateFileCaches(file.acpId);
   }
 
   async deleteForAcp(acpId: string, id: string): Promise<void> {
     const file = await this.findByIdForAcp(acpId, id);
     await this.fileRepository.remove(file);
     await this.fileStorageService.removePhysicalFile(file);
+    this.unitParserService.invalidateFileCaches(acpId);
   }
 
   async deleteManyForAcp(acpId: string, ids: string[]): Promise<string[]> {
@@ -274,6 +284,7 @@ export class FilesService {
     const filesToDelete = normalizedIds.map((id) => filesById.get(id)!);
     await this.fileRepository.remove(filesToDelete);
     await this.fileStorageService.removePhysicalFiles(filesToDelete);
+    this.unitParserService.invalidateFileCaches(acpId);
     return normalizedIds;
   }
 
@@ -281,6 +292,7 @@ export class FilesService {
     const files = await this.findByAcp(acpId);
     await this.fileRepository.remove(files);
     await this.fileStorageService.removePhysicalFiles(files);
+    this.unitParserService.invalidateFileCaches(acpId);
   }
 
   async cleanupOrphanedResponseStates(acpId: string): Promise<{

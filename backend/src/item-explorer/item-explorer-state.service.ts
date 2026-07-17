@@ -60,8 +60,18 @@ export interface ExplorerDraftPatch {
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+interface ViewerStateCacheEntry {
+  version: number;
+  publishedVersion: number;
+  editor: ExplorerStateEnvelope;
+  readOnly: ExplorerStateEnvelope;
+}
+
 @Injectable()
 export class ItemExplorerStateService {
+  private readonly viewerStateCache = new Map<string, ViewerStateCacheEntry>();
+  private readonly maxViewerStateCacheEntries = 100;
+
   constructor(
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
@@ -77,8 +87,61 @@ export class ItemExplorerStateService {
     acpId: string,
     canEdit: boolean,
   ): Promise<ExplorerStateEnvelope> {
+    const cached = this.viewerStateCache.get(acpId);
+    if (cached) {
+      const version = await this.stateRepository.findOne({
+        where: { acpId },
+        select: {
+          version: true,
+          publishedVersion: true,
+        },
+      });
+      if (
+        version &&
+        version.version === cached.version &&
+        version.publishedVersion === cached.publishedVersion
+      ) {
+        this.viewerStateCache.delete(acpId);
+        this.viewerStateCache.set(acpId, cached);
+        return structuredClone(canEdit ? cached.editor : cached.readOnly);
+      }
+      this.viewerStateCache.delete(acpId);
+    }
+
     const record = await this.ensureStateRecord(acpId);
-    return this.toEnvelope(record, canEdit);
+    const entry: ViewerStateCacheEntry = {
+      version: record.version,
+      publishedVersion: record.publishedVersion,
+      editor: this.toEnvelope(record, true),
+      readOnly: this.toEnvelope(record, false),
+    };
+    this.viewerStateCache.set(acpId, entry);
+    while (this.viewerStateCache.size > this.maxViewerStateCacheEntries) {
+      const oldestKey = this.viewerStateCache.keys().next().value as
+        | string
+        | undefined;
+      if (!oldestKey) break;
+      this.viewerStateCache.delete(oldestKey);
+    }
+    return structuredClone(canEdit ? entry.editor : entry.readOnly);
+  }
+
+  async getStateVersionForViewer(
+    acpId: string,
+    canEdit: boolean,
+  ): Promise<number> {
+    const record = await this.stateRepository.findOne({
+      where: { acpId },
+      select: {
+        version: true,
+        publishedVersion: true,
+      },
+    });
+    if (record) {
+      return canEdit ? record.version : record.publishedVersion;
+    }
+    const initialized = await this.ensureStateRecord(acpId);
+    return canEdit ? initialized.version : initialized.publishedVersion;
   }
 
   async getCleanPublishedState(acpId: string): Promise<ExplorerStateEnvelope> {

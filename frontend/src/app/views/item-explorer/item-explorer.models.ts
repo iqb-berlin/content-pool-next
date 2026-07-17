@@ -118,4 +118,11 @@ export interface CodingVariableFocusResolution {
 }
 
 export type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
-export type PreviewAssetLoadState = 'idle' | 'loading' | 'ready' | 'missing' | 'error';
+
+export type PreviewStatus =
+  | { kind: 'idle' }
+  | { kind: 'loading-unit'; item: ExplorerItem }
+  | { kind: 'loading-response'; item: ExplorerItem; reuseUnit: true }
+  | { kind: 'ready'; item: ExplorerItem }
+  | { kind: 'unavailable'; reason: string }
+  | { kind: 'error'; reason: string };

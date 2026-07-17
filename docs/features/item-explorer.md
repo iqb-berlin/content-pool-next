@@ -168,7 +168,9 @@ localStorage.setItem("cp.itemExplorer.performance", "1");
 
 The console then reports `item-list`, `item-selection-total`, `unit-view`, `response-state`,
 `player-html`, `definition`, and `player-ready` measurements. They are also available as Performance
-API measures named `item-explorer:<phase>`. Disable the console output with:
+API measures named `item-explorer:<phase>`. With diagnostics disabled, the browser retains only the
+latest measure per phase. With diagnostics enabled, measures remain bounded to 100 entries per
+phase. Disable the console output with:
 
 ```js
 localStorage.removeItem("cp.itemExplorer.performance");
@@ -187,16 +189,47 @@ path:
 - warm item-list median improves by at least 50%,
 - warm direct unit-view median improves by at least 40%,
 - a second selection in the same unit improves by at least 30% and requests response state only,
+- the same-unit browser path remains below 500 ms median and 1.5 seconds p95,
 - cold item-list median regresses by no more than 15%,
 - optimized warm p95 values remain below 1.5 seconds,
 - response bodies remain identical and conditional file requests return `304` without a body.
+
+The absolute browser-duration limits are evaluated only in the dedicated counterbalanced browser
+benchmark described below. The regular Playwright suite gates the stable functional invariant
+instead: the first preview issues exactly one unit-view request and two asset requests, and further
+selections in that unit request response state only. This avoids coupling CI correctness to the load
+of an individual runner.
+
+Prepare the reference revision as a worktree with backend and frontend dependencies installed. Then
+run the complete counterbalanced browser benchmark from the candidate checkout:
+
+```bash
+ITEM_EXPLORER_BENCHMARK_BASELINE_ROOT=/path/to/c85fcf3-worktree \
+  npm run benchmark:item-explorer
+```
+
+Run this command from the candidate checkout's `frontend/` directory. The runner creates one
+PostgreSQL container and alternates which variant starts each of six paired rounds. Before every
+start it recreates the same synthetic fixture of 50 units, 2,000 items, and 151 files, then records
+40 warm same-unit selections. The validator aggregates all 240 samples per variant, calculates the
+median as the mean of the two middle samples, calculates p95 by nearest rank, and fails unless the
+candidate improves the median by at least 30%, remains below 500 ms median, and remains below 1.5
+seconds p95.
+
+Raw runs and `summary.json` are written to a timestamped directory below
+`frontend/benchmark-results/`. Set `ITEM_EXPLORER_BENCHMARK_RUNS` to override the default of six
+paired runs; the value must remain even so both variants occupy each start position equally often.
+The runner verifies that the baseline worktree has no tracked changes and is checked out at
+`c85fcf3`; set `ITEM_EXPLORER_BENCHMARK_BASELINE_REVISION` when intentionally comparing against
+another reference. The benchmark spec and configuration live outside the regular Playwright test
+directory and are therefore not part of `npm run e2e` or CI.
 
 The direct unit-view threshold is intentionally 40% rather than 50% because every request still
 performs current authorization and cross-process database-revision checks. Those correctness checks
 must not be replaced with stale process-local authorization data merely to cross a sub-millisecond
 benchmark boundary.
 
-The alternating reference run on 2026-07-17 produced these results:
+The reference run on 2026-07-17 produced these results:
 
 | Path                              | Baseline median | Optimized median | Improvement |
 | --------------------------------- | --------------: | ---------------: | ----------: |

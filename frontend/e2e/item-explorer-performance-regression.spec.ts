@@ -276,53 +276,6 @@ test('records every documented browser performance phase', async ({ page }, test
   });
 });
 
-test('keeps same-unit requests and latency bounded over repeated use', async ({
-  page,
-}, testInfo) => {
-  await loginAsManager(page);
-  const requestCounts = {
-    unitView: 0,
-    responseState: 0,
-    previewAssets: 0,
-  };
-  page.on('request', (request) => {
-    const pathname = new URL(request.url()).pathname;
-    if (pathname.includes('/files/unit-view/')) requestCounts.unitView += 1;
-    if (pathname.endsWith('/response-state/with-fallback')) requestCounts.responseState += 1;
-    if (/\/files\/[^/]+\/download$/.test(pathname)) requestCounts.previewAssets += 1;
-  });
-  await openExplorer(page);
-
-  await selectAndReadResponseState(page, rowIds.direct, 'i1');
-  await expect(page.locator('iframe.player-iframe')).toBeVisible();
-  const durations: number[] = [];
-  for (let index = 0; index < 40; index += 1) {
-    const useFallbackItem = index % 2 === 0;
-    const startedAt = performance.now();
-    await selectAndReadResponseState(
-      page,
-      useFallbackItem ? rowIds.fallback : rowIds.direct,
-      useFallbackItem ? 'i2' : 'i1',
-    );
-    durations.push(performance.now() - startedAt);
-  }
-
-  const orderedDurations = [...durations].sort((left, right) => left - right);
-  const median = orderedDurations[Math.floor(orderedDurations.length / 2)];
-  const p95 = orderedDurations[Math.ceil(orderedDurations.length * 0.95) - 1];
-  expect(requestCounts).toEqual({
-    unitView: 1,
-    responseState: 41,
-    previewAssets: 2,
-  });
-  expect(median).toBeLessThan(500);
-  expect(p95).toBeLessThan(1500);
-  await testInfo.attach('same-unit-performance', {
-    body: JSON.stringify({ medianMs: median, p95Ms: p95, requestCounts }, null, 2),
-    contentType: 'application/json',
-  });
-});
-
 test('renders the preview without document overflow on desktop and narrow screens', async ({
   page,
 }) => {

@@ -16,6 +16,7 @@
     "test:cov": "jest --coverage",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:e2e:seed-browser": "ts-node -r tsconfig-paths/register test/browser-e2e/seed.ts",
+    "test:e2e:seed-browser-benchmark": "ts-node -r tsconfig-paths/register test/browser-e2e/seed-benchmark.ts",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "typeorm:dist": "node ./node_modules/typeorm/cli.js",
     "migration:generate": "npm run typeorm -- migration:generate -d src/database/data-source.ts",

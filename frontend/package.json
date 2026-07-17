@@ -9,6 +9,7 @@
     "test": "vitest",
     "e2e": "../scripts/run-browser-e2e.sh",
     "e2e:playwright": "playwright test",
+    "benchmark:item-explorer": "../scripts/run-item-explorer-browser-benchmark.sh",
     "lint": "ng lint"
   },
   "private": true,

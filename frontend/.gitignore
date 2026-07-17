@@ -36,6 +36,7 @@ yarn-error.log
 /coverage
 /playwright-report
 /test-results
+/benchmark-results
 /libpeerconnection.log
 testem.log
 /typings

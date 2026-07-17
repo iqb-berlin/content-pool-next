@@ -5,6 +5,9 @@ REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DATABASE_CONTAINER="content-pool-browser-e2e-$$"
 DATABASE_PORT="${BROWSER_E2E_DATABASE_PORT:-55432}"
 USE_EXISTING_DATABASE="${BROWSER_E2E_USE_EXISTING_DATABASE:-false}"
+DATABASE_CONTAINER_STARTED=false
+SEED_SCRIPT="${BROWSER_E2E_SEED_SCRIPT:-test:e2e:seed-browser}"
+SKIP_BROWSER_INSTALL="${BROWSER_E2E_SKIP_BROWSER_INSTALL:-false}"
 
 export NODE_ENV=test
 export DB_HOST=127.0.0.1
@@ -21,7 +24,7 @@ export BROWSER_E2E_BACKEND_PORT=3100
 export BROWSER_E2E_FRONTEND_PORT=4300
 
 cleanup() {
-  if [[ "$USE_EXISTING_DATABASE" != "true" ]]; then
+  if [[ "$USE_EXISTING_DATABASE" != "true" && "$DATABASE_CONTAINER_STARTED" == "true" ]]; then
     docker stop "$DATABASE_CONTAINER" >/dev/null 2>&1 || true
   fi
 }
@@ -32,6 +35,10 @@ if [[ "$USE_EXISTING_DATABASE" != "true" ]]; then
     echo "Docker is required to start the isolated browser E2E database." >&2
     exit 1
   }
+  docker info >/dev/null 2>&1 || {
+    echo "A running Docker daemon is required to start the isolated browser E2E database." >&2
+    exit 1
+  }
   docker run --rm -d \
     --name "$DATABASE_CONTAINER" \
     -e POSTGRES_DB="$DB_DATABASE" \
@@ -39,6 +46,7 @@ if [[ "$USE_EXISTING_DATABASE" != "true" ]]; then
     -e POSTGRES_PASSWORD="$DB_PASSWORD" \
     -p "$DATABASE_PORT:5432" \
     postgres:16-alpine >/dev/null
+  DATABASE_CONTAINER_STARTED=true
 
   database_ready=false
   for _attempt in $(seq 1 30); do
@@ -55,10 +63,12 @@ if [[ "$USE_EXISTING_DATABASE" != "true" ]]; then
   fi
 fi
 
-(cd "$REPOSITORY_ROOT/frontend" && npx playwright install chromium)
-(cd "$REPOSITORY_ROOT/backend" && npm run test:e2e:seed-browser)
+if [[ "$SKIP_BROWSER_INSTALL" != "true" ]]; then
+  (cd "$REPOSITORY_ROOT/frontend" && npx playwright install chromium)
+fi
+(cd "$REPOSITORY_ROOT/backend" && npm run "$SEED_SCRIPT")
 # The seed process has already synchronized the complete schema. Repeating
 # synchronization during the Playwright backend startup is redundant and makes
 # TypeORM issue concurrent pg queries on one schema-inspection client.
 export DB_SYNCHRONIZE=false
-(cd "$REPOSITORY_ROOT/frontend" && npm run e2e:playwright)
+(cd "$REPOSITORY_ROOT/frontend" && npm run e2e:playwright -- "$@")

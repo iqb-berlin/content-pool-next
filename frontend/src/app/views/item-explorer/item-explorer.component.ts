@@ -25,6 +25,7 @@ import { ItemExplorerDraftDialogsComponent } from './components/draft-dialogs/it
 import { ItemExplorerShellDomPort } from './item-explorer.dom-ports';
 import { ItemExplorerPreviewLoader } from './item-explorer-preview-loader.service';
 import { ItemExplorerLoadDiagnostics } from './item-explorer-load-diagnostics.service';
+import { ItemExplorerPreviewCoordinator } from './item-explorer-preview-coordinator.service';
 
 @Component({
   selector: 'app-item-explorer',
@@ -43,7 +44,12 @@ import { ItemExplorerLoadDiagnostics } from './item-explorer-load-diagnostics.se
     ItemExplorerHistoryDialogComponent,
     ItemExplorerDraftDialogsComponent,
   ],
-  providers: [ItemExplorerFacade, ItemExplorerPreviewLoader, ItemExplorerLoadDiagnostics],
+  providers: [
+    ItemExplorerFacade,
+    ItemExplorerPreviewLoader,
+    ItemExplorerPreviewCoordinator,
+    ItemExplorerLoadDiagnostics,
+  ],
   templateUrl: './item-explorer.component.html',
   styleUrl: './item-explorer.component.css',
   encapsulation: ViewEncapsulation.None,

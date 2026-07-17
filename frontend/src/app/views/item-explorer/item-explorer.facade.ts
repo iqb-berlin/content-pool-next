@@ -11,21 +11,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import {
-  catchError,
-  EMPTY,
-  finalize,
-  firstValueFrom,
-  forkJoin,
-  map,
-  of,
-  ReplaySubject,
-  Subject,
-  Subscription,
-  switchMap,
-  takeUntil,
-  tap,
-} from 'rxjs';
+import { finalize, firstValueFrom, ReplaySubject, Subscription, takeUntil } from 'rxjs';
 import {
   ItemCollection,
   ItemCollectionSummary,
@@ -60,7 +46,6 @@ import {
   PersonalDataSaveState,
   PersonalItemRowData,
   PersonalItemTagConfig,
-  PreviewAssetLoadState,
   PreviewTargetOption,
   PreviewTargetResolution,
   ReadonlyExplorerItem,
@@ -74,9 +59,9 @@ import {
 } from './item-explorer.dom-ports';
 import { matchesNumericFilter } from '../../core/utils/numeric-filter.util';
 import {
-  ItemExplorerPreviewAssets,
-  ItemExplorerPreviewLoader,
-} from './item-explorer-preview-loader.service';
+  ItemExplorerPreviewCoordinator,
+  ItemExplorerPreviewResult,
+} from './item-explorer-preview-coordinator.service';
 import {
   ItemExplorerLoadDiagnostics,
   ItemExplorerTimingToken,
@@ -140,9 +125,6 @@ export class ItemExplorerFacade implements OnDestroy {
   // Selection
   selectedItem: ExplorerItem | null = null;
   selectedIndex = -1;
-  loadingUnit = false;
-  private playerHtmlLoadState: PreviewAssetLoadState = 'idle';
-  private definitionLoadState: PreviewAssetLoadState = 'idle';
   private playerFrameRefreshPending = false;
 
   // Player
@@ -237,24 +219,15 @@ export class ItemExplorerFacade implements OnDestroy {
   private readonly listPageSize = 10;
   private definitionContent: string | null = null;
   private playerFrameReady = false;
-  private responseStateReady = false;
   private activePlayerSessionId: string | null = null;
-  private unitLoadToken = 0;
   private itemListLoadToken = 0;
   private startSessionCounter = 0;
-  private readonly previewSelection$ = new Subject<{
-    item: ExplorerItem;
-    token: number;
-    reuseLoadedUnit: boolean;
-    timing: ItemExplorerTimingToken | null;
-  } | null>();
   private itemListSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private previewSlowTimer: ReturnType<typeof setTimeout> | null = null;
   private playerReadyTiming: ItemExplorerTimingToken | null = null;
   itemListSlow = false;
   previewSlow = false;
   previewLoadPhase = '';
-  previewUpdateInProgress = false;
 
   // File Upload
   showUploadReport = false;
@@ -330,7 +303,6 @@ export class ItemExplorerFacade implements OnDestroy {
   isFallbackState = false;
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
-  previewUnavailableReason = '';
   previewUserFacingMessage = '';
   selectedPreviewTargetId = '';
   customPreviewTargetDraft = '';
@@ -554,6 +526,19 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.canPreviewItem(this.selectedItem) && !this.previewUnavailableReason;
   }
 
+  get loadingUnit(): boolean {
+    return this.previewCoordinator.status.kind === 'loading-unit';
+  }
+
+  get previewUpdateInProgress(): boolean {
+    return this.previewCoordinator.status.kind === 'loading-response';
+  }
+
+  get previewUnavailableReason(): string {
+    const status = this.previewCoordinator.status;
+    return status.kind === 'unavailable' || status.kind === 'error' ? status.reason : '';
+  }
+
   get previewUnavailableMessage(): string {
     if (!this.previewUnavailableReason) return '';
     if (this.previewUserFacingMessage) return this.previewUserFacingMessage;
@@ -562,27 +547,23 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get isPreviewLoading(): boolean {
-    if (!this.selectedItem || this.previewUnavailableReason || this.hasPreviewLoadFailure()) {
+    if (!this.selectedItem || this.previewUnavailableReason) {
       return false;
     }
 
-    return (
-      this.loadingUnit ||
-      this.playerFrameRefreshPending ||
-      this.playerHtmlLoadState === 'loading' ||
-      this.definitionLoadState === 'loading' ||
-      (!this.responseStateReady && !this.previewUpdateInProgress)
-    );
+    const status = this.previewCoordinator.status.kind;
+    return status === 'loading-unit' || this.playerFrameRefreshPending;
   }
 
   get shouldRenderPlayerFrame(): boolean {
+    const status = this.previewCoordinator.status.kind;
     return (
       !!this.selectedItem &&
       !this.previewUnavailableReason &&
       !this.isPreviewLoading &&
       !!this.playerSrcDoc &&
-      this.playerHtmlLoadState === 'ready' &&
-      this.definitionLoadState === 'ready'
+      !!this.definitionContent &&
+      (status === 'ready' || status === 'loading-response')
     );
   }
 
@@ -674,10 +655,12 @@ export class ItemExplorerFacade implements OnDestroy {
     private voudService: VoudService,
     private authService: AuthService,
     private pendingPersonalSessionStorage: PendingPersonalSessionStorageService,
-    @Optional() private readonly previewLoader?: ItemExplorerPreviewLoader,
+    private readonly previewCoordinator: ItemExplorerPreviewCoordinator,
     @Optional() private readonly diagnostics?: ItemExplorerLoadDiagnostics,
   ) {
-    this.initializePreviewSelectionPipeline();
+    this.previewCoordinator.results$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((result) => this.applyPreviewResult(result));
   }
 
   get headerViewModel(): ItemExplorerHeaderViewModel {
@@ -994,7 +977,6 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     this.destroyed = true;
     this.itemListLoadToken += 1;
-    this.unitLoadToken += 1;
     this.personalDataSessionVersion += 1;
     this.collectionSessionVersion += 1;
     this.destroy$.next();
@@ -1006,7 +988,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.clearItemListSlowTimer();
     this.clearPreviewSlowTimer();
     this.cancelPlayerReadyTiming();
-    this.previewLoader?.clear();
+    this.previewCoordinator.clear();
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
     if (this.playerFrameRefreshTimeout) {
@@ -2034,20 +2016,16 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   resetPlayer() {
+    this.previewCoordinator.cancel();
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
     this.playerSrcDoc = null;
     this.unit = null;
     this.definitionContent = null;
     this.playerFrameReady = false;
-    this.responseStateReady = false;
     this.activePlayerSessionId = null;
-    this.previewUnavailableReason = '';
-    this.playerHtmlLoadState = 'idle';
-    this.definitionLoadState = 'idle';
     this.playerFrameRefreshPending = false;
     this.previewUserFacingMessage = '';
-    this.previewUpdateInProgress = false;
   }
 
   private startItemListSlowTimer(): void {
@@ -2103,12 +2081,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     this.cancelPlayerReadyTiming();
-    const reuseLoadedUnit =
-      this.unit?.id === item.unitId &&
-      this.playerHtmlLoadState === 'ready' &&
-      this.definitionLoadState === 'ready' &&
-      !!this.playerSrcDoc &&
-      !!this.definitionContent;
+    const reuseLoadedUnit = this.hasReusablePreviewUnit(item);
     this.selectedItem = item;
     this.selectedIndex = index;
     if (!reuseLoadedUnit) {
@@ -2116,21 +2089,16 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     this.currentPage = 1;
     this.totalPages = 1;
-    this.loadingUnit = !reuseLoadedUnit;
-    const token = ++this.unitLoadToken;
-    const selectionTiming = this.diagnostics?.start('item-selection-total') || null;
-    this.previewUpdateInProgress = reuseLoadedUnit;
     this.startPreviewSlowTimer(
       reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
     );
 
-    // Reset response state flags
+    // Reset response state data
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.currentResponseData = null;
-    this.responseStateReady = false;
     this.activePlayerSessionId = null;
-    this.previewUnavailableReason = '';
+    this.previewUserFacingMessage = '';
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -2146,158 +2114,76 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncPreviewTargetResolution(item);
 
     if (!this.canPreviewItem(item)) {
-      this.previewSelection$.next(null);
-      this.loadingUnit = false;
-      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
-      this.previewUpdateInProgress = false;
+      this.previewCoordinator.markUnavailable(this.getMissingPreviewTargetMessage());
       this.clearPreviewSlowTimer();
-      this.diagnostics?.finish(selectionTiming, { outcome: 'missing-target' });
       return;
     }
 
-    if (this.previewLoader) {
-      this.previewSelection$.next({
-        item,
-        token,
-        reuseLoadedUnit,
-        timing: selectionTiming,
-      });
-    } else {
-      this.loadPreviewContext(item, token);
+    this.loadPreviewSelection(item, reuseLoadedUnit);
+  }
+
+  private loadPreviewSelection(item: ExplorerItem, reuseUnit: boolean): void {
+    this.previewCoordinator.select({
+      acpId: this.acpId,
+      perspective: this.getPerspectiveForViewerRequests(),
+      item,
+      itemList: this.filteredItems.map((candidate) => ({
+        itemId: candidate.itemId,
+        unitId: candidate.unitId,
+        rowKey: this.getStableRowKey(candidate),
+      })),
+      reuseUnit,
+    });
+  }
+
+  private applyPreviewResult(result: ItemExplorerPreviewResult): void {
+    if (
+      this.destroyed ||
+      !this.selectedItem ||
+      this.getStableRowKey(result.item) !== this.getStableRowKey(this.selectedItem)
+    ) {
+      return;
     }
+
+    this.clearPreviewSlowTimer();
+    if (!result.reuseUnit && result.assets) {
+      this.applyPreviewAssets(result.assets);
+    }
+    this.applyResponseStateResult(result.responseState);
+
+    if (this.previewCoordinator.status.kind !== 'ready') {
+      this.previewUserFacingMessage =
+        this.previewCoordinator.status.kind === 'error'
+          ? this.previewCoordinator.status.reason
+          : '';
+      return;
+    }
+
+    this.playerReadyTiming = this.hasReusablePreviewUnit(result.item)
+      ? this.diagnostics?.start('player-ready') || null
+      : null;
+    this.startPlayerIfReady();
   }
 
-  private initializePreviewSelectionPipeline(): void {
-    if (!this.previewLoader) return;
-
-    this.previewSelection$
-      .pipe(
-        switchMap((request) => {
-          if (!request) return EMPTY;
-
-          let selectionOutcome = 'cancelled';
-          const responseTiming = this.diagnostics?.start('response-state') || null;
-          let responseOutcome = 'cancelled';
-          const responseState$ = this.createResponseStateRequest(request.item).pipe(
-            tap(() => {
-              responseOutcome = 'loaded';
-            }),
-            catchError(() => {
-              responseOutcome = 'error';
-              return of(null);
-            }),
-            finalize(() => {
-              this.diagnostics?.finish(responseTiming, { outcome: responseOutcome });
-            }),
-          );
-          const assets$ = request.reuseLoadedUnit
-            ? of({
-                unit: this.unit,
-                playerHtml: null,
-                definition: null,
-                cacheStatus: 'hit' as const,
-              })
-            : this.previewLoader!.load(
-                this.acpId,
-                this.getPerspectiveForViewerRequests(),
-                request.item.unitId,
-              );
-
-          return forkJoin({ assets: assets$, responseState: responseState$ }).pipe(
-            map((result) => {
-              selectionOutcome = 'loaded';
-              return { request, ...result, error: null };
-            }),
-            catchError((error) => {
-              selectionOutcome = 'error';
-              return of({
-                request,
-                assets: null,
-                responseState: null,
-                error,
-              });
-            }),
-            finalize(() => {
-              this.diagnostics?.finish(request.timing, { outcome: selectionOutcome });
-            }),
-          );
-        }),
-        takeUntil(this.destroy$),
-      )
-      .subscribe((result) => {
-        const { request } = result;
-        if (request.token !== this.unitLoadToken || this.destroyed) return;
-
-        this.clearPreviewSlowTimer();
-        this.loadingUnit = false;
-        this.previewUpdateInProgress = false;
-
-        if (result.error || !result.assets) {
-          this.playerHtmlLoadState = 'error';
-          this.definitionLoadState = 'error';
-          this.previewUserFacingMessage =
-            (result.error as any)?.status === 403
-              ? this.getUnitViewAccessMessage()
-              : 'Die Aufgaben-Vorschau konnte nicht geladen werden.';
-          this.previewUnavailableReason = this.previewUserFacingMessage;
-          return;
-        }
-
-        if (!request.reuseLoadedUnit) {
-          this.applyPreviewAssets(result.assets);
-        }
-        this.applyResponseStateResult(result.responseState);
-        this.responseStateReady = true;
-        this.playerReadyTiming =
-          this.playerHtmlLoadState === 'ready' && this.definitionLoadState === 'ready'
-            ? this.diagnostics?.start('player-ready') || null
-            : null;
-        this.startPlayerIfReady();
-      });
-  }
-
-  private createResponseStateRequest(item: ExplorerItem) {
-    const itemList = this.filteredItems.map((candidate) => ({
-      itemId: candidate.itemId,
-      unitId: candidate.unitId,
-      rowKey: this.getStableRowKey(candidate),
-    }));
-    return item.rowKey
-      ? this.api.getResponseStateWithFallback(
-          this.acpId,
-          item.itemId,
-          item.unitId,
-          itemList,
-          item.rowKey,
-        )
-      : this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList);
-  }
-
-  private applyPreviewAssets(assets: ItemExplorerPreviewAssets): void {
+  private applyPreviewAssets(assets: NonNullable<ItemExplorerPreviewResult['assets']>): void {
     this.unit = assets.unit;
     if (!assets.unit) {
-      this.playerHtmlLoadState = 'missing';
-      this.definitionLoadState = 'missing';
       this.playerSrcDoc = null;
       this.definitionContent = null;
       return;
     }
 
     if (assets.playerHtml === null) {
-      this.playerHtmlLoadState = 'missing';
       this.playerSrcDoc = null;
     } else {
-      this.playerHtmlLoadState = 'ready';
       this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(
         rewriteGeoGebraAssetUrls(assets.playerHtml),
       );
     }
 
     if (assets.definition === null) {
-      this.definitionLoadState = 'missing';
       this.definitionContent = null;
     } else {
-      this.definitionLoadState = 'ready';
       this.definitionContent = assets.definition;
     }
   }
@@ -2315,106 +2201,14 @@ export class ItemExplorerFacade implements OnDestroy {
     this.isFallbackState = false;
   }
 
+  private hasReusablePreviewUnit(item: ExplorerItem): boolean {
+    return this.unit?.id === item.unitId && !!this.playerSrcDoc && !!this.definitionContent;
+  }
+
   // --- Response State ---
-  private loadPreviewContext(item: ExplorerItem, token: number) {
-    this.loadingUnit = true;
-    this.playerHtmlLoadState = 'idle';
-    this.definitionLoadState = 'idle';
-    this.loadResponseStateForItem(item, token);
-
-    this.api
-      .getFileUnitView(this.acpId, item.unitId, {
-        perspective: this.getPerspectiveForViewerRequests(),
-      })
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (u: any) => {
-          if (token !== this.unitLoadToken) return;
-          this.unit = u;
-          this.loadingUnit = false;
-
-          if (!u) {
-            this.playerHtmlLoadState = 'missing';
-            this.definitionLoadState = 'missing';
-            return;
-          }
-
-          const deps = (u.dependencies || []).map((d: any) => ({
-            ...d,
-            downloadUrl: this.api.appendAuthToken(d.downloadUrl),
-          }));
-          u.dependencies = deps;
-          this.playerHtmlLoadState = 'loading';
-          this.definitionLoadState = 'loading';
-          this.loadPlayerHtml(deps, token);
-          this.loadDefinition(deps, token);
-        },
-        error: (error) => {
-          if (token !== this.unitLoadToken) return;
-          this.loadingUnit = false;
-          this.playerHtmlLoadState = 'error';
-          this.definitionLoadState = 'error';
-          this.previewUserFacingMessage =
-            error?.status === 403
-              ? this.getUnitViewAccessMessage()
-              : 'Die Aufgaben-Vorschau konnte nicht geladen werden.';
-          this.previewUnavailableReason = this.previewUserFacingMessage;
-        },
-      });
-  }
-
-  private loadResponseStateForItem(item: ExplorerItem, token: number) {
-    // Build item list from filteredItems for fallback lookup
-    const itemList = this.filteredItems.map((i) => ({
-      itemId: i.itemId,
-      unitId: i.unitId,
-      rowKey: this.getStableRowKey(i),
-    }));
-    const responseStateRequest = item.rowKey
-      ? this.api.getResponseStateWithFallback(
-          this.acpId,
-          item.itemId,
-          item.unitId,
-          itemList,
-          item.rowKey,
-        )
-      : this.api.getResponseStateWithFallback(this.acpId, item.itemId, item.unitId, itemList);
-
-    responseStateRequest.pipe(takeUntil(this.destroy$)).subscribe({
-      next: (result) => {
-        if (token !== this.unitLoadToken) return;
-        if (
-          result.state &&
-          result.state.responseData &&
-          Object.keys(result.state.responseData).length > 0
-        ) {
-          this.currentResponseData = result.state.responseData;
-          this.hasResponseState = true;
-          this.isFallbackState = result.isFallback;
-        } else {
-          // No state available (direct or fallback)
-          this.currentResponseData = null;
-          this.hasResponseState = false;
-          this.isFallbackState = false;
-        }
-        this.responseStateReady = true;
-        this.startPlayerIfReady();
-      },
-      error: () => {
-        if (token !== this.unitLoadToken) return;
-        // On error, continue without state
-        this.currentResponseData = null;
-        this.hasResponseState = false;
-        this.isFallbackState = false;
-        this.responseStateReady = true;
-        this.startPlayerIfReady();
-      },
-    });
-  }
-
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
-    if (this.previewUpdateInProgress || !this.responseStateReady) {
+    if (this.previewCoordinator.status.kind !== 'ready') {
       this.confirmDialogError =
         'Der Zustand des ausgewählten Items wird noch geladen. Bitte versuchen Sie es gleich erneut.';
       this.showSaveConfirmDialog = true;
@@ -2434,8 +2228,7 @@ export class ItemExplorerFacade implements OnDestroy {
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
-      this.previewUpdateInProgress ||
-      !this.responseStateReady
+      this.previewCoordinator.status.kind !== 'ready'
     ) {
       this.confirmDialogError =
         'Der Zustand des ausgewählten Items ist noch nicht vollständig geladen.';
@@ -2550,7 +2343,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private updatePreviewTargetSelection(targetId: string) {
-    this.previewUnavailableReason = '';
+    this.previewUserFacingMessage = '';
     if (!this.selectedItem) {
       return;
     }
@@ -2559,68 +2352,44 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncPreviewTargetResolution(this.selectedItem);
 
     if (!this.canPreviewItem(this.selectedItem)) {
-      this.unitLoadToken += 1;
-      this.previewSelection$.next(null);
       this.clearPreviewSlowTimer();
       this.cancelPlayerReadyTiming();
-      this.loadingUnit = false;
-      this.previewUpdateInProgress = false;
-      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      this.previewCoordinator.markUnavailable(this.getMissingPreviewTargetMessage());
       return;
     }
 
-    if (!this.loadingUnit && (!this.unit || !this.responseStateReady)) {
+    const previewStatus = this.previewCoordinator.status.kind;
+    if (
+      previewStatus !== 'loading-unit' &&
+      previewStatus !== 'loading-response' &&
+      previewStatus !== 'ready'
+    ) {
       this.reloadPreviewAfterTargetChange(this.selectedItem);
       return;
     }
 
-    if (
-      !this.playerFrameReady ||
-      !this.definitionContent ||
-      !this.unit ||
-      !this.responseStateReady
-    ) {
+    if (previewStatus === 'loading-unit' || previewStatus === 'loading-response') {
       return;
     }
+    this.previewCoordinator.markReady(this.selectedItem);
     this.startPlayerIfReady();
   }
 
   private reloadPreviewAfterTargetChange(item: ExplorerItem): void {
-    const reuseLoadedUnit =
-      this.unit?.id === item.unitId &&
-      this.playerHtmlLoadState === 'ready' &&
-      this.definitionLoadState === 'ready' &&
-      !!this.playerSrcDoc &&
-      !!this.definitionContent;
+    const reuseLoadedUnit = this.hasReusablePreviewUnit(item);
 
     this.cancelPlayerReadyTiming();
     if (!reuseLoadedUnit) {
       this.resetPlayer();
     }
-    this.loadingUnit = !reuseLoadedUnit;
-    const token = ++this.unitLoadToken;
-    this.previewUpdateInProgress = reuseLoadedUnit;
     this.hasResponseState = false;
     this.isFallbackState = false;
     this.currentResponseData = null;
-    this.responseStateReady = false;
     this.activePlayerSessionId = null;
-
-    if (this.previewLoader) {
-      const selectionTiming = this.diagnostics?.start('item-selection-total') || null;
-      this.startPreviewSlowTimer(
-        reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
-      );
-      this.previewSelection$.next({
-        item,
-        token,
-        reuseLoadedUnit,
-        timing: selectionTiming,
-      });
-      return;
-    }
-
-    this.loadPreviewContext(item, token);
+    this.startPreviewSlowTimer(
+      reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
+    );
+    this.loadPreviewSelection(item, reuseLoadedUnit);
   }
 
   onPlayerLoaded() {
@@ -2650,11 +2419,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
     switch (playerMessage['type']) {
       case 'vopStateChangedNotification':
-        if (
-          this.previewUpdateInProgress ||
-          !this.responseStateReady ||
-          !this.activePlayerSessionId
-        ) {
+        if (this.previewCoordinator.status.kind !== 'ready' || !this.activePlayerSessionId) {
           break;
         }
         {
@@ -2721,75 +2486,13 @@ export class ItemExplorerFacade implements OnDestroy {
     );
   }
 
-  private loadPlayerHtml(dependencies: any[], token: number) {
-    const playerDep = dependencies.find(
-      (d: any) => String(d?.type || '').toLowerCase() === 'player',
-    );
-    if (!playerDep?.downloadUrl) {
-      if (token !== this.unitLoadToken) return;
-      this.playerHtmlLoadState = 'missing';
-      this.playerSrcDoc = null;
-      return;
-    }
-
-    fetch(playerDep.downloadUrl)
-      .then((res) => res.text())
-      .then((html) => {
-        if (token !== this.unitLoadToken) return;
-        this.playerHtmlLoadState = 'ready';
-        this.playerSrcDoc = this.sanitizer.bypassSecurityTrustHtml(rewriteGeoGebraAssetUrls(html));
-      })
-      .catch(() => {
-        if (token !== this.unitLoadToken) return;
-        this.playerHtmlLoadState = 'error';
-        this.playerSrcDoc = null;
-      });
-  }
-
-  private loadDefinition(dependencies: any[], token: number) {
-    const definitionDep = dependencies.find((d: any) => {
-      const type = String(d?.type || '').toLowerCase();
-      return type === 'unit_definition' || type === 'unitdefinition' || type === 'definition';
-    });
-
-    if (!definitionDep?.downloadUrl) {
-      if (token !== this.unitLoadToken) return;
-      this.definitionLoadState = 'missing';
-      this.definitionContent = null;
-      return;
-    }
-
-    fetch(definitionDep.downloadUrl)
-      .then((res) => res.text())
-      .then((definition) => {
-        if (token !== this.unitLoadToken) return;
-        this.definitionLoadState = 'ready';
-        this.definitionContent = definition;
-        this.startPlayerIfReady();
-      })
-      .catch(() => {
-        if (token !== this.unitLoadToken) return;
-        this.definitionLoadState = 'error';
-        this.definitionContent = null;
-      });
-  }
-
-  private hasPreviewLoadFailure(): boolean {
-    return (
-      this.playerHtmlLoadState === 'missing' ||
-      this.playerHtmlLoadState === 'error' ||
-      this.definitionLoadState === 'missing' ||
-      this.definitionLoadState === 'error'
-    );
-  }
-
   private startPlayerIfReady() {
     if (
       !this.playerFrameReady ||
       !this.definitionContent ||
       !this.unit ||
       !this.selectedItem ||
-      !this.responseStateReady
+      this.previewCoordinator.status.kind !== 'ready'
     ) {
       return;
     }
@@ -2797,7 +2500,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const selectedItem = this.selectedItem;
     const previewTarget = this.getEffectivePlayerTarget(selectedItem);
     if (!previewTarget) {
-      this.previewUnavailableReason = this.getMissingPreviewTargetMessage();
+      this.previewCoordinator.markUnavailable(this.getMissingPreviewTargetMessage());
       this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'missing-target' });
       this.playerReadyTiming = null;
       return;
@@ -2807,13 +2510,14 @@ export class ItemExplorerFacade implements OnDestroy {
       previewTarget,
     );
     if (!targetLocation) {
-      this.previewUnavailableReason = `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`;
+      this.previewCoordinator.markUnavailable(
+        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`,
+      );
       this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-target' });
       this.playerReadyTiming = null;
       return;
     }
     const startPage = targetLocation.scrollPageIndex;
-    this.previewUnavailableReason = '';
     const sessionId = `explorer-${this.getStableRowKey(selectedItem) || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
@@ -4219,10 +3923,6 @@ export class ItemExplorerFacade implements OnDestroy {
     return 'Die Item-Liste ist für diese Ansicht nicht freigegeben.';
   }
 
-  private getUnitViewAccessMessage(): string {
-    return 'Die Aufgaben-Vorschau ist für diese Ansicht nicht freigegeben.';
-  }
-
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
     if (!this.metadataSettings?.visible?.length) {
       return allColumns; // Show all if no settings
@@ -4589,10 +4289,14 @@ export class ItemExplorerFacade implements OnDestroy {
         previousPreviewTarget !== nextPreviewTarget &&
         this.playerFrameReady &&
         this.definitionContent &&
-        this.unit &&
-        this.responseStateReady
+        this.unit
       ) {
-        this.startPlayerIfReady();
+        const previewStatus = this.previewCoordinator.status.kind;
+        if (previewStatus === 'ready') {
+          this.startPlayerIfReady();
+        } else if (previewStatus !== 'loading-unit' && previewStatus !== 'loading-response') {
+          this.reloadPreviewAfterTargetChange(this.selectedItem);
+        }
       }
     }
 
@@ -5157,11 +4861,9 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
 
-    this.unitLoadToken += 1;
-    this.previewSelection$.next(null);
+    this.previewCoordinator.cancel();
     this.clearPreviewSlowTimer();
     this.cancelPlayerReadyTiming();
-    this.loadingUnit = false;
     this.selectedItem = null;
     this.selectedIndex = -1;
     this.currentUnitMetadata = [];
@@ -5170,7 +4872,6 @@ export class ItemExplorerFacade implements OnDestroy {
     this.currentResponseData = null;
     this.hasResponseState = false;
     this.isFallbackState = false;
-    this.previewUnavailableReason = '';
     this.selectedPreviewTargetId = '';
     this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);

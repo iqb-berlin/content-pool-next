@@ -10,6 +10,7 @@ import { ServerApiService } from "./server-api.service";
 import { Acp, AcpFile } from "../database/entities";
 import { FilesService } from "../files/files.service";
 import { SnapshotsService } from "../snapshots/snapshots.service";
+import { TEST_UUIDS } from "../testing/test-fixtures";
 
 describe("ServerApiService", () => {
   let service: ServerApiService;
@@ -82,7 +83,7 @@ describe("ServerApiService", () => {
 
   it("rejects import when package exists and conflictStrategy=reject", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -102,7 +103,7 @@ describe("ServerApiService", () => {
 
   it("merges existing ACP index when conflictStrategy=merge", async () => {
     const existing = {
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       name: "Old",
       description: "Old Desc",
@@ -150,7 +151,7 @@ describe("ServerApiService", () => {
 
   it("throws conflict on index update when expectedUpdatedAt mismatches", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -158,7 +159,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.updateAcpIndex(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         { version: "0.5.0" },
         "overwrite",
         "2026-01-02T00:00:00.000Z",
@@ -168,7 +169,7 @@ describe("ServerApiService", () => {
 
   it("rejects file upload when duplicate filename exists and conflictStrategy=reject", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -177,7 +178,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "unit.xml",
       },
     ]);
@@ -187,7 +188,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.uploadFiles(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         [
           {
             originalname: "unit.xml",
@@ -203,7 +204,7 @@ describe("ServerApiService", () => {
 
   it("replaces multiple coding schemes in one batch and creates a snapshot with changelog", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -212,12 +213,12 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
       },
       {
         id: "55555555-5555-4555-8555-555555555555",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-2.VOCS",
       },
     ]);
@@ -225,7 +226,7 @@ describe("ServerApiService", () => {
     filesService.uploadMultiple.mockResolvedValue([
       {
         id: "44444444-4444-4444-8444-444444444444",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
         fileType: "application/json",
         fileSize: 10,
@@ -234,7 +235,7 @@ describe("ServerApiService", () => {
       },
       {
         id: "66666666-6666-4666-8666-666666666666",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-2.VOCS",
         fileType: "application/json",
         fileSize: 12,
@@ -251,7 +252,7 @@ describe("ServerApiService", () => {
     });
 
     const result = await service.replaceCodingSchemeFiles(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [
         {
           originalname: "unit-1.vocs",
@@ -275,22 +276,24 @@ describe("ServerApiService", () => {
     expect(filesService.deleteForAcp).not.toHaveBeenCalled();
     expect(filesService.uploadMultiple).toHaveBeenCalledTimes(1);
     expect(filesService.uploadMultiple).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [
         expect.objectContaining({ originalname: "UNIT-1.VOCS" }),
         expect.objectContaining({ originalname: "UNIT-2.VOCS" }),
       ],
-      "overwrite",
-      { expandArchives: false },
+      {
+        conflictStrategy: "overwrite",
+        expandArchives: false,
+      },
     );
     expect(filesService.upload).not.toHaveBeenCalled();
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+    ).toHaveBeenCalledWith(TEST_UUIDS.acp, {
       skipValidation: true,
     });
     expect(snapshotsService.create).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       "Kodierschema aktualisiert",
     );
     expect(result.snapshot.versionNumber).toBe(7);
@@ -299,7 +302,7 @@ describe("ServerApiService", () => {
 
   it("does not delete coding schemes before a failed replacement batch", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -307,19 +310,19 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
       },
       {
         id: "55555555-5555-4555-8555-555555555555",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-2.VOCS",
       },
     ]);
     filesService.uploadMultiple.mockRejectedValue(new Error("upload failed"));
 
     await expect(
-      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, [
         { originalname: "unit-1.vocs" } as Express.Multer.File,
         { originalname: "unit-2.vocs" } as Express.Multer.File,
       ]),
@@ -334,7 +337,7 @@ describe("ServerApiService", () => {
 
   it("fails replacement if coding scheme does not exist in ACP", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -342,7 +345,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([]);
 
     await expect(
-      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, [
         {
           originalname: "unit-1.vocs",
           buffer: Buffer.from("{}"),
@@ -355,7 +358,7 @@ describe("ServerApiService", () => {
 
   it("fails replacement when a non-vocs file is provided", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -363,7 +366,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([]);
 
     await expect(
-      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, [
         {
           originalname: "unit-1.xml",
           buffer: Buffer.from("<xml/>"),
@@ -384,7 +387,7 @@ describe("ServerApiService", () => {
         updatedAt: new Date("2026-01-03T00:00:00.000Z"),
       },
       {
-        id: "11111111-1111-4111-8111-111111111111",
+        id: TEST_UUIDS.acp,
         packageId: "pkg-1",
         name: "First",
         acpIndex: { version: "1.2.3" },
@@ -401,7 +404,7 @@ describe("ServerApiService", () => {
         updatedAt: "2026-01-03T00:00:00.000Z",
       },
       {
-        id: "11111111-1111-4111-8111-111111111111",
+        id: TEST_UUIDS.acp,
         packageId: "pkg-1",
         name: "First",
         version: "1.2.3",
@@ -413,7 +416,7 @@ describe("ServerApiService", () => {
   it("filters and enforces ACP restrictions for limited application tokens", async () => {
     acpRepository.find.mockResolvedValue([
       {
-        id: "11111111-1111-4111-8111-111111111111",
+        id: TEST_UUIDS.acp,
         packageId: "pkg-1",
         name: "First",
         acpIndex: {},
@@ -421,11 +424,9 @@ describe("ServerApiService", () => {
       },
     ]);
 
-    await expect(
-      service.listAcps(["11111111-1111-4111-8111-111111111111"]),
-    ).resolves.toEqual([
+    await expect(service.listAcps([TEST_UUIDS.acp])).resolves.toEqual([
       {
-        id: "11111111-1111-4111-8111-111111111111",
+        id: TEST_UUIDS.acp,
         packageId: "pkg-1",
         name: "First",
         version: "0.0.0",
@@ -440,14 +441,14 @@ describe("ServerApiService", () => {
 
     await expect(
       service.getAcpIndex("22222222-2222-4222-8222-222222222222", [
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
       ]),
     ).rejects.toThrow(ForbiddenException);
   });
 
   it("returns transfer payload and index payload for existing ACPs", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       name: "Demo",
       description: "desc",
@@ -457,7 +458,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 21,
@@ -466,11 +467,9 @@ describe("ServerApiService", () => {
       },
     ]);
 
-    const transfer = await service.getAcpTransferData(
-      "11111111-1111-4111-8111-111111111111",
-    );
+    const transfer = await service.getAcpTransferData(TEST_UUIDS.acp);
     expect(transfer).toEqual({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       name: "Demo",
       description: "desc",
@@ -490,11 +489,9 @@ describe("ServerApiService", () => {
       ],
     });
 
-    const index = await service.getAcpIndex(
-      "11111111-1111-4111-8111-111111111111",
-    );
+    const index = await service.getAcpIndex(TEST_UUIDS.acp);
     expect(index).toEqual({
-      acpId: "11111111-1111-4111-8111-111111111111",
+      acpId: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: "2026-01-01T00:00:00.000Z",
       acpIndex: { version: "0.5.0" },
@@ -503,16 +500,14 @@ describe("ServerApiService", () => {
 
   it("returns empty index object if ACP index is missing", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: undefined,
     });
 
-    await expect(
-      service.getAcpIndex("11111111-1111-4111-8111-111111111111"),
-    ).resolves.toEqual({
-      acpId: "11111111-1111-4111-8111-111111111111",
+    await expect(service.getAcpIndex(TEST_UUIDS.acp)).resolves.toEqual({
+      acpId: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: "2026-01-01T00:00:00.000Z",
       acpIndex: {},
@@ -521,15 +516,11 @@ describe("ServerApiService", () => {
 
   it("rejects invalid index update payload and invalid strategy values", async () => {
     await expect(
-      service.updateAcpIndex(
-        "11111111-1111-4111-8111-111111111111",
-        [] as any,
-        "overwrite",
-      ),
+      service.updateAcpIndex(TEST_UUIDS.acp, [] as any, "overwrite"),
     ).rejects.toThrow(BadRequestException);
 
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -537,7 +528,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.updateAcpIndex(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         { version: "0.5.0" },
         "invalid-strategy",
       ),
@@ -545,7 +536,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.updateAcpIndex(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         { version: "0.5.0" },
         "overwrite",
         "not-a-date",
@@ -555,7 +546,7 @@ describe("ServerApiService", () => {
 
   it("lists and reads transfer files and throws when file is missing", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -563,7 +554,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 12,
@@ -574,7 +565,7 @@ describe("ServerApiService", () => {
     fileRepository.findOne
       .mockResolvedValueOnce({
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "unit.xml",
         fileType: "text/xml",
         fileSize: 12,
@@ -583,14 +574,9 @@ describe("ServerApiService", () => {
       })
       .mockResolvedValueOnce(null);
 
+    await expect(service.listFiles(TEST_UUIDS.acp)).resolves.toHaveLength(1);
     await expect(
-      service.listFiles("11111111-1111-4111-8111-111111111111"),
-    ).resolves.toHaveLength(1);
-    await expect(
-      service.getFile(
-        "11111111-1111-4111-8111-111111111111",
-        "33333333-3333-4333-8333-333333333333",
-      ),
+      service.getFile(TEST_UUIDS.acp, "33333333-3333-4333-8333-333333333333"),
     ).resolves.toEqual(
       expect.objectContaining({
         id: "33333333-3333-4333-8333-333333333333",
@@ -599,22 +585,19 @@ describe("ServerApiService", () => {
       }),
     );
     await expect(
-      service.getFile(
-        "11111111-1111-4111-8111-111111111111",
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-      ),
+      service.getFile(TEST_UUIDS.acp, "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("throws when file operations are requested for a missing ACP", async () => {
     acpRepository.findOne.mockResolvedValue(null);
 
-    await expect(
-      service.listFiles("99999999-9999-4999-8999-999999999999"),
-    ).rejects.toThrow(NotFoundException);
+    await expect(service.listFiles(TEST_UUIDS.unknownAcp)).rejects.toThrow(
+      NotFoundException,
+    );
     await expect(
       service.downloadFile(
-        "99999999-9999-4999-8999-999999999999",
+        TEST_UUIDS.unknownAcp,
         "33333333-3333-4333-8333-333333333333",
       ),
     ).rejects.toThrow(NotFoundException);
@@ -625,9 +608,7 @@ describe("ServerApiService", () => {
       service.listFiles("__coding-box-connection-test__"),
     ).rejects.toThrow(BadRequestException);
     await expect(
-      service.listFiles("__coding-box-connection-test__", [
-        "11111111-1111-4111-8111-111111111111",
-      ]),
+      service.listFiles("__coding-box-connection-test__", [TEST_UUIDS.acp]),
     ).rejects.toThrow(BadRequestException);
 
     expect(acpRepository.findOne).not.toHaveBeenCalled();
@@ -636,10 +617,7 @@ describe("ServerApiService", () => {
 
   it("returns bad request for invalid file ids before querying Postgres", async () => {
     await expect(
-      service.getFile(
-        "11111111-1111-4111-8111-111111111111",
-        "not-a-file-uuid",
-      ),
+      service.getFile(TEST_UUIDS.acp, "not-a-file-uuid"),
     ).rejects.toThrow(BadRequestException);
 
     expect(fileRepository.findOne).not.toHaveBeenCalled();
@@ -647,7 +625,7 @@ describe("ServerApiService", () => {
 
   it("downloads files through FilesService when ACP exists", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -659,7 +637,7 @@ describe("ServerApiService", () => {
 
     await expect(
       service.downloadFile(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       ),
     ).resolves.toEqual({
@@ -667,25 +645,25 @@ describe("ServerApiService", () => {
       file: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
     });
     expect(filesService.downloadForAcp).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );
   });
 
   it("rejects upload requests without files or with invalid conflictStrategy", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
     });
 
-    await expect(
-      service.uploadFiles("11111111-1111-4111-8111-111111111111", []),
-    ).rejects.toThrow(BadRequestException);
+    await expect(service.uploadFiles(TEST_UUIDS.acp, [])).rejects.toThrow(
+      BadRequestException,
+    );
     await expect(
       service.uploadFiles(
-        "11111111-1111-4111-8111-111111111111",
+        TEST_UUIDS.acp,
         [{ originalname: "f.xml" } as any],
         "invalid",
       ),
@@ -694,7 +672,7 @@ describe("ServerApiService", () => {
 
   it("supports keep-both and overwrite upload conflict strategies", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -702,7 +680,7 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "55555555-5555-4555-8555-555555555555",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "unit.xml",
       },
     ]);
@@ -710,7 +688,7 @@ describe("ServerApiService", () => {
       .mockResolvedValueOnce([
         {
           id: "66666666-6666-4666-8666-666666666666",
-          acpId: "11111111-1111-4111-8111-111111111111",
+          acpId: TEST_UUIDS.acp,
           originalName: "unit.xml",
           fileType: "text/xml",
           fileSize: 10,
@@ -721,7 +699,7 @@ describe("ServerApiService", () => {
       .mockResolvedValueOnce([
         {
           id: "77777777-7777-4777-8777-777777777777",
-          acpId: "11111111-1111-4111-8111-111111111111",
+          acpId: TEST_UUIDS.acp,
           originalName: "unit.xml",
           fileType: "text/xml",
           fileSize: 11,
@@ -731,7 +709,7 @@ describe("ServerApiService", () => {
       ] as AcpFile[]);
 
     const keepBoth = await service.uploadFiles(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [{ originalname: "bundle.zip" } as any],
       "keep-both",
     );
@@ -743,16 +721,16 @@ describe("ServerApiService", () => {
     );
     expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
       1,
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [{ originalname: "bundle.zip" }],
-      "keep-both",
+      { conflictStrategy: "keep-both" },
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
     ).not.toHaveBeenCalled();
 
     const overwrite = await service.uploadFiles(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [{ originalname: "bundle.zip" } as any],
       "overwrite",
     );
@@ -761,27 +739,24 @@ describe("ServerApiService", () => {
     );
     expect(filesService.uploadMultiple).toHaveBeenNthCalledWith(
       2,
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [{ originalname: "bundle.zip" }],
-      "overwrite",
+      { conflictStrategy: "overwrite" },
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+    ).toHaveBeenCalledWith(TEST_UUIDS.acp, {
       skipValidation: true,
     });
   });
 
   it("validates replacement file list details before processing", async () => {
     await expect(
-      service.replaceCodingSchemeFiles(
-        "11111111-1111-4111-8111-111111111111",
-        [],
-      ),
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, []),
     ).rejects.toThrow(BadRequestException);
 
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -789,19 +764,19 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
       },
     ]);
 
     await expect(
-      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, [
         { originalname: "   " } as any,
       ]),
     ).rejects.toThrow(BadRequestException);
 
     await expect(
-      service.replaceCodingSchemeFiles("11111111-1111-4111-8111-111111111111", [
+      service.replaceCodingSchemeFiles(TEST_UUIDS.acp, [
         { originalname: "unit-1.vocs" } as any,
         { originalname: "UNIT-1.VOCS" } as any,
       ]),
@@ -810,7 +785,7 @@ describe("ServerApiService", () => {
 
   it("generates default coding scheme changelog with source client suffix", async () => {
     acpRepository.findOne.mockResolvedValue({
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       acpIndex: {},
@@ -818,14 +793,14 @@ describe("ServerApiService", () => {
     fileRepository.find.mockResolvedValue([
       {
         id: "33333333-3333-4333-8333-333333333333",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
       },
     ]);
     filesService.uploadMultiple.mockResolvedValue([
       {
         id: "44444444-4444-4444-8444-444444444444",
-        acpId: "11111111-1111-4111-8111-111111111111",
+        acpId: TEST_UUIDS.acp,
         originalName: "UNIT-1.VOCS",
         fileType: "application/json",
         fileSize: 10,
@@ -841,18 +816,18 @@ describe("ServerApiService", () => {
     });
 
     await service.replaceCodingSchemeFiles(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       [{ originalname: "unit-1.vocs" } as any],
       { sourceClientId: "sync-agent" },
     );
 
     expect(snapshotsService.create).toHaveBeenCalledWith(
-      "11111111-1111-4111-8111-111111111111",
+      TEST_UUIDS.acp,
       "Kodierschema ersetzt via sync-agent: UNIT-1.VOCS",
     );
     expect(
       filesService.cleanupReferencesAfterFileMutation,
-    ).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+    ).toHaveBeenCalledWith(TEST_UUIDS.acp, {
       skipValidation: true,
     });
   });
@@ -913,7 +888,7 @@ describe("ServerApiService", () => {
 
   it("overwrites existing ACP index when conflictStrategy=overwrite", async () => {
     const existing = {
-      id: "11111111-1111-4111-8111-111111111111",
+      id: TEST_UUIDS.acp,
       packageId: "pkg-1",
       name: "Old",
       description: "Old",

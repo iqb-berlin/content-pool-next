@@ -16,6 +16,11 @@ import {
   AcpAccessConfig,
   ItemResponseState,
 } from "../database/entities";
+import { DataSource } from "typeorm";
+import { ArchiveExpansionService } from "./archive-expansion.service";
+import { FileMutationService } from "./file-mutation.service";
+import { FileStorageService } from "./file-storage.service";
+import { createAcpFileFixture, TEST_UUIDS } from "../testing/test-fixtures";
 
 jest.mock("fs/promises", () => ({
   mkdir: jest.fn().mockResolvedValue(undefined),
@@ -25,8 +30,8 @@ jest.mock("fs/promises", () => ({
 }));
 
 describe("FilesService", () => {
-  const acpId = "11111111-1111-4111-8111-111111111111";
-  const unknownAcpId = "99999999-9999-4999-8999-999999999999";
+  const acpId = TEST_UUIDS.acp;
+  const unknownAcpId = TEST_UUIDS.unknownAcp;
   let service: FilesService;
   let repo: any;
   let acpRepo: any;
@@ -34,20 +39,18 @@ describe("FilesService", () => {
   let stateRepo: any;
   let unitParserService: any;
   let validationService: any;
+  let dataSource: any;
 
-  const mockFile = {
+  const mockFile = createAcpFileFixture({
     id: "file-1",
-    acpId: acpId,
     filePath: "/uploads/acp-1/test.json",
     originalName: "test.json",
-    fileType: "application/json",
     fileSize: 1024,
     checksum: "abc123",
-    validationResult: null,
-    uploadedAt: new Date(),
-  };
+  });
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     repo = {
       find: jest.fn().mockResolvedValue([mockFile]),
       findOne: jest.fn().mockResolvedValue(mockFile),
@@ -143,10 +146,20 @@ describe("FilesService", () => {
         },
       }),
     };
+    dataSource = {
+      transaction: jest.fn().mockImplementation(async (work) =>
+        work({
+          getRepository: (entity: unknown) => (entity === Acp ? acpRepo : repo),
+        }),
+      ),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FilesService,
+        ArchiveExpansionService,
+        FileMutationService,
+        FileStorageService,
         { provide: getRepositoryToken(AcpFile), useValue: repo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
         {
@@ -160,6 +173,7 @@ describe("FilesService", () => {
         },
         { provide: UnitParserService, useValue: unitParserService },
         { provide: ValidationService, useValue: validationService },
+        { provide: DataSource, useValue: dataSource },
       ],
     }).compile();
 
@@ -304,7 +318,7 @@ describe("FilesService", () => {
           fileSize: 12,
         }),
       );
-      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(2);
       expect(result.map((file) => file.originalName)).toEqual([
         "unit-1.xml",
         "unit-1.vomd",
@@ -322,9 +336,6 @@ describe("FilesService", () => {
         originalName: "UNIT-1.VOCS",
       };
       repo.find.mockResolvedValue([existingVocs]);
-      const deleteSpy = jest
-        .spyOn(service, "deleteForAcp")
-        .mockResolvedValue(undefined);
       (fs.writeFile as jest.Mock).mockClear();
 
       const result = await service.uploadMultiple(
@@ -337,11 +348,13 @@ describe("FilesService", () => {
             buffer,
           } as Express.Multer.File,
         ],
-        "overwrite",
-        { expandArchives: false },
+        {
+          conflictStrategy: "overwrite",
+          expandArchives: false,
+        },
       );
 
-      expect(deleteSpy).toHaveBeenCalledWith(acpId, "vocs-file");
+      expect(repo.remove).toHaveBeenCalledWith([existingVocs]);
       expect(repo.create).toHaveBeenCalledTimes(1);
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -371,58 +384,132 @@ describe("FilesService", () => {
     });
 
     it("should reject conflicts by default", async () => {
+      (fs.writeFile as jest.Mock).mockClear();
+      (fs.unlink as jest.Mock).mockClear();
+
       await expect(service.uploadMultiple(acpId, [incoming])).rejects.toThrow(
         ConflictException,
       );
+
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(fs.writeFile).not.toHaveBeenCalled();
+      expect(fs.unlink).not.toHaveBeenCalled();
+    });
+
+    it("should recheck reject conflicts after acquiring the ACP lock", async () => {
+      repo.find.mockResolvedValueOnce([]).mockResolvedValueOnce([mockFile]);
+      (fs.unlink as jest.Mock).mockClear();
+
+      await expect(service.uploadMultiple(acpId, [incoming])).rejects.toThrow(
+        ConflictException,
+      );
+
+      expect(repo.find).toHaveBeenCalledTimes(2);
+      expect(fs.writeFile).toHaveBeenCalledTimes(1);
+      expect(repo.save).not.toHaveBeenCalled();
+      expect(fs.unlink).toHaveBeenCalledTimes(1);
+      expect(fs.unlink).not.toHaveBeenCalledWith(mockFile.filePath);
     });
 
     it("should overwrite existing files when strategy is overwrite", async () => {
-      const deleteSpy = jest
-        .spyOn(service, "deleteForAcp")
-        .mockResolvedValue(undefined);
+      const result = await service.uploadMultiple(acpId, [incoming], {
+        conflictStrategy: "overwrite",
+      });
 
-      const result = await service.uploadMultiple(
-        acpId,
-        [incoming],
-        "overwrite",
-      );
-
-      expect(deleteSpy).toHaveBeenCalledWith(acpId, "file-1");
+      expect(repo.remove).toHaveBeenCalledWith([mockFile]);
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           acpId: acpId,
           originalName: incoming.originalname,
         }),
       );
-      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(2);
+      expect(acpRepo.findOne).toHaveBeenNthCalledWith(2, {
+        where: { id: acpId },
+        lock: { mode: "pessimistic_write" },
+      });
       expect(result).toHaveLength(1);
+      expect(
+        (fs.writeFile as jest.Mock).mock.invocationCallOrder[0],
+      ).toBeLessThan(dataSource.transaction.mock.invocationCallOrder[0]);
+      expect(dataSource.transaction.mock.invocationCallOrder[0]).toBeLessThan(
+        acpRepo.findOne.mock.invocationCallOrder[1],
+      );
+      expect(acpRepo.findOne.mock.invocationCallOrder[1]).toBeLessThan(
+        repo.find.mock.invocationCallOrder[0],
+      );
+      expect(repo.save.mock.invocationCallOrder[0]).toBeLessThan(
+        repo.remove.mock.invocationCallOrder[0],
+      );
+      expect(repo.remove.mock.invocationCallOrder[0]).toBeLessThan(
+        (fs.unlink as jest.Mock).mock.invocationCallOrder[0],
+      );
+    });
+
+    it("should keep original files when the metadata transaction fails", async () => {
+      dataSource.transaction.mockRejectedValueOnce(
+        new Error("transaction failed"),
+      );
+      (fs.unlink as jest.Mock).mockClear();
+
+      await expect(
+        service.uploadMultiple(acpId, [incoming], {
+          conflictStrategy: "overwrite",
+        }),
+      ).rejects.toThrow("transaction failed");
+
+      expect(repo.remove).not.toHaveBeenCalled();
+      expect(fs.unlink).toHaveBeenCalledTimes(1);
+      expect(fs.unlink).not.toHaveBeenCalledWith(mockFile.filePath);
+    });
+
+    it("should keep original files when staging a batch fails", async () => {
+      (fs.writeFile as jest.Mock)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error("disk full"));
+      (fs.unlink as jest.Mock).mockClear();
+
+      await expect(
+        service.uploadMultiple(
+          acpId,
+          [
+            incoming,
+            {
+              ...incoming,
+              originalname: "second.json",
+            } as Express.Multer.File,
+          ],
+          { conflictStrategy: "overwrite" },
+        ),
+      ).rejects.toThrow("disk full");
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+      expect(repo.remove).not.toHaveBeenCalled();
+      expect(fs.unlink).not.toHaveBeenCalledWith(mockFile.filePath);
     });
 
     it("should keep both files when strategy is keep-both", async () => {
-      const deleteSpy = jest
-        .spyOn(service, "deleteForAcp")
-        .mockResolvedValue(undefined);
+      const result = await service.uploadMultiple(acpId, [incoming], {
+        conflictStrategy: "keep-both",
+      });
 
-      const result = await service.uploadMultiple(
-        acpId,
-        [incoming],
-        "keep-both",
-      );
-
-      expect(deleteSpy).not.toHaveBeenCalled();
+      expect(repo.remove).not.toHaveBeenCalled();
       expect(repo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           acpId: acpId,
           originalName: incoming.originalname,
         }),
       );
-      expect(acpRepo.findOne).toHaveBeenCalledTimes(1);
+      expect(acpRepo.findOne).toHaveBeenCalledTimes(2);
       expect(result).toHaveLength(1);
     });
 
     it("should reject invalid conflict strategy", async () => {
       await expect(
-        service.uploadMultiple(acpId, [incoming], "invalid-strategy"),
+        service.uploadMultiple(acpId, [incoming], {
+          conflictStrategy: "invalid-strategy",
+        }),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -585,6 +672,35 @@ describe("FilesService", () => {
         expect.objectContaining({ id: "file-1" }),
         expect.objectContaining({ id: "file-2" }),
       ]);
+    });
+
+    it("should remove physical files sequentially", async () => {
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: "file-1", filePath: "/x/1" },
+        { ...mockFile, id: "file-2", filePath: "/x/2" },
+      ]);
+      let signalFirstUnlink!: () => void;
+      let releaseFirstUnlink!: () => void;
+      const firstUnlinkStarted = new Promise<void>((resolve) => {
+        signalFirstUnlink = resolve;
+      });
+      (fs.unlink as jest.Mock)
+        .mockImplementationOnce(
+          () =>
+            new Promise<void>((resolve) => {
+              releaseFirstUnlink = resolve;
+              signalFirstUnlink();
+            }),
+        )
+        .mockResolvedValueOnce(undefined);
+
+      const deletion = service.deleteAll(acpId);
+      await firstUnlinkStarted;
+
+      expect(fs.unlink).toHaveBeenCalledTimes(1);
+      releaseFirstUnlink();
+      await deletion;
+      expect(fs.unlink).toHaveBeenCalledTimes(2);
     });
 
     it("should bulk delete ACP files for the provided IDs", async () => {

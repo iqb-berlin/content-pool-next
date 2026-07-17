@@ -14,7 +14,6 @@ import {
   Request,
   Res,
   Sse,
-  UsePipes,
 } from "@nestjs/common";
 import { Response } from "express";
 import { FilesInterceptor } from "@nestjs/platform-express";
@@ -34,11 +33,10 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
-import { UuidRouteParamsPipe } from "../common/uuid-param";
+import { UuidParam } from "../common/uuid-param";
 
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
-@UsePipes(new UuidRouteParamsPipe())
 export class FilesController {
   constructor(
     private readonly filesService: FilesService,
@@ -52,7 +50,7 @@ export class FilesController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "List all files for an ACP" })
   async findAll(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Query("format") format?: string,
     @Query("unitId") unitId?: string,
     @Query("sequenceId") sequenceId?: string,
@@ -106,7 +104,7 @@ export class FilesController {
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete all files for an ACP" })
-  async deleteAll(@Param("acpId") acpId: string) {
+  async deleteAll(@UuidParam("acpId") acpId: string) {
     await this.filesService.deleteAll(acpId);
     const cleanupResult =
       await this.filesService.cleanupReferencesAfterFileMutation(acpId);
@@ -123,7 +121,7 @@ export class FilesController {
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Validate completeness of all unit files" })
-  async validateUnits(@Param("acpId") acpId: string) {
+  async validateUnits(@UuidParam("acpId") acpId: string) {
     const files = await this.filesService.findByAcp(acpId);
     const [unitResults, validationRun] = await Promise.all([
       this.unitParserService.validateUnitFiles(acpId),
@@ -140,7 +138,7 @@ export class FilesController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Extract item list with metadata from .vomd files" })
   async getItemList(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Query("perspective") perspective?: string,
   ) {
@@ -175,7 +173,7 @@ export class FilesController {
   @ApiOperation({
     summary: "Recalculate stable Item Explorer row numbers",
   })
-  async recalculateItemRowNumbers(@Param("acpId") acpId: string) {
+  async recalculateItemRowNumbers(@UuidParam("acpId") acpId: string) {
     return this.unitParserService.recalculatePublishedItemRowNumbers(acpId);
   }
 
@@ -185,7 +183,7 @@ export class FilesController {
     summary: "Get unit view data from uploaded files (player, definition)",
   })
   async getUnitView(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Param("unitId") unitId: string,
     @Request() req: any,
     @Query("perspective") perspective?: string,
@@ -206,8 +204,8 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get file processing job status" })
   async getProcessingJob(
-    @Param("acpId") acpId: string,
-    @Param("jobId") jobId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("jobId") jobId: string,
   ) {
     return this.fileProcessingJobsService.getJobSnapshot(acpId, jobId);
   }
@@ -218,8 +216,8 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Stream file processing job progress" })
   async streamProcessingJob(
-    @Param("acpId") acpId: string,
-    @Param("jobId") jobId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("jobId") jobId: string,
   ) {
     await this.fileProcessingJobsService.ensureJobExists(acpId, jobId);
     return this.fileProcessingJobsService.streamJob(jobId);
@@ -233,8 +231,8 @@ export class FilesController {
     summary: "Download generated ZIP archive for a completed file job",
   })
   async downloadJobArchive(
-    @Param("acpId") acpId: string,
-    @Param("jobId") jobId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("jobId") jobId: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
     const archive = await this.fileProcessingJobsService.downloadArchive(
@@ -254,8 +252,8 @@ export class FilesController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get file metadata" })
   async findOne(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
     @Request() req: any,
   ) {
     const isManager =
@@ -275,8 +273,8 @@ export class FilesController {
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "Get preview data for a file" })
   async getPreview(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
     @Request() req: any,
   ) {
     const file = await this.filesService.findByIdForAcp(acpId, fileId);
@@ -297,16 +295,14 @@ export class FilesController {
   })
   @ApiOperation({ summary: "Upload files to ACP" })
   async upload(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Query("conflictStrategy") conflictStrategy?: string,
   ) {
     return {
-      files: await this.filesService.uploadMultiple(
-        acpId,
-        files,
+      files: await this.filesService.uploadMultiple(acpId, files, {
         conflictStrategy,
-      ),
+      }),
     };
   }
 
@@ -318,7 +314,7 @@ export class FilesController {
     summary: "Download all or selected ACP files as ZIP archive",
   })
   async bulkDownload(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() body: { fileIds?: string[] } = {},
     @Res({ passthrough: true }) res?: Response,
   ) {
@@ -340,7 +336,7 @@ export class FilesController {
     summary: "Start ZIP creation job for all or selected ACP files",
   })
   async startBulkDownloadJob(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() body: { fileIds?: string[] } = {},
     @Request() req?: any,
   ) {
@@ -357,7 +353,7 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Start processing for freshly uploaded ACP files" })
   async processUpload(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() body: { fileIds?: string[]; runCleanup?: boolean },
     @Request() req: any,
   ) {
@@ -377,7 +373,7 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete multiple files for an ACP" })
   async bulkDelete(
-    @Param("acpId") acpId: string,
+    @UuidParam("acpId") acpId: string,
     @Body() body: { fileIds?: string[] },
   ) {
     const deletedFileIds = await this.filesService.deleteManyForAcp(
@@ -405,7 +401,7 @@ export class FilesController {
     summary:
       "Synchronize ACP-Index from uploaded unit files (non-destructive merge)",
   })
-  async syncIndex(@Param("acpId") acpId: string) {
+  async syncIndex(@UuidParam("acpId") acpId: string) {
     return this.unitParserService.syncIndexFromFiles(acpId);
   }
 
@@ -418,8 +414,8 @@ export class FilesController {
   })
   @ApiOperation({ summary: "Download a file" })
   async download(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
     @Query("disposition") disposition: string | undefined,
     @Request() req: any,
     @Res() res: Response,
@@ -442,7 +438,10 @@ export class FilesController {
   @Roles("ACP_MANAGER")
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete a file" })
-  async delete(@Param("acpId") acpId: string, @Param("fileId") fileId: string) {
+  async delete(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
+  ) {
     await this.filesService.deleteForAcp(acpId, fileId);
     const cleanupResult =
       await this.filesService.cleanupReferencesAfterFileMutation(acpId);
@@ -460,8 +459,8 @@ export class FilesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get validation result for a file" })
   async getValidation(
-    @Param("acpId") acpId: string,
-    @Param("fileId") fileId: string,
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("fileId") fileId: string,
   ) {
     return this.filesService.getValidationResultForAcp(acpId, fileId);
   }

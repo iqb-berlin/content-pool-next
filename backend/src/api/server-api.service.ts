@@ -233,11 +233,9 @@ export class ServerApiService {
     const existingNames = new Set(
       existingFiles.map((file) => this.normalizeFileName(file.originalName)),
     );
-    const uploaded = await this.filesService.uploadMultiple(
-      acpId,
-      files,
+    const uploaded = await this.filesService.uploadMultiple(acpId, files, {
       conflictStrategy,
-    );
+    });
     const deletedAny =
       conflictStrategy === "overwrite" &&
       uploaded.some((file) =>
@@ -343,8 +341,10 @@ export class ServerApiService {
     const replacedFiles = await this.filesService.uploadMultiple(
       acpId,
       uploadPayloads,
-      "overwrite",
-      { expandArchives: false },
+      {
+        conflictStrategy: "overwrite",
+        expandArchives: false,
+      },
     );
 
     await this.filesService.cleanupReferencesAfterFileMutation(acpId, {

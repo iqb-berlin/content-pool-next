@@ -2,7 +2,6 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ConflictException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -31,11 +30,11 @@ import {
 import { FileProcessingProgressReporter } from "./file-processing-progress";
 import { parseItemRowKeyParts } from "../items/item-row-key.util";
 import { assertUuidParam } from "../common/uuid-param";
-
-type UploadConflictStrategy = "reject" | "overwrite" | "keep-both";
-type UploadMultipleOptions = {
-  expandArchives?: boolean;
-};
+import {
+  FileMutationService,
+  UploadMultipleOptions,
+} from "./file-mutation.service";
+import { FileStorageService } from "./file-storage.service";
 export type FilePreviewMode =
   | "text"
   | "image"
@@ -161,6 +160,8 @@ export class FilesService {
     private readonly configService: ConfigService,
     private readonly unitParserService: UnitParserService,
     private readonly validationService: ValidationService,
+    private readonly fileMutationService: FileMutationService,
+    private readonly fileStorageService: FileStorageService,
   ) {
     this.storagePath = this.configService.get<string>(
       "FILE_STORAGE_PATH",
@@ -202,97 +203,21 @@ export class FilesService {
     acpId: string,
     uploadedFile: Express.Multer.File,
   ): Promise<AcpFile> {
-    await this.getAcpOrFail(acpId);
-    return this.persistUpload(acpId, uploadedFile);
+    return this.fileMutationService.upload(acpId, uploadedFile);
   }
 
   async uploadMultiple(
     acpId: string,
     files: Express.Multer.File[],
-    conflictStrategyInput?: string,
     options: UploadMultipleOptions = {},
   ): Promise<AcpFile[]> {
-    const conflictStrategy = this.resolveUploadConflictStrategy(
-      conflictStrategyInput,
-    );
-
-    if (!files?.length) {
-      throw new BadRequestException("At least one file is required");
-    }
-
-    await this.getAcpOrFail(acpId);
-    const normalizedFiles =
-      options.expandArchives === false
-        ? files
-        : await this.expandUploadedFiles(files);
-    const existingFiles = await this.findFileRecordsByAcp(acpId);
-    const existingByName = new Map<string, AcpFile[]>();
-    for (const existing of existingFiles) {
-      const key = this.normalizeFileName(existing.originalName);
-      if (!key) {
-        continue;
-      }
-      const bucket = existingByName.get(key) || [];
-      bucket.push(existing);
-      existingByName.set(key, bucket);
-    }
-
-    const seenIncomingNames = new Set<string>();
-    const conflicts = new Set<string>();
-    for (const incoming of normalizedFiles) {
-      const incomingName = String(incoming?.originalname || "").trim();
-      const key = this.normalizeFileName(incomingName);
-      if (!key) {
-        throw new BadRequestException("All files must include a filename");
-      }
-
-      if (existingByName.has(key) || seenIncomingNames.has(key)) {
-        conflicts.add(incomingName);
-      }
-      seenIncomingNames.add(key);
-    }
-
-    if (conflictStrategy === "reject" && conflicts.size > 0) {
-      throw new ConflictException({
-        message:
-          "File conflicts detected. Resolve duplicates by skipping or uploading with conflictStrategy=overwrite.",
-        conflicts: Array.from(conflicts).sort((a, b) => a.localeCompare(b)),
-      });
-    }
-
-    const results: AcpFile[] = [];
-
-    for (const file of normalizedFiles) {
-      const key = this.normalizeFileName(file.originalname);
-      if (!key) {
-        throw new BadRequestException("All files must include a filename");
-      }
-
-      if (conflictStrategy === "overwrite") {
-        const matches = existingByName.get(key) || [];
-        for (const match of matches) {
-          await this.deleteForAcp(acpId, match.id);
-        }
-        existingByName.delete(key);
-      }
-
-      results.push(await this.persistUpload(acpId, file));
-
-      if (conflictStrategy === "keep-both") {
-        const bucket = existingByName.get(key) || [];
-        bucket.push(results[results.length - 1]);
-        existingByName.set(key, bucket);
-      } else {
-        existingByName.set(key, [results[results.length - 1]]);
-      }
-    }
-    return results;
+    return this.fileMutationService.uploadMultiple(acpId, files, options);
   }
 
   async download(id: string): Promise<{ buffer: Buffer; file: AcpFile }> {
     const file = await this.findById(id);
     try {
-      const buffer = await fs.readFile(file.filePath);
+      const buffer = await this.fileStorageService.read(file);
       return { buffer, file };
     } catch {
       throw new NotFoundException("File not found on disk");
@@ -305,7 +230,7 @@ export class FilesService {
   ): Promise<{ buffer: Buffer; file: AcpFile }> {
     const file = await this.findByIdForAcp(acpId, id);
     try {
-      const buffer = await fs.readFile(file.filePath);
+      const buffer = await this.fileStorageService.read(file);
       return { buffer, file };
     } catch {
       throw new NotFoundException("File not found on disk");
@@ -314,22 +239,14 @@ export class FilesService {
 
   async delete(id: string): Promise<void> {
     const file = await this.findById(id);
-    try {
-      await fs.unlink(file.filePath);
-    } catch {
-      // File may already be deleted from disk
-    }
     await this.fileRepository.remove(file);
+    await this.fileStorageService.removePhysicalFile(file);
   }
 
   async deleteForAcp(acpId: string, id: string): Promise<void> {
     const file = await this.findByIdForAcp(acpId, id);
-    try {
-      await fs.unlink(file.filePath);
-    } catch {
-      // File may already be deleted from disk
-    }
     await this.fileRepository.remove(file);
+    await this.fileStorageService.removePhysicalFile(file);
   }
 
   async deleteManyForAcp(acpId: string, ids: string[]): Promise<string[]> {
@@ -355,27 +272,15 @@ export class FilesService {
     }
 
     const filesToDelete = normalizedIds.map((id) => filesById.get(id)!);
-    for (const file of filesToDelete) {
-      try {
-        await fs.unlink(file.filePath);
-      } catch {
-        // File may already be deleted from disk
-      }
-    }
     await this.fileRepository.remove(filesToDelete);
+    await this.fileStorageService.removePhysicalFiles(filesToDelete);
     return normalizedIds;
   }
 
   async deleteAll(acpId: string): Promise<void> {
     const files = await this.findByAcp(acpId);
-    for (const file of files) {
-      try {
-        await fs.unlink(file.filePath);
-      } catch {
-        // File may already be deleted from disk
-      }
-    }
     await this.fileRepository.remove(files);
+    await this.fileStorageService.removePhysicalFiles(files);
   }
 
   async cleanupOrphanedResponseStates(acpId: string): Promise<{
@@ -732,36 +637,6 @@ export class FilesService {
       throw new NotFoundException(`ACP with ID ${acpId} not found`);
     }
     return acp;
-  }
-
-  private async persistUpload(
-    acpId: string,
-    uploadedFile: Express.Multer.File,
-  ): Promise<AcpFile> {
-    const acpDir = path.join(this.storagePath, acpId);
-    await fs.mkdir(acpDir, { recursive: true });
-
-    const ext = path.extname(uploadedFile.originalname);
-    const uniqueName = `${crypto.randomUUID()}${ext}`;
-    const filePath = path.join(acpDir, uniqueName);
-
-    await fs.writeFile(filePath, uploadedFile.buffer);
-
-    const checksum = crypto
-      .createHash("sha256")
-      .update(uploadedFile.buffer)
-      .digest("hex");
-
-    const file = this.fileRepository.create({
-      acpId,
-      filePath,
-      originalName: uploadedFile.originalname,
-      fileType: uploadedFile.mimetype,
-      fileSize: uploadedFile.size,
-      checksum,
-    });
-
-    return this.fileRepository.save(file);
   }
 
   private buildBasePreview(
@@ -1473,212 +1348,5 @@ export class FilesService {
       files: normalizedIds.map((id) => filesById.get(id)!),
       fileName: `acp-${acpId}-selected-files.zip`,
     };
-  }
-
-  private resolveUploadConflictStrategy(
-    conflictStrategyInput?: string,
-  ): UploadConflictStrategy {
-    const strategy = (conflictStrategyInput || "reject").trim().toLowerCase();
-    if (
-      strategy === "reject" ||
-      strategy === "overwrite" ||
-      strategy === "keep-both"
-    ) {
-      return strategy;
-    }
-    throw new BadRequestException(
-      "Invalid conflictStrategy. Expected one of: reject, overwrite, keep-both",
-    );
-  }
-
-  private async expandUploadedFiles(
-    files: Express.Multer.File[],
-  ): Promise<Express.Multer.File[]> {
-    const expandedFiles: Express.Multer.File[] = [];
-
-    for (const file of files) {
-      const incomingName = String(file?.originalname || "").trim();
-      if (!incomingName) {
-        throw new BadRequestException("All files must include a filename");
-      }
-
-      if (!this.isZipUpload(file)) {
-        expandedFiles.push(file);
-        continue;
-      }
-
-      const extractedFiles = await this.extractZipEntries(file);
-      if (!extractedFiles.length) {
-        throw new BadRequestException(
-          `ZIP archive "${incomingName}" does not contain any uploadable files`,
-        );
-      }
-
-      expandedFiles.push(...extractedFiles);
-    }
-
-    return expandedFiles;
-  }
-
-  private isZipUpload(file: Express.Multer.File): boolean {
-    const fileName = String(file?.originalname || "")
-      .trim()
-      .toLowerCase();
-    const mimeType = this.normalizeMimeType(file?.mimetype);
-    return (
-      fileName.endsWith(".zip") ||
-      mimeType === "application/zip" ||
-      mimeType === "application/x-zip-compressed"
-    );
-  }
-
-  private async extractZipEntries(
-    uploadedZip: Express.Multer.File,
-  ): Promise<Express.Multer.File[]> {
-    const JSZip = require("jszip");
-
-    let archive: any;
-    try {
-      archive = await JSZip.loadAsync(uploadedZip.buffer);
-    } catch {
-      throw new BadRequestException(
-        `ZIP archive "${uploadedZip.originalname}" could not be extracted`,
-      );
-    }
-
-    const extractedFiles: Express.Multer.File[] = [];
-    const archiveEntries = Object.values(archive.files || {});
-
-    for (const entry of archiveEntries as Array<{
-      dir?: boolean;
-      name?: string;
-    }>) {
-      if (entry?.dir) {
-        continue;
-      }
-
-      const originalEntryName = String(entry?.name || "");
-      const extractedName = this.getArchiveEntryFileName(originalEntryName);
-      if (
-        !extractedName ||
-        this.shouldSkipArchiveEntry(originalEntryName, extractedName)
-      ) {
-        continue;
-      }
-
-      const zipEntry = archive.file(originalEntryName);
-      if (!zipEntry) {
-        continue;
-      }
-
-      const buffer = Buffer.from(await zipEntry.async("nodebuffer"));
-      extractedFiles.push({
-        ...uploadedZip,
-        originalname: extractedName,
-        mimetype: this.inferMimeTypeFromFileName(extractedName),
-        size: buffer.length,
-        buffer,
-      });
-    }
-
-    return extractedFiles;
-  }
-
-  private getArchiveEntryFileName(entryName: string): string {
-    const normalizedPath = String(entryName || "")
-      .replace(/\\/g, "/")
-      .trim();
-    return path.posix.basename(normalizedPath).trim();
-  }
-
-  private shouldSkipArchiveEntry(
-    entryName: string,
-    extractedName: string,
-  ): boolean {
-    const normalizedPath = String(entryName || "")
-      .replace(/\\/g, "/")
-      .trim();
-    if (!normalizedPath) {
-      return true;
-    }
-
-    if (normalizedPath.startsWith("__MACOSX/")) {
-      return true;
-    }
-
-    return extractedName === ".DS_Store";
-  }
-
-  private inferMimeTypeFromFileName(fileName: string): string {
-    const extension = this.getFileExtension(fileName);
-
-    switch (extension) {
-      case "xml":
-        return "application/xml";
-      case "json":
-      case "voud":
-      case "vomd":
-      case "vocs":
-        return "application/json";
-      case "html":
-      case "htm":
-        return "text/html";
-      case "csv":
-        return "text/csv";
-      case "tsv":
-        return "text/tab-separated-values";
-      case "txt":
-      case "md":
-      case "log":
-      case "yml":
-      case "yaml":
-      case "ini":
-      case "properties":
-        return "text/plain";
-      case "pdf":
-        return "application/pdf";
-      case "png":
-        return "image/png";
-      case "jpg":
-      case "jpeg":
-        return "image/jpeg";
-      case "gif":
-        return "image/gif";
-      case "webp":
-        return "image/webp";
-      case "svg":
-      case "svgz":
-        return "image/svg+xml";
-      case "bmp":
-        return "image/bmp";
-      case "mp3":
-        return "audio/mpeg";
-      case "wav":
-        return "audio/wav";
-      case "ogg":
-        return "audio/ogg";
-      case "m4a":
-        return "audio/mp4";
-      case "aac":
-        return "audio/aac";
-      case "mp4":
-        return "video/mp4";
-      case "webm":
-        return "video/webm";
-      case "mov":
-        return "video/quicktime";
-      case "m4v":
-        return "video/x-m4v";
-      case "ogv":
-        return "video/ogg";
-      default:
-        return "application/octet-stream";
-    }
-  }
-
-  private normalizeFileName(fileName: string): string {
-    return String(fileName || "")
-      .trim()
-      .toLowerCase();
   }
 }

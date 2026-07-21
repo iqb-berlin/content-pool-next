@@ -5,6 +5,7 @@ import {
   Controller,
   Get,
   Logger,
+  Optional,
   Post,
   Delete,
   Param,
@@ -39,6 +40,7 @@ import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { UuidParam } from "../common/uuid-param";
+import { IndexGenerationService } from "./index-generation.service";
 
 @ApiTags("ACP Files")
 @Controller("acp/:acpId/files")
@@ -51,6 +53,7 @@ export class FilesController {
     private readonly validationService: ValidationService,
     private readonly fileProcessingJobsService: FileProcessingJobsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
+    @Optional() private readonly indexGenerationService?: IndexGenerationService,
   ) {}
 
   @Get()
@@ -63,6 +66,7 @@ export class FilesController {
     @Query("sequenceId") sequenceId?: string,
     @Request() req?: any,
     @Res({ passthrough: true }) res?: Response,
+    @Query("partId") partId?: string,
   ) {
     const isManager =
       req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
@@ -87,7 +91,9 @@ export class FilesController {
       }
 
       const archive = unitId
-        ? await this.filesService.createUnitZip(acpId, unitId)
+        ? partId
+          ? await this.filesService.createUnitZip(acpId, unitId, partId)
+          : await this.filesService.createUnitZip(acpId, unitId)
         : await this.filesService.createSequenceZip(acpId, sequenceId!);
 
       res?.setHeader("Content-Type", "application/zip");
@@ -251,6 +257,24 @@ export class FilesController {
     return unitView;
   }
 
+  @Get("unit-view/:partId/:unitId")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({ summary: "Get uploaded unit view scoped to an assessment part" })
+  async getPartUnitView(
+    @UuidParam("acpId") acpId: string,
+    @Param("partId") partId: string,
+    @Param("unitId") unitId: string,
+    @Request() req: any,
+    @Query("perspective") perspective?: string,
+  ) {
+    const isManager = this.isManagerViewContext(req, perspective);
+    if (!isManager) {
+      const featureConfig = await this.filesService.getFeatureConfig(acpId);
+      if (featureConfig.enableUnitView === false) throw new ForbiddenException("Unit view is not enabled for this ACP");
+    }
+    return this.unitParserService.getUnitViewFromFiles(acpId, unitId, undefined, "", partId);
+  }
+
   @Get("jobs/:jobId")
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles("ACP_MANAGER")
@@ -351,12 +375,26 @@ export class FilesController {
     @UuidParam("acpId") acpId: string,
     @UploadedFiles() files: Express.Multer.File[],
     @Query("conflictStrategy") conflictStrategy?: string,
+    @Body("relativePaths") relativePathsInput?: string | string[],
   ) {
+    const relativePaths = this.parseRelativePaths(relativePathsInput);
     return {
       files: await this.filesService.uploadMultiple(acpId, files, {
         conflictStrategy,
+        relativePaths,
       }),
     };
+  }
+
+  private parseRelativePaths(input?: string | string[]): string[] | undefined {
+    if (input === undefined) return undefined;
+    if (Array.isArray(input)) return input;
+    try {
+      const parsed = JSON.parse(input);
+      return Array.isArray(parsed) ? parsed.map(String) : [String(input)];
+    } catch {
+      return [String(input)];
+    }
   }
 
   @Post("bulk-download")
@@ -455,7 +493,9 @@ export class FilesController {
       "Synchronize ACP-Index from uploaded unit files (non-destructive merge)",
   })
   async syncIndex(@UuidParam("acpId") acpId: string) {
-    return this.unitParserService.syncIndexFromFiles(acpId);
+    return this.indexGenerationService
+      ? this.indexGenerationService.preview(acpId)
+      : this.unitParserService.syncIndexFromFiles(acpId);
   }
 
   @Get(":fileId/download")

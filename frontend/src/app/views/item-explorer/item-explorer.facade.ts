@@ -3840,7 +3840,10 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   downloadUnit() {
-    const url = `/api/acp/${this.acpId}/files?unitId=${this.selectedItem?.unitId}&format=zip`;
+    const partQuery = this.selectedItem?.partId
+      ? `&partId=${encodeURIComponent(this.selectedItem.partId)}`
+      : '';
+    const url = `/api/acp/${this.acpId}/files?unitId=${encodeURIComponent(this.selectedItem?.unitId || '')}${partQuery}&format=zip`;
     window.open(this.api.appendAuthToken(url), '_blank');
   }
 

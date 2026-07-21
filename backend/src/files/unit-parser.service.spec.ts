@@ -217,9 +217,9 @@ describe("UnitParserService", () => {
     expect(units[0].id).toBe("u1");
     expect(units[0].dependencies).toEqual(
       expect.arrayContaining([
-        { id: "u1.voud", type: "UNIT_DEFINITION" },
-        { id: "u1.vocs", type: "CODING_SCHEME" },
-        { id: "u1.vomd", type: "METADATA" },
+        { id: "u1.voud", type: "UNIT_UI_DEFINITION" },
+        { id: "u1.vocs", type: "UNIT_CODING_SCHEME" },
+        { id: "u1.vomd", type: "UNIT_METADATA" },
         { id: "iqb-player-aspect-2.11.6.html", type: "PLAYER" },
       ]),
     );

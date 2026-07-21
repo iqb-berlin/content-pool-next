@@ -25,6 +25,10 @@ import { FileCatalogCache } from "./file-catalog.cache";
 import { ItemListParser } from "./item-list.parser";
 import { NumberedItemListCache } from "./numbered-item-list.cache";
 import { UnitViewResolver } from "./unit-view.resolver";
+import { AcpModule } from "../acp/acp.module";
+import { SnapshotsModule } from "../snapshots/snapshots.module";
+import { IndexGenerationService } from "./index-generation.service";
+import { IndexGenerationController } from "./index-generation.controller";
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
 
@@ -45,8 +49,10 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     AuthModule,
     ValidationModule,
     ItemExplorerModule,
+    AcpModule,
+    SnapshotsModule,
   ],
-  controllers: [FilesController],
+  controllers: [FilesController, IndexGenerationController],
   providers: [
     FilesService,
     ArchiveExpansionService,
@@ -59,6 +65,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     UnitParserService,
     FileProcessingJobsService,
     ItemRowNumberingService,
+    IndexGenerationService,
   ],
   exports: [
     FilesService,

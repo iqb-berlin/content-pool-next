@@ -46,6 +46,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       }
 
       <div class="grid">
+        <a [routerLink]="['/manage', acp.id, 'index']" class="card link-card">
+          <h3>ACP-Index 0.5</h3>
+          <p>Validieren, migrieren, erzeugen und veröffentlichen</p>
+        </a>
         <a [routerLink]="['/manage', acp.id, 'files']" class="card link-card">
           <h3>📁 Dateien</h3>
           <p>Dateien hochladen, herunterladen und validieren</p>
@@ -244,11 +248,12 @@ export class DashboardComponent implements OnInit {
     reader.onload = () => {
       try {
         const data = JSON.parse(reader.result as string);
-        this.api.importAcpIndex(this.acp!.id, data).subscribe({
+        this.api.importAcpIndex(this.acp!.id, data, this.acp!.updatedAt).subscribe({
           next: (idx) => {
             this.acp!.acpIndex = idx;
             this.error = '';
             this.indexSuccessMessage = 'ACP-Index wurde importiert.';
+            this.refreshAcp();
           },
         });
       } catch {
@@ -275,18 +280,24 @@ export class DashboardComponent implements OnInit {
     this.deleteIndexError = '';
     this.indexSuccessMessage = '';
 
-    this.api.deleteAcpIndex(this.acp.id).subscribe({
+    this.api.deleteAcpIndex(this.acp.id, this.acp.updatedAt).subscribe({
       next: (idx) => {
         this.acp!.acpIndex = idx;
         this.indexSuccessMessage = 'ACP-Index wurde auf den Standardzustand zurückgesetzt.';
         this.deletingIndex = false;
         this.showDeleteIndexDialog = false;
+        this.refreshAcp();
       },
       error: (err) => {
         this.deletingIndex = false;
         this.deleteIndexError = err?.error?.message || 'Fehler beim Löschen des ACP-Index.';
       },
     });
+  }
+
+  private refreshAcp() {
+    if (!this.acp) return;
+    this.api.getAcp(this.acp.id).subscribe((acp) => (this.acp = acp));
   }
 
   assignRole() {

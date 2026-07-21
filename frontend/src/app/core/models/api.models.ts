@@ -79,6 +79,13 @@ export interface Acp {
   name: string;
   description?: string;
   acpIndex: Record<string, any>;
+  acpIndexSchemaId?: string;
+  acpIndexValidationStatus?:
+    | 'UNKNOWN'
+    | 'CONFORMANT'
+    | 'CONFORMANT_WITH_ISSUES'
+    | 'LEGACY_NONCONFORMANT';
+  acpIndexValidationReport?: AcpIndexValidationReport;
   settings: Record<string, any>;
   createdAt: string;
   updatedAt: string;
@@ -89,6 +96,7 @@ export interface AcpFile {
   acpId: string;
   filePath: string;
   originalName: string;
+  relativePath: string;
   fileType?: string;
   fileSize: number;
   checksum?: string;
@@ -102,6 +110,48 @@ export interface IndexSyncReport {
   itemsAdded: number;
   itemsUpdated: number;
   warnings: string[];
+}
+
+export interface AcpIndexValidationIssue {
+  code: string;
+  scope: 'schema' | 'semantic' | 'vocabulary' | 'file';
+  severity: 'error' | 'warning' | 'info';
+  path: string;
+  message: string;
+}
+
+export interface AcpIndexValidationReport {
+  schemaId: 'acp-index@0.5';
+  valid: boolean;
+  publishable: boolean;
+  checkedAt: string;
+  issues: AcpIndexValidationIssue[];
+  externalChecks: Array<{
+    url: string;
+    status: 'valid' | 'invalid' | 'cached' | 'unavailable';
+    checkedAt?: string;
+  }>;
+}
+
+export interface AcpIndexGenerationPreview {
+  candidateIndex: Record<string, any>;
+  validation: AcpIndexValidationReport;
+  sourceRevision: string;
+  sourceUpdatedAt: string;
+  assignments: Record<string, string>;
+  unassignedUnitPaths: string[];
+  ambiguousBooklets: Array<{ path: string; possibleParts: string[] }>;
+  warnings: string[];
+  diff: Array<{ operation: 'add' | 'remove' | 'replace'; path: string }>;
+  canApply: boolean;
+}
+
+export interface AcpIndexMigrationPreview {
+  candidateIndex: Record<string, any>;
+  changes: Array<{ path: string; message: string }>;
+  unresolved: AcpIndexValidationIssue[];
+  validation: AcpIndexValidationReport;
+  sourceUpdatedAt: string;
 }
 
 export type FileUploadConflictStrategy = 'reject' | 'overwrite' | 'keep-both';
@@ -430,6 +480,7 @@ export interface PublicAcp {
 
 export interface UnitViewData {
   id: string;
+  partId?: string;
   name: string;
   description?: string;
   lang?: string;

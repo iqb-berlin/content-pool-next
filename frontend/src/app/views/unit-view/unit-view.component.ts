@@ -458,6 +458,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
 
   acpId = '';
   unitId = '';
+  partId = '';
   unit: UnitViewData | null = null;
   playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
@@ -503,6 +504,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.unitId = this.route.snapshot.paramMap.get('unitId') || '';
+    this.partId = this.route.snapshot.paramMap.get('partId') || '';
 
     this.onWindowResize();
     window.addEventListener('resize', this.resizeHandler);
@@ -529,7 +531,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       else if (this.featureConfig.showRichText) this.activeTab = 'richtext';
     });
 
-    this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
+    this.api.getViewUnit(this.acpId, this.unitId, this.partId || undefined).subscribe((u) => {
       this.unit = u;
       this.breadcrumbs = [
         { label: 'Assessment Content Pool', route: ['/'] },

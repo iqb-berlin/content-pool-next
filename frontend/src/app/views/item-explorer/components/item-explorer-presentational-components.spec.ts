@@ -74,7 +74,7 @@ describe('ItemExplorer presentational components', () => {
     ['header fullscreen', headerTemplate, '(click)="vm.toggleFullscreen()"'],
     ['header save', headerTemplate, '(click)="vm.openSavePreviewDialog()"'],
     ['collections create', collectionsTemplate, '(click)="vm.createCollection()"'],
-    ['collections delete', collectionsTemplate, '(click)="vm.deleteActiveCollection()"'],
+    ['collections delete', collectionsTemplate, '(click)="deleteActiveCollection()"'],
     ['coding close', codingTemplate, '(click)="vm.closeCodingOverlay()"'],
     ['metadata close', metadataTemplate, '(click)="vm.setMetadataDrawerOpen(false)"'],
     ['upload close', uploadTemplate, '(click)="vm.closeUploadReport(true)"'],
@@ -88,5 +88,38 @@ describe('ItemExplorer presentational components', () => {
 
   it('gives the collection selector an accessible name', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
+  });
+
+  it('renders collection details as an accessible paginated modal', () => {
+    expect(collectionsTemplate).toContain('role="dialog"');
+    expect(collectionsTemplate).toContain('aria-modal="true"');
+    expect(collectionsTemplate).toContain('pagedCollectionItems');
+    expect(collectionsTemplate).toContain('Alle Einträge auf dieser Seite auswählen');
+    expect(collectionsTemplate).toContain('[error]="removeConfirmationError"');
+  });
+
+  it('filters and paginates large collections without exposing more than 50 rows', () => {
+    const entries = Array.from({ length: 10_000 }, (_, index) => ({
+      rowKey: `row-${index}`,
+      position: index + 1,
+      item: {
+        unitLabel: `Aufgabe ${index}`,
+        itemId: `item-${index}`,
+        subId: String(index),
+      },
+    }));
+    const vm = { activeCollectionItems: entries };
+    const component = new ItemExplorerCollectionsComponent({ collectionsViewModel: vm } as any);
+
+    expect(component.pagedCollectionItems).toHaveLength(50);
+    component.nextPage();
+    expect(component.pagedCollectionItems[0].position).toBe(51);
+
+    component.toggleCurrentPage(true);
+    expect(component.selectedCount).toBe(50);
+    component.setCollectionFilterText('item-9999');
+    expect(component.selectedCount).toBe(0);
+    expect(component.filteredCollectionItems.map((entry) => entry.rowKey)).toEqual(['row-9999']);
+    expect(component.collectionPage).toBe(1);
   });
 });

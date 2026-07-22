@@ -492,6 +492,18 @@ export interface ItemCollectionsPayload {
   collections: ItemCollection[];
 }
 
+export type ItemCollectionRowsMutation =
+  | { baseVersion: number; addRowKeys: string[]; perspective: ItemExplorerPerspective }
+  | { baseVersion: number; removeRowKeys: string[]; perspective: ItemExplorerPerspective }
+  | { baseVersion: number; clear: true; perspective: ItemExplorerPerspective };
+
+export interface ItemCollectionRowsMutationResult {
+  collectionId: string;
+  version: number;
+  updatedAt: string;
+  summary: ItemCollectionSummary;
+}
+
 export interface ItemExplorerMetadataColumns {
   visible?: string[];
   order?: string[];

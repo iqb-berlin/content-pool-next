@@ -203,9 +203,20 @@ export class ItemExplorerFacade implements OnDestroy {
   collectionLoadState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
   collectionBusy = false;
   collectionError = '';
-  showCollectionDrawer = false;
+  showCollectionDialog = false;
   private collectionSessionIdentity: string | null = null;
   private collectionSessionVersion = 0;
+  private collectionItemMapSource: ExplorerItem[] | null = null;
+  private collectionItemMap = new Map<string, ExplorerItem>();
+  private collectionItemsCacheSource: string[] | null = null;
+  private collectionItemsCacheItemSource: ExplorerItem[] | null = null;
+  private collectionItemsCache: Array<{
+    rowKey: string;
+    position: number;
+    item: ExplorerItem | null;
+  }> = [];
+  private activeCollectionSetSource: string[] | null = null;
+  private activeCollectionRowKeySet = new Set<string>();
 
   private readonly draftPatchDebounceMs = 250;
   private draftPatchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -485,12 +496,29 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get activeCollectionItems(): Array<{
     rowKey: string;
+    position: number;
     item: ExplorerItem | null;
   }> {
     const collection = this.activeItemCollection;
-    if (!collection) return [];
-    const itemMap = new Map(this.items.map((item) => [item.rowKey, item] as const));
-    return collection.rowKeys.map((rowKey) => ({ rowKey, item: itemMap.get(rowKey) || null }));
+    if (!collection) {
+      this.collectionItemsCacheSource = null;
+      this.collectionItemsCache = [];
+      return this.collectionItemsCache;
+    }
+    if (
+      this.collectionItemsCacheSource !== collection.rowKeys ||
+      this.collectionItemsCacheItemSource !== this.items
+    ) {
+      const itemMap = this.getCollectionItemMap();
+      this.collectionItemsCacheSource = collection.rowKeys;
+      this.collectionItemsCacheItemSource = this.items;
+      this.collectionItemsCache = collection.rowKeys.map((rowKey, index) => ({
+        rowKey,
+        position: index + 1,
+        item: itemMap.get(rowKey) || null,
+      }));
+    }
+    return this.collectionItemsCache;
   }
 
   get selectedPreviewTarget(): string {
@@ -812,8 +840,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.columnFilterText = value;
   }
 
-  toggleCollectionDrawer(): void {
-    this.showCollectionDrawer = !this.showCollectionDrawer;
+  openCollectionDialog(): void {
+    if (this.activeItemCollection) this.showCollectionDialog = true;
+  }
+
+  closeCollectionDialog(): void {
+    if (!this.collectionBusy) this.showCollectionDialog = false;
   }
 
   setMetadataDrawerOpen(open: boolean): void {
@@ -1190,7 +1222,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionBusy = false;
     this.collectionError = '';
     this.collectionLoadState = 'idle';
-    this.showCollectionDrawer = false;
+    this.showCollectionDialog = false;
     this.applyFilter(false);
     if (nextIdentity) {
       this.loadItemCollections();
@@ -1306,30 +1338,31 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   isItemInActiveCollection(item: ReadonlyExplorerItem): boolean {
-    return this.activeItemCollection?.rowKeys.includes(item.rowKey) === true;
+    return this.getActiveCollectionRowKeySet().has(item.rowKey);
   }
 
   async toggleItemInActiveCollection(item: ReadonlyExplorerItem) {
     let collection = this.activeItemCollection;
     if (!collection) collection = await this.createCollection();
     if (!collection) return;
-    const nextRowKeys = collection.rowKeys.includes(item.rowKey)
-      ? collection.rowKeys.filter((rowKey) => rowKey !== item.rowKey)
-      : [...collection.rowKeys, item.rowKey];
-    await this.persistActiveCollectionRows(nextRowKeys);
+    const mutation = this.getActiveCollectionRowKeySet().has(item.rowKey)
+      ? { removeRowKeys: [item.rowKey] }
+      : { addRowKeys: [item.rowKey] };
+    await this.persistActiveCollectionRowsMutation(mutation);
   }
 
-  async removeRowFromActiveCollection(rowKey: string) {
-    const collection = this.activeItemCollection;
-    if (!collection) return;
-    await this.persistActiveCollectionRows(
-      collection.rowKeys.filter((candidate) => candidate !== rowKey),
-    );
+  async removeRowFromActiveCollection(rowKey: string): Promise<boolean> {
+    return this.removeRowsFromActiveCollection([rowKey]);
   }
 
-  async clearActiveCollection() {
-    if (!this.activeItemCollection?.rowKeys.length) return;
-    await this.persistActiveCollectionRows([]);
+  async removeRowsFromActiveCollection(rowKeys: string[]): Promise<boolean> {
+    if (!rowKeys.length) return true;
+    return this.persistActiveCollectionRowsMutation({ removeRowKeys: rowKeys });
+  }
+
+  async clearActiveCollection(): Promise<boolean> {
+    if (!this.activeItemCollection?.rowKeys.length) return true;
+    return this.persistActiveCollectionRowsMutation({ clear: true });
   }
 
   async renameActiveCollection() {
@@ -1358,7 +1391,7 @@ export class ItemExplorerFacade implements OnDestroy {
       );
       if (!this.isCurrentItemCollectionSession(session)) return;
       this.applyItemCollectionsPayload(payload);
-      if (!this.activeItemCollection) this.showCollectionDrawer = false;
+      this.showCollectionDialog = false;
     } catch {
       if (!this.isCurrentItemCollectionSession(session)) return;
       this.collectionError = 'Die Auswahlliste konnte nicht gelöscht werden.';
@@ -1407,8 +1440,63 @@ export class ItemExplorerFacade implements OnDestroy {
       : `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
   }
 
-  private async persistActiveCollectionRows(rowKeys: string[]) {
-    await this.persistActiveCollectionUpdate({ rowKeys });
+  private async persistActiveCollectionRowsMutation(
+    mutation: { addRowKeys: string[] } | { removeRowKeys: string[] } | { clear: true },
+  ): Promise<boolean> {
+    const collection = this.activeItemCollection;
+    if (!collection || this.collectionBusy) return false;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return false;
+    const previous = structuredClone(collection);
+    if ('addRowKeys' in mutation) {
+      const existing = new Set(collection.rowKeys);
+      collection.rowKeys = [
+        ...collection.rowKeys,
+        ...mutation.addRowKeys.filter((rowKey) => !existing.has(rowKey)),
+      ];
+    } else if ('removeRowKeys' in mutation) {
+      const removals = new Set(mutation.removeRowKeys);
+      collection.rowKeys = collection.rowKeys.filter((rowKey) => !removals.has(rowKey));
+      collection.unavailableRowKeys = collection.unavailableRowKeys.filter(
+        (rowKey) => !removals.has(rowKey),
+      );
+    } else {
+      collection.rowKeys = [];
+      collection.unavailableRowKeys = [];
+    }
+    this.recalculateCollectionSummaries();
+    this.applyFilter(false);
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const result = await firstValueFrom(
+        this.api.mutateItemCollectionRows(this.acpId, collection.id, {
+          baseVersion: previous.version,
+          perspective: this.getPerspectiveForViewerRequests(),
+          ...mutation,
+        }),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return false;
+      const updated = this.itemCollections.find((candidate) => candidate.id === collection.id);
+      if (!updated) return false;
+      updated.version = result.version;
+      updated.updatedAt = result.updatedAt;
+      updated.summary = result.summary;
+      return true;
+    } catch (error: any) {
+      if (!this.isCurrentItemCollectionSession(session)) return false;
+      const index = this.itemCollections.findIndex((candidate) => candidate.id === previous.id);
+      if (index >= 0) this.itemCollections[index] = previous;
+      this.applyFilter(false);
+      this.collectionError =
+        error?.status === 409
+          ? 'Die Auswahlliste wurde parallel geändert und wird neu geladen.'
+          : 'Die Auswahlliste konnte nicht gespeichert werden.';
+      if (error?.status === 409) this.loadItemCollections(true);
+      return false;
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
   }
 
   private async persistActiveCollectionUpdate(update: { name?: string; rowKeys?: string[] }) {
@@ -1497,7 +1585,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private recalculateCollectionSummaries() {
-    const itemMap = new Map(this.items.map((item) => [item.rowKey, item] as const));
+    const itemMap = this.getCollectionItemMap();
     this.itemCollections = this.itemCollections.map((collection) => {
       const items = collection.rowKeys
         .map((rowKey) => itemMap.get(rowKey))
@@ -1508,6 +1596,23 @@ export class ItemExplorerFacade implements OnDestroy {
         summary: this.calculateCollectionSummary(items, collection.rowKeys.length),
       };
     });
+  }
+
+  private getCollectionItemMap(): Map<string, ExplorerItem> {
+    if (this.collectionItemMapSource !== this.items) {
+      this.collectionItemMapSource = this.items;
+      this.collectionItemMap = new Map(this.items.map((item) => [item.rowKey, item] as const));
+    }
+    return this.collectionItemMap;
+  }
+
+  private getActiveCollectionRowKeySet(): Set<string> {
+    const rowKeys = this.activeItemCollection?.rowKeys || null;
+    if (this.activeCollectionSetSource !== rowKeys) {
+      this.activeCollectionSetSource = rowKeys;
+      this.activeCollectionRowKeySet = new Set(rowKeys || []);
+    }
+    return this.activeCollectionRowKeySet;
   }
 
   private calculateCollectionSummary(

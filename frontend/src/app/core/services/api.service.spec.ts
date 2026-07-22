@@ -974,6 +974,33 @@ describe('ApiService', () => {
       );
     });
 
+    it('should mutate collection rows without sending the complete collection', () => {
+      const result = {
+        collectionId: 'collection-1',
+        version: 3,
+        updatedAt: '2026-07-22T10:00:00.000Z',
+        summary: { rowCount: 2 },
+      };
+      httpClientMock.patch.mockReturnValue(of(result));
+
+      service
+        .mutateItemCollectionRows('acp1', 'collection-1', {
+          baseVersion: 2,
+          removeRowKeys: ['uuid::1'],
+          perspective: 'read-only',
+        })
+        .subscribe((response) => expect(response).toBe(result));
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/collection-1/rows',
+        {
+          baseVersion: 2,
+          removeRowKeys: ['uuid::1'],
+          perspective: 'read-only',
+        },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

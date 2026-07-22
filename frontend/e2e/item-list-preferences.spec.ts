@@ -282,6 +282,103 @@ test('reconciles mean filters across clear, reimport, reload and credential relo
   await managerContext.close();
 });
 
+test('paginates large personal collections and removes selections across pages', async ({
+  page,
+  request,
+}) => {
+  const login = await request.post('/api/auth/login', {
+    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
+  });
+  expect(login.ok()).toBeTruthy();
+  const token = (await login.json()).accessToken as string;
+  await page.addInitScript((accessToken) => {
+    localStorage.setItem('cp_token', accessToken);
+    localStorage.setItem('cp_auth_type', 'local');
+  }, token);
+
+  const collectionId = '20000000-0000-4000-8000-000000000001';
+  const rowKeys = Array.from({ length: 51 }, (_, index) => `missing-row-${index + 1}`);
+  const summary = {
+    rowCount: rowKeys.length,
+    itemCount: 0,
+    unitCount: 0,
+    itemTimeSeconds: 0,
+    stimulusTimeSeconds: 0,
+    testTimeSeconds: 0,
+    missingItemTimeCount: 0,
+    missingStimulusTimeUnitCount: 0,
+    complete: true,
+  };
+  let removePayload: { removeRowKeys?: string[]; rowKeys?: string[] } | null = null;
+  await page.route(`**/api/view/acp/${ACP_ID}/items/collections**`, async (route) => {
+    const browserRequest = route.request();
+    const pathname = new URL(browserRequest.url()).pathname;
+    if (browserRequest.method() === 'GET' && pathname.endsWith('/items/collections')) {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          activeCollectionId: collectionId,
+          collectionViewMode: 'all',
+          collections: [
+            {
+              id: collectionId,
+              name: 'Große Auswahlliste',
+              rowKeys,
+              version: 1,
+              createdAt: '2026-07-22T10:00:00.000Z',
+              updatedAt: '2026-07-22T10:00:00.000Z',
+              unavailableRowKeys: rowKeys,
+              summary,
+            },
+          ],
+        }),
+      });
+      return;
+    }
+    if (browserRequest.method() === 'PATCH' && pathname.endsWith('/rows')) {
+      removePayload = browserRequest.postDataJSON();
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          collectionId,
+          version: 2,
+          updatedAt: '2026-07-22T10:01:00.000Z',
+          summary: { ...summary, rowCount: 49 },
+        }),
+      });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const collectionDialog = page.getByRole('dialog', { name: 'Große Auswahlliste' });
+  await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(50);
+
+  await collectionDialog.getByRole('checkbox', { name: 'Eintrag 1 auswählen' }).check();
+  await collectionDialog.getByRole('button', { name: 'Weiter' }).click();
+  await expect(collectionDialog.getByText('Seite 2 von 2')).toBeVisible();
+  await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(1);
+  await collectionDialog.getByRole('checkbox', { name: 'Eintrag 51 auswählen' }).check();
+  await expect(collectionDialog.getByText('2 ausgewählt')).toBeVisible();
+
+  await collectionDialog.getByRole('button', { name: 'Ausgewählte entfernen (2)' }).click();
+  const confirmation = page.locator('.collection-remove-confirmation');
+  await expect(confirmation).toContainText(
+    '2 Einträge aus der Auswahlliste „Große Auswahlliste“ entfernen?',
+  );
+  await confirmation.getByRole('button', { name: 'Entfernen', exact: true }).click();
+
+  await expect.poll(() => removePayload).not.toBeNull();
+  expect(removePayload).toMatchObject({
+    removeRowKeys: ['missing-row-1', 'missing-row-51'],
+  });
+  expect(removePayload?.rowKeys).toBeUndefined();
+  await expect(collectionDialog.getByText('Seite 1 von 1')).toBeVisible();
+  await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(49);
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
   request,
@@ -365,6 +462,52 @@ test('keeps positions gapless and persists the personal selection view across pe
       .check(),
   ]);
   const activeOnlyButton = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
+
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const collectionDialog = page.getByRole('dialog', { name: 'Meine Auswahlliste' });
+  await expect(collectionDialog).toBeVisible();
+  const collectionSearch = collectionDialog.getByRole('searchbox', {
+    name: 'Einträge der Auswahlliste durchsuchen',
+  });
+  await expect(collectionSearch).toBeFocused();
+  await collectionSearch.fill('ohne-treffer');
+  await expect(collectionDialog.getByText('Keine passenden Einträge.')).toBeVisible();
+  await collectionSearch.clear();
+  await collectionDialog.getByRole('checkbox', { name: 'Eintrag 1 auswählen' }).check();
+  await collectionDialog.getByRole('button', { name: 'Ausgewählte entfernen (1)' }).click();
+  const [removeResponse] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().endsWith('/rows') &&
+        response.ok(),
+    ),
+    page
+      .locator('.collection-remove-confirmation')
+      .getByRole('button', { name: 'Entfernen', exact: true })
+      .click(),
+  ]);
+  const removePayload = removeResponse.request().postDataJSON();
+  expect(removePayload.removeRowKeys).toHaveLength(1);
+  expect(removePayload.rowKeys).toBeUndefined();
+  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(collectionDialog).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeFocused();
+
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().endsWith('/rows') &&
+        response.ok(),
+    ),
+    page
+      .getByRole('checkbox', { name: /in Auswahlliste auswählen/ })
+      .first()
+      .check(),
+  ]);
+
   await Promise.all([
     page.waitForResponse(
       (response) =>

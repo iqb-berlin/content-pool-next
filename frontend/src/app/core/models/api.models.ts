@@ -552,3 +552,9 @@ export interface AuthContext {
   oidcEnabled: boolean;
   message: string;
 }
+
+export interface BuildVersion {
+  version: string;
+  commit: string;
+  builtAt: string;
+}

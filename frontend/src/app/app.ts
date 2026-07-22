@@ -3,6 +3,8 @@ import { RouterOutlet, RouterLink, Router } from '@angular/router';
 import { AuthService } from './core/services/auth.service';
 import { ApiService } from './core/services/api.service';
 import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
+import { forkJoin } from 'rxjs';
+import { BuildVersion } from './core/models/api.models';
 
 @Component({
   selector: 'app-root',
@@ -47,6 +49,13 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
     <main class="app-main">
       <router-outlet />
     </main>
+    <footer class="app-footer">
+      @if (buildVersion) {
+        <span [class.version-mismatch]="versionMismatch" [title]="versionTitle"
+          >v{{ buildVersion.version }}</span
+        >
+      }
+    </footer>
   `,
   styles: [
     `
@@ -131,6 +140,17 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
         margin: 0 auto;
         box-sizing: border-box;
       }
+      .app-footer {
+        min-height: 32px;
+        padding: 6px 24px;
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        text-align: right;
+      }
+      .version-mismatch {
+        color: var(--color-danger-text);
+        font-weight: 600;
+      }
       @media (max-width: 700px) {
         .app-header {
           height: auto;
@@ -169,6 +189,9 @@ import { applyLanguage, applyTheme } from './core/utils/app-settings.util';
   ],
 })
 export class AppComponent implements OnInit, OnDestroy {
+  buildVersion: BuildVersion | null = null;
+  versionMismatch = false;
+  versionTitle = '';
   private readonly settingsUpdatedListener = (event: Event) => {
     const customEvent = event as CustomEvent<{
       theme?: Record<string, unknown>;
@@ -206,6 +229,25 @@ export class AppComponent implements OnInit, OnDestroy {
     this.api.getPublicSettings().subscribe((settings) => {
       applyTheme(settings.theme);
       applyLanguage(settings.language);
+    });
+
+    forkJoin({
+      backend: this.api.getBackendVersion(),
+      frontend: this.api.getFrontendVersion(),
+    }).subscribe({
+      next: ({ backend, frontend }) => {
+        this.buildVersion = frontend;
+        this.versionMismatch =
+          backend.version !== frontend.version ||
+          backend.commit !== frontend.commit ||
+          backend.builtAt !== frontend.builtAt;
+        this.versionTitle = this.versionMismatch
+          ? `Versionskonflikt: Frontend ${frontend.version} (${frontend.commit}, ${frontend.builtAt}), Backend ${backend.version} (${backend.commit}, ${backend.builtAt})`
+          : `Release ${frontend.version}, Commit ${frontend.commit}, gebaut ${frontend.builtAt}`;
+      },
+      error: () => {
+        this.buildVersion = null;
+      },
     });
   }
 

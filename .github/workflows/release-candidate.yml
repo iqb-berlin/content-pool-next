@@ -1,0 +1,251 @@
+name: Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      rc_number:
+        description: Release candidate number
+        required: true
+        type: number
+      migration_classification:
+        description: Database migration compatibility
+        required: true
+        type: choice
+        options:
+          - none
+          - backward-compatible
+          - manual
+
+concurrency:
+  group: release-candidate
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-frontend
+
+jobs:
+  validate:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
+    outputs:
+      release: ${{ steps.release.outputs.release }}
+      version: ${{ steps.release.outputs.version }}
+      built_at: ${{ steps.release.outputs.built_at }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Validate canonical release metadata
+        run: ./scripts/check-release-metadata.sh
+      - name: Require master as the release source
+        run: test "$GITHUB_REF" = refs/heads/master
+      - name: Require declared migration classification
+        env:
+          EXPECTED_CLASSIFICATION: ${{ inputs.migration_classification }}
+        run: |
+          actual="$(python3 - <<'PY'
+          from pathlib import Path
+          version = Path("VERSION").read_text().strip()
+          text = Path("CHANGELOG.md").read_text()
+          section = text.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
+          for value in ("none", "backward-compatible", "manual"):
+              if f"Classification: `{value}`" in section:
+                  print(value)
+                  break
+          PY
+          )"
+          test "$actual" = "$EXPECTED_CLASSIFICATION" || {
+            echo "Workflow classification ${EXPECTED_CLASSIFICATION} differs from CHANGELOG ${actual}" >&2
+            exit 1
+          }
+      - name: Resolve release candidate
+        id: release
+        env:
+          RC_NUMBER: ${{ inputs.rc_number }}
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          release="v${version}-rc.${RC_NUMBER}"
+          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "release=${release}" >> "$GITHUB_OUTPUT"
+          echo "built_at=${built_at}" >> "$GITHUB_OUTPUT"
+      - name: Require successful quality gate for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" \
+            --jq '[.check_runs[] | select(.name == "release-gate")] | sort_by(.completed_at) | last | .conclusion // "missing"')"
+          test "$conclusion" = success || {
+            echo "release-gate for ${GITHUB_SHA} is ${conclusion}" >&2
+            exit 1
+          }
+      - name: Reject reused release candidate
+        env:
+          RELEASE: ${{ steps.release.outputs.release }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE}" >/dev/null 2>&1; then
+            echo "Tag ${RELEASE} already exists" >&2
+            exit 1
+          fi
+
+  backend:
+    name: Build and scan backend
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reject an existing candidate image
+        env:
+          RELEASE: ${{ needs.validate.outputs.release }}
+        run: |
+          ! docker buildx imagetools inspect "${BACKEND_IMAGE}:${RELEASE}" >/dev/null 2>&1
+          ! docker buildx imagetools inspect "${BACKEND_IMAGE}:sha-${GITHUB_SHA}" >/dev/null 2>&1
+      - name: Build backend once
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile.prod
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:${{ needs.validate.outputs.release }}
+            ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ needs.validate.outputs.version }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILT_AT=${{ needs.validate.outputs.built_at }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Scan published backend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+  frontend:
+    name: Build and scan frontend
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reject an existing candidate image
+        env:
+          RELEASE: ${{ needs.validate.outputs.release }}
+        run: |
+          ! docker buildx imagetools inspect "${FRONTEND_IMAGE}:${RELEASE}" >/dev/null 2>&1
+          ! docker buildx imagetools inspect "${FRONTEND_IMAGE}:sha-${GITHUB_SHA}" >/dev/null 2>&1
+      - name: Build frontend once
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.prod
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.validate.outputs.release }}
+            ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ needs.validate.outputs.version }}
+            APP_COMMIT=${{ github.sha }}
+            APP_BUILT_AT=${{ needs.validate.outputs.built_at }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+      - name: Scan published frontend image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: '1'
+
+  publish:
+    name: Publish prerelease
+    needs: [validate, backend, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Build runtime bundle and manifest
+        env:
+          RELEASE: ${{ needs.validate.outputs.release }}
+          BUILT_AT: ${{ needs.validate.outputs.built_at }}
+          BACKEND_DIGEST: ${{ needs.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ needs.frontend.outputs.digest }}
+          MIGRATION_CLASSIFICATION: ${{ inputs.migration_classification }}
+        run: |
+          mkdir -p dist
+          archive="content-pool-${RELEASE}-runtime.tar.gz"
+          ./scripts/build-runtime-bundle.sh "dist/${archive}"
+          archive_sha="$(sha256sum "dist/${archive}" | cut -d' ' -f1)"
+          ./scripts/release_manifest.py create \
+            --release "$RELEASE" \
+            --application-version "${{ needs.validate.outputs.version }}" \
+            --commit "$GITHUB_SHA" \
+            --built-at "$BUILT_AT" \
+            --backend-image "${BACKEND_IMAGE}@${BACKEND_DIGEST}" \
+            --frontend-image "${FRONTEND_IMAGE}@${FRONTEND_DIGEST}" \
+            --runtime-archive "$archive" \
+            --runtime-sha256 "$archive_sha" \
+            --migration-classification "$MIGRATION_CLASSIFICATION" \
+            --required-configuration DEPLOYMENT_ENV \
+            --required-configuration CONTENT_POOL_BACKEND_IMAGE \
+            --required-configuration CONTENT_POOL_FRONTEND_IMAGE \
+            --output dist/release-manifest.json
+          (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+      - name: Create annotated candidate tag
+        env:
+          RELEASE: ${{ needs.validate.outputs.release }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE" "$GITHUB_SHA" -m "Release candidate ${RELEASE}"
+          git push origin "refs/tags/${RELEASE}"
+      - name: Create GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ needs.validate.outputs.release }}
+        run: |
+          gh release create "$RELEASE" dist/* \
+            --verify-tag \
+            --prerelease \
+            --generate-notes \
+            --title "ContentPool ${RELEASE}"

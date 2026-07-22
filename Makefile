@@ -6,7 +6,8 @@
 	server-update-release server-traefik-update-release \
 	server-traefik-up server-traefik-update server-traefik-update-safe server-traefik-backup \
 	server-traefik-stop server-traefik-logs server-traefik-config \
-	prod-traefik prod-traefik-build prod-traefik-stop prod-traefik-logs prod-traefik-config
+	prod-traefik prod-traefik-build prod-traefik-stop prod-traefik-logs prod-traefik-config \
+	staging-update production-update staging-rollback production-rollback adopt-current restore-backup
 
 # Default target
 help: ## Show this help message
@@ -99,8 +100,9 @@ prod-clean: ## Stop and remove production containers, volumes, and images
 # Server Deployment Commands (Pre-built Images)
 # ============================================
 
-server-install: ## Prepare .env and validate a pre-built image server deployment
-	@./scripts/install.sh --mode server
+server-install: ## Install a release: make server-install RELEASE=vX.Y.Z ENVIRONMENT=production
+	@if [ -z "$(RELEASE)" ] || [ -z "$(ENVIRONMENT)" ]; then echo "Error: RELEASE and ENVIRONMENT are required"; exit 1; fi
+	@./scripts/install.sh --mode server --environment "$(ENVIRONMENT)" --release "$(RELEASE)"
 
 server-up: ## Deploy on server using pre-built images (requires .env file)
 	@echo "Deploying using pre-built images from GHCR..."
@@ -117,18 +119,39 @@ server-stop: ## Stop server deployment
 server-logs: ## View server deployment logs
 	docker compose -f docker-compose.server.yml logs -f
 
-server-update: ## Pull latest images and restart server deployment
-	@echo "Updating server deployment..."
-	docker compose -f docker-compose.server.yml pull
-	docker compose -f docker-compose.server.yml up -d
-	@echo "Server deployment updated!"
+server-update: ## Deprecated: use staging-update or production-update with RELEASE=vX.Y.Z
+	@echo "Error: choose staging-update or production-update and set RELEASE"; exit 1
 
-server-update-safe: ## Backup databases/uploads, pull images, restart, and health-check
-	@./scripts/update.sh --mode server
+server-update-safe: ## Deprecated: use staging-update or production-update with RELEASE=vX.Y.Z
+	@echo "Error: choose staging-update or production-update and set RELEASE"; exit 1
 
 server-update-release: ## Safely update server deployment to VERSION=vX.Y.Z
-	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make server-update-release VERSION=v0.1.1"; exit 1; fi
-	@./scripts/update.sh --mode server --image-version "$(VERSION)"
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make server-update-release VERSION=vX.Y.Z"; exit 1; fi
+	@./scripts/update.sh --mode server --environment production --release "$(VERSION)"
+
+staging-update: ## Deploy tested candidate: make staging-update RELEASE=vX.Y.Z-rc.N [MODE=traefik]
+	@if [ -z "$(RELEASE)" ]; then echo "Error: RELEASE is required"; exit 1; fi
+	@./scripts/update.sh $(if $(MODE),--mode "$(MODE)",) --environment staging --release "$(RELEASE)"
+
+production-update: ## Deploy stable release: make production-update RELEASE=vX.Y.Z [MODE=traefik]
+	@if [ -z "$(RELEASE)" ]; then echo "Error: RELEASE is required"; exit 1; fi
+	@./scripts/update.sh $(if $(MODE),--mode "$(MODE)",) --environment production --release "$(RELEASE)"
+
+staging-rollback: ## Explicit staging rollback: make staging-rollback RELEASE=vX.Y.Z
+	@if [ -z "$(RELEASE)" ]; then echo "Error: RELEASE is required"; exit 1; fi
+	@./scripts/update.sh $(if $(MODE),--mode "$(MODE)",) --environment staging --rollback-to "$(RELEASE)"
+
+production-rollback: ## Explicit production rollback: make production-rollback RELEASE=vX.Y.Z
+	@if [ -z "$(RELEASE)" ]; then echo "Error: RELEASE is required"; exit 1; fi
+	@./scripts/update.sh $(if $(MODE),--mode "$(MODE)",) --environment production --rollback-to "$(RELEASE)"
+
+adopt-current: ## Pin running legacy images: make adopt-current RELEASE=v0.1.3 ENVIRONMENT=production
+	@if [ -z "$(RELEASE)" ] || [ -z "$(ENVIRONMENT)" ]; then echo "Error: RELEASE and ENVIRONMENT are required"; exit 1; fi
+	@./scripts/update.sh $(if $(MODE),--mode "$(MODE)",) --environment "$(ENVIRONMENT)" --adopt-current "$(RELEASE)"
+
+restore-backup: ## Downtime restore: make restore-backup BACKUP=backups/update_... [MODE=traefik]
+	@if [ -z "$(BACKUP)" ]; then echo "Error: BACKUP is required"; exit 1; fi
+	@./scripts/restore.sh $(if $(MODE),--mode "$(MODE)",) --from-backup "$(BACKUP)"
 
 server-backup: ## Backup server deployment config, databases, and uploads
 	@./scripts/update.sh --mode server --backup-only
@@ -141,8 +164,9 @@ server-clean: ## Stop and remove server deployment
 # Traefik Edge Deployment Commands
 # ============================================
 
-server-install-traefik: ## Prepare .env and validate a pre-built image deployment behind Traefik
-	@./scripts/install.sh --mode traefik
+server-install-traefik: ## Install release behind Traefik: RELEASE=vX.Y.Z ENVIRONMENT=production
+	@if [ -z "$(RELEASE)" ] || [ -z "$(ENVIRONMENT)" ]; then echo "Error: RELEASE and ENVIRONMENT are required"; exit 1; fi
+	@./scripts/install.sh --mode traefik --environment "$(ENVIRONMENT)" --release "$(RELEASE)"
 
 server-traefik-up: ## Deploy pre-built images behind an existing Traefik edge
 	@echo "Deploying using pre-built images behind Traefik..."
@@ -152,19 +176,15 @@ server-traefik-up: ## Deploy pre-built images behind an existing Traefik edge
 	@echo "Traefik-backed server deployment complete!"
 	@echo "  Configure CONTENT_POOL_HOST, CONTENT_POOL_AUTH_HOST, and TRAEFIK_DOCKER_NETWORK in .env"
 
-server-traefik-update: ## Pull latest pre-built images and restart behind Traefik
-	@echo "Updating Traefik-backed server deployment..."
-	@if [ ! -f .env ]; then echo "Error: .env file not found. Copy .env.example to .env and configure it."; exit 1; fi
-	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml pull
-	docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml up -d
-	@echo "Traefik-backed server deployment updated!"
+server-traefik-update: ## Deprecated: use staging-update or production-update with RELEASE=vX.Y.Z
+	@echo "Error: choose staging-update or production-update and set RELEASE"; exit 1
 
-server-traefik-update-safe: ## Backup databases/uploads, pull images, restart behind Traefik, and health-check
-	@./scripts/update.sh --mode traefik
+server-traefik-update-safe: ## Deprecated: use staging-update or production-update with RELEASE=vX.Y.Z
+	@echo "Error: choose staging-update or production-update and set RELEASE"; exit 1
 
 server-traefik-update-release: ## Safely update Traefik deployment to VERSION=vX.Y.Z
 	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make server-traefik-update-release VERSION=v0.1.1"; exit 1; fi
-	@./scripts/update.sh --mode traefik --image-version "$(VERSION)"
+	@./scripts/update.sh --mode traefik --environment production --release "$(VERSION)"
 
 server-traefik-backup: ## Backup Traefik deployment config, databases, and uploads
 	@./scripts/update.sh --mode traefik --backup-only
@@ -204,31 +224,18 @@ prod-traefik-config: ## Validate/render build-on-host production deployment behi
 # ============================================
 
 build-push: ## Build and push images to GitHub Container Registry
-	@echo "Building and pushing images to GHCR..."
-	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION not set. Usage: make build-push VERSION=v1.0.0"; exit 1; fi
-	docker build -t ghcr.io/iqb-berlin/content-pool-backend:$(VERSION) -f backend/Dockerfile.prod ./backend
-	docker build -t ghcr.io/iqb-berlin/content-pool-frontend:$(VERSION) -f frontend/Dockerfile.prod ./frontend
-	docker push ghcr.io/iqb-berlin/content-pool-backend:$(VERSION)
-	docker push ghcr.io/iqb-berlin/content-pool-frontend:$(VERSION)
-	@echo "Images pushed: ghcr.io/iqb-berlin/content-pool-{backend,frontend}:$(VERSION)"
+	@echo "Error: GitHub Actions is the only release image publisher"; exit 1
 
 # ============================================
 # Database Commands
 # ============================================
 
-db-backup: ## Backup database to ./backups/backup_YYYY-MM-DD.sql
-	@mkdir -p backups
-	@echo "Creating database backup..."
-	@FILE="backups/backup_$$(date +%Y-%m-%d_%H-%M-%S).sql"; \
-	docker exec content-pool-db pg_dump -U $${POSTGRES_USER:-content_pool} $${POSTGRES_DB:-content_pool} > $$FILE && \
-	echo "Backup created: $$FILE"
+db-backup: ## Backup both databases, uploads, and runtime configuration
+	@./scripts/update.sh --backup-only
 
-db-restore: ## Restore database from file (usage: make db-restore FILE=backups/backup_xxx.sql)
-	@if [ -z "$(FILE)" ]; then echo "Error: FILE not specified. Usage: make db-restore FILE=backups/backup_xxx.sql"; exit 1; fi
-	@if [ ! -f "$(FILE)" ]; then echo "Error: File $(FILE) not found"; exit 1; fi
-	@echo "Restoring database from $(FILE)..."
-	docker exec -i content-pool-db psql -U $${POSTGRES_USER:-content_pool} $${POSTGRES_DB:-content_pool} < $(FILE)
-	@echo "Database restored!"
+db-restore: ## Restore a complete update backup: make db-restore BACKUP=backups/update_...
+	@if [ -z "$(BACKUP)" ]; then echo "Error: BACKUP is required"; exit 1; fi
+	@./scripts/restore.sh --from-backup "$(BACKUP)"
 
 db-shell: ## Open PostgreSQL shell
 	docker exec -it content-pool-db psql -U $${POSTGRES_USER:-content_pool} $${POSTGRES_DB:-content_pool}
@@ -304,10 +311,8 @@ clean: ## Remove all stopped containers, unused images, and volumes
 	docker system prune -f
 	docker volume prune -f
 
-update: ## Pull latest images and restart (production)
-	@echo "Updating production environment..."
-	docker compose -f docker-compose.prod.yml pull
-	docker compose -f docker-compose.prod.yml up -d
+update: ## Deprecated mutable-tag update
+	@echo "Error: use staging-update or production-update with RELEASE=vX.Y.Z"; exit 1
 
 # ============================================
 # Build Commands

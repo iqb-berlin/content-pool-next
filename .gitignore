@@ -9,8 +9,14 @@ keycloak/providers/*.jar
 
 # Environment
 .env
+.env.bak.*
 .env.local
 .env.*.local
+.release-manifest.json
+
+# Managed deployment state and backups (backups contain secrets)
+backups/
+deployments/
 
 # IDE
 .idea/
@@ -34,6 +40,8 @@ npm-debug.log*
 
 # Temp
 tmp/
+__pycache__/
+*.pyc
 
 # Local credential export
 non_iqb_login_password.csv

@@ -2,7 +2,7 @@
 # This file pulls images from GitHub Container Registry (no build on server)
 services:
   keycloak-db:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777}
     container_name: keycloak-db
     environment:
       POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
@@ -20,7 +20,7 @@ services:
       - keycloak-network
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.1
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:24.0.1@sha256:8e38bc8a4e0606e38a37401422dfbf414e2b73797952dfe94c9b56e2f9207897}
     container_name: keycloak
     entrypoint: ["/opt/keycloak/bin/kc.sh"]
     command: ["start", "--import-realm"]
@@ -62,7 +62,7 @@ services:
       - app-network
 
   content-pool-db:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777}
     container_name: content-pool-db
     environment:
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
@@ -80,7 +80,7 @@ services:
       - app-network
 
   content-pool-api:
-    image: ghcr.io/iqb-berlin/content-pool-backend:${IMAGE_VERSION:-latest}
+    image: ${CONTENT_POOL_BACKEND_IMAGE:?CONTENT_POOL_BACKEND_IMAGE must be a repository@sha256 digest reference}
     container_name: content-pool-api
     depends_on:
       content-pool-db:
@@ -89,6 +89,9 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      APP_VERSION: ${APPLICATION_VERSION:?APPLICATION_VERSION must be set}
+      APP_COMMIT: ${RELEASE_COMMIT:?RELEASE_COMMIT must be set}
+      APP_BUILT_AT: ${RELEASE_BUILT_AT:?RELEASE_BUILT_AT must be set}
       PORT: 3000
       DB_HOST: content-pool-db
       DB_PORT: 5432
@@ -123,7 +126,7 @@ services:
 
   nginx:
     # Frontend image includes nginx with the built Angular app
-    image: ghcr.io/iqb-berlin/content-pool-frontend:${IMAGE_VERSION:-latest}
+    image: ${CONTENT_POOL_FRONTEND_IMAGE:?CONTENT_POOL_FRONTEND_IMAGE must be a repository@sha256 digest reference}
     container_name: content-pool-nginx
     ports:
       - "${APP_PORT:-80}:80"

@@ -52,6 +52,15 @@ cp_env_get() {
   printf '%s' "$value"
 }
 
+cp_env_get_default() {
+  local file="$1"
+  local key="$2"
+  local fallback="$3"
+  local value
+  value="$(cp_env_get "$file" "$key")"
+  printf '%s' "${value:-$fallback}"
+}
+
 cp_env_set() {
   local file="$1"
   local key="$2"
@@ -116,6 +125,215 @@ cp_validate_mode() {
       cp_die "Unsupported deployment mode: $mode (expected: server or traefik)"
       ;;
   esac
+}
+
+cp_validate_environment() {
+  case "$1" in
+    staging|production) ;;
+    *) cp_die "Unsupported deployment environment: $1 (expected: staging or production)" ;;
+  esac
+}
+
+cp_validate_release_for_environment() {
+  local release="$1"
+  local environment="$2"
+  [[ "$release" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$ ]] || \
+    cp_die "Invalid release: $release"
+  if [[ "$environment" == "production" && "$release" == *-rc.* ]]; then
+    cp_die "Release candidates cannot be deployed to production"
+  fi
+}
+
+cp_release_asset_url() {
+  local repo="$1"
+  local release="$2"
+  local asset="$3"
+  printf 'https://github.com/%s/releases/download/%s/%s' "$repo" "$release" "$asset"
+}
+
+cp_download_file() {
+  local source="$1"
+  local output="$2"
+  local token="${CONTENT_POOL_GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  local curl_args=(-fsSL)
+  cp_require_cmd curl
+  if [[ -n "$token" ]]; then
+    case "$source" in
+      https://github.com/*|https://raw.githubusercontent.com/*)
+        curl_args+=(-H "Authorization: Bearer ${token}")
+        ;;
+    esac
+  fi
+  case "$source" in
+    http://*|https://*) curl "${curl_args[@]}" "$source" -o "$output" || cp_die "Download failed: $source" ;;
+    *)
+      [[ -f "$source" ]] || cp_die "File not found: $source"
+      command cp -f "$source" "$output" || cp_die "Copy failed: $source"
+      ;;
+  esac
+}
+
+cp_validate_tar_archive() {
+  local archive="$1"
+  python3 - "$archive" <<'PY'
+import posixpath
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+with tarfile.open(sys.argv[1], "r:gz") as bundle:
+    for member in bundle.getmembers():
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"unsafe archive path: {member.name}")
+        if member.issym() or member.islnk():
+            target = member.linkname
+            combined = posixpath.normpath(posixpath.join(posixpath.dirname(member.name), target))
+            if target.startswith("/") or combined == ".." or combined.startswith("../"):
+                raise SystemExit(f"unsafe archive link: {member.name} -> {target}")
+PY
+}
+
+cp_manifest_tool() {
+  local repo="$1"
+  local release="$2"
+  local candidate="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/release_manifest.py"
+  if [[ -f "$candidate" ]]; then
+    printf '%s' "$candidate"
+    return 0
+  fi
+
+  candidate="$(mktemp "${TMPDIR:-/tmp}/content-pool-release-manifest.XXXXXX.py")"
+  cp_download_file \
+    "https://raw.githubusercontent.com/${repo}/${release}/scripts/release_manifest.py" \
+    "$candidate"
+  printf '%s' "$candidate"
+}
+
+cp_manifest_get() {
+  local tool="$1"
+  local manifest="$2"
+  local field="$3"
+  python3 "$tool" get --manifest "$manifest" --field "$field" || \
+    cp_die "Could not read ${field} from release manifest"
+}
+
+cp_prepare_release() {
+  local repo="$1"
+  local release="$2"
+  local environment="$3"
+  local manifest_source="$4"
+  local work_dir="$5"
+  local tool manifest archive_name archive_path checksums_path
+
+  cp_validate_environment "$environment"
+  cp_require_cmd python3
+  cp_require_cmd tar
+  mkdir -p "$work_dir/runtime"
+  manifest="${work_dir}/release-manifest.json"
+  if [[ -n "$manifest_source" ]]; then
+    cp_download_file "$manifest_source" "$manifest"
+  else
+    cp_download_file "$(cp_release_asset_url "$repo" "$release" release-manifest.json)" "$manifest"
+  fi
+
+  tool="$(cp_manifest_tool "$repo" "$release")"
+  python3 "$tool" validate \
+    --manifest "$manifest" \
+    --expected-release "$release" \
+    --environment "$environment" || cp_die "Release manifest validation failed"
+
+  archive_name="$(cp_manifest_get "$tool" "$manifest" runtime.archive)"
+  [[ "$archive_name" == "$(basename "$archive_name")" ]] || cp_die "Unsafe runtime archive name in release manifest"
+  archive_path="${work_dir}/${archive_name}"
+  if [[ -n "$manifest_source" ]]; then
+    case "$manifest_source" in
+      http://*|https://*) cp_download_file "${manifest_source%/*}/${archive_name}" "$archive_path" ;;
+      *)
+        [[ -f "$(dirname "$manifest_source")/${archive_name}" ]] || \
+          cp_die "Runtime archive not found next to local manifest: ${archive_name}"
+        cp_download_file "$(dirname "$manifest_source")/${archive_name}" "$archive_path"
+        ;;
+    esac
+  else
+    cp_download_file "$(cp_release_asset_url "$repo" "$release" "$archive_name")" "$archive_path"
+  fi
+
+  checksums_path="${work_dir}/SHA256SUMS"
+  if [[ -n "$manifest_source" ]]; then
+    case "$manifest_source" in
+      http://*|https://*) cp_download_file "${manifest_source%/*}/SHA256SUMS" "$checksums_path" ;;
+      *) cp_download_file "$(dirname "$manifest_source")/SHA256SUMS" "$checksums_path" ;;
+    esac
+  else
+    cp_download_file "$(cp_release_asset_url "$repo" "$release" SHA256SUMS)" "$checksums_path"
+  fi
+  python3 - "$checksums_path" "$manifest" "$archive_path" <<'PY'
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+sums = {}
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    match = re.fullmatch(r"([0-9a-f]{64})\s+\*?(.+)", line)
+    if match:
+        sums[Path(match.group(2)).name] = match.group(1)
+for value in sys.argv[2:]:
+    path = Path(value)
+    expected = sums.get(path.name)
+    if expected is None:
+        raise SystemExit(f"missing checksum for {path.name}")
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise SystemExit(f"checksum mismatch for {path.name}: expected {expected}, got {actual}")
+PY
+  [[ "$?" -eq 0 ]] || cp_die "Release checksum validation failed"
+
+  python3 "$tool" validate \
+    --manifest "$manifest" \
+    --expected-release "$release" \
+    --environment "$environment" \
+    --runtime-archive "$archive_path" || cp_die "Release archive validation failed"
+
+  cp_validate_tar_archive "$archive_path" || cp_die "Unsafe runtime archive"
+  tar -xzf "$archive_path" -C "$work_dir/runtime" || cp_die "Extracting runtime archive failed"
+  printf '%s' "$tool"
+}
+
+cp_apply_manifest_env() {
+  local env_file="$1"
+  local manifest="$2"
+  local environment="$3"
+  local tool="$4"
+
+  cp_env_set "$env_file" DEPLOYMENT_ENV "$environment"
+  cp_env_set "$env_file" COMPOSE_PROJECT_NAME "content-pool-${environment}"
+  cp_env_set "$env_file" RELEASE_VERSION "$(cp_manifest_get "$tool" "$manifest" release)"
+  cp_env_set "$env_file" APPLICATION_VERSION "$(cp_manifest_get "$tool" "$manifest" applicationVersion)"
+  cp_env_set "$env_file" RELEASE_COMMIT "$(cp_manifest_get "$tool" "$manifest" sourceCommit)"
+  cp_env_set "$env_file" RELEASE_BUILT_AT "$(cp_manifest_get "$tool" "$manifest" builtAt)"
+  cp_env_set "$env_file" CONTENT_POOL_BACKEND_IMAGE "$(cp_manifest_get "$tool" "$manifest" images.backend)"
+  cp_env_set "$env_file" CONTENT_POOL_FRONTEND_IMAGE "$(cp_manifest_get "$tool" "$manifest" images.frontend)"
+}
+
+cp_validate_required_configuration() {
+  local env_file="$1"
+  local manifest="$2"
+  local key value
+  while IFS= read -r key; do
+    [[ -n "$key" ]] || continue
+    value="$(cp_env_get "$env_file" "$key")"
+    if [[ -z "$value" ]]; then
+      cp_warn "Release requires missing configuration key: $key"
+      return 1
+    fi
+  done < <(python3 - "$manifest" <<'PY'
+import json, sys
+for key in json.load(open(sys.argv[1], encoding="utf-8"))["requiredConfiguration"]:
+    print(key)
+PY
+  )
 }
 
 cp_set_compose_args() {
@@ -202,6 +420,9 @@ cp_install_runtime_artifacts() {
 
   local file
   for file in \
+    VERSION \
+    CHANGELOG.md \
+    RELEASE_CHECKLIST.md \
     .env.example \
     docker-compose.server.yml \
     docker-compose.traefik.yml \
@@ -224,6 +445,8 @@ cp_install_runtime_artifacts() {
     scripts/deploy-common.sh \
     scripts/install.sh \
     scripts/update.sh \
+    scripts/restore.sh \
+    scripts/release_manifest.py \
     scripts/make/server.mk
   do
     cp_copy_file_if_present "$source_abs" "$target_abs" "$file"

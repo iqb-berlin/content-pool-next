@@ -32,6 +32,7 @@ import {
   ItemCollectionsPayload,
   ItemExplorerPerspective,
   SimpleItemListEntry,
+  BuildVersion,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -39,6 +40,14 @@ export class ApiService {
   private readonly API = '/api';
 
   constructor(private http: HttpClient) {}
+
+  getBackendVersion(): Observable<BuildVersion> {
+    return this.http.get<BuildVersion>(`${this.API}/version`);
+  }
+
+  getFrontendVersion(): Observable<BuildVersion> {
+    return this.http.get<BuildVersion>('/version.json');
+  }
 
   // Users
   getUsers(): Observable<User[]> {

@@ -118,7 +118,7 @@ make server-up
 The scripted installer can do the first-time setup work for this mode:
 
 ```bash
-./scripts/install.sh --mode server
+./scripts/install.sh --mode server --environment production --release vX.Y.Z
 ```
 
 It creates `.env` when needed, generates production secrets, validates the
@@ -170,13 +170,14 @@ endpoints.
 The matching scripted installer is:
 
 ```bash
-./scripts/install.sh --mode traefik
+./scripts/install.sh --mode traefik --environment production --release vX.Y.Z
 ```
 
 For a release-style deployment directory without cloning the whole repository:
 
 ```bash
-./scripts/install.sh --mode traefik --dir /opt/content-pool --ref vX.Y.Z --download
+./scripts/install.sh --mode traefik --environment production \
+  --release vX.Y.Z --dir /opt/content-pool
 ```
 
 This installs only the runtime artifacts needed for the server deployment:
@@ -246,11 +247,11 @@ For a deployment directory owned by the Docker operator, use:
 mkdir -p "${CONTENT_POOL_DIR}"
 ```
 
-Before installing, verify that both prebuilt images exist for the selected tag:
+Before installing, download the release assets and verify their checksums:
 
 ```bash
-docker manifest inspect "ghcr.io/iqb-berlin/content-pool-backend:${CONTENT_POOL_VERSION}" >/dev/null
-docker manifest inspect "ghcr.io/iqb-berlin/content-pool-frontend:${CONTENT_POOL_VERSION}" >/dev/null
+gh release download "${CONTENT_POOL_VERSION}" --pattern 'release-manifest.json' --pattern 'SHA256SUMS'
+sha256sum --check --ignore-missing SHA256SUMS
 ```
 
 For long-term operations, prefer a directory owned by the Docker operator, for
@@ -268,7 +269,6 @@ curl -fsSL \
   -o "${CONTENT_POOL_DIR}-bootstrap/install.sh"
 chmod +x "${CONTENT_POOL_DIR}-bootstrap/install.sh"
 
-IMAGE_VERSION="${CONTENT_POOL_VERSION}" \
 CONTENT_POOL_HOST="${APP_HOST}" \
 CONTENT_POOL_AUTH_HOST="${APP_HOST}" \
 TRAEFIK_DOCKER_NETWORK=ingress-net \
@@ -276,16 +276,19 @@ TRAEFIK_ENTRYPOINT=websecure \
 TRAEFIK_TLS_CERTRESOLVER=acme \
 "${CONTENT_POOL_DIR}-bootstrap/install.sh" \
   --mode traefik \
+  --environment production \
+  --release "${CONTENT_POOL_VERSION}" \
   --dir "${CONTENT_POOL_DIR}" \
-  --ref "${CONTENT_POOL_VERSION}" \
-  --download \
   --non-interactive
 ```
 
 For the single-hostname setup, the generated `.env` should contain:
 
 ```bash
-IMAGE_VERSION=vX.Y.Z
+RELEASE_VERSION=vX.Y.Z
+APPLICATION_VERSION=X.Y.Z
+CONTENT_POOL_BACKEND_IMAGE=ghcr.io/iqb-berlin/content-pool-backend@sha256:...
+CONTENT_POOL_FRONTEND_IMAGE=ghcr.io/iqb-berlin/content-pool-frontend@sha256:...
 CONTENT_POOL_HOST=content-pool.example.org
 CONTENT_POOL_AUTH_HOST=content-pool.example.org
 TRAEFIK_DOCKER_NETWORK=ingress-net
@@ -485,26 +488,20 @@ Recommended values:
 - `DB_SYNCHRONIZE=false`
 - `DB_RUN_MIGRATIONS=true`
 
-Manual commands when needed:
+Reviewed forward migration when needed:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec content-pool-api npm run migration:run:dist
-docker compose -f docker-compose.prod.yml exec content-pool-api npm run migration:revert:dist
 ```
+
+Application rollback never invokes `migration:revert`. Use the complete
+downtime restore described in [Releases and Promotion](releases.md) for an
+incompatible emergency.
 
 ## Backup Basics
 
-Typical database backup commands:
-
-```bash
-docker exec content-pool-db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backup.sql
-docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > keycloak.sql
-```
-
-Keep in mind that ACP uploads live in a separate volume, so a complete backup strategy
-should include both databases and the upload volume.
-
-The update script can create this complete backup without deploying:
+Create one consistent operational backup containing custom-format dumps of
+both databases, uploads, and runtime configuration:
 
 ```bash
 ./scripts/update.sh --mode traefik --backup-only
@@ -535,33 +532,19 @@ make status
 
 ### Update
 
-```bash
-make update
-```
+Use the managed release commands; generic mutable-tag updates are disabled.
 
 For prebuilt-image server deployments, prefer the safe update wrapper:
 
 ```bash
-# with direct nginx exposure
-./scripts/update.sh --mode server
+# staging candidate
+make staging-update RELEASE=vX.Y.Z-rc.N MODE=traefik
 
-# behind Traefik
-./scripts/update.sh --mode traefik
-
-# switch to a specific image tag
-./scripts/update.sh --mode traefik --image-version vX.Y.Z
+# promoted production release
+make production-update RELEASE=vX.Y.Z MODE=traefik
 ```
 
-For a controlled release update after the `v0.1.1` pipeline is green, use the
-release target from the deployment directory:
-
-```bash
-# behind Traefik
-make server-traefik-update-release VERSION=v0.1.1
-
-# or, with direct nginx exposure
-make server-update-release VERSION=v0.1.1
-```
+Only a promoted stable GitHub Release may be deployed to production.
 
 The wrapper backs up `.env`, Compose/runtime files, both PostgreSQL databases,
 and the API upload directory before pulling images and restarting. It relies on
@@ -579,7 +562,7 @@ those commands remove the volumes that hold PostgreSQL data, Keycloak users, and
 uploads.
 
 If the post-update Keycloak user check fails, the script attempts to redeploy the
-previous image version from `.env`, stops the public `nginx` facade, and exits
+previous digest-pinned application release, stops the public `nginx` facade, and exits
 with the backup directory in the error message. Verify or restore the Keycloak
 database before starting `nginx` again.
 
@@ -590,15 +573,11 @@ inspection with the backup rather than a Keycloak-specific restore.
 For a dry run without changing containers:
 
 ```bash
-./scripts/update.sh --mode traefik --image-version v0.1.1 --dry-run
+./scripts/update.sh --mode traefik --environment production --release vX.Y.Z --dry-run
 ```
 
-If deployment artifacts changed in the release tag as well as the images, refresh
-them explicitly:
-
-```bash
-./scripts/update.sh --mode traefik --image-version v0.1.1 --refresh-artifacts --ref v0.1.1
-```
+Runtime artifacts always come from the checksummed GitHub Release bundle; they
+cannot be refreshed from `master` or an arbitrary source ref.
 
 ## Security Notes
 
@@ -614,6 +593,7 @@ For more detailed operator guidance, also read:
 - [DEPLOY.md](../../DEPLOY.md)
 - [KEYCLOAK_SETUP.md](../../KEYCLOAK_SETUP.md)
 - [RELEASE_CHECKLIST.md](../../RELEASE_CHECKLIST.md)
+- [Releases and Promotion](releases.md)
 - [Keycloak Email](keycloak-email.md)
 
 ## Related Documents

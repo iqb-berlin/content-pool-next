@@ -177,6 +177,8 @@ jobs:
           values ('11111111-1111-4111-8111-111111111111', 'compatibility-fixture', 'Compatibility fixture');
           insert into item_response_states (acp_id, item_id, unit_id, response_data)
           values ('11111111-1111-4111-8111-111111111111', 'item-1', 'unit-1', '{}');
+          insert into users (id, username)
+          values ('22222222-2222-4222-8222-222222222222', 'keycloak-only-compatibility-user');
           do $$
           begin
             if not exists (
@@ -185,6 +187,20 @@ jobs:
                 and row_key = 'unit-1::item-1'
             ) then
               raise exception 'previous-backend write compatibility failed';
+            end if;
+            if not exists (
+              select 1 from information_schema.columns
+              where table_schema = 'public'
+                and table_name = 'users'
+                and column_name = 'password_hash'
+            ) then
+              raise exception 'users.password_hash was removed before the rollback compatibility window ended';
+            end if;
+            if (
+              select password_hash from users
+              where id = '22222222-2222-4222-8222-222222222222'
+            ) is distinct from '' then
+              raise exception 'Keycloak-only user insert did not receive the legacy-compatible empty password hash';
             end if;
           end $$;
           SQL

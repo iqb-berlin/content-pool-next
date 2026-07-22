@@ -176,10 +176,12 @@ export type ItemExplorerCollectionsViewModel = ReadonlyViewModelSlice<
     | 'itemCollections'
     | 'loadItemCollections'
     | 'removeRowFromActiveCollection'
+    | 'removeRowsFromActiveCollection'
     | 'renameActiveCollection'
-    | 'showCollectionDrawer'
+    | 'showCollectionDialog'
+    | 'openCollectionDialog'
+    | 'closeCollectionDialog'
     | 'setCollectionViewMode'
-    | 'toggleCollectionDrawer'
   >
 >;
 

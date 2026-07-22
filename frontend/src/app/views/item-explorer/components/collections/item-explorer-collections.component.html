@@ -61,11 +61,12 @@
         Leeren
       </button>
       <button
+        #detailsTrigger
         class="btn btn-outline btn-sm"
         [disabled]="!vm.activeItemCollection || vm.collectionBusy"
-        (click)="vm.toggleCollectionDrawer()"
+        (click)="openDetails(detailsTrigger)"
       >
-        {{ vm.showCollectionDrawer ? 'Details schließen' : 'Details' }}
+        Details
       </button>
       @if (vm.activeItemCollection; as collection) {
         <span class="collection-summary">
@@ -85,45 +86,203 @@
   @if (vm.collectionError && vm.collectionLoadState !== 'error') {
     <div class="alert alert-error collection-error">{{ vm.collectionError }}</div>
   }
-  @if (vm.showCollectionDrawer && vm.activeItemCollection) {
-    <div class="collection-drawer">
-      <div class="collection-drawer-header">
-        <strong>{{ vm.activeItemCollection.name }}</strong>
-        <div>
-          <button class="btn btn-outline btn-sm" (click)="vm.exportActiveCollection()">
-            CSV exportieren
+  @if (vm.showCollectionDialog && vm.activeItemCollection; as collection) {
+    <div class="collection-modal-backdrop" (click)="closeDetails()">
+      <div
+        #collectionDialog
+        class="collection-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="collection-dialog-title"
+        aria-describedby="collection-dialog-summary"
+        (click)="$event.stopPropagation()"
+      >
+        <header class="collection-modal-header">
+          <div>
+            <h2 id="collection-dialog-title">{{ collection.name }}</h2>
+            <p id="collection-dialog-summary">
+              <strong>{{ vm.formatDuration(collection.summary.testTimeSeconds) }}</strong>
+              · {{ collection.summary.rowCount }} Zeilen · {{ collection.summary.itemCount }} Items
+              · {{ collection.summary.unitCount }} Units
+            </p>
+          </div>
+          <button
+            class="btn btn-outline btn-sm collection-close-button"
+            type="button"
+            aria-label="Details schließen"
+            [disabled]="vm.collectionBusy"
+            (click)="closeDetails()"
+          >
+            ✕
           </button>
-          <button class="btn btn-danger btn-sm" (click)="vm.deleteActiveCollection()">
-            Auswahlliste löschen
-          </button>
+        </header>
+
+        <div class="collection-modal-toolbar">
+          <input
+            #collectionSearch
+            class="filter-input"
+            type="search"
+            [ngModel]="collectionFilterText"
+            (ngModelChange)="setCollectionFilterText($event)"
+            placeholder="🔍 Aufgabe, Item-ID, Sub-ID oder Zeilenschlüssel suchen …"
+            aria-label="Einträge der Auswahlliste durchsuchen"
+          />
+          <div class="collection-modal-actions">
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              [disabled]="vm.collectionBusy"
+              (click)="vm.exportActiveCollection()"
+            >
+              CSV exportieren
+            </button>
+            <button
+              class="btn btn-danger btn-sm"
+              type="button"
+              [disabled]="vm.collectionBusy"
+              (click)="deleteActiveCollection()"
+            >
+              Auswahlliste löschen
+            </button>
+          </div>
         </div>
-      </div>
-      @if (vm.activeCollectionItems.length === 0) {
-        <p class="help-text">Noch keine Items ausgewählt.</p>
-      } @else {
-        <ol class="collection-items">
-          @for (entry of vm.activeCollectionItems; track entry.rowKey) {
-            <li>
-              @if (entry.item) {
-                <span>
-                  {{ entry.item.unitLabel }} · {{ entry.item.itemId }}
-                  @if (entry.item.subIdDisplay || entry.item.subId) {
-                    · {{ entry.item.subIdDisplay || entry.item.subId }}
-                  }
-                </span>
-              } @else {
-                <span class="collection-warning">Nicht verfügbar: {{ entry.rowKey }}</span>
-              }
-              <button
-                class="btn btn-outline btn-sm"
-                (click)="vm.removeRowFromActiveCollection(entry.rowKey)"
-              >
-                Entfernen
-              </button>
-            </li>
+
+        @if (vm.collectionError) {
+          <div class="alert alert-error collection-modal-error" role="alert">
+            {{ vm.collectionError }}
+          </div>
+        }
+
+        <div class="collection-modal-content">
+          @if (vm.activeCollectionItems.length === 0) {
+            <div class="collection-modal-empty">
+              <strong>Noch keine Items ausgewählt.</strong>
+              <span>Fügen Sie Items über die Checkboxen der Itemtabelle hinzu.</span>
+            </div>
+          } @else if (filteredCollectionItems.length === 0) {
+            <div class="collection-modal-empty">
+              <strong>Keine passenden Einträge.</strong>
+              <span>Ändern oder löschen Sie den Suchbegriff.</span>
+            </div>
+          } @else {
+            <table class="collection-table">
+              <thead>
+                <tr>
+                  <th class="collection-check-col">
+                    <input
+                      type="checkbox"
+                      aria-label="Alle Einträge auf dieser Seite auswählen"
+                      [checked]="currentPageFullySelected"
+                      [indeterminate]="currentPagePartiallySelected"
+                      [disabled]="vm.collectionBusy"
+                      (change)="toggleCurrentPage($any($event.target).checked)"
+                    />
+                  </th>
+                  <th class="collection-position-col">Pos.</th>
+                  <th>Aufgabe</th>
+                  <th>Item-ID</th>
+                  <th>Sub-ID</th>
+                  <th>Status</th>
+                  <th class="collection-action-col"><span class="sr-only">Aktion</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (entry of pagedCollectionItems; track entry.rowKey) {
+                  <tr [class.collection-unavailable-row]="!entry.item">
+                    <td class="collection-check-col">
+                      <input
+                        type="checkbox"
+                        [attr.aria-label]="'Eintrag ' + entry.position + ' auswählen'"
+                        [checked]="selectedRowKeys.has(entry.rowKey)"
+                        [disabled]="vm.collectionBusy"
+                        (change)="toggleRowSelection(entry.rowKey, $any($event.target).checked)"
+                      />
+                    </td>
+                    <td class="collection-position-col">{{ entry.position }}</td>
+                    @if (entry.item) {
+                      <td>{{ entry.item.unitLabel }}</td>
+                      <td>
+                        <code>{{ entry.item.itemId }}</code>
+                      </td>
+                      <td>{{ entry.item.subIdDisplay || entry.item.subId || '–' }}</td>
+                      <td><span class="collection-available">Verfügbar</span></td>
+                    } @else {
+                      <td colspan="3">
+                        <code>{{ entry.rowKey }}</code>
+                      </td>
+                      <td><span class="collection-warning">Nicht verfügbar</span></td>
+                    }
+                    <td class="collection-action-col">
+                      <button
+                        class="btn btn-outline btn-sm"
+                        type="button"
+                        [disabled]="vm.collectionBusy"
+                        [attr.aria-label]="'Eintrag ' + entry.position + ' entfernen'"
+                        (click)="removeOne(entry.rowKey)"
+                      >
+                        Entfernen
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           }
-        </ol>
-      }
+        </div>
+
+        <footer class="collection-modal-footer">
+          <div class="collection-result-summary" aria-live="polite">
+            {{ filteredCollectionItems.length }} Treffer
+            @if (selectedCount > 0) {
+              · {{ selectedCount }} ausgewählt
+            }
+          </div>
+          <div class="collection-pagination" aria-label="Seitennavigation">
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              [disabled]="collectionPage <= 1 || vm.collectionBusy"
+              (click)="previousPage()"
+            >
+              Zurück
+            </button>
+            <span>Seite {{ collectionPage }} von {{ collectionPageCount }}</span>
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              [disabled]="collectionPage >= collectionPageCount || vm.collectionBusy"
+              (click)="nextPage()"
+            >
+              Weiter
+            </button>
+          </div>
+          <button
+            #removeSelectedButton
+            class="btn btn-danger btn-sm"
+            type="button"
+            [disabled]="selectedCount === 0 || vm.collectionBusy"
+            (click)="openRemoveConfirmation()"
+          >
+            Ausgewählte entfernen ({{ selectedCount }})
+          </button>
+        </footer>
+      </div>
     </div>
+
+    <app-confirm-dialog
+      #removeConfirmation
+      class="collection-remove-confirmation"
+      [open]="showRemoveConfirmation"
+      title="Einträge entfernen"
+      [message]="
+        selectedCount + ' Einträge aus der Auswahlliste „' + collection.name + '“ entfernen?'
+      "
+      confirmLabel="Entfernen"
+      [busy]="vm.collectionBusy"
+      [error]="removeConfirmationError"
+      busyLabel="Wird entfernt …"
+      (confirmed)="confirmRemoveSelected()"
+      (cancelled)="cancelRemoveConfirmation()"
+    />
   }
 }

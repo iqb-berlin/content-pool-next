@@ -17,6 +17,8 @@ import {
 } from "../item-explorer/item-export-projection";
 import {
   ItemCollectionState,
+  ItemCollectionRowsMutation,
+  ItemCollectionRowsMutationResult,
   ItemCollectionSummary,
   ItemCollectionViewMode,
   ItemCollectionsPayload,
@@ -146,6 +148,128 @@ export class ItemCollectionsService {
       },
     );
     return this.resolveViews(acpId, state, canEditExplorerState);
+  }
+
+  async mutateItemCollectionRows(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    collectionId: string,
+    mutation: ItemCollectionRowsMutation,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionRowsMutationResult> {
+    const actions = [
+      mutation.addRowKeys !== undefined,
+      mutation.removeRowKeys !== undefined,
+      mutation.clear !== undefined,
+    ].filter(Boolean).length;
+    if (
+      actions !== 1 ||
+      (mutation.clear !== undefined && mutation.clear !== true)
+    ) {
+      throw new BadRequestException(
+        "Exactly one collection row mutation is required",
+      );
+    }
+
+    const addRowKeys =
+      mutation.addRowKeys === undefined
+        ? undefined
+        : this.normalizeRowKeys(mutation.addRowKeys);
+    const removeRowKeys =
+      mutation.removeRowKeys === undefined
+        ? undefined
+        : this.normalizeRowKeys(mutation.removeRowKeys);
+    let knownRowKeys: ReadonlySet<string> | undefined;
+    if (addRowKeys !== undefined) {
+      const explorerState =
+        await this.itemExplorerStateService.getStateForViewer(
+          acpId,
+          canEditExplorerState,
+        );
+      knownRowKeys = await this.unitParserService.getItemRowKeysFromFiles(
+        acpId,
+        {
+          itemPropertiesOverride: explorerState.activeState.itemProperties,
+          publishedItemPropertiesOverride:
+            explorerState.publishedState.itemProperties,
+        },
+      );
+    }
+
+    const baseVersion = Number(mutation.baseVersion);
+    const state = await this.mutateState(
+      acpId,
+      identity,
+      false,
+      (lockedState) => {
+        const collection = lockedState.collections.find(
+          (candidate) => candidate.id === collectionId,
+        );
+        if (!collection) {
+          throw new NotFoundException("Item collection not found");
+        }
+        if (
+          !Number.isInteger(baseVersion) ||
+          baseVersion !== collection.version
+        ) {
+          throw new ConflictException(
+            "The item collection changed concurrently",
+          );
+        }
+
+        let nextRowKeys = collection.rowKeys;
+        if (addRowKeys !== undefined && knownRowKeys) {
+          const existing = new Set(collection.rowKeys);
+          const additions = addRowKeys.filter(
+            (rowKey) => !existing.has(rowKey),
+          );
+          const invalidRowKey = additions.find(
+            (rowKey) => !knownRowKeys!.has(rowKey),
+          );
+          if (invalidRowKey) {
+            throw new BadRequestException(
+              "Collections can only add existing item rows",
+            );
+          }
+          if (
+            collection.rowKeys.length + additions.length >
+            MAX_COLLECTION_ROWS
+          ) {
+            throw new BadRequestException(
+              `At most ${MAX_COLLECTION_ROWS} item rows can be stored in a collection`,
+            );
+          }
+          if (additions.length)
+            nextRowKeys = [...collection.rowKeys, ...additions];
+        } else if (removeRowKeys !== undefined) {
+          const removals = new Set(removeRowKeys);
+          nextRowKeys = collection.rowKeys.filter(
+            (rowKey) => !removals.has(rowKey),
+          );
+        } else if (mutation.clear === true && collection.rowKeys.length) {
+          nextRowKeys = [];
+        }
+
+        const changed =
+          nextRowKeys.length !== collection.rowKeys.length ||
+          nextRowKeys.some(
+            (rowKey, index) => rowKey !== collection.rowKeys[index],
+          );
+        if (!changed) return;
+        collection.rowKeys = nextRowKeys;
+        collection.version += 1;
+        collection.updatedAt = new Date().toISOString();
+      },
+    );
+    const collection = state.collections.find(
+      (candidate) => candidate.id === collectionId,
+    );
+    if (!collection) throw new NotFoundException("Item collection not found");
+    return this.resolveRowsMutationResult(
+      acpId,
+      collection,
+      canEditExplorerState,
+    );
   }
 
   async activateItemCollection(
@@ -417,6 +541,34 @@ export class ItemCollectionsService {
           summary: this.calculateSummary(items, collection.rowKeys.length),
         };
       }),
+    };
+  }
+
+  private async resolveRowsMutationResult(
+    acpId: string,
+    collection: StoredItemCollection,
+    canEditExplorerState: boolean,
+  ): Promise<ItemCollectionRowsMutationResult> {
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    const items = collection.rowKeys
+      .map((rowKey) => itemsByRowKey.get(rowKey))
+      .filter((item): item is VomdItemData => Boolean(item));
+    return {
+      collectionId: collection.id,
+      version: collection.version,
+      updatedAt: collection.updatedAt,
+      summary: this.calculateSummary(items, collection.rowKeys.length),
     };
   }
 

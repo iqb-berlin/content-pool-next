@@ -352,37 +352,6 @@ app-item-explorer {
     margin: 6px 12px;
   }
 
-  .collection-drawer {
-    padding: 12px;
-    border-bottom: 1px solid var(--color-border);
-    background: var(--color-surface);
-    max-height: 240px;
-    overflow: auto;
-    flex-shrink: 0;
-  }
-
-  .collection-drawer-header,
-  .collection-items li {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 10px;
-  }
-
-  .collection-drawer-header > div {
-    display: flex;
-    gap: 6px;
-  }
-
-  .collection-items {
-    margin: 10px 0 0;
-    padding-left: 24px;
-  }
-
-  .collection-items li {
-    padding: 5px 0;
-  }
-
   .collection-select-col {
     width: 38px;
     min-width: 38px;

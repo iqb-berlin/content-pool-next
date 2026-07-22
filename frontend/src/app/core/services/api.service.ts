@@ -30,6 +30,8 @@ import {
   FilePreviewResponse,
   FileDeletionResponse,
   ItemCollectionsPayload,
+  ItemCollectionRowsMutation,
+  ItemCollectionRowsMutationResult,
   ItemExplorerPerspective,
   SimpleItemListEntry,
   BuildVersion,
@@ -636,6 +638,17 @@ export class ApiService {
     return this.http.patch<ItemCollectionsPayload>(
       `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}`,
       { ...update, perspective },
+    );
+  }
+
+  mutateItemCollectionRows(
+    acpId: string,
+    collectionId: string,
+    mutation: ItemCollectionRowsMutation,
+  ): Observable<ItemCollectionRowsMutationResult> {
+    return this.http.patch<ItemCollectionRowsMutationResult>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}/rows`,
+      mutation,
     );
   }
 

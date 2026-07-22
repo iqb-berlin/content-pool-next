@@ -25,6 +25,7 @@ import {
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
@@ -179,6 +180,80 @@ class UpdateItemCollectionDto {
   @IsOptional()
   @IsIn(["editor", "read-only"])
   perspective?: "editor" | "read-only";
+}
+
+class MutateItemCollectionRowsDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  baseVersion!: number;
+
+  @ApiPropertyOptional({ type: [String], maxItems: 10_000 })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  addRowKeys?: string[];
+
+  @ApiPropertyOptional({ type: [String], maxItems: 10_000 })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  removeRowKeys?: string[];
+
+  @ApiPropertyOptional({ enum: [true] })
+  @IsOptional()
+  @IsBoolean()
+  clear?: boolean;
+
+  @ApiPropertyOptional({ enum: ["editor", "read-only"] })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class ItemCollectionSummaryDto {
+  @ApiProperty()
+  rowCount!: number;
+
+  @ApiProperty()
+  itemCount!: number;
+
+  @ApiProperty()
+  unitCount!: number;
+
+  @ApiProperty()
+  itemTimeSeconds!: number;
+
+  @ApiProperty()
+  stimulusTimeSeconds!: number;
+
+  @ApiProperty()
+  testTimeSeconds!: number;
+
+  @ApiProperty()
+  missingItemTimeCount!: number;
+
+  @ApiProperty()
+  missingStimulusTimeUnitCount!: number;
+
+  @ApiProperty()
+  complete!: boolean;
+}
+
+class ItemCollectionRowsMutationResultDto {
+  @ApiProperty({ format: "uuid" })
+  collectionId!: string;
+
+  @ApiProperty()
+  version!: number;
+
+  @ApiProperty({ format: "date-time" })
+  updatedAt!: string;
+
+  @ApiProperty({ type: () => ItemCollectionSummaryDto })
+  summary!: ItemCollectionSummaryDto;
 }
 
 class ActivateItemCollectionDto {
@@ -503,6 +578,28 @@ export class ViewsController {
   ) {
     await this.assertItemCollectionsEnabled(acpId, req);
     return this.itemCollectionsService.updateItemCollection(
+      acpId,
+      this.requireCollectionIdentity(req),
+      collectionId,
+      dto,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Patch("acp/:acpId/items/collections/:collectionId/rows")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({
+    summary: "Add, remove, or clear personal item collection rows",
+  })
+  @ApiOkResponse({ type: ItemCollectionRowsMutationResultDto })
+  async mutateItemCollectionRows(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
+    @Body() dto: MutateItemCollectionRowsDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId, req);
+    return this.itemCollectionsService.mutateItemCollectionRows(
       acpId,
       this.requireCollectionIdentity(req),
       collectionId,

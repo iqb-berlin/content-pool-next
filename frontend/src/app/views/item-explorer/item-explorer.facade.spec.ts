@@ -3793,34 +3793,27 @@ describe('ItemExplorerFacade', () => {
   });
 
   it('persists selection changes against the active collection version', async () => {
-    const response = {
-      activeCollectionId: 'collection-1',
-      collections: [
-        {
-          id: 'collection-1',
-          name: 'Auswahl',
-          rowKeys: ['uuid-1'],
-          version: 2,
-          createdAt: '',
-          updatedAt: '',
-          unavailableRowKeys: [],
-          summary: {
-            rowCount: 1,
-            itemCount: 1,
-            unitCount: 1,
-            itemTimeSeconds: 10,
-            stimulusTimeSeconds: 5,
-            testTimeSeconds: 15,
-            missingItemTimeCount: 0,
-            missingStimulusTimeUnitCount: 0,
-            complete: true,
-          },
-        },
-      ],
+    const summary = {
+      rowCount: 1,
+      itemCount: 1,
+      unitCount: 1,
+      itemTimeSeconds: 10,
+      stimulusTimeSeconds: 5,
+      testTimeSeconds: 15,
+      missingItemTimeCount: 0,
+      missingStimulusTimeUnitCount: 0,
+      complete: true,
     };
-    const updateItemCollection = vi.fn().mockReturnValue(of(response));
+    const mutateItemCollectionRows = vi.fn().mockReturnValue(
+      of({
+        collectionId: 'collection-1',
+        version: 2,
+        updatedAt: '2026-07-22T10:00:00.000Z',
+        summary,
+      }),
+    );
     const component = createFacade({
-      api: { updateItemCollection },
+      api: { mutateItemCollectionRows },
       authService: { isLoggedIn: true },
     });
     const item = {
@@ -3839,10 +3832,14 @@ describe('ItemExplorerFacade', () => {
     component.items = [item];
     component.itemCollections = [
       {
-        ...response.collections[0],
+        id: 'collection-1',
+        name: 'Auswahl',
         rowKeys: [],
         version: 1,
-        summary: { ...response.collections[0].summary, rowCount: 0 },
+        createdAt: '',
+        updatedAt: '',
+        unavailableRowKeys: [],
+        summary: { ...summary, rowCount: 0 },
       },
     ];
     component.activeCollectionId = 'collection-1';
@@ -3850,13 +3847,105 @@ describe('ItemExplorerFacade', () => {
 
     await component.toggleItemInActiveCollection(item);
 
-    expect(updateItemCollection).toHaveBeenCalledWith(
-      'acp-1',
-      'collection-1',
-      { baseVersion: 1, rowKeys: ['uuid-1'] },
-      'read-only',
-    );
+    expect(mutateItemCollectionRows).toHaveBeenCalledWith('acp-1', 'collection-1', {
+      baseVersion: 1,
+      addRowKeys: ['uuid-1'],
+      perspective: 'read-only',
+    });
     expect(component.activeItemCollection?.version).toBe(2);
+    expect(component.activeItemCollection?.rowKeys).toEqual(['uuid-1']);
+  });
+
+  it('caches collection item lookups and membership sets until their sources change', () => {
+    const component = createFacade();
+    const item = {
+      itemId: 'item-1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'unit-1',
+      unitLabel: 'Aufgabe 1',
+      description: '',
+      variableId: 'v1',
+      metadata: {},
+    };
+    component.items = [item];
+    component.itemCollections = [
+      {
+        id: 'collection-1',
+        name: 'Auswahl',
+        rowKeys: ['uuid-1'],
+        version: 1,
+        createdAt: '',
+        updatedAt: '',
+        unavailableRowKeys: [],
+        summary: {} as any,
+      },
+    ];
+    component.activeCollectionId = 'collection-1';
+
+    const firstEntries = component.activeCollectionItems;
+    expect(component.activeCollectionItems).toBe(firstEntries);
+    expect(component.isItemInActiveCollection(item)).toBe(true);
+
+    component.activeItemCollection!.rowKeys = [];
+    expect(component.activeCollectionItems).not.toBe(firstEntries);
+    expect(component.isItemInActiveCollection(item)).toBe(false);
+  });
+
+  it('rolls back failed batch removals and sends clear as a compact mutation', async () => {
+    const summary = {
+      rowCount: 2,
+      itemCount: 2,
+      unitCount: 1,
+      itemTimeSeconds: 0,
+      stimulusTimeSeconds: 0,
+      testTimeSeconds: 0,
+      missingItemTimeCount: 2,
+      missingStimulusTimeUnitCount: 1,
+      complete: false,
+    };
+    const mutateItemCollectionRows = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ status: 500 })))
+      .mockReturnValueOnce(
+        of({
+          collectionId: 'collection-1',
+          version: 2,
+          updatedAt: '2026-07-22T10:00:00.000Z',
+          summary: { ...summary, rowCount: 0, itemCount: 0, unitCount: 0 },
+        }),
+      );
+    const component = createFacade({
+      api: { mutateItemCollectionRows },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.itemCollections = [
+      {
+        id: 'collection-1',
+        name: 'Auswahl',
+        rowKeys: ['row-1', 'row-2'],
+        version: 1,
+        createdAt: '',
+        updatedAt: '',
+        unavailableRowKeys: ['row-2'],
+        summary,
+      },
+    ];
+    component.activeCollectionId = 'collection-1';
+
+    await expect(component.removeRowsFromActiveCollection(['row-1', 'row-2'])).resolves.toBe(false);
+    expect(component.activeItemCollection?.rowKeys).toEqual(['row-1', 'row-2']);
+    expect(component.activeItemCollection?.unavailableRowKeys).toEqual(['row-2']);
+    expect(component.collectionError).toContain('konnte nicht gespeichert werden');
+
+    await expect(component.clearActiveCollection()).resolves.toBe(true);
+    expect(mutateItemCollectionRows).toHaveBeenLastCalledWith('acp-1', 'collection-1', {
+      baseVersion: 1,
+      clear: true,
+      perspective: 'read-only',
+    });
+    expect(component.activeItemCollection?.rowKeys).toEqual([]);
   });
 
   it('persists and applies the active personal selection view after base visibility rules', async () => {

@@ -52,6 +52,8 @@ docker exec "$app_container" pg_dump --format=custom -U postgres content_pool \
   >"${temp_dir}/content-pool-db.dump"
 docker exec "$keycloak_container" pg_dump --format=custom -U postgres keycloak \
   >"${temp_dir}/keycloak-db.dump"
+docker exec -i "$app_container" pg_restore --list <"${temp_dir}/content-pool-db.dump" >/dev/null
+docker exec -i "$keycloak_container" pg_restore --list <"${temp_dir}/keycloak-db.dump" >/dev/null
 
 docker exec -i "$app_container" psql -v ON_ERROR_STOP=1 -U postgres -d content_pool \
   -c 'drop table restore_probe'

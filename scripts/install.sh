@@ -60,6 +60,8 @@ Options:
   --environment staging|production  Isolated target environment (required)
   --release VERSION                 Release or candidate, for example v0.2.0-rc.1 (required)
   --manifest FILE|URL               Alternate release-manifest.json source
+  --compose-override FILE           Additional Compose file for an isolated deployment
+  --base-url URL                    Public/frontend URL used by server-mode health checks
   --repo OWNER/REPO                 GitHub repository (default: iqb-berlin/content-pool-next)
   --download                        Deprecated compatibility flag; release assets are always used
   --start                           Start the stack after validation
@@ -320,6 +322,8 @@ REPO="$BOOTSTRAP_REPO"
 ENVIRONMENT="${DEPLOYMENT_ENV:-}"
 RELEASE=""
 MANIFEST_SOURCE=""
+COMPOSE_OVERRIDE=""
+BASE_URL=""
 START=0
 NON_INTERACTIVE=0
 FORCE_ENV=0
@@ -365,6 +369,22 @@ while [[ $# -gt 0 ]]; do
       ;;
     --manifest=*)
       MANIFEST_SOURCE="${1#*=}"
+      shift
+      ;;
+    --compose-override)
+      COMPOSE_OVERRIDE="$2"
+      shift 2
+      ;;
+    --compose-override=*)
+      COMPOSE_OVERRIDE="${1#*=}"
+      shift
+      ;;
+    --base-url)
+      BASE_URL="$2"
+      shift 2
+      ;;
+    --base-url=*)
+      BASE_URL="${1#*=}"
       shift
       ;;
     --repo)
@@ -416,6 +436,10 @@ cp_validate_mode "$MODE"
 cp_validate_environment "$ENVIRONMENT"
 [[ -n "$RELEASE" ]] || cp_die "--release vX.Y.Z[-rc.N] is required"
 cp_validate_release_for_environment "$RELEASE" "$ENVIRONMENT"
+if [[ -n "$COMPOSE_OVERRIDE" ]]; then
+  [[ -f "$COMPOSE_OVERRIDE" ]] || cp_die "Compose override not found: $COMPOSE_OVERRIDE"
+  COMPOSE_OVERRIDE="$(cd "$(dirname "$COMPOSE_OVERRIDE")" && pwd -P)/$(basename "$COMPOSE_OVERRIDE")"
+fi
 
 if [[ -z "$TARGET_DIR" ]]; then
   if [[ "$NON_INTERACTIVE" -eq 1 ]] || ! is_tty; then
@@ -470,7 +494,7 @@ fi
 cp_info "Validating Docker Compose configuration"
 (
   cd "$TARGET_DIR"
-  cp_set_compose_args "$MODE"
+  cp_set_compose_args "$MODE" "$COMPOSE_OVERRIDE"
   docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" config >/dev/null
 )
 
@@ -480,14 +504,18 @@ if [[ "$START" -eq 1 ]]; then
   cp_info "Starting and verifying ContentPool (${MODE})"
   (
     cd "$TARGET_DIR"
-    ./scripts/update.sh \
-      --mode "$MODE" \
-      --environment "$ENVIRONMENT" \
-      --release "$RELEASE" \
-      --manifest "${RELEASE_WORK_DIR}/release-manifest.json" \
-      --no-backup \
-      --no-keycloak-user-check \
+    update_args=(
+      --mode "$MODE"
+      --environment "$ENVIRONMENT"
+      --release "$RELEASE"
+      --manifest "${RELEASE_WORK_DIR}/release-manifest.json"
+      --no-backup
+      --no-keycloak-user-check
       --yes
+    )
+    [[ -z "$COMPOSE_OVERRIDE" ]] || update_args+=(--compose-override "$COMPOSE_OVERRIDE")
+    [[ -z "$BASE_URL" ]] || update_args+=(--base-url "$BASE_URL")
+    ./scripts/update.sh "${update_args[@]}"
   )
 fi
 

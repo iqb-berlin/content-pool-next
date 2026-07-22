@@ -15,6 +15,7 @@ decision in the release issue or operational change record.
 
 - [ ] Staging uses its own Compose project, data, volumes, domains, and secrets
 - [ ] Managed update created complete database/config/upload backups
+- [ ] Backup checksums, both tar archives, and both PostgreSQL dump catalogs validate
 - [ ] `/api/version` and `/version.json` match the candidate manifest
 - [ ] OIDC login and logout work
 - [ ] ACP create/update, file upload, public/read view, and Item Explorer smoke tests pass
@@ -34,6 +35,7 @@ decision in the release issue or operational change record.
 
 - [ ] `.env` has `DEPLOYMENT_ENV=production`, `DB_SYNCHRONIZE=false`, and `DB_RUN_MIGRATIONS=true`
 - [ ] Full backup and deployment JSON record were created
+- [ ] Adopted Compose project and exact previous image digests are recorded locally
 - [ ] Compose configuration validates and images are pulled by digest
 - [ ] Health, readiness, Keycloak discovery, and version identity pass
 - [ ] Keycloak user count did not decrease

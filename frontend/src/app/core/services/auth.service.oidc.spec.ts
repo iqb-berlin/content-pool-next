@@ -317,6 +317,22 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
   });
 
+  it('uses the installer-approved login URL for the Keycloak logout redirect', () => {
+    const navigateSpy = vi
+      .spyOn(service as any, 'navigateBrowserTo')
+      .mockImplementation(() => undefined);
+
+    (service as any).redirectToKeycloakLogout('id-token');
+
+    const logoutUrl = new URL(navigateSpy.mock.calls[0][0]);
+    expect(logoutUrl.pathname).toBe('/protocol/openid-connect/logout');
+    expect(logoutUrl.searchParams.get('post_logout_redirect_uri')).toBe(
+      `${window.location.origin}/login`,
+    );
+    expect(logoutUrl.searchParams.get('client_id')).toBe(oidcConfig.clientId);
+    expect(logoutUrl.searchParams.get('id_token_hint')).toBe('id-token');
+  });
+
   it('falls back to the public start page when the logout configuration cannot be loaded', () => {
     httpClientMock.get.mockReturnValueOnce(throwError(() => new Error('network failure')));
     const navigateSpy = vi

@@ -332,7 +332,7 @@ export class AuthService {
 
         try {
           const logoutUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/logout`);
-          logoutUrl.searchParams.set('post_logout_redirect_uri', `${window.location.origin}/`);
+          logoutUrl.searchParams.set('post_logout_redirect_uri', `${window.location.origin}/login`);
           logoutUrl.searchParams.set('client_id', config.clientId);
           if (idToken) {
             logoutUrl.searchParams.set('id_token_hint', idToken);

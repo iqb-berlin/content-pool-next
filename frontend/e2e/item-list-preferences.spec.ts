@@ -281,3 +281,123 @@ test('reconciles mean filters across clear, reimport, reload and credential relo
 
   await managerContext.close();
 });
+
+test('keeps positions gapless and persists the personal selection view across perspectives', async ({
+  page,
+  request,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  const login = await request.post('/api/auth/login', {
+    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
+  });
+  expect(login.ok()).toBeTruthy();
+  const token = (await login.json()).accessToken as string;
+  await page.addInitScript((accessToken) => {
+    localStorage.setItem('cp_token', accessToken);
+    localStorage.setItem('cp_auth_type', 'local');
+  }, token);
+
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await expect(page.getByRole('columnheader', { name: 'Pos.' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeHidden();
+  await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
+
+  await page.getByRole('button', { name: /Referenznummern neu vergeben/ }).click();
+  await expect(page.getByRole('heading', { name: 'Referenznummern neu vergeben' })).toBeVisible();
+  await expect(page.getByText(/Alle 2 Zeilen des vollständigen Itembestands/)).toBeVisible();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/item-list/renumber') &&
+        response.ok(),
+    ),
+    page.getByRole('button', { name: 'Referenznummern neu vergeben', exact: true }).last().click(),
+  ]);
+  await expect(page.getByText(/2 Referenznummern im vollständigen Itembestand/)).toBeVisible();
+
+  await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+  await page.getByLabel(/Referenz-Nr/).check();
+  await page
+    .getByRole('button', { name: /Speichern/ })
+    .last()
+    .click();
+  await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeVisible();
+  await expect(page.locator('tbody tr td.number-col').nth(0)).toHaveText('1');
+  await expect(page.locator('tbody tr td.number-col').nth(2)).toHaveText('2');
+
+  const tableScroll = page.locator('.table-scroll');
+  await tableScroll.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+  const [positionBox, referenceBox, itemIdBox] = await Promise.all([
+    page.getByRole('columnheader', { name: 'Pos.' }).boundingBox(),
+    page.getByRole('columnheader', { name: /Referenz-Nr/ }).boundingBox(),
+    page.getByRole('columnheader', { name: /Item-ID/ }).boundingBox(),
+  ]);
+  expect(positionBox).not.toBeNull();
+  expect(referenceBox).not.toBeNull();
+  expect(itemIdBox).not.toBeNull();
+  expect(positionBox!.x + positionBox!.width).toBeLessThanOrEqual(referenceBox!.x + 1);
+  expect(referenceBox!.x + referenceBox!.width).toBeLessThanOrEqual(itemIdBox!.x + 1);
+
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith('/items/collections') &&
+        response.ok(),
+    ),
+    page.getByRole('button', { name: 'Neu', exact: true }).click(),
+  ]);
+  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeEnabled();
+
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().includes('/items/collections/') &&
+        response.ok(),
+    ),
+    page
+      .getByRole('checkbox', { name: /in Auswahlliste auswählen/ })
+      .first()
+      .check(),
+  ]);
+  const activeOnlyButton = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PUT' &&
+        response.url().endsWith('/items/collections/active') &&
+        response.ok(),
+    ),
+    activeOnlyButton.click(),
+  ]);
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (1)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  await expect(page.getByRole('button', { name: 'Bearbeitungsansicht' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (1)' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+
+  await page.getByRole('button', { name: 'Alle Items' }).click();
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+
+  await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
+  const discardButton = page.getByRole('button', { name: /Verwerfen/ }).first();
+  await expect(discardButton).toBeEnabled();
+  await discardButton.click();
+  await page.getByRole('button', { name: 'Änderungen verwerfen', exact: true }).click();
+  await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeHidden();
+});

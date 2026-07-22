@@ -18,6 +18,7 @@ import {
 import {
   ItemCollectionState,
   ItemCollectionSummary,
+  ItemCollectionViewMode,
   ItemCollectionsPayload,
   StoredItemCollection,
 } from "./item-collection.models";
@@ -51,7 +52,7 @@ export class ItemCollectionsService {
     rawName?: string,
     canEditExplorerState = false,
   ): Promise<ItemCollectionsPayload> {
-    const name = this.normalizeName(rawName || "Meine Kollektion");
+    const name = this.normalizeName(rawName || "Meine Auswahlliste");
     const now = new Date().toISOString();
     const collection: StoredItemCollection = {
       id: uuidv4(),
@@ -152,6 +153,7 @@ export class ItemCollectionsService {
     identity: StablePreferenceIdentity,
     collectionId: string | null,
     canEditExplorerState = false,
+    collectionViewMode?: ItemCollectionViewMode,
   ): Promise<ItemCollectionsPayload> {
     const state = await this.mutateState(
       acpId,
@@ -167,6 +169,13 @@ export class ItemCollectionsService {
           throw new NotFoundException("Item collection not found");
         }
         lockedState.activeCollectionId = collectionId;
+        if (collectionViewMode) {
+          lockedState.collectionViewMode = collectionId
+            ? collectionViewMode
+            : "all";
+        } else if (!collectionId) {
+          lockedState.collectionViewMode = "all";
+        }
       },
     );
     return this.resolveViews(acpId, state, canEditExplorerState);
@@ -192,6 +201,9 @@ export class ItemCollectionsService {
         lockedState.collections = collections;
         if (lockedState.activeCollectionId === collectionId) {
           lockedState.activeCollectionId = collections[0]?.id || null;
+        }
+        if (!lockedState.activeCollectionId) {
+          lockedState.collectionViewMode = "all";
         }
       },
     );
@@ -317,13 +329,21 @@ export class ItemCollectionsService {
     const requestedActiveId = String(
       preferences.activeCollectionId || "",
     ).trim();
+    const hasRequestedActiveCollection = collections.some(
+      (collection) => collection.id === requestedActiveId,
+    );
+    const activeCollectionId = hasRequestedActiveCollection
+      ? requestedActiveId
+      : collections[0]?.id || null;
+    const requestedViewMode: ItemCollectionViewMode =
+      preferences.collectionViewMode === "active" ? "active" : "all";
     return {
       collections,
-      activeCollectionId: collections.some(
-        (collection) => collection.id === requestedActiveId,
-      )
-        ? requestedActiveId
-        : collections[0]?.id || null,
+      activeCollectionId,
+      collectionViewMode:
+        hasRequestedActiveCollection && activeCollectionId
+          ? requestedViewMode
+          : "all",
     };
   }
 
@@ -383,6 +403,7 @@ export class ItemCollectionsService {
     );
     return {
       activeCollectionId: state.activeCollectionId,
+      collectionViewMode: state.collectionViewMode,
       collections: state.collections.map((collection) => {
         const unavailableRowKeys = collection.rowKeys.filter(
           (rowKey) => !itemsByRowKey.has(rowKey),

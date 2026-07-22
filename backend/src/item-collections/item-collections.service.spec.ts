@@ -89,6 +89,104 @@ describe("ItemCollectionsService", () => {
       missingStimulusTimeUnitCount: 0,
       complete: false,
     });
+    expect(result.collectionViewMode).toBe("all");
+  });
+
+  it("defaults missing or invalid collection view modes to all", async () => {
+    const basePreferences = {
+      activeCollectionId: "collection-1",
+      collections: [
+        {
+          id: "collection-1",
+          name: "Auswahl A",
+          rowKeys: [],
+          version: 1,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    };
+    store.readPreferences.mockResolvedValue(basePreferences);
+    await expect(service.getItemCollections("acp-1", owner)).resolves.toEqual(
+      expect.objectContaining({ collectionViewMode: "all" }),
+    );
+
+    store.readPreferences.mockResolvedValue({
+      ...basePreferences,
+      collectionViewMode: "invalid",
+    });
+    await expect(service.getItemCollections("acp-1", owner)).resolves.toEqual(
+      expect.objectContaining({ collectionViewMode: "all" }),
+    );
+  });
+
+  it("falls back to all when the stored active collection no longer exists", async () => {
+    store.readPreferences.mockResolvedValue({
+      activeCollectionId: "deleted-collection",
+      collectionViewMode: "active",
+      collections: [
+        {
+          id: "collection-1",
+          name: "Auswahl A",
+          rowKeys: [],
+          version: 1,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    });
+
+    await expect(service.getItemCollections("acp-1", owner)).resolves.toEqual(
+      expect.objectContaining({
+        activeCollectionId: "collection-1",
+        collectionViewMode: "all",
+      }),
+    );
+  });
+
+  it("persists active view mode and resets it when no active list remains", async () => {
+    const preferences: Record<string, unknown> = {
+      activeCollectionId: "collection-1",
+      collectionViewMode: "all",
+      collections: [
+        {
+          id: "collection-1",
+          name: "Auswahl A",
+          rowKeys: [],
+          version: 1,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+    };
+    store.mutate.mockImplementation(async (...args: any[]) => {
+      const state = args[3](preferences);
+      preferences.collections = state.collections;
+      preferences.activeCollectionId = state.activeCollectionId;
+      preferences.collectionViewMode = state.collectionViewMode;
+      return state;
+    });
+
+    const activated = await service.activateItemCollection(
+      "acp-1",
+      owner,
+      "collection-1",
+      false,
+      "active",
+    );
+    expect(activated.collectionViewMode).toBe("active");
+
+    const deleted = await service.deleteItemCollection(
+      "acp-1",
+      owner,
+      "collection-1",
+    );
+    expect(deleted).toEqual(
+      expect.objectContaining({
+        activeCollectionId: null,
+        collectionViewMode: "all",
+      }),
+    );
   });
 
   it("checks the base version inside the store mutation", async () => {

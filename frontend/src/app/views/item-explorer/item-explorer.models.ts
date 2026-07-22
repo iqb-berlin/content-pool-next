@@ -47,6 +47,7 @@ export type ReadonlyExplorerItem = DeepReadonly<ExplorerItem>;
 export interface MetadataSettings {
   visible: string[];
   order: string[];
+  referenceNumberVisible?: boolean;
 }
 
 export interface PersonalItemTagConfig {

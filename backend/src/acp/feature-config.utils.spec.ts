@@ -116,4 +116,26 @@ describe("normalizeFeatureConfig", () => {
       },
     });
   });
+
+  it("keeps reference-number visibility opt-in for existing ACPs", () => {
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          visible: [],
+          order: [],
+          referenceNumberVisible: true,
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        visible: [],
+        order: [],
+        referenceNumberVisible: true,
+      },
+    });
+
+    expect(normalizeFeatureConfig({ enableItemList: true })).not.toHaveProperty(
+      "metadataColumns.referenceNumberVisible",
+    );
+  });
 });

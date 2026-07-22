@@ -106,6 +106,7 @@ async function seed(): Promise<void> {
           enableItemListSort: true,
           enableItemClick: true,
           persistUserPreferences: true,
+          enableItemCollections: true,
         },
       }),
     );

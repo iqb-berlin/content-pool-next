@@ -7,9 +7,12 @@ export interface StoredItemCollection {
   updatedAt: string;
 }
 
+export type ItemCollectionViewMode = "all" | "active";
+
 export interface ItemCollectionState {
   collections: StoredItemCollection[];
   activeCollectionId: string | null;
+  collectionViewMode: ItemCollectionViewMode;
 }
 
 export interface ItemCollectionSummary {
@@ -31,5 +34,6 @@ export interface ItemCollectionView extends StoredItemCollection {
 
 export interface ItemCollectionsPayload {
   activeCollectionId: string | null;
+  collectionViewMode: ItemCollectionViewMode;
   collections: ItemCollectionView[];
 }

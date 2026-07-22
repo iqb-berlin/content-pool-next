@@ -146,7 +146,7 @@ class ExportAllPersonalItemDataDto {
 }
 
 class CreateItemCollectionDto {
-  @ApiPropertyOptional({ example: "Meine Kollektion" })
+  @ApiPropertyOptional({ example: "Meine Auswahlliste" })
   @IsOptional()
   @IsString()
   name?: string;
@@ -186,6 +186,11 @@ class ActivateItemCollectionDto {
   @IsOptional()
   @IsString()
   collectionId?: string | null;
+
+  @ApiPropertyOptional({ enum: ["all", "active"] })
+  @IsOptional()
+  @IsIn(["all", "active"])
+  collectionViewMode?: "all" | "active";
 
   @ApiPropertyOptional({ enum: ["editor", "read-only"] })
   @IsOptional()
@@ -508,7 +513,9 @@ export class ViewsController {
 
   @Put("acp/:acpId/items/collections/active")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: "Persist the active personal item collection" })
+  @ApiOperation({
+    summary: "Persist the active personal item collection and list view mode",
+  })
   async activateItemCollection(
     @UuidParam("acpId") acpId: string,
     @Body() dto: ActivateItemCollectionDto,
@@ -520,6 +527,7 @@ export class ViewsController {
       this.requireCollectionIdentity(req),
       dto.collectionId || null,
       this.isEditorPerspective(req, dto.perspective),
+      dto.collectionViewMode,
     );
   }
 

@@ -24,6 +24,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'confirmDiscardDraftDialog'
     | 'confirmDiscardPersonalItemDataChanges'
     | 'confirmRenumber'
+    | 'draftSaveSuccessMessage'
     | 'discardAndLeave'
     | 'discardDraftDialogBusy'
     | 'discardDraftDialogError'
@@ -36,6 +37,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'exportPersonalItemDataXlsx'
     | 'filteredItems'
     | 'getRenumberingActionTitle'
+    | 'getRenumberingBlockedMessage'
     | 'hasPendingDraftChanges'
     | 'isFullscreen'
     | 'isReadOnlyPreview'
@@ -75,7 +77,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'stayOnPage'
     | 'toggleFullscreen'
     | 'toggleReadOnlyPreview'
-    | 'visibleItemsCount'
+    | 'totalItemsCount'
   >
 >;
 
@@ -100,6 +102,8 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'excludedItemsCount'
     | 'filterText'
     | 'filteredItems'
+    | 'hiddenExcludedItemsCount'
+    | 'hiddenMissingDifficultyItemsCount'
     | 'flushPersonalItemDataSave'
     | 'getItemRowId'
     | 'getMetaSortIndicator'
@@ -126,6 +130,7 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'personalItemCategoryValues'
     | 'personalItemData'
     | 'personalItemTagLabel'
+    | 'referenceNumberVisible'
     | 'removeItemTag'
     | 'removePersonalItemTagFromRow'
     | 'retryPersonalItemDataLoad'
@@ -141,6 +146,9 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'showExplorerKeyboardHints'
     | 'showPersonalItemData'
     | 'showPlayerTargetInfo'
+    | 'collectionViewMode'
+    | 'activeItemCollection'
+    | 'setCollectionViewMode'
     | 'sortBy'
     | 'sortByMeta'
     | 'toggleItemInActiveCollection'
@@ -159,6 +167,7 @@ export type ItemExplorerCollectionsViewModel = ReadonlyViewModelSlice<
     | 'collectionBusy'
     | 'collectionError'
     | 'collectionLoadState'
+    | 'collectionViewMode'
     | 'createCollection'
     | 'deleteActiveCollection'
     | 'enableItemCollections'
@@ -169,6 +178,7 @@ export type ItemExplorerCollectionsViewModel = ReadonlyViewModelSlice<
     | 'removeRowFromActiveCollection'
     | 'renameActiveCollection'
     | 'showCollectionDrawer'
+    | 'setCollectionViewMode'
     | 'toggleCollectionDrawer'
   >
 >;
@@ -281,6 +291,7 @@ export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
     | 'setColumnFilterText'
     | 'showColumnManager'
     | 'toggleColumnVisibility'
+    | 'toggleReferenceNumberVisibility'
   >
 >;
 

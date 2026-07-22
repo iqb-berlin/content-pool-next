@@ -3,6 +3,7 @@ type UnknownRecord = Record<string, unknown>;
 interface MetadataColumnsConfig {
   visible: string[];
   order: string[];
+  referenceNumberVisible?: boolean;
 }
 
 function asRecord(value: unknown): UnknownRecord {
@@ -62,13 +63,16 @@ function normalizeMetadataColumns(
   const metadataColumns = asRecord(metadataColumnsRaw);
   const visible = asStringArray(metadataColumns.visible);
   const order = asStringArray(metadataColumns.order);
+  const referenceNumberVisible =
+    metadataColumns.referenceNumberVisible === true;
 
-  if (visible.length || order.length) {
+  if (visible.length || order.length || referenceNumberVisible) {
     const normalizedVisible = visible.length ? visible : order;
     const normalizedOrder = order.length ? order : normalizedVisible;
     return {
       visible: normalizedVisible,
       order: normalizedOrder,
+      ...(referenceNumberVisible ? { referenceNumberVisible: true } : {}),
     };
   }
 

@@ -13,6 +13,25 @@
         <button class="btn btn-sm btn-outline" (click)="vm.closeColumnManager()">✕</button>
       </div>
       <div class="overlay-content">
+        <section class="base-column-settings" aria-labelledby="base-columns-heading">
+          <h3 id="base-columns-heading">Grundspalten</h3>
+          <label class="base-column-option">
+            <input
+              type="checkbox"
+              [checked]="vm.metadataSettings.referenceNumberVisible === true"
+              (change)="vm.toggleReferenceNumberVisibility()"
+            />
+            <span>
+              <strong>Referenz-Nr.</strong>
+              <small
+                >Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken
+                sichtbar.</small
+              >
+            </span>
+          </label>
+        </section>
+
+        <h3>Metadatenspalten</h3>
         <div class="column-manager-toolbar">
           <div class="search-container">
             <input
@@ -25,7 +44,10 @@
           <button
             class="btn btn-outline btn-sm"
             (click)="vm.resetToDefault()"
-            [disabled]="!vm.metadataSettings.visible.length"
+            [disabled]="
+              !vm.metadataSettings.visible.length &&
+              vm.metadataSettings.referenceNumberVisible !== true
+            "
           >
             🔄 Standard
           </button>

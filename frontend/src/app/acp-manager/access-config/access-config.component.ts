@@ -500,7 +500,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         </label>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enableItemCollectionsKey]" />
-          <span>Persönliche Item-Kollektionen aktivieren</span>
+          <span>Persönliche Item-Auswahllisten aktivieren</span>
         </label>
         @if (featureConfig[enablePersonalItemDataKey]) {
           <div class="indent-section personal-data-config">

@@ -488,12 +488,14 @@ export interface ItemCollection {
 
 export interface ItemCollectionsPayload {
   activeCollectionId: string | null;
+  collectionViewMode: 'all' | 'active';
   collections: ItemCollection[];
 }
 
 export interface ItemExplorerMetadataColumns {
   visible?: string[];
   order?: string[];
+  referenceNumberVisible?: boolean;
 }
 
 export interface ItemExplorerSharedState {

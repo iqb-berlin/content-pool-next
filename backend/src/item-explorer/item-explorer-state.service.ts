@@ -24,6 +24,7 @@ export interface ExplorerActor {
 export interface ExplorerMetadataColumns {
   visible: string[];
   order: string[];
+  referenceNumberVisible?: boolean;
 }
 
 export interface ExplorerSharedStatePayload {
@@ -651,6 +652,9 @@ export class ItemExplorerStateService {
     const metadataColumns: ExplorerMetadataColumns = {
       visible: visible.length ? visible : order,
       order: order.length ? order : visible,
+      ...(rawMetadataColumns.referenceNumberVisible === true
+        ? { referenceNumberVisible: true }
+        : {}),
     };
 
     const itemProperties = this.normalizeItemProperties(acp.itemProperties);
@@ -706,10 +710,17 @@ export class ItemExplorerStateService {
     const visible = this.asStringArray(state.metadataColumns?.visible);
     const order = this.asStringArray(state.metadataColumns?.order);
 
-    if (visible.length || order.length) {
+    if (
+      visible.length ||
+      order.length ||
+      state.metadataColumns.referenceNumberVisible
+    ) {
       normalizedFeatureConfig.metadataColumns = {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        ...(state.metadataColumns.referenceNumberVisible
+          ? { referenceNumberVisible: true }
+          : {}),
       };
     } else {
       delete normalizedFeatureConfig.metadataColumns;
@@ -773,6 +784,9 @@ export class ItemExplorerStateService {
       metadataColumns: {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        ...(metadataColumnsRaw.referenceNumberVisible === true
+          ? { referenceNumberVisible: true }
+          : {}),
       },
       itemOrder: this.asStringArray(payload.itemOrder),
       itemProperties: this.normalizeItemProperties(payload.itemProperties),
@@ -789,6 +803,9 @@ export class ItemExplorerStateService {
       metadataColumns: {
         visible: [...current.metadataColumns.visible],
         order: [...current.metadataColumns.order],
+        ...(current.metadataColumns.referenceNumberVisible
+          ? { referenceNumberVisible: true }
+          : {}),
       },
       itemOrder: [...current.itemOrder],
       itemProperties: this.normalizeItemProperties(current.itemProperties),
@@ -811,6 +828,9 @@ export class ItemExplorerStateService {
       merged.metadataColumns = {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        ...(patch.metadataColumns.referenceNumberVisible === true
+          ? { referenceNumberVisible: true }
+          : {}),
       };
     }
 

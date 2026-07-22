@@ -1,3 +1,17 @@
 :host {
   display: contents;
 }
+.collection-label {
+  font-size: 0.85rem;
+}
+.collection-view-toggle {
+  display: inline-flex;
+  align-items: center;
+}
+.collection-view-toggle .btn:first-child {
+  border-radius: var(--radius) 0 0 var(--radius);
+}
+.collection-view-toggle .btn:last-child {
+  margin-left: -1px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}

@@ -122,15 +122,6 @@ export class AccessComponent implements OnInit {
   goToLogin() {
     const queryParams: Record<string, string> = {};
 
-    if (this.context === 'admin') {
-      queryParams['for'] = 'admin';
-    }
-    if (this.context === 'acp') {
-      queryParams['for'] = 'acp';
-    }
-    if (this.reason === 'session_expired') {
-      queryParams['message'] = 'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.';
-    }
     if (this.nextUrl) {
       queryParams['next'] = this.nextUrl;
     }

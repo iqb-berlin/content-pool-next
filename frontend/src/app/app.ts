@@ -261,9 +261,10 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   async logout() {
-    const navigated = await this.router.navigate(['/login']);
-    if (navigated) {
-      this.auth.logout();
+    const wasOidc = this.auth.isOidcUser;
+    this.auth.logout();
+    if (!wasOidc) {
+      await this.router.navigate(['/']);
     }
   }
 

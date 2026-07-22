@@ -84,7 +84,7 @@ export class CommentsController {
 
     return this.commentsService.create({
       acpId,
-      userId: req.user.type === "user" ? req.user.sub : undefined,
+      userId: req.user.type === "oidc" ? req.user.sub : undefined,
       credentialUsername:
         req.user.type === "credential" ? req.user.username : undefined,
       targetType: dto.targetType,

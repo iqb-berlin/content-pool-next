@@ -64,7 +64,6 @@ Dockerized environments.
 | Variable | Meaning |
 | --- | --- |
 | `SWAGGER_ENABLED` | explicit Swagger toggle |
-| `SEED_DEFAULT_ADMIN` | whether to seed a default admin user |
 
 ### OIDC / Keycloak
 

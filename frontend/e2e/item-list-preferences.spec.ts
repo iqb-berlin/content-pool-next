@@ -1,8 +1,9 @@
 import { expect, Page, test } from '@playwright/test';
+import { createOidcAppToken, installOidcSession } from './oidc-test-session';
 
 const ACP_ID = '10000000-0000-4000-8000-000000000001';
+const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 const MANAGER_USERNAME = 'e2e-manager';
-const MANAGER_PASSWORD = 'Manager-E2E-123!';
 const CREDENTIAL_USERNAME = 'e2e-reviewer';
 const CREDENTIAL_PASSWORD = 'Reviewer-E2E-123!';
 
@@ -40,19 +41,8 @@ async function loginWithCredential(page: Page): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`/view/${ACP_ID}`));
 }
 
-test('shows a slow-connection hint while the Explorer item list is delayed', async ({
-  page,
-  request,
-}) => {
-  const login = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(login.ok()).toBeTruthy();
-  const token = (await login.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+test('shows a slow-connection hint while the Explorer item list is delayed', async ({ page }) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
   await page.route('**/api/acp/*/files/item-list*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2200));
     await route.continue();
@@ -67,19 +57,8 @@ test('shows a slow-connection hint while the Explorer item list is delayed', asy
   await expect(page.locator('tbody tr').first()).toBeVisible();
 });
 
-test('shows and clears the slow-connection hint for a delayed preview phase', async ({
-  page,
-  request,
-}) => {
-  const login = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(login.ok()).toBeTruthy();
-  const token = (await login.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+test('shows and clears the slow-connection hint for a delayed preview phase', async ({ page }) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
   await page.route('**/api/acp/*/files/unit-view/*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2200));
     await route.continue();
@@ -98,19 +77,8 @@ test('shows and clears the slow-connection hint for a delayed preview phase', as
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 });
 
-test('reuses preview assets and requests only response state within one unit', async ({
-  page,
-  request,
-}) => {
-  const login = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(login.ok()).toBeTruthy();
-  const token = (await login.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+test('reuses preview assets and requests only response state within one unit', async ({ page }) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
 
   const requestCounts = {
     unitView: 0,
@@ -186,15 +154,11 @@ test('reconciles mean filters across clear, reimport, reload and credential relo
   await page.reload();
   await expect(meanFilter).toHaveValue('-0.1..0.1');
 
-  const managerLogin = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(managerLogin.ok()).toBeTruthy();
-  const managerToken = (await managerLogin.json()).accessToken as string;
+  const managerToken = createOidcAppToken(MANAGER_ID, MANAGER_USERNAME);
   const managerContext = await browser.newContext();
   await managerContext.addInitScript((token) => {
     localStorage.setItem('cp_token', token);
-    localStorage.setItem('cp_auth_type', 'local');
+    localStorage.setItem('cp_auth_type', 'oidc');
   }, managerToken);
   const managerPage = await managerContext.newPage();
 
@@ -262,7 +226,7 @@ test('reconciles mean filters across clear, reimport, reload and credential relo
   await expect(page.getByText('0.5', { exact: true })).toHaveCount(2);
 
   await page.getByRole('button', { name: 'Abmelden' }).click();
-  await expect(page).toHaveURL(/\/login/);
+  await expect(page).toHaveURL(/\/$/);
   await loginWithCredential(page);
   await page.goto(`/view/${ACP_ID}/items`);
   await expect(page.getByPlaceholder('Mittlere Schwierigkeit: Min..Max')).toHaveValue('');
@@ -284,17 +248,8 @@ test('reconciles mean filters across clear, reimport, reload and credential relo
 
 test('paginates large personal collections and removes selections across pages', async ({
   page,
-  request,
 }) => {
-  const login = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(login.ok()).toBeTruthy();
-  const token = (await login.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
 
   const collectionId = '20000000-0000-4000-8000-000000000001';
   const rowKeys = Array.from({ length: 51 }, (_, index) => `missing-row-${index + 1}`);
@@ -432,18 +387,9 @@ test('paginates large personal collections and removes selections across pages',
 
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
-  request,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1100 });
-  const login = await request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(login.ok()).toBeTruthy();
-  const token = (await login.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/view/${ACP_ID}/item-explorer`);
   await expect(page.getByRole('columnheader', { name: 'Pos.' })).toBeVisible();

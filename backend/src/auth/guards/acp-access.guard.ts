@@ -66,8 +66,8 @@ export class AcpAccessGuard implements CanActivate {
         return true;
       }
 
-      // User role-based access (local users and OIDC users)
-      if (user.type === "user" || user.type === "oidc") {
+      // Role-based access for OIDC users.
+      if (user.type === "oidc") {
         const role = Object.prototype.hasOwnProperty.call(
           user,
           "resolvedAcpRole",
@@ -135,6 +135,10 @@ export class AcpAccessGuard implements CanActivate {
           acpId: payload.acpId,
           acpRoles: [],
         };
+      }
+
+      if (payload.type !== "oidc" || payload.authType !== "oidc") {
+        return null;
       }
 
       // Resolve the persisted user and the role relevant to this request in one

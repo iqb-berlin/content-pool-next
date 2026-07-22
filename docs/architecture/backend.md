@@ -35,16 +35,15 @@ loads the global `ConfigModule`, configures TypeORM, and imports the functional 
 
 ### Auth module
 
-Files under `backend/src/auth` handle the three authentication modes:
+Files under `backend/src/auth` handle two authentication modes:
 
-- local username/password login,
 - OIDC login callback and role synchronization,
 - ACP credential-list login.
 
 Key pieces:
 
-- `AuthController` exposes `/auth/login`, `/auth/credential-login`,
-  `/auth/oidc-config`, `/auth/oidc-callback`, `/auth/profile`, and logout endpoints.
+- `AuthController` exposes `/auth/credential-login`, `/auth/oidc-config`,
+  `/auth/oidc-callback`, `/auth/profile`, and logout endpoints.
 - `JwtAuthGuard` protects authenticated routes.
 - `RolesGuard` enforces `APP_ADMIN` and `ACP_MANAGER` style role checks.
 - `OidcAuthGuard` is used on admin endpoints to require OIDC-backed sessions.
@@ -52,9 +51,9 @@ Key pieces:
 
 ### Users module
 
-The users module is app-admin only. It manages local users, profile data, and app-admin
-status. OIDC users are represented in the local `users` table as linked accounts with
-an optional `oidcSub`.
+The users module is app-admin only. It manages pre-provisioned Keycloak usernames,
+profile data, and app-admin status. OIDC users are represented in the local `users`
+table as linked identities with an optional `oidcSub`; no local passwords are stored.
 
 ### Admin module
 

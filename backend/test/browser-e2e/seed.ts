@@ -21,7 +21,6 @@ const ACP_ID = "10000000-0000-4000-8000-000000000001";
 const REGRESSION_ACP_ID = "10000000-0000-4000-8000-000000000101";
 const MANAGER_ID = "10000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "e2e-manager";
-const MANAGER_PASSWORD = "Manager-E2E-123!";
 const CREDENTIAL_USERNAME = "e2e-reviewer";
 const CREDENTIAL_PASSWORD = "Reviewer-E2E-123!";
 
@@ -82,7 +81,6 @@ async function seed(): Promise<void> {
       dataSource.getRepository(User).create({
         id: MANAGER_ID,
         username: MANAGER_USERNAME,
-        passwordHash: await bcrypt.hash(MANAGER_PASSWORD, 4),
         displayName: "E2E Manager",
         isAppAdmin: false,
       }),

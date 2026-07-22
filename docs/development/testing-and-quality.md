@@ -58,8 +58,7 @@ installation automatically.
 
 Verify:
 
-- local login,
-- OIDC login callback,
+- direct Keycloak redirect and OIDC login callback,
 - credential login for ACPs,
 - route-guard redirects,
 - feature-disabled and insufficient-rights access flows.

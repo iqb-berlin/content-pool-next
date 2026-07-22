@@ -14,6 +14,8 @@ import {
   CreatedApplicationToken,
   CreateApplicationTokenRequest,
   User,
+  CreateUserRequest,
+  UpdateUserRequest,
   PublicAcp,
   UnitViewData,
   TaskSequence,
@@ -55,10 +57,10 @@ export class ApiService {
   getUsers(): Observable<User[]> {
     return this.http.get<User[]>(`${this.API}/users`);
   }
-  createUser(data: any): Observable<User> {
+  createUser(data: CreateUserRequest): Observable<User> {
     return this.http.post<User>(`${this.API}/users`, data);
   }
-  updateUser(id: string, data: any): Observable<User> {
+  updateUser(id: string, data: UpdateUserRequest): Observable<User> {
     return this.http.patch<User>(`${this.API}/users/${id}`, data);
   }
   deleteUser(id: string): Observable<void> {

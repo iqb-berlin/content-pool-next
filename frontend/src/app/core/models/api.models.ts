@@ -8,6 +8,16 @@ export interface User {
   updatedAt?: string;
 }
 
+export interface CreateUserRequest {
+  username: string;
+  displayName?: string;
+  isAppAdmin?: boolean;
+}
+
+export interface UpdateUserRequest {
+  displayName?: string;
+}
+
 export interface LoginResponse {
   accessToken: string;
   user: User;
@@ -559,12 +569,6 @@ export interface OidcConfig {
   clientId: string | null;
   redirectUri: string;
   scope: string;
-}
-
-export interface AuthContext {
-  allowedMethods: ('oidc' | 'credentials')[];
-  oidcEnabled: boolean;
-  message: string;
 }
 
 export interface BuildVersion {

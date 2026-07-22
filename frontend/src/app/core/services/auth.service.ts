@@ -6,7 +6,6 @@ import {
   CredentialLoginResponse,
   UserProfile,
   OidcConfig,
-  AuthContext,
 } from '../models/api.models';
 import { BYPASS_APP_AUTH } from '../interceptors/auth-context.tokens';
 import { PendingPersonalSessionStorageService } from './pending-personal-session-storage.service';
@@ -59,8 +58,13 @@ export class AuthService {
     const token = this.getToken();
     this.pendingPersonalSessionStorage.activateIdentityFromToken(token);
 
+    if (localStorage.getItem(this.AUTH_TYPE_KEY) === 'local') {
+      this.performLogout();
+      return;
+    }
+
     if (this.isCredentialToken(token)) {
-      this.switchApplicationSession('credential');
+      this.switchToCredentialSession();
       return;
     }
 
@@ -146,30 +150,24 @@ export class AuthService {
     return this.http.get<OidcConfig>(`${this.API}/oidc-config`);
   }
 
-  getAuthContext(type: 'admin' | 'acp' | null = null): Observable<AuthContext> {
-    const params = type ? `?type=${type}` : '';
-    return this.http.get<AuthContext>(`${this.API}/context${params}`);
-  }
-
-  initiateOidcLogin(redirectUrl?: string): void {
+  async initiateOidcLogin(redirectUrl?: string): Promise<void> {
     if (redirectUrl) {
       sessionStorage.setItem(this.OIDC_REDIRECT_KEY, redirectUrl);
+    } else {
+      sessionStorage.removeItem(this.OIDC_REDIRECT_KEY);
     }
 
-    this.getOidcConfig().subscribe({
-      next: async (config) => {
-        if (!config.enabled || !config.issuerUrl || !config.clientId) {
-          return;
-        }
+    let config: OidcConfig;
+    try {
+      config = await firstValueFrom(this.getOidcConfig());
+    } catch {
+      throw new Error('Die Keycloak-Konfiguration konnte nicht geladen werden.');
+    }
+    if (!config.enabled || !config.issuerUrl || !config.clientId) {
+      throw new Error('Die Keycloak-Anmeldung ist nicht konfiguriert.');
+    }
 
-        try {
-          await this.redirectToOidcAuthorization(config);
-        } catch {
-          // noop - callback page will show a user-visible error if flow fails
-        }
-      },
-      error: () => {},
-    });
+    await this.redirectToOidcAuthorization(config);
   }
 
   handleOidcAuthorizationCode(code: string, state: string | null): Observable<LoginResponse> {
@@ -289,16 +287,6 @@ export class AuthService {
     });
   }
 
-  login(username: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.API}/login`, { username, password }).pipe(
-      tap((res) => {
-        this.switchApplicationSession('local');
-        this.storeApplicationToken(res.accessToken);
-        this.loadProfile();
-      }),
-    );
-  }
-
   credentialLogin(
     acpId: string,
     username: string,
@@ -308,7 +296,7 @@ export class AuthService {
       .post<CredentialLoginResponse>(`${this.API}/credential-login`, { acpId, username, password })
       .pipe(
         tap((res) => {
-          this.switchApplicationSession('credential');
+          this.switchToCredentialSession();
           this.storeApplicationToken(res.accessToken);
         }),
       );
@@ -335,18 +323,36 @@ export class AuthService {
   }
 
   private redirectToKeycloakLogout(idToken: string | null): void {
-    this.getOidcConfig().subscribe((config) => {
-      if (!config.enabled || !config.issuerUrl || !config.clientId) return;
+    this.getOidcConfig().subscribe({
+      next: (config) => {
+        if (!config.enabled || !config.issuerUrl || !config.clientId) {
+          this.redirectToPublicStart();
+          return;
+        }
 
-      const logoutUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/logout`);
-      logoutUrl.searchParams.set('post_logout_redirect_uri', `${window.location.origin}/login`);
-      logoutUrl.searchParams.set('client_id', config.clientId);
-      if (idToken) {
-        logoutUrl.searchParams.set('id_token_hint', idToken);
-      }
+        try {
+          const logoutUrl = new URL(`${config.issuerUrl}/protocol/openid-connect/logout`);
+          logoutUrl.searchParams.set('post_logout_redirect_uri', `${window.location.origin}/`);
+          logoutUrl.searchParams.set('client_id', config.clientId);
+          if (idToken) {
+            logoutUrl.searchParams.set('id_token_hint', idToken);
+          }
 
-      window.location.href = logoutUrl.toString();
+          this.navigateBrowserTo(logoutUrl.toString());
+        } catch {
+          this.redirectToPublicStart();
+        }
+      },
+      error: () => this.redirectToPublicStart(),
     });
+  }
+
+  private redirectToPublicStart(): void {
+    this.navigateBrowserTo(`${window.location.origin}/`);
+  }
+
+  private navigateBrowserTo(url: string): void {
+    window.location.href = url;
   }
 
   private performLogout(broadcast = true): void {
@@ -580,10 +586,10 @@ export class AuthService {
     this.broadcastAuthEvent({ type: 'app_session_updated' });
   }
 
-  private switchApplicationSession(authType: 'local' | 'credential'): void {
+  private switchToCredentialSession(): void {
     this.clearOidcRefreshTimer();
     this.clearStoredOidcSession();
-    localStorage.setItem(this.AUTH_TYPE_KEY, authType);
+    localStorage.setItem(this.AUTH_TYPE_KEY, 'credential');
     this.currentUserSubject.next(null);
   }
 

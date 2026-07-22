@@ -16,16 +16,6 @@ codepaths for public, managed, and restricted content.
 
 ## Supported Authentication Methods
 
-### Local username/password
-
-Endpoint:
-
-- `/api/auth/login`
-
-Use case:
-
-- internal users managed directly inside the application.
-
 ### OIDC login
 
 Endpoints:
@@ -36,7 +26,7 @@ Endpoints:
 
 Use case:
 
-- administrators and users managed through Keycloak.
+- all registered application users managed through Keycloak.
 
 Important behavior:
 
@@ -193,8 +183,8 @@ The admin controller is protected by:
 - `OidcAuthGuard`
 - `RolesGuard`
 
-That means normal local logins are not enough for admin-only configuration areas. The
-application expects administration to happen through OIDC-backed accounts.
+All normal application sessions are OIDC-backed. The additional guard ensures that ACP
+credential tokens can never be used for admin-only configuration areas.
 
 ## Access Outcome Matrix
 
@@ -202,8 +192,8 @@ application expects administration to happen through OIDC-backed accounts.
 | --- | --- | --- | --- | --- |
 | Anonymous visitor | Yes | No | No | No |
 | Credential viewer | Only linked ACP | No | No | No |
-| Local user with `READ_ONLY` | Yes | Yes for assigned ACP | No | No |
-| Local or OIDC user with `ACP_MANAGER` | Yes | Yes for assigned ACP | Yes for assigned ACP | No |
+| OIDC user with `READ_ONLY` | Yes | Yes for assigned ACP | No | No |
+| OIDC user with `ACP_MANAGER` | Yes | Yes for assigned ACP | Yes for assigned ACP | No |
 | OIDC app admin | Yes | Yes | Yes | Yes |
 
 ## Access UX on the Frontend

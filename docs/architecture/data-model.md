@@ -31,18 +31,17 @@ An ACP is linked to files, snapshots, access configurations, comments, and user 
 
 ### `User`
 
-The `users` table stores local user accounts and OIDC-linked identities.
+The `users` table stores application profiles linked to OIDC identities.
 
 Key fields:
 
 - `username`
-- `passwordHash`
 - `displayName`
 - `isAppAdmin`
 - `oidcSub`
 
-OIDC-backed users still exist in the local database so ACP roles and app-admin state can
-be resolved consistently.
+OIDC-backed users exist in the local database so ACP roles, comments, and app-admin
+state can be resolved consistently. Authentication itself remains in Keycloak.
 
 ### `AcpUserRole`
 

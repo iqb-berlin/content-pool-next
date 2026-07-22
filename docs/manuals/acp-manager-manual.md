@@ -30,10 +30,9 @@ Benutzerverwaltung.
 
 ### 1. Anmelden
 
-Je nach Systemkonfiguration erfolgt die Anmeldung:
-
-- mit lokalem Benutzername/Kennwort oder
-- ueber Keycloak / OIDC.
+Die Anmeldung fuer ContentPool-Nutzerinnen und -Nutzer erfolgt ueber Keycloak / OIDC.
+Separate ACP-Zugangsdaten werden nur fuer entsprechend geschuetzte Nur-Lese-Zugaenge
+verwendet.
 
 Nach erfolgreicher Anmeldung oeffnen Sie die ACP-Liste ueber:
 

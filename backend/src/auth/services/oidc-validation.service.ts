@@ -102,7 +102,7 @@ export class OidcValidationService {
       });
 
       if (!user) {
-        // If a local account with the same username already exists and is not linked yet,
+        // If a pre-provisioned profile with the same username exists and is not linked yet,
         // bind this OIDC identity to that account to avoid duplicate users/role drift.
         const existingByUsername = await this.userRepository.findOne({
           where: { username: baseUsername },
@@ -130,7 +130,6 @@ export class OidcValidationService {
             username,
             displayName: name || preferredUsername || username,
             oidcSub: sub,
-            passwordHash: "",
             isAppAdmin: isKeycloakAdmin,
           });
 

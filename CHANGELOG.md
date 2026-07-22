@@ -39,6 +39,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   use the existing database and upload volumes.
 - Add checksum-validated local legacy baselines, exact-digest rollback, and
   structural validation for database backups.
+- Wait for both restored PostgreSQL services to become healthy before invoking
+  `pg_restore`.
 
 ### Breaking changes
 

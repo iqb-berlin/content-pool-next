@@ -6,6 +6,11 @@ for script in "$ROOT_DIR"/scripts/*.sh; do
   bash -n "$script"
 done
 
+grep -q 'up -d --wait --wait-timeout 120' "$ROOT_DIR/scripts/restore.sh" || {
+  echo "restore does not wait for both PostgreSQL services" >&2
+  exit 1
+}
+
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-script-test.XXXXXX")"
 trap 'rm -rf "$temp_dir"' EXIT
 mkdir -p "$temp_dir/scripts" "$temp_dir/bin"

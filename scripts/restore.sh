@@ -80,7 +80,9 @@ docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" stop nginx content-pool-api key
 cp_info "Restoring runtime configuration"
 tar -xzf "${BACKUP_DIR}/config.tgz" -C .
 cp_set_compose_args "$MODE" "$COMPOSE_OVERRIDE"
-docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d content-pool-db keycloak-db
+cp_info "Waiting for both restore databases to become ready"
+docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d --wait --wait-timeout 120 \
+  content-pool-db keycloak-db
 
 restore_database() {
   local service="$1" user="$2" database="$3" dump="$4" container

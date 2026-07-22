@@ -356,6 +356,52 @@ test('paginates large personal collections and removes selections across pages',
   const collectionDialog = page.getByRole('dialog', { name: 'Große Auswahlliste' });
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(50);
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileLayout = await collectionDialog.evaluate((dialog) => {
+    const containedSelectors = [
+      '.collection-modal-header',
+      '.collection-modal-toolbar',
+      '.collection-modal-actions',
+      '.collection-modal-footer',
+    ];
+    const dialogRect = dialog.getBoundingClientRect();
+    return {
+      dialogLeft: dialogRect.left,
+      dialogRight: dialogRect.right,
+      viewportWidth: window.innerWidth,
+      children: containedSelectors.map((selector) => {
+        const element = dialog.querySelector<HTMLElement>(selector)!;
+        const rect = element.getBoundingClientRect();
+        return {
+          selector,
+          left: rect.left,
+          right: rect.right,
+          scrollWidth: element.scrollWidth,
+          clientWidth: element.clientWidth,
+        };
+      }),
+    };
+  });
+  expect(mobileLayout.dialogLeft).toBeGreaterThanOrEqual(0);
+  expect(mobileLayout.dialogRight).toBeLessThanOrEqual(mobileLayout.viewportWidth);
+  for (const child of mobileLayout.children) {
+    expect(child.left, `${child.selector} starts outside the dialog`).toBeGreaterThanOrEqual(
+      mobileLayout.dialogLeft,
+    );
+    expect(child.right, `${child.selector} ends outside the dialog`).toBeLessThanOrEqual(
+      mobileLayout.dialogRight,
+    );
+    expect(child.scrollWidth, `${child.selector} overflows horizontally`).toBeLessThanOrEqual(
+      child.clientWidth,
+    );
+  }
+  await expect(collectionDialog.getByRole('searchbox')).toBeInViewport();
+  await expect(collectionDialog.getByRole('button', { name: 'CSV exportieren' })).toBeInViewport();
+  await expect(
+    collectionDialog.getByRole('button', { name: 'Auswahlliste löschen' }),
+  ).toBeInViewport();
+  await expect(collectionDialog.getByRole('button', { name: 'Details schließen' })).toBeInViewport();
+
   await collectionDialog.getByRole('checkbox', { name: 'Eintrag 1 auswählen' }).check();
   await collectionDialog.getByRole('button', { name: 'Weiter' }).click();
   await expect(collectionDialog.getByText('Seite 2 von 2')).toBeVisible();
@@ -368,7 +414,12 @@ test('paginates large personal collections and removes selections across pages',
   await expect(confirmation).toContainText(
     '2 Einträge aus der Auswahlliste „Große Auswahlliste“ entfernen?',
   );
-  await confirmation.getByRole('button', { name: 'Entfernen', exact: true }).click();
+  const confirmRemovalButton = confirmation.getByRole('button', {
+    name: 'Entfernen',
+    exact: true,
+  });
+  await expect(confirmRemovalButton).toBeFocused();
+  await confirmRemovalButton.click();
 
   await expect.poll(() => removePayload).not.toBeNull();
   expect(removePayload).toMatchObject({
@@ -526,7 +577,13 @@ test('keeps positions gapless and persists the personal selection view across pe
   );
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  const editingViewButton = page.getByRole('button', { name: 'Bearbeitungsansicht' });
+  if (await editingViewButton.isVisible()) {
+    await editingViewButton.click();
+  }
+  const readOnlyPreviewButton = page.getByRole('button', { name: 'READ ONLY-Vorschau' });
+  await expect(readOnlyPreviewButton).toBeVisible();
+  await readOnlyPreviewButton.click();
   await expect(page.getByRole('button', { name: 'Bearbeitungsansicht' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (1)' })).toHaveAttribute(
     'aria-pressed',

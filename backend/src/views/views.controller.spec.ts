@@ -62,6 +62,12 @@ describe("ViewsController", () => {
         activeCollectionId: "collection-1",
         collections: [],
       }),
+      mutateItemCollectionRows: jest.fn().mockResolvedValue({
+        collectionId: "collection-1",
+        version: 3,
+        updatedAt: "2026-07-22T10:00:00.000Z",
+        summary: { rowCount: 1 },
+      }),
       activateItemCollection: jest.fn().mockResolvedValue({
         activeCollectionId: "collection-1",
         collections: [],
@@ -537,6 +543,12 @@ describe("ViewsController", () => {
       { baseVersion: 2, rowKeys: ["uuid::1"], perspective: "editor" },
       request,
     );
+    await controller.mutateItemCollectionRows(
+      "acp-1",
+      "collection-1",
+      { baseVersion: 2, removeRowKeys: ["uuid::1"], perspective: "editor" },
+      request,
+    );
     const res = { setHeader: jest.fn(), send: jest.fn() } as any;
     await controller.exportItemCollectionCsv(
       "acp-1",
@@ -556,6 +568,15 @@ describe("ViewsController", () => {
       { kind: "user", userId: "user-1" },
       "collection-1",
       expect.objectContaining({ baseVersion: 2, rowKeys: ["uuid::1"] }),
+      true,
+    );
+    expect(
+      itemCollectionsService.mutateItemCollectionRows,
+    ).toHaveBeenCalledWith(
+      "acp-1",
+      { kind: "user", userId: "user-1" },
+      "collection-1",
+      expect.objectContaining({ baseVersion: 2, removeRowKeys: ["uuid::1"] }),
       true,
     );
     expect(itemCollectionsService.exportItemCollectionCsv).toHaveBeenCalledWith(

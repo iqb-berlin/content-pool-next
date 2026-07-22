@@ -37,3 +37,17 @@ export interface ItemCollectionsPayload {
   collectionViewMode: ItemCollectionViewMode;
   collections: ItemCollectionView[];
 }
+
+export interface ItemCollectionRowsMutation {
+  baseVersion?: unknown;
+  addRowKeys?: unknown;
+  removeRowKeys?: unknown;
+  clear?: unknown;
+}
+
+export interface ItemCollectionRowsMutationResult {
+  collectionId: string;
+  version: number;
+  updatedAt: string;
+  summary: ItemCollectionSummary;
+}

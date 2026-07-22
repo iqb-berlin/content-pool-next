@@ -55,8 +55,8 @@ describe("CommentsController", () => {
     expect(commentsService.findByUser).not.toHaveBeenCalled();
   });
 
-  it("returns mine for regular users", async () => {
-    const req = { user: { type: "user", sub: "u-1" } };
+  it("returns mine for OIDC users", async () => {
+    const req = { user: { type: "oidc", sub: "u-1" } };
     const result = await controller.findMine("acp-1", req);
 
     expect(result).toEqual([{ id: "c-user" }]);
@@ -65,7 +65,7 @@ describe("CommentsController", () => {
 
   it("creates comment directly for managers", async () => {
     const req = {
-      user: { type: "user", sub: "u-1", isAppAdmin: true },
+      user: { type: "oidc", sub: "u-1", isAppAdmin: true },
       acpAccessLevel: "PUBLIC",
     };
     const dto = {
@@ -147,7 +147,7 @@ describe("CommentsController", () => {
 
   it("exports comments for manager users", async () => {
     const req = {
-      user: { isAppAdmin: false, type: "user", sub: "u-1" },
+      user: { isAppAdmin: false, type: "oidc", sub: "u-1" },
       acpAccessLevel: "MANAGER",
     };
     const result = await controller.exportComments("acp-1", req);
@@ -171,9 +171,9 @@ describe("CommentsController", () => {
     );
   });
 
-  it("exports comments for normal users with user filter", async () => {
+  it("exports comments for OIDC users with user filter", async () => {
     const req = {
-      user: { isAppAdmin: false, type: "user", sub: "u-42" },
+      user: { isAppAdmin: false, type: "oidc", sub: "u-42" },
       acpAccessLevel: "PUBLIC",
     };
 
@@ -218,9 +218,9 @@ describe("CommentsController", () => {
     );
   });
 
-  it("exports XLSX for normal users with username fallback", async () => {
+  it("exports XLSX for OIDC users with username fallback", async () => {
     const req = {
-      user: { isAppAdmin: false, type: "user", sub: "u-2", username: "" },
+      user: { isAppAdmin: false, type: "oidc", sub: "u-2", username: "" },
       acpAccessLevel: "PUBLIC",
     };
     const res = { setHeader: jest.fn(), send: jest.fn() } as any;

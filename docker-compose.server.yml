@@ -110,7 +110,6 @@ services:
       DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-false}
       DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-true}
       SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
-      SEED_DEFAULT_ADMIN: ${SEED_DEFAULT_ADMIN:-false}
     volumes:
       - uploads:/app/uploads
     healthcheck:

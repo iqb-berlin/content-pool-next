@@ -3,7 +3,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsBoolean,
-  MinLength,
 } from "class-validator";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 
@@ -12,11 +11,6 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   username!: string;
-
-  @ApiProperty({ example: "SecurePass123!" })
-  @IsString()
-  @MinLength(8)
-  password!: string;
 
   @ApiPropertyOptional({ example: "John Doe" })
   @IsString()
@@ -34,10 +28,4 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   displayName?: string;
-
-  @ApiPropertyOptional()
-  @IsString()
-  @MinLength(8)
-  @IsOptional()
-  password?: string;
 }

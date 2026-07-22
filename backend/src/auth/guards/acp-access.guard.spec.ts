@@ -138,6 +138,27 @@ describe("AcpAccessGuard", () => {
     expect(request.acpAccessLevel).toBe("MANAGER");
   });
 
+  it("rejects legacy local bearer tokens before resolving the user", async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "legacy-user-id",
+      username: "legacy",
+      type: "user",
+      authType: "local",
+    });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+
+    const request: any = {
+      params: { acpId },
+      headers: { authorization: "Bearer legacy-token" },
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(
+      "Authentication required",
+    );
+    expect(userRepository.findOne).not.toHaveBeenCalled();
+  });
+
   it("does not reuse a role for a different ACP", async () => {
     userRepository.query = jest.fn().mockResolvedValue([
       {

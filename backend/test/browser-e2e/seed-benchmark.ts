@@ -2,7 +2,6 @@ import { NestFactory } from "@nestjs/core";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { DataSource } from "typeorm";
-import * as bcrypt from "bcryptjs";
 import { AppModule } from "../../src/app.module";
 import {
   AccessModel,
@@ -19,7 +18,6 @@ import {
 const ACP_ID = "20000000-0000-4000-8000-000000000001";
 const MANAGER_ID = "20000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "benchmark-manager";
-const MANAGER_PASSWORD = "Benchmark-E2E-123!";
 const UNIT_COUNT = 50;
 const ITEMS_PER_UNIT = 40;
 const EXPECTED_FILE_COUNT = 151;
@@ -159,7 +157,6 @@ async function seed(): Promise<void> {
       dataSource.getRepository(User).create({
         id: MANAGER_ID,
         username: MANAGER_USERNAME,
-        passwordHash: await bcrypt.hash(MANAGER_PASSWORD, 4),
         displayName: "Benchmark Manager",
         isAppAdmin: false,
       }),

@@ -6,12 +6,11 @@ import {
   UseGuards,
   Request,
   UnauthorizedException,
-  Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { OidcValidationService } from "./services/oidc-validation.service";
-import { LoginDto, CredentialLoginDto, OidcCallbackDto } from "./dto/login.dto";
+import { CredentialLoginDto, OidcCallbackDto } from "./dto/login.dto";
 import { SyncOidcRolesDto } from "./dto/sync-oidc-roles.dto";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
@@ -45,45 +44,6 @@ export class AuthController {
       redirectUri,
       scope: process.env.OIDC_SCOPE || "openid profile email",
     };
-  }
-
-  @Get("context")
-  @ApiOperation({ summary: "Get available authentication methods for context" })
-  async getAuthContext(@Query("type") type: string) {
-    const oidcEnabled = this.oidcValidationService.isOidcEnabled();
-
-    // Admin context: only OIDC allowed
-    if (type === "admin") {
-      return {
-        allowedMethods: oidcEnabled ? ["oidc"] : [],
-        oidcEnabled,
-        message: oidcEnabled
-          ? "Admin login requires OIDC authentication"
-          : "OIDC is not configured",
-      };
-    }
-
-    // ACP credential context: only credentials allowed
-    if (type === "acp") {
-      return {
-        allowedMethods: ["credentials"],
-        oidcEnabled: false,
-        message: "Please login with ACP credentials",
-      };
-    }
-
-    // Default: return both if OIDC enabled
-    return {
-      allowedMethods: oidcEnabled ? ["oidc", "credentials"] : ["credentials"],
-      oidcEnabled,
-      message: "Please select authentication method",
-    };
-  }
-
-  @Post("login")
-  @ApiOperation({ summary: "Login with username and password" })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto.username, loginDto.password);
   }
 
   @Post("oidc-callback")

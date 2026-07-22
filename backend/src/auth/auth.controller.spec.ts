@@ -15,7 +15,6 @@ describe("AuthController", () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     authService = {
-      login: jest.fn().mockResolvedValue({ accessToken: "jwt-login" }),
       generateTokenForOidcUser: jest
         .fn()
         .mockResolvedValue({ accessToken: "jwt-oidc" }),
@@ -72,70 +71,6 @@ describe("AuthController", () => {
       redirectUri: "http://localhost:4201/auth/callback",
       scope: "openid profile email",
     });
-  });
-
-  it("returns auth context for admin type", async () => {
-    oidcValidationService.isOidcEnabled.mockReturnValue(true);
-
-    const result = await controller.getAuthContext("admin");
-
-    expect(result).toEqual({
-      allowedMethods: ["oidc"],
-      oidcEnabled: true,
-      message: "Admin login requires OIDC authentication",
-    });
-  });
-
-  it("returns disabled admin auth context when OIDC is off", async () => {
-    oidcValidationService.isOidcEnabled.mockReturnValue(false);
-
-    const result = await controller.getAuthContext("admin");
-
-    expect(result).toEqual({
-      allowedMethods: [],
-      oidcEnabled: false,
-      message: "OIDC is not configured",
-    });
-  });
-
-  it("returns ACP credential auth context", async () => {
-    const result = await controller.getAuthContext("acp");
-    expect(result).toEqual({
-      allowedMethods: ["credentials"],
-      oidcEnabled: false,
-      message: "Please login with ACP credentials",
-    });
-  });
-
-  it("returns default mixed auth context when OIDC is enabled", async () => {
-    oidcValidationService.isOidcEnabled.mockReturnValue(true);
-
-    const result = await controller.getAuthContext("unknown");
-    expect(result).toEqual({
-      allowedMethods: ["oidc", "credentials"],
-      oidcEnabled: true,
-      message: "Please select authentication method",
-    });
-  });
-
-  it("returns default credentials-only auth context when OIDC is disabled", async () => {
-    oidcValidationService.isOidcEnabled.mockReturnValue(false);
-
-    const result = await controller.getAuthContext("unknown");
-    expect(result).toEqual({
-      allowedMethods: ["credentials"],
-      oidcEnabled: false,
-      message: "Please select authentication method",
-    });
-  });
-
-  it("delegates login", async () => {
-    const result = await controller.login({
-      username: "u",
-      password: "p",
-    } as any);
-    expect(result).toEqual({ accessToken: "jwt-login" });
-    expect(authService.login).toHaveBeenCalledWith("u", "p");
   });
 
   it("rejects OIDC callback when OIDC is disabled", async () => {

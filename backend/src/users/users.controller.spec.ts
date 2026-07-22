@@ -33,7 +33,7 @@ describe("UsersController", () => {
   });
 
   it("creates users", async () => {
-    const dto = { username: "bob", password: "Secret123!" } as any;
+    const dto = { username: "bob", displayName: "Bob" } as any;
 
     await expect(controller.create(dto)).resolves.toEqual({
       id: "u-2",

@@ -6,7 +6,6 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import * as bcrypt from "bcryptjs";
 import { User, AcpUserRole, AcpRole } from "../database/entities";
 import { CreateUserDto, UpdateUserDto } from "./dto/user.dto";
 
@@ -61,10 +60,8 @@ export class UsersService {
       throw new ConflictException(`Username "${dto.username}" already exists`);
     }
 
-    const passwordHash = await bcrypt.hash(dto.password, 12);
     const user = this.userRepository.create({
       username: dto.username,
-      passwordHash,
       displayName: dto.displayName,
       isAppAdmin: dto.isAppAdmin ?? false,
     });
@@ -81,10 +78,6 @@ export class UsersService {
     if (dto.displayName !== undefined) {
       user.displayName = dto.displayName;
     }
-    if (dto.password) {
-      user.passwordHash = await bcrypt.hash(dto.password, 12);
-    }
-
     await this.userRepository.save(user);
     return this.findById(id);
   }
@@ -121,32 +114,5 @@ export class UsersService {
     user.isAppAdmin = isAppAdmin;
     await this.userRepository.save(user);
     return this.findById(id);
-  }
-
-  /**
-   * Seeds the initial admin user if no users exist.
-   */
-  async seedInitialAdmin(): Promise<void> {
-    const shouldSeed =
-      process.env.SEED_DEFAULT_ADMIN === "true" ||
-      process.env.NODE_ENV !== "production";
-    if (!shouldSeed) {
-      return;
-    }
-
-    const count = await this.userRepository.count();
-    if (count === 0) {
-      const username = process.env.DEFAULT_ADMIN_USERNAME || "admin";
-      const password = process.env.DEFAULT_ADMIN_PASSWORD || "admin";
-      const passwordHash = await bcrypt.hash(password, 12);
-      const admin = this.userRepository.create({
-        username,
-        passwordHash,
-        displayName: "Administrator",
-        isAppAdmin: true,
-      });
-      await this.userRepository.save(admin);
-      console.log(`Initial admin user created (username: ${username})`);
-    }
   }
 }

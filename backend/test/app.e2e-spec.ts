@@ -3,7 +3,6 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import * as bcrypt from "bcryptjs";
 import * as request from "supertest";
 import {
   AcpFile,
@@ -144,7 +143,6 @@ describe("ContentPool API (e2e)", () => {
     const adminUser = await userRepo.save(
       userRepo.create({
         username: adminUsername,
-        passwordHash: await bcrypt.hash("TempPassword123!", 10),
         isAppAdmin: true,
       }),
     );
@@ -153,7 +151,8 @@ describe("ContentPool API (e2e)", () => {
       sub: adminUser.id,
       username: adminUser.username,
       isAppAdmin: true,
-      type: "user",
+      type: "oidc",
+      authType: "oidc",
     });
   });
 
@@ -161,6 +160,17 @@ describe("ContentPool API (e2e)", () => {
     if (app) {
       await app.close();
     }
+  });
+
+  it("does not expose the removed local user login endpoint", async () => {
+    await request(server)
+      .post("/api/auth/login")
+      .send({ username: "legacy-user", password: "LegacyPassword123!" })
+      .expect(404);
+  });
+
+  it("does not expose the removed authentication context endpoint", async () => {
+    await request(server).get("/api/auth/context").expect(404);
   });
 
   it("creates ACP and baseline index", async () => {

@@ -56,8 +56,7 @@ npm install --legacy-peer-deps
 npm run start:dev
 # → API at http://localhost:3000/api
 # → Swagger at http://localhost:3000/api/docs
-# → In non-production, an empty database gets a seeded local user: admin / admin
-# → App-Admin login requires OIDC (development user: iqb-admin / Admin1234!)
+# → User login uses Keycloak OIDC (development user: iqb-admin / Admin1234!)
 
 # Frontend
 cd frontend
@@ -314,7 +313,7 @@ ACP route with a synthetic ID.
 
 ## OIDC / Keycloak Integration
 
-Application-Admin login uses Keycloak OIDC. ACP-Manager and READ_ONLY users can use local ContentPool credentials (JWT-based login). ACP credential-list access continues to work without OIDC.
+All application users sign in through Keycloak OIDC. ACP-specific credential-list access remains available independently for restricted viewer access.
 
 Highlights:
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/configure-github-release-settings.sh --reviewer USER [options]
+Usage: scripts/configure-github-release-settings.sh (--reviewer USER | --no-reviewer) [options]
 
 Configure master branch protection and the protected production environment.
 Run only after the workflow containing the release-gate job is merged.
@@ -11,13 +11,15 @@ Run only after the workflow containing the release-gate job is merged.
 Options:
   --repo OWNER/REPO  Repository (default: current gh repository)
   --branch NAME      Protected release branch (default: master)
-  --reviewer USER    Different GitHub user who may approve production (required)
+  --reviewer USER    Different GitHub user who may approve production
+  --no-reviewer      Create production without an approval rule (temporary)
 USAGE
 }
 
 repo=""
 branch=master
 reviewer=""
+no_reviewer=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
@@ -26,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --branch=*) branch="${1#*=}"; shift ;;
     --reviewer) reviewer="$2"; shift 2 ;;
     --reviewer=*) reviewer="${1#*=}"; shift ;;
+    --no-reviewer) no_reviewer=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -34,14 +37,24 @@ done
 command -v gh >/dev/null || { echo "gh is required" >&2; exit 1; }
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 [[ -n "$repo" ]] || repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-[[ -n "$reviewer" ]] || { echo "--reviewer USER is required" >&2; exit 1; }
-
-actor="$(gh api user --jq .login)"
-[[ "$reviewer" != "$actor" ]] || {
-  echo "Production approval must be assigned to a second person" >&2
+if [[ -n "$reviewer" && "$no_reviewer" == true ]]; then
+  echo "--reviewer and --no-reviewer are mutually exclusive" >&2
+  exit 1
+fi
+[[ -n "$reviewer" || "$no_reviewer" == true ]] || {
+  echo "Either --reviewer USER or --no-reviewer is required" >&2
   exit 1
 }
-reviewer_id="$(gh api "users/${reviewer}" --jq .id)"
+
+actor="$(gh api user --jq .login)"
+reviewer_id=""
+if [[ -n "$reviewer" ]]; then
+  [[ "$reviewer" != "$actor" ]] || {
+    echo "Production approval must be assigned to a second person" >&2
+    exit 1
+  }
+  reviewer_id="$(gh api "users/${reviewer}" --jq .id)"
+fi
 
 workflow="$(gh api -H 'Accept: application/vnd.github.raw+json' \
   "repos/${repo}/contents/.github/workflows/ci.yml?ref=${branch}")"
@@ -90,13 +103,26 @@ fi
 
 gh api --method PUT "repos/${repo}/branches/${branch}/protection" \
   --input "${temp_dir}/branch.json" >/dev/null
-jq -n --argjson reviewer_id "$reviewer_id" '{
-  wait_timer: 0,
-  prevent_self_review: true,
-  reviewers: [{type: "User", id: $reviewer_id}],
-  deployment_branch_policy: {protected_branches: true, custom_branch_policies: false}
-}' >"${temp_dir}/environment.json"
+if [[ -n "$reviewer_id" ]]; then
+  jq -n --argjson reviewer_id "$reviewer_id" '{
+    wait_timer: 0,
+    prevent_self_review: true,
+    reviewers: [{type: "User", id: $reviewer_id}],
+    deployment_branch_policy: {protected_branches: true, custom_branch_policies: false}
+  }' >"${temp_dir}/environment.json"
+else
+  jq -n '{
+    wait_timer: 0,
+    prevent_self_review: false,
+    reviewers: [],
+    deployment_branch_policy: {protected_branches: true, custom_branch_policies: false}
+  }' >"${temp_dir}/environment.json"
+fi
 gh api --method PUT "repos/${repo}/environments/production" \
   --input "${temp_dir}/environment.json" >/dev/null
 
-echo "Configured ${repo}:${branch} protection and production approval by ${reviewer}"
+if [[ -n "$reviewer" ]]; then
+  echo "Configured ${repo}:${branch} protection and production approval by ${reviewer}"
+else
+  echo "Configured ${repo}:${branch} protection and production without required reviewers"
+fi

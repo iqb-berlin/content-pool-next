@@ -343,7 +343,7 @@ jobs:
         working-directory: frontend
       - run: npm audit --audit-level=critical
         working-directory: frontend
-      - uses: aquasecurity/trivy-action@0.32.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .

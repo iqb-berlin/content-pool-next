@@ -132,6 +132,17 @@ describe('AuthService', () => {
 
       expect(httpClientMock.get).not.toHaveBeenCalled();
     });
+
+    it('clears legacy local sessions immediately', () => {
+      localStorage.setItem('cp_token', 'legacy-token');
+      localStorage.setItem('cp_auth_type', 'local');
+
+      service.initFromStorage();
+
+      expect(localStorage.getItem('cp_token')).toBeNull();
+      expect(localStorage.getItem('cp_auth_type')).toBeNull();
+      expect(httpClientMock.get).not.toHaveBeenCalled();
+    });
   });
 
   describe('getToken', () => {
@@ -209,23 +220,6 @@ describe('AuthService', () => {
   describe('currentUser', () => {
     it('should return null when no user loaded', () => {
       expect(service.currentUser).toBeNull();
-    });
-  });
-
-  describe('login', () => {
-    it('should store token and load profile on successful login', () => {
-      const loginResponse: LoginResponse = { accessToken: 'new-token', user: mockUserProfile };
-      httpClientMock.post.mockReturnValue(of(loginResponse));
-
-      service.login('testuser', 'password').subscribe((response) => {
-        expect(response).toEqual(loginResponse);
-        expect(localStorage.getItem('cp_token')).toBe('new-token');
-      });
-
-      expect(httpClientMock.post).toHaveBeenCalledWith('/api/auth/login', {
-        username: 'testuser',
-        password: 'password',
-      });
     });
   });
 

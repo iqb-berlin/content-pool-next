@@ -14,7 +14,6 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
 
 function isInlineAuthError(url: string): boolean {
   return (
-    url.startsWith('/api/auth/login') ||
     url.startsWith('/api/auth/credential-login') ||
     url.startsWith('/api/auth/oidc-callback')
   );

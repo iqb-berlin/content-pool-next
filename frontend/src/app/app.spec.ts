@@ -3,9 +3,10 @@ import { of } from 'rxjs';
 import { AppComponent } from './app';
 
 describe('AppComponent', () => {
-  it('logs out only after guarded navigation succeeds', async () => {
+  it('logs out credential sessions before navigating home', async () => {
     const calls: string[] = [];
     const auth = {
+      isOidcUser: false,
       logout: vi.fn(() => calls.push('logout')),
     };
     const router = {
@@ -18,17 +19,19 @@ describe('AppComponent', () => {
 
     await component.logout();
 
-    expect(calls).toEqual(['navigate', 'logout']);
+    expect(calls).toEqual(['logout', 'navigate']);
+    expect(router.navigate).toHaveBeenCalledWith(['/']);
   });
 
-  it('keeps the session when guarded navigation is cancelled', async () => {
-    const auth = { logout: vi.fn() };
-    const router = { navigate: vi.fn().mockResolvedValue(false) };
+  it('lets Keycloak handle OIDC logout without an application navigation', async () => {
+    const auth = { isOidcUser: true, logout: vi.fn() };
+    const router = { navigate: vi.fn().mockResolvedValue(true) };
     const component = new AppComponent(auth as any, router as any, {} as any);
 
     await component.logout();
 
-    expect(auth.logout).not.toHaveBeenCalled();
+    expect(auth.logout).toHaveBeenCalledTimes(1);
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('marks different frontend and backend build times as a version mismatch', () => {

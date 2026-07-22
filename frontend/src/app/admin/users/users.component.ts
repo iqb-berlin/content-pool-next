@@ -19,12 +19,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         <h3>Neuen Nutzer anlegen</h3>
         <form (ngSubmit)="createUser()">
           <div class="form-group">
-            <label>Benutzername</label>
+            <label>Keycloak-Benutzername</label>
             <input [(ngModel)]="newUser.username" name="username" required />
-          </div>
-          <div class="form-group">
-            <label>Kennwort</label>
-            <input type="password" [(ngModel)]="newUser.password" name="password" required />
           </div>
           <div class="form-group">
             <label>Anzeigename</label>
@@ -45,53 +41,55 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     }
 
     <div class="card">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Benutzername</th>
-            <th>Anzeigename</th>
-            <th>Admin</th>
-            <th>OIDC</th>
-            <th>Aktionen</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (user of users; track user.id) {
+      <div class="table-scroll" role="region" aria-label="Nutzerliste" tabindex="0">
+        <table class="table">
+          <thead>
             <tr>
-              <td>{{ user.username }}</td>
-              <td>{{ user.displayName || '–' }}</td>
-              <td>
-                <span
-                  class="badge"
-                  [class.badge-success]="user.isAppAdmin"
-                  [class.badge-info]="!user.isAppAdmin"
-                >
-                  {{ user.isAppAdmin ? 'Admin' : 'Nutzer' }}
-                </span>
-              </td>
-              <td>
-                @if (user.oidcSub) {
-                  <span class="badge badge-success" title="{{ user.oidcSub }}">✓ Verknüpft</span>
-                } @else {
-                  <span class="badge badge-warning">✗ Lokal</span>
-                }
-              </td>
-              <td>
-                <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
-                  {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
-                </button>
-                <button
-                  class="btn btn-sm btn-danger"
-                  (click)="openDeleteUserDialog(user)"
-                  style="margin-left:8px"
-                >
-                  Löschen
-                </button>
-              </td>
+              <th>Benutzername</th>
+              <th>Anzeigename</th>
+              <th>Admin</th>
+              <th>OIDC</th>
+              <th>Aktionen</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (user of users; track user.id) {
+              <tr>
+                <td>{{ user.username }}</td>
+                <td>{{ user.displayName || '–' }}</td>
+                <td>
+                  <span
+                    class="badge"
+                    [class.badge-success]="user.isAppAdmin"
+                    [class.badge-info]="!user.isAppAdmin"
+                  >
+                    {{ user.isAppAdmin ? 'Admin' : 'Nutzer' }}
+                  </span>
+                </td>
+                <td>
+                  @if (user.oidcSub) {
+                    <span class="badge badge-success" title="{{ user.oidcSub }}">✓ Verknüpft</span>
+                  } @else {
+                    <span class="badge badge-warning">Noch nicht mit Keycloak verknüpft</span>
+                  }
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-outline" (click)="toggleAdmin(user)">
+                    {{ user.isAppAdmin ? 'Admin entziehen' : 'Zum Admin' }}
+                  </button>
+                  <button
+                    class="btn btn-sm btn-danger"
+                    (click)="openDeleteUserDialog(user)"
+                    style="margin-left:8px"
+                  >
+                    Löschen
+                  </button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
       @if (!users.length) {
         <div class="empty-state"><h3>Keine Nutzer vorhanden</h3></div>
       }
@@ -111,12 +109,20 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       (cancelled)="closeDeleteUserDialog()"
     />
   `,
+  styles: `
+    .table-scroll {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+  `,
 })
 export class UsersComponent implements OnInit {
   users: User[] = [];
   showCreate = false;
   error = '';
-  newUser = { username: '', password: '', displayName: '' };
+  newUser = { username: '', displayName: '' };
   deleteDialogOpen = false;
   deleteDialogBusy = false;
   deleteDialogError = '';
@@ -136,8 +142,8 @@ export class UsersComponent implements OnInit {
   }
 
   createUser() {
-    if (!this.newUser.username.trim() || !this.newUser.password.trim()) {
-      this.error = 'Benutzername und Kennwort sind erforderlich';
+    if (!this.newUser.username.trim()) {
+      this.error = 'Der Keycloak-Benutzername ist erforderlich';
       return;
     }
 
@@ -145,7 +151,7 @@ export class UsersComponent implements OnInit {
     this.api.createUser(this.newUser).subscribe({
       next: () => {
         this.showCreate = false;
-        this.newUser = { username: '', password: '', displayName: '' };
+        this.newUser = { username: '', displayName: '' };
         this.load();
       },
       error: (err) => (this.error = err.error?.message || 'Fehler beim Anlegen'),

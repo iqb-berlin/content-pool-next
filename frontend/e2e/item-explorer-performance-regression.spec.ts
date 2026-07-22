@@ -1,8 +1,9 @@
 import { expect, Page, test } from '@playwright/test';
+import { installOidcSession } from './oidc-test-session';
 
 const ACP_ID = '10000000-0000-4000-8000-000000000101';
+const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 const MANAGER_USERNAME = 'e2e-manager';
-const MANAGER_PASSWORD = 'Manager-E2E-123!';
 
 const rowIds = {
   direct: '#item-explorer-row-regression-item-uuid-1',
@@ -16,15 +17,7 @@ const rowIds = {
 test.describe.configure({ mode: 'serial' });
 
 async function loginAsManager(page: Page): Promise<void> {
-  const response = await page.request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(response.ok()).toBeTruthy();
-  const token = (await response.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
 }
 
 async function openExplorer(page: Page): Promise<void> {

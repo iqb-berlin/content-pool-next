@@ -48,7 +48,7 @@ describe('ApiService', () => {
     });
 
     it('should create user', () => {
-      const userData = { username: 'newuser', password: 'pass' };
+      const userData = { username: 'newuser', displayName: 'New User' };
       const mockUser: User = {
         id: '2',
         username: 'newuser',

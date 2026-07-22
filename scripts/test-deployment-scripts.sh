@@ -10,6 +10,10 @@ grep -q 'up -d --wait --wait-timeout 120' "$ROOT_DIR/scripts/restore.sh" || {
   echo "restore does not wait for both PostgreSQL services" >&2
   exit 1
 }
+grep -q 'up -d --wait --wait-timeout 180' "$ROOT_DIR/scripts/restore.sh" || {
+  echo "restore does not wait for the complete application stack" >&2
+  exit 1
+}
 
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-script-test.XXXXXX")"
 trap 'rm -rf "$temp_dir"' EXIT

@@ -81,6 +81,7 @@ describe("ItemCollectionStore", () => {
           },
         ],
         activeCollectionId: "collection-1",
+        collectionViewMode: "active",
       }),
     );
 
@@ -95,12 +96,13 @@ describe("ItemCollectionStore", () => {
     });
     expect(manager.query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /UPDATE "acp_item_preferences"[\s\S]*jsonb_typeof\("preferences"\) = 'object'[\s\S]*ELSE '\{\}'::jsonb[\s\S]*'\{collections\}'[\s\S]*'\{activeCollectionId\}'/,
+        /UPDATE "acp_item_preferences"[\s\S]*jsonb_typeof\("preferences"\) = 'object'[\s\S]*ELSE '\{\}'::jsonb[\s\S]*'\{collections\}'[\s\S]*'\{activeCollectionId\}'[\s\S]*'\{collectionViewMode\}'/,
       ),
       [
         "preference-1",
         expect.stringContaining('"collection-1"'),
         JSON.stringify("collection-1"),
+        JSON.stringify("active"),
         null,
       ],
     );
@@ -119,7 +121,11 @@ describe("ItemCollectionStore", () => {
       false,
       (preferences) => {
         expect(preferences).toEqual({});
-        return { collections: [], activeCollectionId: null };
+        return {
+          collections: [],
+          activeCollectionId: null,
+          collectionViewMode: "all",
+        };
       },
     );
 
@@ -140,7 +146,11 @@ describe("ItemCollectionStore", () => {
         credentialUsername: "reader-a",
       },
       true,
-      () => ({ collections: [], activeCollectionId: null }),
+      () => ({
+        collections: [],
+        activeCollectionId: null,
+        collectionViewMode: "all",
+      }),
     );
 
     expect(manager.query).toHaveBeenNthCalledWith(
@@ -159,6 +169,7 @@ describe("ItemCollectionStore", () => {
       store.mutate("acp-1", { kind: "user", userId: "user-1" }, false, () => ({
         collections: [],
         activeCollectionId: null,
+        collectionViewMode: "all",
       })),
     ).rejects.toThrow(NotFoundException);
     expect(manager.query).not.toHaveBeenCalled();

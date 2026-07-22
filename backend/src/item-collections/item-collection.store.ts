@@ -52,21 +52,26 @@ export class ItemCollectionStore {
             UPDATE "acp_item_preferences"
             SET "preferences" = jsonb_set(
                   jsonb_set(
-                    CASE
-                      WHEN jsonb_typeof("preferences") = 'object'
-                        THEN "preferences"
-                      ELSE '{}'::jsonb
-                    END,
-                    '{collections}',
-                    $2::jsonb,
+                    jsonb_set(
+                      CASE
+                        WHEN jsonb_typeof("preferences") = 'object'
+                          THEN "preferences"
+                        ELSE '{}'::jsonb
+                      END,
+                      '{collections}',
+                      $2::jsonb,
+                      true
+                    ),
+                    '{activeCollectionId}',
+                    $3::jsonb,
                     true
                   ),
-                  '{activeCollectionId}',
-                  $3::jsonb,
+                  '{collectionViewMode}',
+                  $4::jsonb,
                   true
                 ),
                 "credential_username" = CASE
-                  WHEN $4::varchar IS NOT NULL THEN $4::varchar
+                  WHEN $5::varchar IS NOT NULL THEN $5::varchar
                   ELSE "credential_username"
                 END,
                 "updated_at" = now()
@@ -76,6 +81,7 @@ export class ItemCollectionStore {
             record.id,
             JSON.stringify(state.collections),
             JSON.stringify(state.activeCollectionId),
+            JSON.stringify(state.collectionViewMode),
             identity.kind === "credential"
               ? identity.credentialUsername || null
               : null,

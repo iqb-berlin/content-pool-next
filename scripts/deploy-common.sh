@@ -306,9 +306,13 @@ cp_apply_manifest_env() {
   local manifest="$2"
   local environment="$3"
   local tool="$4"
+  local compose_project
 
   cp_env_set "$env_file" DEPLOYMENT_ENV "$environment"
-  cp_env_set "$env_file" COMPOSE_PROJECT_NAME "content-pool-${environment}"
+  compose_project="$(cp_env_get "$env_file" COMPOSE_PROJECT_NAME)"
+  if [[ -z "$compose_project" ]]; then
+    cp_env_set "$env_file" COMPOSE_PROJECT_NAME "content-pool-${environment}"
+  fi
   cp_env_set "$env_file" RELEASE_VERSION "$(cp_manifest_get "$tool" "$manifest" release)"
   cp_env_set "$env_file" APPLICATION_VERSION "$(cp_manifest_get "$tool" "$manifest" applicationVersion)"
   cp_env_set "$env_file" RELEASE_COMMIT "$(cp_manifest_get "$tool" "$manifest" sourceCommit)"
@@ -338,11 +342,99 @@ PY
 
 cp_set_compose_args() {
   local mode="$1"
+  local override="${2:-}"
   cp_validate_mode "$mode"
   CONTENT_POOL_COMPOSE_ARGS=(-f docker-compose.server.yml)
   if [[ "$mode" == "traefik" ]]; then
     CONTENT_POOL_COMPOSE_ARGS+=(-f docker-compose.traefik.yml)
   fi
+  if [[ -n "$override" ]]; then
+    [[ -f "$override" ]] || cp_die "Compose override not found: $override"
+    CONTENT_POOL_COMPOSE_ARGS+=(-f "$override")
+  fi
+}
+
+cp_compose_container_id() {
+  local service="$1"
+  local container
+  container="$(docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" ps -q "$service" 2>/dev/null | head -n 1)"
+  [[ -n "$container" ]] || return 1
+  printf '%s' "$container"
+}
+
+cp_compose_service_running() {
+  local service="$1"
+  local container state
+  container="$(cp_compose_container_id "$service")" || return 1
+  state="$(docker inspect "$container" --format '{{.State.Running}}' 2>/dev/null)" || return 1
+  [[ "$state" == "true" ]]
+}
+
+cp_sha256_file() {
+  python3 - "$1" <<'PY'
+import hashlib
+import sys
+
+digest = hashlib.sha256()
+with open(sys.argv[1], "rb") as source:
+    for block in iter(lambda: source.read(1024 * 1024), b""):
+        digest.update(block)
+print(digest.hexdigest())
+PY
+}
+
+cp_write_sha256s() {
+  local directory="$1"
+  shift
+  python3 - "$directory" "$@" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+lines = []
+for name in sys.argv[2:]:
+    path = directory / name
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    lines.append(f"{digest.hexdigest()}  {name}")
+(directory / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
+}
+
+cp_verify_sha256s() {
+  local directory="$1"
+  python3 - "$directory" <<'PY'
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+directory = Path(sys.argv[1])
+sums = directory / "SHA256SUMS"
+if not sums.is_file():
+    raise SystemExit("SHA256SUMS is missing")
+seen = set()
+for line in sums.read_text(encoding="utf-8").splitlines():
+    match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
+    if not match:
+        raise SystemExit(f"invalid checksum line: {line}")
+    expected, name = match.groups()
+    if name == "SHA256SUMS" or name in seen:
+        raise SystemExit(f"invalid checksum target: {name}")
+    seen.add(name)
+    path = directory / name
+    if not path.is_file():
+        raise SystemExit(f"checksummed file is missing: {name}")
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    if digest.hexdigest() != expected:
+        raise SystemExit(f"checksum mismatch: {name}")
+PY
 }
 
 cp_detect_mode() {

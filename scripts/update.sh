@@ -23,6 +23,8 @@ Options:
   --manifest FILE|URL               Alternate release-manifest.json source
   --rollback-to VERSION             Explicitly permit a downgrade to VERSION
   --adopt-current VERSION           Pin currently running legacy images as a baseline
+  --compose-override FILE           Additional Compose file for an isolated deployment
+  --base-url URL                    Public/frontend URL used by server-mode health checks
   --backup-dir DIR                  Backup root (default: ./backups)
   --no-backup                       Skip backups (intentional maintenance only)
   --allow-incomplete-backup         Continue if a backup source is not running
@@ -51,6 +53,23 @@ running_image_digest() {
   repo_digest="$(docker image inspect "$image_id" --format '{{range .RepoDigests}}{{println .}}{{end}}' 2>/dev/null | head -n 1)"
   [[ "$repo_digest" =~ @sha256:[0-9a-f]{64}$ ]] || return 1
   printf '%s' "$repo_digest"
+}
+
+running_service_image_digest() {
+  local service="$1" container
+  container="$(cp_compose_container_id "$service")" || return 1
+  running_image_digest "$container"
+}
+
+write_digest_override() {
+  local output="$1" backend="$2" frontend="$3"
+  cat >"$output" <<YAML
+services:
+  content-pool-api:
+    image: ${backend}
+  nginx:
+    image: ${frontend}
+YAML
 }
 
 validate_env_safety() {
@@ -92,23 +111,29 @@ create_backup_dir() {
 }
 
 backup_database() {
-  local container="$1" user="$2" database="$3" output="$4"
-  if cp_has_running_container "$container"; then
-    cp_info "Backing up ${database} from ${container}"
+  local service="$1" user="$2" database="$3" output="$4" container
+  if cp_compose_service_running "$service"; then
+    container="$(cp_compose_container_id "$service")"
+    cp_info "Backing up ${database} from ${service}"
     if ! docker exec "$container" pg_dump --format=custom -U "$user" "$database" > "$output"; then
       command rm -f "$output"
-      cp_die "Database backup failed for ${container}/${database}"
+      cp_die "Database backup failed for ${service}/${database}"
+    fi
+    if ! docker exec -i "$container" pg_restore --list <"$output" >/dev/null; then
+      command rm -f "$output"
+      cp_die "Database backup validation failed for ${service}/${database}"
     fi
   elif [[ "$ALLOW_INCOMPLETE_BACKUP" -eq 0 ]]; then
-    cp_die "Container ${container} is not running; backup would be incomplete"
+    cp_die "Service ${service} is not running; backup would be incomplete"
   else
-    cp_warn "Container ${container} is not running; database backup skipped"
+    cp_warn "Service ${service} is not running; database backup skipped"
   fi
 }
 
 keycloak_user_count() {
-  local user="$1" database="$2" realm="$3" count
-  count="$(docker exec -i keycloak-db psql -qAt -v ON_ERROR_STOP=1 \
+  local user="$1" database="$2" realm="$3" count container
+  container="$(cp_compose_container_id keycloak-db)" || return 1
+  count="$(docker exec -i "$container" psql -qAt -v ON_ERROR_STOP=1 \
     -v realm_name="$realm" -U "$user" -d "$database" <<'SQL'
 select count(*)
 from user_entity u
@@ -123,7 +148,7 @@ SQL
 
 capture_keycloak_users() {
   [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]] || return 0
-  if ! cp_has_running_container keycloak-db; then
+  if ! cp_compose_service_running keycloak-db; then
     [[ "$ALLOW_INCOMPLETE_BACKUP" -eq 1 ]] || cp_die "keycloak-db is not running"
     cp_warn "Keycloak user check skipped because keycloak-db is not running"
     KEYCLOAK_USER_CHECK=0
@@ -136,8 +161,16 @@ capture_keycloak_users() {
   export KEYCLOAK_USERS_BEFORE
 }
 
+write_backup_checksums() {
+  local backup_dir="$1" path backup_files=(manifest.txt)
+  for path in config.tgz content-pool-db.dump keycloak-db.dump uploads.tgz; do
+    [[ -f "${backup_dir}/${path}" ]] && backup_files+=("$path")
+  done
+  cp_write_sha256s "$backup_dir" "${backup_files[@]}"
+}
+
 create_backup() {
-  local backup_dir old_umask paths=() path
+  local backup_dir old_umask paths=() path api_container
   old_umask="$(umask)"
   umask 077
   backup_dir="$(create_backup_dir "$BACKUP_ROOT")"
@@ -154,8 +187,9 @@ create_backup() {
     "$(cp_env_get_default .env KEYCLOAK_DB_USER keycloak)" \
     "$(cp_env_get_default .env KEYCLOAK_DB_NAME keycloak)" \
     "${backup_dir}/keycloak-db.dump"
-  if cp_has_running_container content-pool-api; then
-    docker exec content-pool-api tar -C /app -czf - uploads > "${backup_dir}/uploads.tgz" || \
+  if cp_compose_service_running content-pool-api; then
+    api_container="$(cp_compose_container_id content-pool-api)"
+    docker exec "$api_container" tar -C /app -czf - uploads > "${backup_dir}/uploads.tgz" || \
       cp_die "Upload backup failed"
   elif [[ "$ALLOW_INCOMPLETE_BACKUP" -eq 0 ]]; then
     cp_die "content-pool-api is not running; upload backup would be incomplete"
@@ -170,6 +204,7 @@ create_backup() {
     printf 'keycloak_realm=%s\n' "$KEYCLOAK_REALM"
     printf 'keycloak_users_before=%s\n' "${KEYCLOAK_USERS_BEFORE:-}"
   } > "${backup_dir}/manifest.txt"
+  write_backup_checksums "$backup_dir"
   chmod 700 "$backup_dir"
   find "$backup_dir" -type f -exec chmod 600 {} \;
   umask "$old_umask"
@@ -224,7 +259,11 @@ PY
 run_health_check() {
   local keycloak_url api_url frontend_url content_host
   [[ "$HEALTH_CHECK" -eq 1 ]] || return 0
-  if [[ "$MODE" == "traefik" ]]; then
+  if [[ -n "$BASE_URL" ]]; then
+    keycloak_url="$(cp_env_get .env OIDC_PUBLIC_ISSUER_URL)"
+    api_url="${BASE_URL%/}/api"
+    frontend_url="${BASE_URL%/}"
+  elif [[ "$MODE" == "traefik" ]]; then
     content_host="$(cp_env_get .env CONTENT_POOL_HOST)"
     keycloak_url="$(cp_env_get .env OIDC_PUBLIC_ISSUER_URL)"
     api_url="https://${content_host}/api"
@@ -239,10 +278,14 @@ run_health_check() {
 }
 
 restore_previous_application() {
+  local digest_override
   cp_warn "Restoring previous runtime files and image references; database migrations are not reverted"
   if [[ -n "$LAST_BACKUP_DIR" && -f "${LAST_BACKUP_DIR}/config.tgz" ]]; then
     tar -xzf "${LAST_BACKUP_DIR}/config.tgz" -C .
-    cp_set_compose_args "$MODE"
+    cp_set_compose_args "$MODE" "$COMPOSE_OVERRIDE"
+    digest_override="${LAST_BACKUP_DIR}/rollback-images.yml"
+    write_digest_override "$digest_override" "$PREVIOUS_BACKEND_IMAGE" "$PREVIOUS_FRONTEND_IMAGE"
+    CONTENT_POOL_COMPOSE_ARGS+=(-f "$digest_override")
     if run_compose up -d; then
       cp_warn "Previous application release restarted"
     else
@@ -275,13 +318,16 @@ cleanup_update() {
 }
 
 adopt_current() {
-  local baseline="$1" backend frontend compose_project
+  local baseline="$1" backend frontend compose_project api_container frontend_container
+  local baseline_dir runtime_archive runtime_sha paths=() path
   [[ "$baseline" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || cp_die "--adopt-current requires stable vMAJOR.MINOR.PATCH"
-  cp_has_running_container content-pool-api || cp_die "content-pool-api is not running"
-  cp_has_running_container content-pool-nginx || cp_die "content-pool-nginx is not running"
-  backend="$(running_image_digest content-pool-api)" || cp_die "Cannot resolve running backend RepoDigest"
-  frontend="$(running_image_digest content-pool-nginx)" || cp_die "Cannot resolve running frontend RepoDigest"
-  compose_project="$(docker inspect content-pool-api \
+  cp_compose_service_running content-pool-api || cp_die "content-pool-api is not running"
+  cp_compose_service_running nginx || cp_die "nginx is not running"
+  api_container="$(cp_compose_container_id content-pool-api)"
+  frontend_container="$(cp_compose_container_id nginx)"
+  backend="$(running_image_digest "$api_container")" || cp_die "Cannot resolve running backend RepoDigest"
+  frontend="$(running_image_digest "$frontend_container")" || cp_die "Cannot resolve running frontend RepoDigest"
+  compose_project="$(docker inspect "$api_container" \
     --format '{{index .Config.Labels "com.docker.compose.project"}}' 2>/dev/null)" || \
     cp_die "Cannot determine the legacy Compose project"
   [[ -n "$compose_project" ]] || cp_die "Running backend has no Compose project label"
@@ -293,9 +339,20 @@ adopt_current() {
   cp_env_set .env RELEASE_BUILT_AT 1970-01-01T00:00:00Z
   cp_env_set .env CONTENT_POOL_BACKEND_IMAGE "$backend"
   cp_env_set .env CONTENT_POOL_FRONTEND_IMAGE "$frontend"
-  mkdir -p deployments
-  python3 - "$baseline" "$ENVIRONMENT" "$compose_project" "$backend" "$frontend" > "deployments/baseline-${baseline}.json" <<'PY'
-import json, sys
+
+  baseline_dir="baselines/${baseline}"
+  mkdir -m 700 -p deployments "$baseline_dir"
+  for path in .env .release-manifest.json docker-compose.server.yml docker-compose.traefik.yml nginx.server.conf Makefile keycloak scripts; do
+    [[ -e "$path" ]] && paths+=("$path")
+  done
+  runtime_archive="${baseline_dir}/runtime.tgz"
+  tar -czf "$runtime_archive" "${paths[@]}"
+  runtime_sha="$(cp_sha256_file "$runtime_archive")"
+  python3 - "$baseline" "$ENVIRONMENT" "$compose_project" "$backend" "$frontend" "$runtime_sha" \
+    > "${baseline_dir}/manifest.json" <<'PY'
+import json
+import sys
+
 print(json.dumps({
     "schemaVersion": 1,
     "type": "legacy-baseline",
@@ -303,9 +360,122 @@ print(json.dumps({
     "environment": sys.argv[2],
     "composeProject": sys.argv[3],
     "images": {"backend": sys.argv[4], "frontend": sys.argv[5]},
+    "runtime": {"archive": "runtime.tgz", "sha256": sys.argv[6]},
 }, indent=2))
 PY
+  cp_write_sha256s "$baseline_dir" manifest.json runtime.tgz
+  command cp -f "${baseline_dir}/manifest.json" "deployments/baseline-${baseline}.json"
+  chmod 600 "${baseline_dir}"/* "deployments/baseline-${baseline}.json"
   cp_info "Adopted ${baseline} with immutable running image digests"
+  cp_info "Baseline: ${baseline_dir}"
+}
+
+baseline_get() {
+  local manifest="$1" field="$2"
+  python3 - "$manifest" "$field" <<'PY'
+import json
+import sys
+
+value = json.load(open(sys.argv[1], encoding="utf-8"))
+for part in sys.argv[2].split("."):
+    value = value[part]
+print(value)
+PY
+}
+
+validate_local_baseline() {
+  local baseline="$1" baseline_dir="baselines/${1}" manifest
+  manifest="${baseline_dir}/manifest.json"
+  [[ -f "$manifest" && -f "${baseline_dir}/runtime.tgz" ]] || return 1
+  cp_verify_sha256s "$baseline_dir" || cp_die "Legacy baseline checksum validation failed"
+  cp_validate_tar_archive "${baseline_dir}/runtime.tgz" || cp_die "Unsafe legacy baseline archive"
+  python3 - "$manifest" "$baseline" "$ENVIRONMENT" <<'PY'
+import json
+import re
+import sys
+
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+if data.get("schemaVersion") != 1 or data.get("type") != "legacy-baseline":
+    raise SystemExit("invalid legacy baseline schema")
+if data.get("release") != sys.argv[2] or data.get("environment") != sys.argv[3]:
+    raise SystemExit("legacy baseline target mismatch")
+if not data.get("composeProject"):
+    raise SystemExit("legacy baseline compose project is missing")
+images = data.get("images")
+if not isinstance(images, dict) or set(images) != {"backend", "frontend"}:
+    raise SystemExit("legacy baseline images are incomplete")
+for image in images.values():
+    if not isinstance(image, str) or not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", image):
+        raise SystemExit("legacy baseline image is not digest-pinned")
+runtime = data.get("runtime", {})
+if runtime.get("archive") != "runtime.tgz" or not re.fullmatch(r"[0-9a-f]{64}", str(runtime.get("sha256", ""))):
+    raise SystemExit("invalid legacy baseline runtime metadata")
+PY
+}
+
+rollback_local_baseline() {
+  local baseline="$1" baseline_dir="baselines/${1}" manifest digest_override users_after
+  manifest="${baseline_dir}/manifest.json"
+  validate_local_baseline "$baseline" || cp_die "Local legacy baseline not found: ${baseline}"
+  TARGET_RELEASE="$baseline"
+  TARGET_APPLICATION_VERSION=""
+  TARGET_COMMIT=""
+  TARGET_BACKEND_IMAGE="$(baseline_get "$manifest" images.backend)"
+  TARGET_FRONTEND_IMAGE="$(baseline_get "$manifest" images.frontend)"
+
+  if [[ "$YES" -eq 0 ]] && is_tty; then
+    printf 'Roll back application to local baseline %s? [y/N]: ' "$baseline"
+    read -r answer
+    [[ "$answer" =~ ^([yY]|yes|YES)$ ]] || cp_die "Rollback aborted"
+  fi
+
+  DEPLOYMENT_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  DEPLOYMENT_RECORD=""
+  DEPLOYMENT_ACTIVE=1
+  RELEASE_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-rollback.XXXXXX")"
+  write_deployment_record started
+  trap cleanup_update EXIT
+  capture_keycloak_users
+  if [[ "$BACKUP" -eq 1 ]]; then
+    create_backup
+    export DEPLOY_CHECK_BACKUP=passed
+  else
+    export DEPLOY_CHECK_BACKUP=skipped
+  fi
+
+  tar -xzf "${baseline_dir}/runtime.tgz" -C .
+  cp_set_compose_args "$MODE" "$COMPOSE_OVERRIDE"
+  digest_override="${RELEASE_WORK_DIR}/rollback-images.yml"
+  write_digest_override "$digest_override" "$TARGET_BACKEND_IMAGE" "$TARGET_FRONTEND_IMAGE"
+  CONTENT_POOL_COMPOSE_ARGS+=(-f "$digest_override")
+  run_compose config >/dev/null || fail_deployment "Legacy baseline Compose validation failed"
+  export DEPLOY_CHECK_COMPOSE=passed
+  if [[ "$PULL" -eq 1 ]]; then
+    run_compose pull || fail_deployment "Pulling legacy baseline images failed"
+  fi
+  docker image inspect "$TARGET_BACKEND_IMAGE" >/dev/null 2>&1 || fail_deployment "Legacy backend digest is unavailable"
+  docker image inspect "$TARGET_FRONTEND_IMAGE" >/dev/null 2>&1 || fail_deployment "Legacy frontend digest is unavailable"
+  export DEPLOY_CHECK_IMAGES=passed
+  run_compose up -d || fail_deployment "Starting legacy baseline failed"
+  export DEPLOY_CHECK_START=passed
+  run_health_check || fail_deployment "Legacy baseline health check failed"
+  export DEPLOY_CHECK_HEALTH=$([[ "$HEALTH_CHECK" -eq 1 ]] && printf passed || printf skipped)
+
+  if [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]]; then
+    users_after="$(keycloak_user_count \
+      "$(cp_env_get_default .env KEYCLOAK_DB_USER keycloak)" \
+      "$(cp_env_get_default .env KEYCLOAK_DB_NAME keycloak)" \
+      "$KEYCLOAK_REALM")" || fail_deployment "Could not count Keycloak users after rollback"
+    (( users_after >= KEYCLOAK_USERS_BEFORE )) || fail_deployment "Keycloak user count decreased during rollback"
+    KEYCLOAK_USERS_AFTER="$users_after"
+    export KEYCLOAK_USERS_AFTER DEPLOY_CHECK_KEYCLOAK=passed
+  else
+    export DEPLOY_CHECK_KEYCLOAK=skipped
+  fi
+  write_deployment_record succeeded
+  DEPLOYMENT_ACTIVE=0
+  cp_info "Application rollback complete: ${baseline}; database migrations were not reverted"
+  cp_info "Record: ${DEPLOYMENT_RECORD}"
 }
 
 MODE="${CONTENT_POOL_DEPLOY_MODE:-}"
@@ -314,6 +484,8 @@ RELEASE=""
 ROLLBACK_TO=""
 ADOPT_CURRENT=""
 MANIFEST_SOURCE=""
+COMPOSE_OVERRIDE=""
+BASE_URL=""
 REPO="${CONTENT_POOL_REPO:-$CONTENT_POOL_REPO_DEFAULT}"
 BACKUP_ROOT=backups
 BACKUP=1
@@ -349,6 +521,10 @@ while [[ $# -gt 0 ]]; do
     --adopt-current=*) ADOPT_CURRENT="${1#*=}"; shift ;;
     --manifest) MANIFEST_SOURCE="$2"; shift 2 ;;
     --manifest=*) MANIFEST_SOURCE="${1#*=}"; shift ;;
+    --compose-override) COMPOSE_OVERRIDE="$2"; shift 2 ;;
+    --compose-override=*) COMPOSE_OVERRIDE="${1#*=}"; shift ;;
+    --base-url) BASE_URL="$2"; shift 2 ;;
+    --base-url=*) BASE_URL="${1#*=}"; shift ;;
     --repo) REPO="$2"; shift 2 ;;
     --repo=*) REPO="${1#*=}"; shift ;;
     --backup-dir) BACKUP_ROOT="$2"; shift 2 ;;
@@ -378,7 +554,7 @@ cp_validate_mode "$MODE"
 cp_validate_environment "$ENVIRONMENT"
 cp_require_docker_compose
 cp_require_cmd python3
-cp_set_compose_args "$MODE"
+cp_set_compose_args "$MODE" "$COMPOSE_OVERRIDE"
 
 if [[ -n "$ADOPT_CURRENT" ]]; then
   [[ -z "$RELEASE" && -z "$ROLLBACK_TO" ]] || cp_die "--adopt-current cannot be combined with a release"
@@ -388,8 +564,8 @@ if [[ -n "$ADOPT_CURRENT" ]]; then
 fi
 
 PREVIOUS_RELEASE="$(cp_env_get .env RELEASE_VERSION)"
-PREVIOUS_BACKEND_IMAGE="$(running_image_digest content-pool-api 2>/dev/null || cp_env_get .env CONTENT_POOL_BACKEND_IMAGE)"
-PREVIOUS_FRONTEND_IMAGE="$(running_image_digest content-pool-nginx 2>/dev/null || cp_env_get .env CONTENT_POOL_FRONTEND_IMAGE)"
+PREVIOUS_BACKEND_IMAGE="$(running_service_image_digest content-pool-api 2>/dev/null || cp_env_get .env CONTENT_POOL_BACKEND_IMAGE)"
+PREVIOUS_FRONTEND_IMAGE="$(running_service_image_digest nginx 2>/dev/null || cp_env_get .env CONTENT_POOL_FRONTEND_IMAGE)"
 
 if [[ "$BACKUP_ONLY" -eq 1 ]]; then
   capture_keycloak_users
@@ -404,8 +580,17 @@ cp_validate_release_for_environment "$TARGET_RELEASE" "$ENVIRONMENT"
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   cp_info "Would deploy ${TARGET_RELEASE} to ${ENVIRONMENT} using mode ${MODE}"
-  cp_info "Would use manifest: ${MANIFEST_SOURCE:-GitHub release asset}"
+  if [[ -n "$ROLLBACK_TO" && -f "baselines/${TARGET_RELEASE}/manifest.json" ]]; then
+    cp_info "Would use local legacy baseline: baselines/${TARGET_RELEASE}"
+  else
+    cp_info "Would use manifest: ${MANIFEST_SOURCE:-GitHub release asset}"
+  fi
   cp_info "Would create backup: $([[ "$BACKUP" -eq 1 ]] && printf yes || printf no)"
+  exit 0
+fi
+
+if [[ -n "$ROLLBACK_TO" && -f "baselines/${TARGET_RELEASE}/manifest.json" ]]; then
+  rollback_local_baseline "$TARGET_RELEASE"
   exit 0
 fi
 
@@ -491,6 +676,7 @@ if [[ "$KEYCLOAK_USER_CHECK" -eq 1 ]]; then
   export KEYCLOAK_USERS_AFTER
   if [[ -n "$LAST_BACKUP_DIR" && -f "${LAST_BACKUP_DIR}/manifest.txt" ]]; then
     printf 'keycloak_users_after=%s\n' "$KEYCLOAK_USERS_AFTER" >>"${LAST_BACKUP_DIR}/manifest.txt"
+    write_backup_checksums "$LAST_BACKUP_DIR"
   fi
   export DEPLOY_CHECK_KEYCLOAK=passed
 else

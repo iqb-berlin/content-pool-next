@@ -62,8 +62,10 @@ make adopt-current RELEASE=v0.1.3 ENVIRONMENT=production MODE=traefik
 ```
 
 The command refuses to continue unless Docker can resolve both running images
-to registry digests. Repeat separately for staging. After adoption, `.env`
-contains full digest references and the normal release commands can be used.
+to registry digests. Repeat separately for staging. Adoption preserves the
+running Compose project, writes full digest references to `.env`, and creates a
+checksum-validated `baselines/vX.Y.Z` runtime snapshot for exact application
+rollback.
 
 ## Rollback and restore
 
@@ -78,6 +80,11 @@ An intentional application rollback is explicit:
 make production-rollback RELEASE=vX.Y.Z MODE=traefik
 ```
 
+For an adopted legacy release without a historical GitHub manifest, the same
+command uses the local baseline. It restores the legacy runtime and adds a
+temporary Compose image override so the exact captured digests are used rather
+than mutable legacy tags. Database migrations are not reverted.
+
 If an incompatible database or filesystem change requires a full recovery,
 perform the documented downtime restore from one complete update backup:
 
@@ -87,8 +94,20 @@ make restore-backup BACKUP=backups/update_YYYYMMDD_HHMMSS MODE=traefik
 
 The restore stops public/application services, restores both PostgreSQL custom
 dumps with `pg_restore`, restores uploads and runtime configuration, restarts
-the stack, and verifies health and release identity. Test this path in an
-isolated environment before the first production release.
+the stack, and verifies health and release identity. Before stopping services,
+it verifies `SHA256SUMS` and both tar archives; before replacing database
+objects, it validates both custom dumps with `pg_restore --list`. Test this path
+in an isolated environment before the first production release.
+
+An isolated stack on a shared Docker host may supply an additional Compose file
+and a non-default health URL:
+
+```bash
+./scripts/update.sh --mode server --environment staging \
+  --release vX.Y.Z-rc.N \
+  --compose-override /absolute/path/rehearsal.yml \
+  --base-url http://127.0.0.1:18080
+```
 
 When `--manifest` points to a local file or private URL, the runtime archive and
 `SHA256SUMS` must be available beside it. The installer verifies the manifest

@@ -1,41 +1,42 @@
-# ContentPool Go/No-Go Checklist
+# ContentPool Release Go/No-Go Checklist
 
-Use this checklist before every production rollout.
+Record the owner, timestamps, evidence links, candidate manifest, and final
+decision in the release issue or operational change record.
 
-## 1. Deployment and migration readiness
+## 1. Release candidate
 
-- [ ] `.env` reviewed (`DB_SYNCHRONIZE=false`, `DB_RUN_MIGRATIONS=true`)
-- [ ] Compose config validates without errors:
-  - `docker compose -f docker-compose.server.yml config`
-  - or `docker compose -f docker-compose.prod.yml config`
-- [ ] Migration plan confirmed (see `DEPLOY.md`, section "Migration strategy")
-- [ ] Backup created:
-  - `pg_dump` for app DB
-  - `pg_dump` for Keycloak DB
+- [ ] Release PR updates `VERSION`, package versions, and `CHANGELOG.md`
+- [ ] Migration classification is `none` or `backward-compatible`
+- [ ] Required GitHub `release-gate` succeeded for the candidate commit
+- [ ] RC GitHub prerelease contains runtime archive, manifest, and checksums
+- [ ] Backend and frontend images passed the release image scan
 
-## 2. Monitoring and observability baseline
+## 2. Staging deployment
 
-- [ ] Container health checks report healthy:
-  - `docker compose -f docker-compose.server.yml ps`
-- [ ] API liveness/readiness return success:
-  - `curl -fsS http://localhost/api/health/live`
-  - `curl -fsS http://localhost/api/health/ready`
-- [ ] Full stack health script passes:
-  - `./scripts/check-health.sh server "https://auth.example.com/realms/iqb" "http://localhost/api" "http://localhost"`
-- [ ] No critical errors in recent logs:
-  - `docker compose -f docker-compose.server.yml logs --since 15m content-pool-api keycloak`
+- [ ] Staging uses its own Compose project, data, volumes, domains, and secrets
+- [ ] Managed update created complete database/config/upload backups
+- [ ] `/api/version` and `/version.json` match the candidate manifest
+- [ ] OIDC login and logout work
+- [ ] ACP create/update, file upload, public/read view, and Item Explorer smoke tests pass
+- [ ] Migration logs contain no failures or schema synchronization
+- [ ] Application rollback to the prior digest was rehearsed when migrations changed
+- [ ] Staging evidence URL/reference is recorded
 
-## 3. Functional release gates
+## 3. Promotion
 
-- [ ] Backend unit tests green (`cd backend && npm test -- --runInBand`)
-- [ ] Backend e2e tests green (`cd backend && npm run test:e2e`)
-- [ ] Backend build green (`cd backend && npm run build`)
-- [ ] Frontend tests/build green (`cd frontend && npm run test`, `cd frontend && npm run build`)
-- [ ] OIDC login path verified manually
-- [ ] ACP create/update + file upload + view access smoke test passed
+- [ ] A release owner confirms staging evidence
+- [ ] A separate authorized reviewer approves the protected `production` environment
+- [ ] Stable Git and GHCR tags were created without rebuilding
+- [ ] Stable manifest contains exactly the candidate backend/frontend digests
+- [ ] GitHub Release notes include configuration, migration, and rollback information
 
-## 4. Decision
+## 4. Production deployment
 
-- [ ] Go
-- [ ] No-Go
-- [ ] Decision timestamp + owner documented in release notes / issue comment
+- [ ] `.env` has `DEPLOYMENT_ENV=production`, `DB_SYNCHRONIZE=false`, and `DB_RUN_MIGRATIONS=true`
+- [ ] Full backup and deployment JSON record were created
+- [ ] Compose configuration validates and images are pulled by digest
+- [ ] Health, readiness, Keycloak discovery, and version identity pass
+- [ ] Keycloak user count did not decrease
+- [ ] OIDC and critical ACP smoke tests pass
+- [ ] Logs show no critical errors after the observation window
+- [ ] Go/No-Go decision, owner, and completion timestamp are recorded

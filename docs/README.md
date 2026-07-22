@@ -59,6 +59,8 @@ For ACP managers who need a task-oriented user guide, see:
 
 ### Operations
 
+- [Releases and Promotion](operations/releases.md)
+  SemVer, release candidates, staging evidence, digest promotion, rollback, and restore.
 - [Deployment](operations/deployment.md)
   Development, production, server-image, and single-domain Traefik deployment modes.
 - [Monitoring and Maintenance](operations/monitoring-and-maintenance.md)

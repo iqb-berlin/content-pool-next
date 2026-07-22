@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 BOOTSTRAP_REPO="${CONTENT_POOL_REPO:-iqb-berlin/content-pool-next}"
-BOOTSTRAP_REF="${CONTENT_POOL_REF:-master}"
+BOOTSTRAP_REF=""
 
 for ((i = 1; i <= $#; i++)); do
   arg="${!i}"
@@ -15,11 +15,11 @@ for ((i = 1; i <= $#; i++)); do
     --repo=*)
       BOOTSTRAP_REPO="${arg#*=}"
       ;;
-    --ref)
+    --release)
       next=$((i + 1))
       BOOTSTRAP_REF="${!next-}"
       ;;
-    --ref=*)
+    --release=*)
       BOOTSTRAP_REF="${arg#*=}"
       ;;
   esac
@@ -27,12 +27,21 @@ done
 
 COMMON_SH="${SCRIPT_DIR}/deploy-common.sh"
 if [[ ! -f "$COMMON_SH" ]]; then
+  [[ "$BOOTSTRAP_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]] || {
+    printf 'Error: standalone bootstrap requires --release vX.Y.Z[-rc.N]\n' >&2
+    exit 1
+  }
   tmp_common="$(mktemp "${TMPDIR:-/tmp}/content-pool-deploy-common.XXXXXX")"
   command -v curl >/dev/null 2>&1 || {
     printf 'Error: scripts/deploy-common.sh is missing and curl is not available for bootstrap\n' >&2
     exit 1
   }
-  curl -fsSL "https://raw.githubusercontent.com/${BOOTSTRAP_REPO}/${BOOTSTRAP_REF}/scripts/deploy-common.sh" -o "$tmp_common"
+  bootstrap_curl_args=(-fsSL)
+  bootstrap_token="${CONTENT_POOL_GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  [[ -z "$bootstrap_token" ]] || bootstrap_curl_args+=(-H "Authorization: Bearer ${bootstrap_token}")
+  curl "${bootstrap_curl_args[@]}" \
+    "https://raw.githubusercontent.com/${BOOTSTRAP_REPO}/${BOOTSTRAP_REF}/scripts/deploy-common.sh" \
+    -o "$tmp_common"
   COMMON_SH="$tmp_common"
 fi
 
@@ -43,22 +52,23 @@ usage() {
   cat <<'USAGE'
 Usage: scripts/install.sh [options]
 
-Install a ContentPool server deployment directory from the local checkout or
-from a GitHub ref.
+Install a ContentPool server deployment from a verified GitHub release bundle.
 
 Options:
   --dir DIR                         Target directory (default: prompt or current directory)
   --mode server|traefik             Deployment mode (default: prompt or server in non-interactive mode)
-  --ref REF                         GitHub ref/tag for downloaded artifacts (default: master)
+  --environment staging|production  Isolated target environment (required)
+  --release VERSION                 Release or candidate, for example v0.2.0-rc.1 (required)
+  --manifest FILE|URL               Alternate release-manifest.json source
   --repo OWNER/REPO                 GitHub repository (default: iqb-berlin/content-pool-next)
-  --download                        Force download from GitHub instead of using the local checkout
+  --download                        Deprecated compatibility flag; release assets are always used
   --start                           Start the stack after validation
   --non-interactive                 Do not prompt; use env values, generated secrets, and defaults
   --force-env                       Recreate .env from .env.example, backing up an existing .env
   --skip-traefik-network-check      Do not fail --start when the Traefik Docker network is missing
   -h, --help                        Show this help
 
-Environment overrides such as IMAGE_VERSION, CONTENT_POOL_HOST,
+Environment overrides such as CONTENT_POOL_HOST,
 CONTENT_POOL_AUTH_HOST, POSTGRES_PASSWORD, KEYCLOAK_DB_PASSWORD,
 KEYCLOAK_ADMIN_PASSWORD, and JWT_SECRET are written into .env when set.
 USAGE
@@ -107,7 +117,7 @@ apply_env_overrides() {
   local key value
 
   for key in \
-    IMAGE_VERSION APP_PORT \
+    APP_PORT \
     CONTENT_POOL_HOST CONTENT_POOL_AUTH_HOST TRAEFIK_DOCKER_NETWORK TRAEFIK_ENTRYPOINT TRAEFIK_TLS_CERTRESOLVER \
     POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
     JWT_SECRET JWT_EXPIRATION CORS_ORIGIN \
@@ -306,9 +316,10 @@ check_traefik_network() {
 
 TARGET_DIR="${CONTENT_POOL_INSTALL_DIR:-}"
 MODE="${CONTENT_POOL_DEPLOY_MODE:-}"
-REF="$BOOTSTRAP_REF"
 REPO="$BOOTSTRAP_REPO"
-DOWNLOAD=0
+ENVIRONMENT="${DEPLOYMENT_ENV:-}"
+RELEASE=""
+MANIFEST_SOURCE=""
 START=0
 NON_INTERACTIVE=0
 FORCE_ENV=0
@@ -332,12 +343,28 @@ while [[ $# -gt 0 ]]; do
       MODE="${1#*=}"
       shift
       ;;
-    --ref)
-      REF="$2"
+    --environment)
+      ENVIRONMENT="$2"
       shift 2
       ;;
-    --ref=*)
-      REF="${1#*=}"
+    --environment=*)
+      ENVIRONMENT="${1#*=}"
+      shift
+      ;;
+    --release)
+      RELEASE="$2"
+      shift 2
+      ;;
+    --release=*)
+      RELEASE="${1#*=}"
+      shift
+      ;;
+    --manifest)
+      MANIFEST_SOURCE="$2"
+      shift 2
+      ;;
+    --manifest=*)
+      MANIFEST_SOURCE="${1#*=}"
       shift
       ;;
     --repo)
@@ -349,7 +376,6 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --download)
-      DOWNLOAD=1
       shift
       ;;
     --start)
@@ -386,6 +412,10 @@ if [[ -z "$MODE" ]]; then
   fi
 fi
 cp_validate_mode "$MODE"
+[[ -n "$ENVIRONMENT" ]] || cp_die "--environment staging|production is required"
+cp_validate_environment "$ENVIRONMENT"
+[[ -n "$RELEASE" ]] || cp_die "--release vX.Y.Z[-rc.N] is required"
+cp_validate_release_for_environment "$RELEASE" "$ENVIRONMENT"
 
 if [[ -z "$TARGET_DIR" ]]; then
   if [[ "$NON_INTERACTIVE" -eq 1 ]] || ! is_tty; then
@@ -398,12 +428,10 @@ fi
 cp_require_docker_compose
 cp_require_cmd openssl
 
-SOURCE_ROOT=""
-if [[ "$DOWNLOAD" -eq 0 && -f "${SCRIPT_DIR}/../docker-compose.server.yml" ]]; then
-  SOURCE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd -P)"
-else
-  SOURCE_ROOT="$(cp_download_source "$REPO" "$REF")"
-fi
+RELEASE_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-install.XXXXXX")"
+trap 'rm -rf "$RELEASE_WORK_DIR"' EXIT
+MANIFEST_TOOL="$(cp_prepare_release "$REPO" "$RELEASE" "$ENVIRONMENT" "$MANIFEST_SOURCE" "$RELEASE_WORK_DIR")"
+SOURCE_ROOT="${RELEASE_WORK_DIR}/runtime"
 
 TARGET_DIR="$(cp_abs_path "$TARGET_DIR")"
 cp_install_runtime_artifacts "$SOURCE_ROOT" "$TARGET_DIR"
@@ -420,7 +448,9 @@ elif [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 apply_env_overrides "$ENV_FILE"
-cp_env_set_if_placeholder "$ENV_FILE" IMAGE_VERSION "${IMAGE_VERSION:-latest}"
+cp_apply_manifest_env "$ENV_FILE" "${RELEASE_WORK_DIR}/release-manifest.json" "$ENVIRONMENT" "$MANIFEST_TOOL"
+cp_validate_required_configuration "$ENV_FILE" "${RELEASE_WORK_DIR}/release-manifest.json" || \
+  cp_die "Required release configuration is missing"
 ensure_secret "$ENV_FILE" POSTGRES_PASSWORD 48
 ensure_secret "$ENV_FILE" KEYCLOAK_DB_PASSWORD 48
 ensure_secret "$ENV_FILE" KEYCLOAK_ADMIN_PASSWORD 48
@@ -444,27 +474,23 @@ cp_info "Validating Docker Compose configuration"
   docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" config >/dev/null
 )
 
+command cp -f "${RELEASE_WORK_DIR}/release-manifest.json" "${TARGET_DIR}/.release-manifest.json"
+
 if [[ "$START" -eq 1 ]]; then
-  cp_info "Starting ContentPool (${MODE})"
+  cp_info "Starting and verifying ContentPool (${MODE})"
   (
     cd "$TARGET_DIR"
-    if command -v make >/dev/null 2>&1; then
-      if [[ "$MODE" == "traefik" ]]; then
-        make server-traefik-up
-      else
-        make server-up
-      fi
-    else
-      cp_set_compose_args "$MODE"
-      docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" pull
-      docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d
-    fi
+    ./scripts/update.sh \
+      --mode "$MODE" \
+      --environment "$ENVIRONMENT" \
+      --release "$RELEASE" \
+      --manifest "${RELEASE_WORK_DIR}/release-manifest.json" \
+      --no-backup \
+      --no-keycloak-user-check \
+      --yes
   )
 fi
 
 cp_info "Install complete: ${TARGET_DIR}"
-if [[ "$MODE" == "traefik" ]]; then
-  cp_info "Next command: cd '${TARGET_DIR}' && make server-traefik-up"
-else
-  cp_info "Next command: cd '${TARGET_DIR}' && make server-up"
-fi
+cp_info "Release: ${RELEASE} (${ENVIRONMENT})"
+[[ "$START" -eq 1 ]] || cp_info "Re-run the installer with --start after reviewing ${TARGET_DIR}/.env"

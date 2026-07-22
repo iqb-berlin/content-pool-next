@@ -1,0 +1,129 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Release candidate tag, for example v0.2.0-rc.1
+        required: true
+        type: string
+      staging_evidence:
+        description: Link or identifier for the successful staging checklist
+        required: true
+        type: string
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-frontend
+
+jobs:
+  promote:
+    name: Promote tested digests
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve and validate candidate
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          STAGING_EVIDENCE: ${{ inputs.staging_evidence }}
+        run: |
+          [[ "$STAGING_EVIDENCE" =~ [^[:space:]]{5,} ]] || {
+            echo "Staging evidence must contain a meaningful URL or record identifier" >&2
+            exit 1
+          }
+          [[ "$CANDIDATE" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.[1-9][0-9]*$ ]] || {
+            echo "Invalid candidate: ${CANDIDATE}" >&2
+            exit 1
+          }
+          stable="v${BASH_REMATCH[1]}"
+          echo "stable=${stable}" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          gh release download "$CANDIDATE" --dir dist
+          (cd dist && sha256sum --check SHA256SUMS)
+          ./scripts/release_manifest.py validate \
+            --manifest dist/release-manifest.json \
+            --expected-release "$CANDIDATE" \
+            --environment staging \
+            --runtime-archive "dist/$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field runtime.archive)"
+          test "$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field migrations.classification)" != manual || {
+            echo "Manual/incompatible migrations cannot use the normal promotion workflow" >&2
+            exit 1
+          }
+          source_commit="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field sourceCommit)"
+          tag_commit="$(git rev-list -n 1 "$CANDIDATE")"
+          test "$source_commit" = "$tag_commit"
+          if git ls-remote --exit-code --tags origin "refs/tags/${stable}" >/dev/null 2>&1; then
+            echo "Stable tag ${stable} already exists" >&2
+            exit 1
+          fi
+          expected_version="${stable#v}"
+          test "$(git show "${source_commit}:VERSION" | tr -d '[:space:]')" = "$expected_version"
+      - name: Promote image manifests without rebuilding
+        env:
+          STABLE: ${{ steps.release.outputs.stable }}
+        run: |
+          backend="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field images.backend)"
+          frontend="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field images.frontend)"
+          ensure_promoted_tag() {
+            local stable_ref="$1" source_ref="$2" expected="${2##*@}" actual
+            if docker buildx imagetools inspect "$stable_ref" >/dev/null 2>&1; then
+              actual="$(docker buildx imagetools inspect "$stable_ref" --format '{{json .Manifest}}' | jq -r .digest)"
+              test "$actual" = "$expected" || {
+                echo "${stable_ref} is already assigned to ${actual}, expected ${expected}" >&2
+                return 1
+              }
+            else
+              docker buildx imagetools create --tag "$stable_ref" "$source_ref"
+            fi
+          }
+          ensure_promoted_tag "${BACKEND_IMAGE}:${STABLE}" "$backend"
+          ensure_promoted_tag "${FRONTEND_IMAGE}:${STABLE}" "$frontend"
+          test "$(docker buildx imagetools inspect "${BACKEND_IMAGE}:${STABLE}" --format '{{json .Manifest}}' | jq -r .digest)" = "${backend##*@}"
+          test "$(docker buildx imagetools inspect "${FRONTEND_IMAGE}:${STABLE}" --format '{{json .Manifest}}' | jq -r .digest)" = "${frontend##*@}"
+      - name: Create stable manifest and checksums
+        env:
+          STABLE: ${{ steps.release.outputs.stable }}
+        run: |
+          ./scripts/release_manifest.py promote \
+            --manifest dist/release-manifest.json \
+            --release "$STABLE" \
+            --output dist/release-manifest.stable.json
+          mv dist/release-manifest.stable.json dist/release-manifest.json
+          archive="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field runtime.archive)"
+          (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+      - name: Publish stable tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          STABLE: ${{ steps.release.outputs.stable }}
+          STAGING_EVIDENCE: ${{ inputs.staging_evidence }}
+        run: |
+          source_commit="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field sourceCommit)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$STABLE" "$source_commit" -m "Release ${STABLE} promoted from ${CANDIDATE}"
+          git push origin "refs/tags/${STABLE}"
+          gh release create "$STABLE" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --notes "Promoted from \`${CANDIDATE}\`. Staging evidence: ${STAGING_EVIDENCE}" \
+            --title "ContentPool ${STABLE}"

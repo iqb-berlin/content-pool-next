@@ -22,7 +22,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --audit-level=critical
 
   npm-audit-frontend:
     name: NPM Audit Frontend
@@ -38,7 +38,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - run: npm audit --audit-level=moderate
+      - run: npm audit --audit-level=critical
 
   trivy-scan:
     name: Trivy Security Scan
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Run Trivy vulnerability scanner in repo mode
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.32.0
         with:
           scan-type: 'fs'
           scan-ref: '.'

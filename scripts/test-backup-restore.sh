@@ -15,8 +15,11 @@ trap cleanup EXIT
 
 wait_for_postgres() {
   local container="$1" database="$2"
-  for attempt in {1..30}; do
-    if docker exec "$container" pg_isready -U postgres -d "$database" >/dev/null 2>&1; then
+  for attempt in {1..60}; do
+    if docker logs "$container" 2>&1 | grep -q \
+      'PostgreSQL init process complete; ready for start up.' &&
+      [[ "$(docker exec "$container" psql -qAt -U postgres -d "$database" \
+        -c 'select 1' 2>/dev/null)" == "1" ]]; then
       return 0
     fi
     sleep 1

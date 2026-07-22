@@ -286,7 +286,7 @@ restore_previous_application() {
     digest_override="${LAST_BACKUP_DIR}/rollback-images.yml"
     write_digest_override "$digest_override" "$PREVIOUS_BACKEND_IMAGE" "$PREVIOUS_FRONTEND_IMAGE"
     CONTENT_POOL_COMPOSE_ARGS+=(-f "$digest_override")
-    if run_compose up -d; then
+    if run_compose up -d --wait --wait-timeout 180; then
       cp_warn "Previous application release restarted"
     else
       cp_warn "Previous application restart failed"
@@ -456,7 +456,8 @@ rollback_local_baseline() {
   docker image inspect "$TARGET_BACKEND_IMAGE" >/dev/null 2>&1 || fail_deployment "Legacy backend digest is unavailable"
   docker image inspect "$TARGET_FRONTEND_IMAGE" >/dev/null 2>&1 || fail_deployment "Legacy frontend digest is unavailable"
   export DEPLOY_CHECK_IMAGES=passed
-  run_compose up -d || fail_deployment "Starting legacy baseline failed"
+  run_compose up -d --wait --wait-timeout 180 || \
+    fail_deployment "Starting legacy baseline failed"
   export DEPLOY_CHECK_START=passed
   run_health_check || fail_deployment "Legacy baseline health check failed"
   export DEPLOY_CHECK_HEALTH=$([[ "$HEALTH_CHECK" -eq 1 ]] && printf passed || printf skipped)
@@ -661,7 +662,7 @@ docker image inspect "$TARGET_BACKEND_IMAGE" >/dev/null 2>&1 || \
 docker image inspect "$TARGET_FRONTEND_IMAGE" >/dev/null 2>&1 || \
   fail_deployment "Pulled frontend image does not match the manifest digest"
 export DEPLOY_CHECK_IMAGES=passed
-run_compose up -d || fail_deployment "Starting the release failed"
+run_compose up -d --wait --wait-timeout 180 || fail_deployment "Starting the release failed"
 export DEPLOY_CHECK_START=passed
 run_health_check || fail_deployment "Health or version check failed"
 export DEPLOY_CHECK_HEALTH=$([[ "$HEALTH_CHECK" -eq 1 ]] && printf passed || printf skipped)

@@ -43,6 +43,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   `pg_restore`.
 - Wait for the complete restored application stack to become healthy before
   running release identity and endpoint checks.
+- Wait for stack health during normal updates, legacy rollback, and automatic
+  application recovery before evaluating deployment health.
 
 ### Breaking changes
 

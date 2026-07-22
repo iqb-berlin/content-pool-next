@@ -33,6 +33,8 @@ All notable changes to ContentPool are documented in this file. Releases use
 - Add a gated release-candidate and promotion process.
 - Pin deployable application images by digest and expose build metadata.
 - Add manifest-driven, auditable staging and production updates.
+- Refresh pinned runtime bases and remove package-manager tooling from the
+  backend runtime image.
 
 ### Breaking changes
 

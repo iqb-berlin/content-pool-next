@@ -134,7 +134,8 @@ docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" run --rm --no-deps -T \
   < "${BACKUP_DIR}/uploads.tgz"
 
 docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" config >/dev/null
-docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d
+cp_info "Waiting for the restored application stack to become ready"
+docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d --wait --wait-timeout 180
 
 if [[ "$HEALTH_CHECK" -eq 1 ]]; then
   release="$(cp_env_get .env APPLICATION_VERSION)"

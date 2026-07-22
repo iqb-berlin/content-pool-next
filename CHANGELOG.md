@@ -41,6 +41,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   structural validation for database backups.
 - Wait for both restored PostgreSQL services to become healthy before invoking
   `pg_restore`.
+- Wait for the complete restored application stack to become healthy before
+  running release identity and endpoint checks.
 
 ### Breaking changes
 

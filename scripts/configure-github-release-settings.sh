@@ -13,6 +13,7 @@ Options:
   --branch NAME      Protected release branch (default: master)
   --reviewer USER    Different GitHub user who may approve production
   --no-reviewer      Create production without an approval rule (temporary)
+  --no-branch-review Require pull requests, but no approving review
 USAGE
 }
 
@@ -20,6 +21,7 @@ repo=""
 branch=master
 reviewer=""
 no_reviewer=false
+require_branch_review=true
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) repo="$2"; shift 2 ;;
@@ -29,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --reviewer) reviewer="$2"; shift 2 ;;
     --reviewer=*) reviewer="${1#*=}"; shift ;;
     --no-reviewer) no_reviewer=true; shift ;;
+    --no-branch-review) require_branch_review=false; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
   esac
@@ -56,6 +59,11 @@ if [[ -n "$reviewer" ]]; then
   reviewer_id="$(gh api "users/${reviewer}" --jq .id)"
 fi
 
+required_review_count=1
+if [[ "$require_branch_review" == false ]]; then
+  required_review_count=0
+fi
+
 workflow="$(gh api -H 'Accept: application/vnd.github.raw+json' \
   "repos/${repo}/contents/.github/workflows/ci.yml?ref=${branch}")"
 grep -Eq '^    name: release-gate$' <<<"$workflow" || {
@@ -66,13 +74,13 @@ grep -Eq '^    name: release-gate$' <<<"$workflow" || {
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-github-settings.XXXXXX")"
 trap 'rm -rf "$temp_dir"' EXIT
 if gh api "repos/${repo}/branches/${branch}/protection" >"${temp_dir}/current.json" 2>/dev/null; then
-  jq '{
+  jq --argjson required_review_count "$required_review_count" '{
     required_status_checks: {strict: true, contexts: ["release-gate"]},
     enforce_admins: true,
     required_pull_request_reviews: {
       dismiss_stale_reviews: (.required_pull_request_reviews.dismiss_stale_reviews // false),
       require_code_owner_reviews: (.required_pull_request_reviews.require_code_owner_reviews // false),
-      required_approving_review_count: 1,
+      required_approving_review_count: $required_review_count,
       require_last_push_approval: (.required_pull_request_reviews.require_last_push_approval // false)
     },
     restrictions: (if .restrictions == null then null else {
@@ -85,13 +93,13 @@ if gh api "repos/${repo}/branches/${branch}/protection" >"${temp_dir}/current.js
     required_conversation_resolution: true
   }' "${temp_dir}/current.json" >"${temp_dir}/branch.json"
 else
-  jq -n '{
+  jq -n --argjson required_review_count "$required_review_count" '{
     required_status_checks: {strict: true, contexts: ["release-gate"]},
     enforce_admins: true,
     required_pull_request_reviews: {
       dismiss_stale_reviews: false,
       require_code_owner_reviews: false,
-      required_approving_review_count: 1,
+      required_approving_review_count: $required_review_count,
       require_last_push_approval: false
     },
     restrictions: null,
@@ -125,4 +133,9 @@ if [[ -n "$reviewer" ]]; then
   echo "Configured ${repo}:${branch} protection and production approval by ${reviewer}"
 else
   echo "Configured ${repo}:${branch} protection and production without required reviewers"
+fi
+if [[ "$require_branch_review" == true ]]; then
+  echo "Pull requests require one approving review"
+else
+  echo "Pull requests do not require an approving review"
 fi

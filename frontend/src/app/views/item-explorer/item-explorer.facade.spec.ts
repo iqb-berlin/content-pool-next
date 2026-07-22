@@ -962,6 +962,109 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
+  it('falls back to task sorting when the saved reference-number sort is hidden', () => {
+    const component = createFacade();
+    component.sortField = 'rowNumber';
+    component.sortDir = 'desc';
+    component.metadataSettings.referenceNumberVisible = false;
+    component.items = [
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        rowNumber: 2,
+        unitId: 'UNIT_2',
+        unitLabel: 'Aufgabe B',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        rowNumber: 9,
+        unitId: 'UNIT_1',
+        unitLabel: 'Aufgabe A',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+
+    component.applyFilter(false);
+
+    expect(component.sortField).toBe('unitLabel');
+    expect(component.sortDir).toBe('asc');
+    expect(component.filteredItems.map((item) => item.rowNumber)).toEqual([9, 2]);
+  });
+
+  it('keeps stable reference numbers sortable when their column is visible', () => {
+    const component = createFacade();
+    component.metadataSettings.referenceNumberVisible = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        rowNumber: 8,
+        unitId: 'UNIT_1',
+        unitLabel: 'Aufgabe A',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        rowNumber: 3,
+        unitId: 'UNIT_2',
+        unitLabel: 'Aufgabe B',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.filteredItems = [...component.items];
+
+    component.sortBy('rowNumber');
+
+    expect(component.filteredItems.map((item) => item.rowNumber)).toEqual([3, 8]);
+  });
+
+  it('treats reference-number visibility as an opt-in ACP setting', () => {
+    const component = createFacade();
+
+    expect((component as any).resolveMetadataSettings({}).referenceNumberVisible).toBe(false);
+    expect(
+      (component as any).resolveMetadataSettings({
+        metadataColumns: { referenceNumberVisible: true },
+      }).referenceNumberVisible,
+    ).toBe(true);
+  });
+
+  it('restores column settings when the column manager is cancelled', () => {
+    const component = createFacade();
+    component.metadataSettings = {
+      visible: ['subject'],
+      order: ['subject'],
+      referenceNumberVisible: false,
+    };
+
+    component.openColumnManager();
+    component.toggleReferenceNumberVisibility();
+    expect(component.referenceNumberVisible).toBe(true);
+
+    component.closeColumnManager();
+
+    expect(component.metadataSettings).toEqual({
+      visible: ['subject'],
+      order: ['subject'],
+      referenceNumberVisible: false,
+    });
+  });
+
   it('ignores stale item-list responses after a newer reload completes', () => {
     const firstLoad = new Subject<any>();
     const secondLoad = new Subject<any>();
@@ -1061,7 +1164,9 @@ describe('ItemExplorerFacade', () => {
 
     expect(recalculateItemRowNumbers).toHaveBeenCalledWith('acp-1');
     expect(component.showRenumberDialog).toBe(false);
-    expect(component.numberingSuccessMessage).toBe('Eine Zeile wurde neu nummeriert.');
+    expect(component.numberingSuccessMessage).toBe(
+      'Eine Referenznummer im vollständigen Itembestand wurde neu vergeben. 0 Zeilen werden aktuell angezeigt.',
+    );
     expect(reloadItems).toHaveBeenCalledTimes(1);
   });
 
@@ -1800,7 +1905,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.visibleItemsCount).toBe(2);
   });
 
-  it('keeps the header total on the visible item base when text filters narrow the list', () => {
+  it('keeps the header total on the complete item base when filters narrow the list', () => {
     const component = createFacade();
     component.items = [
       {
@@ -1838,6 +1943,25 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.filteredItems.map((item) => item.uuid)).toEqual(['uuid-1']);
     expect(component.visibleItemsCount).toBe(2);
+    expect(component.totalItemsCount).toBe(3);
+    expect(component.hiddenExcludedItemsCount).toBe(1);
+  });
+
+  it('reports mutually exclusive base-visibility reasons', () => {
+    const component = createFacade();
+    component.showOnlyItemsWithEmpiricalDifficulty = true;
+    component.hasEmpiricalDifficulty = true;
+    component.items = [
+      { uuid: 'excluded-missing', excluded: true },
+      { uuid: 'visible-missing' },
+      { uuid: 'visible', empiricalDifficulty: 0.2 },
+    ] as any;
+
+    expect(component.hiddenExcludedItemsCount).toBe(1);
+    expect(component.hiddenMissingDifficultyItemsCount).toBe(1);
+    expect(component.hiddenExcludedItemsCount + component.hiddenMissingDifficultyItemsCount).toBe(
+      2,
+    );
   });
 
   it('counts only items with empirical difficulty when that visibility rule is active', () => {
@@ -3735,6 +3859,116 @@ describe('ItemExplorerFacade', () => {
     expect(component.activeItemCollection?.version).toBe(2);
   });
 
+  it('persists and applies the active personal selection view after base visibility rules', async () => {
+    const payload = {
+      activeCollectionId: 'collection-1',
+      collectionViewMode: 'active' as const,
+      collections: [
+        {
+          id: 'collection-1',
+          name: 'Auswahl',
+          rowKeys: ['visible', 'excluded'],
+          version: 1,
+          createdAt: '',
+          updatedAt: '',
+          unavailableRowKeys: [],
+          summary: {} as any,
+        },
+      ],
+    };
+    const activateItemCollection = vi.fn().mockReturnValue(of(payload));
+    const component = createFacade({
+      api: { activateItemCollection },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.items = [
+      {
+        itemId: 'VISIBLE',
+        uuid: 'visible',
+        rowKey: 'visible',
+        unitId: 'UNIT_1',
+        unitLabel: 'Aufgabe A',
+        description: 'Treffer',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'EXCLUDED',
+        uuid: 'excluded',
+        rowKey: 'excluded',
+        unitId: 'UNIT_2',
+        unitLabel: 'Aufgabe B',
+        description: 'Treffer',
+        variableId: '',
+        metadata: {},
+        excluded: true,
+      },
+      {
+        itemId: 'OTHER',
+        uuid: 'other',
+        rowKey: 'other',
+        unitId: 'UNIT_3',
+        unitLabel: 'Aufgabe C',
+        description: 'Treffer',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.itemCollections = payload.collections;
+    component.activeCollectionId = 'collection-1';
+    component.collectionLoadState = 'loaded';
+
+    await component.setCollectionViewMode('active');
+
+    expect(activateItemCollection).toHaveBeenCalledWith(
+      'acp-1',
+      'collection-1',
+      'read-only',
+      'active',
+    );
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['visible']);
+  });
+
+  it('rolls the personal selection view back when persistence fails', async () => {
+    const component = createFacade({
+      api: { activateItemCollection: vi.fn(() => throwError(() => new Error('offline'))) },
+      authService: { isLoggedIn: true },
+    });
+    component.items = [
+      {
+        itemId: 'ITEM',
+        uuid: 'item',
+        rowKey: 'item',
+        unitId: 'UNIT',
+        unitLabel: 'Aufgabe',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.itemCollections = [
+      {
+        id: 'collection-1',
+        name: 'Auswahl',
+        rowKeys: [],
+        version: 1,
+        createdAt: '',
+        updatedAt: '',
+        unavailableRowKeys: [],
+        summary: {} as any,
+      },
+    ];
+    component.activeCollectionId = 'collection-1';
+    component.applyFilter(false);
+
+    await component.setCollectionViewMode('active');
+
+    expect(component.collectionViewMode).toBe('all');
+    expect(component.filteredItems).toHaveLength(1);
+    expect(component.collectionError).toContain('konnte nicht gespeichert werden');
+  });
+
   it('keeps the collection conflict visible while reloading the latest version', async () => {
     const freshCollection = {
       id: 'collection-1',
@@ -3766,7 +4000,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.activeItemCollection?.name).toBe('Server-Auswahl');
     expect(component.collectionLoadState).toBe('loaded');
     expect(component.collectionError).toBe(
-      'Die Kollektion wurde parallel geändert und wird neu geladen.',
+      'Die Auswahlliste wurde parallel geändert und wird neu geladen.',
     );
   });
 
@@ -4097,5 +4331,52 @@ describe('ItemExplorerFacade', () => {
       expect.objectContaining({ id: 'collection-b', name: 'User B' }),
     ]);
     expect(component.activeCollectionId).toBe('collection-b');
+  });
+
+  it('immediately removes the previous identity collection filter on logout', () => {
+    let token: string | null = createJwt('user-a');
+    const component = createFacade({
+      authService: { getToken: () => token },
+    });
+    component.enableItemCollections = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Aufgabe A',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'UNIT_2',
+        unitLabel: 'Aufgabe B',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.itemCollections = [
+      {
+        id: 'collection-a',
+        name: 'User A',
+        rowKeys: ['uuid-1'],
+      } as any,
+    ];
+    component.activeCollectionId = 'collection-a';
+    component.collectionViewMode = 'active';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1']);
+
+    token = null;
+    (component as any).syncItemCollectionSession();
+
+    expect(component.collectionViewMode).toBe('all');
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1', 'uuid-2']);
   });
 });

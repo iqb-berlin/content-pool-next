@@ -87,6 +87,6 @@ describe('ItemExplorer presentational components', () => {
   });
 
   it('gives the collection selector an accessible name', () => {
-    expect(collectionsTemplate).toContain('aria-label="Aktive Kollektion auswählen"');
+    expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
   });
 });

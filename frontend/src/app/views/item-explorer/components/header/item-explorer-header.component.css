@@ -26,6 +26,12 @@
   gap: 16px;
   flex-wrap: wrap;
 }
+.renumber-blocked-hint {
+  width: 100%;
+  color: #8a5a00;
+  font-size: 0.8rem;
+  text-align: right;
+}
 .explorer-status-bar {
   margin-bottom: 12px;
   padding: 10px 14px;
@@ -115,5 +121,9 @@
 
   .status-meta {
     overflow-wrap: anywhere;
+  }
+
+  .renumber-blocked-hint {
+    text-align: left;
   }
 }

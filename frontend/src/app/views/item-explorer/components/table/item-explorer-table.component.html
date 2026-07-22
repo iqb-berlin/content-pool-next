@@ -24,6 +24,18 @@
         </button>
       </div>
     }
+    @if (vm.hiddenMissingDifficultyItemsCount > 0 || vm.hiddenExcludedItemsCount > 0) {
+      <div class="visibility-summary" aria-live="polite">
+        @if (vm.hiddenMissingDifficultyItemsCount > 0) {
+          <span
+            >{{ vm.hiddenMissingDifficultyItemsCount }} ohne Itemschwierigkeit ausgeblendet</span
+          >
+        }
+        @if (vm.hiddenExcludedItemsCount > 0) {
+          <span>{{ vm.hiddenExcludedItemsCount }} ausgeschlossene Items ausgeblendet</span>
+        }
+      </div>
+    }
     @if (vm.showExplorerKeyboardHints) {
       <div class="help-text">
         Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl, <kbd>Pos1</kbd>/<kbd
@@ -101,11 +113,20 @@
       <thead>
         <tr>
           @if (vm.enableItemCollections) {
-            <th class="collection-select-col" title="Zur aktiven Kollektion hinzufügen">✓</th>
+            <th class="collection-select-col" title="Zur aktiven Auswahlliste hinzufügen">✓</th>
           }
-          <th (click)="vm.sortBy('rowNumber')" class="sortable number-col">
-            Nr. {{ vm.getSortIndicator('rowNumber') }}
+          <th class="number-col" title="Position in der aktuell gefilterten und sortierten Liste">
+            Pos.
           </th>
+          @if (vm.referenceNumberVisible) {
+            <th
+              (click)="vm.sortBy('rowNumber')"
+              class="sortable number-col reference-number-col"
+              title="Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar."
+            >
+              Referenz-Nr. {{ vm.getSortIndicator('rowNumber') }}
+            </th>
+          }
           <th (click)="vm.sortBy('itemId')" class="sortable sticky-col">
             Item-ID {{ vm.getSortIndicator('itemId') }}
           </th>
@@ -146,6 +167,9 @@
             <th class="collection-select-col"></th>
           }
           <th class="number-col"></th>
+          @if (vm.referenceNumberVisible) {
+            <th class="number-col reference-number-col"></th>
+          }
           <th class="sticky-col">
             <input
               class="col-filter-input"
@@ -274,11 +298,19 @@
                   [checked]="vm.isItemInActiveCollection(item)"
                   [disabled]="vm.collectionBusy || vm.collectionLoadState !== 'loaded'"
                   (change)="vm.toggleItemInActiveCollection(item)"
-                  [attr.aria-label]="'Item ' + item.itemId + ' in Kollektion auswählen'"
+                  [attr.aria-label]="'Item ' + item.itemId + ' in Auswahlliste auswählen'"
                 />
               </td>
             }
-            <td class="number-col">{{ item.rowNumber }}</td>
+            <td class="number-col">{{ i + 1 }}</td>
+            @if (vm.referenceNumberVisible) {
+              <td
+                class="number-col reference-number-col"
+                title="Stabile Nummer im vollständigen Itembestand"
+              >
+                {{ item.rowNumber }}
+              </td>
+            }
             <td class="sticky-col">
               <div class="item-id-cell">
                 <code
@@ -414,6 +446,25 @@
                 ></textarea>
               </td>
             }
+          </tr>
+        }
+        @if (
+          vm.collectionViewMode === 'active' &&
+          vm.activeItemCollection &&
+          vm.activeItemCollection.rowKeys.length === 0
+        ) {
+          <tr>
+            <td colspan="100" class="collection-empty-state">
+              <strong>Diese Auswahlliste ist noch leer.</strong>
+              <span>Fügen Sie Items hinzu oder zeigen Sie wieder alle Items an.</span>
+              <button
+                class="btn btn-outline btn-sm"
+                type="button"
+                (click)="vm.setCollectionViewMode('all')"
+              >
+                Zu Alle Items wechseln
+              </button>
+            </td>
           </tr>
         }
       </tbody>

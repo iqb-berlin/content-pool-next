@@ -8,6 +8,36 @@
 .column-manager-toolbar .search-container {
   flex: 1;
 }
+.base-column-settings {
+  margin-bottom: 18px;
+}
+.base-column-settings h3,
+.overlay-content > h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+.base-column-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  cursor: pointer;
+}
+.base-column-option input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+}
+.base-column-option span,
+.base-column-option small {
+  display: block;
+}
+.base-column-option small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+}
 .column-grid {
   display: flex;
   flex-direction: column;

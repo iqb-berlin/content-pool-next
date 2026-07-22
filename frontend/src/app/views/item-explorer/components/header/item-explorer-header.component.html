@@ -4,7 +4,7 @@
   </div>
   <div class="header-actions">
     <span class="item-count"
-      >{{ vm.filteredItems.length }} von {{ vm.visibleItemsCount }} Zeilen</span
+      >{{ vm.filteredItems.length }} von {{ vm.totalItemsCount }} Zeilen</span
     >
     <button
       class="btn btn-outline btn-sm"
@@ -89,7 +89,7 @@
         [disabled]="vm.isRenumberingBlocked()"
         [title]="vm.getRenumberingActionTitle()"
       >
-        🔢 Nummerierung neu
+        🔢 Referenznummern neu vergeben
       </button>
       <button
         class="btn btn-outline btn-sm"
@@ -115,6 +115,11 @@
       <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">🕒 Änderungsverlauf</button>
     }
   </div>
+  @if (vm.canEditExplorer && vm.isRenumberingBlocked()) {
+    <div class="renumber-blocked-hint" role="status">
+      {{ vm.getRenumberingBlockedMessage() }}
+    </div>
+  }
 </div>
 
 @if (vm.showReadOnlyPreviewBanner) {
@@ -198,18 +203,29 @@
   </div>
 }
 
+@if (vm.draftSaveSuccessMessage) {
+  <div class="alert alert-info" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.draftSaveSuccessMessage }}
+  </div>
+}
+
 <app-confirm-dialog
   [open]="vm.showRenumberDialog"
-  title="Nummerierung neu berechnen"
-  message="Alle aktuell vorhandenen Zeilen werden nach Item-ID und Sub-ID neu nummeriert."
+  title="Referenznummern neu vergeben"
+  [message]="
+    'Alle ' +
+    vm.totalItemsCount +
+    ' Zeilen des vollständigen Itembestands werden nach Item-ID und Sub-ID neu nummeriert.'
+  "
   [details]="[
-    'Bisherige Nummernlücken können sich dadurch schließen.',
-    'Die Nummern bleiben anschließend bei Sortierung und Filterung unverändert.',
+    'Auch aktuell ausgeblendete Zeilen werden einbezogen.',
+    'Bisherige Referenznummern ändern sich; Lücken im vollständigen Bestand werden geschlossen.',
+    'Die sichtbare Spalte Pos. bleibt davon unberührt und wird aus der aktuellen Ansicht berechnet.',
   ]"
   [error]="vm.renumberError"
   [busy]="vm.renumberBusy"
-  busyLabel="Nummeriere Zeilen..."
-  confirmLabel="Nummerierung neu"
+  busyLabel="Referenznummern werden vergeben ..."
+  confirmLabel="Referenznummern neu vergeben"
   confirmVariant="primary"
   (confirmed)="vm.confirmRenumber()"
   (cancelled)="vm.closeRenumberDialog()"

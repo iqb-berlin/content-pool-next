@@ -643,10 +643,11 @@ export class ApiService {
     acpId: string,
     collectionId: string | null,
     perspective: ItemExplorerPerspective,
+    collectionViewMode?: 'all' | 'active',
   ): Observable<ItemCollectionsPayload> {
     return this.http.put<ItemCollectionsPayload>(
       `${this.API}/view/acp/${acpId}/items/collections/active`,
-      { collectionId, perspective },
+      { collectionId, perspective, collectionViewMode },
     );
   }
 

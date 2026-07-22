@@ -11,6 +11,18 @@ describe('ItemExplorerTableComponent', () => {
     );
   });
 
+  it('renders a gapless view position and an optional stable reference number', () => {
+    expect(template).toContain('<td class="number-col">{{ i + 1 }}</td>');
+    expect(template).toContain('@if (vm.referenceNumberVisible)');
+    expect(template).toContain('Referenz-Nr.');
+    expect(template).toContain('{{ item.rowNumber }}');
+  });
+
+  it('offers a dedicated empty state for an empty active selection list', () => {
+    expect(template).toContain('Diese Auswahlliste ist noch leer.');
+    expect(template).toContain('(click)="vm.setCollectionViewMode(\'all\')"');
+  });
+
   it('owns filter focus and selection scrolling', () => {
     vi.useFakeTimers();
     const feature = {

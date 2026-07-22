@@ -22,6 +22,23 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.visibility-summary {
+  display: flex;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+}
+.collection-empty-state {
+  padding: 32px !important;
+  text-align: center !important;
+  color: var(--color-text-secondary);
+}
+.collection-empty-state strong,
+.collection-empty-state span {
+  display: block;
+  margin-bottom: 8px;
+}
 .item-list-loading {
   display: flex;
   align-items: center;
@@ -124,6 +141,12 @@
   background-color: var(--color-surface) !important;
   z-index: 31;
   font-variant-numeric: tabular-nums;
+}
+.reference-number-col {
+  left: 72px;
+}
+.reference-number-col + .sticky-col {
+  left: 144px;
 }
 .explorer-table th.number-col {
   background-color: var(--color-bg) !important;

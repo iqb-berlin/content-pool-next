@@ -952,6 +952,28 @@ describe('ApiService', () => {
       );
     });
 
+    it('should persist the active personal item list view mode', () => {
+      const payload = {
+        activeCollectionId: 'collection-1',
+        collectionViewMode: 'active' as const,
+        collections: [],
+      };
+      httpClientMock.put.mockReturnValue(of(payload));
+
+      service
+        .activateItemCollection('acp1', 'collection-1', 'read-only', 'active')
+        .subscribe((result) => expect(result).toEqual(payload));
+
+      expect(httpClientMock.put).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/active',
+        {
+          collectionId: 'collection-1',
+          perspective: 'read-only',
+          collectionViewMode: 'active',
+        },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 

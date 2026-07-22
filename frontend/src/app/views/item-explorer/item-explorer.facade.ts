@@ -199,6 +199,7 @@ export class ItemExplorerFacade implements OnDestroy {
   enableItemCollections = false;
   itemCollections: ItemCollection[] = [];
   activeCollectionId: string | null = null;
+  collectionViewMode: 'all' | 'active' = 'all';
   collectionLoadState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
   collectionBusy = false;
   collectionError = '';
@@ -246,7 +247,12 @@ export class ItemExplorerFacade implements OnDestroy {
   perspectiveSwitchBusy = false;
   showColumnManager = false;
   allColumns: MetadataColumn[] = [];
-  metadataSettings: MetadataSettings = { visible: [], order: [] };
+  metadataSettings: MetadataSettings = {
+    visible: [],
+    order: [],
+    referenceNumberVisible: false,
+  };
+  private columnManagerOriginalSettings: MetadataSettings | null = null;
   columnFilterText = '';
   itemOrder: string[] = [];
 
@@ -285,6 +291,8 @@ export class ItemExplorerFacade implements OnDestroy {
   renumberBusy = false;
   renumberError = '';
   numberingSuccessMessage = '';
+  draftSaveSuccessMessage = '';
+  private draftSaveMessageResetTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Leave with pending changes dialog
   showLeaveWithChangesDialog = false;
@@ -443,8 +451,30 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.items.filter((item) => this.isItemExcluded(item)).length;
   }
 
+  get totalItemsCount(): number {
+    return this.items.length;
+  }
+
   get visibleItemsCount(): number {
     return this.items.filter((item) => this.isItemVisibleByBaseRules(item)).length;
+  }
+
+  get hiddenExcludedItemsCount(): number {
+    if (this.showExcludedItems) return 0;
+    return this.items.filter((item) => this.isItemExcluded(item)).length;
+  }
+
+  get hiddenMissingDifficultyItemsCount(): number {
+    if (!this.showOnlyItemsWithEmpiricalDifficulty || !this.hasEmpiricalDifficulty) return 0;
+    return this.items.filter(
+      (item) =>
+        (this.showExcludedItems || !this.isItemExcluded(item)) &&
+        (item.empiricalDifficulty === undefined || item.empiricalDifficulty === null),
+    ).length;
+  }
+
+  get referenceNumberVisible(): boolean {
+    return this.metadataSettings.referenceNumberVisible === true;
   }
 
   get activeItemCollection(): ItemCollection | null {
@@ -1007,6 +1037,10 @@ export class ItemExplorerFacade implements OnDestroy {
       clearTimeout(this.saveStatusResetTimeout);
       this.saveStatusResetTimeout = null;
     }
+    if (this.draftSaveMessageResetTimeout) {
+      clearTimeout(this.draftSaveMessageResetTimeout);
+      this.draftSaveMessageResetTimeout = null;
+    }
     this.personalDataSessionIdentity = null;
     this.collectionSessionIdentity = null;
     this.pendingPersonalRowUpdates.clear();
@@ -1143,7 +1177,7 @@ export class ItemExplorerFacade implements OnDestroy {
         this.collectionLoadState === 'idle'
       ) {
         this.collectionLoadState = 'error';
-        this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+        this.collectionError = 'Für persönliche Auswahllisten ist eine Anmeldung erforderlich.';
       }
       return;
     }
@@ -1152,15 +1186,17 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionSessionIdentity = nextIdentity;
     this.itemCollections = [];
     this.activeCollectionId = null;
+    this.collectionViewMode = 'all';
     this.collectionBusy = false;
     this.collectionError = '';
     this.collectionLoadState = 'idle';
     this.showCollectionDrawer = false;
+    this.applyFilter(false);
     if (nextIdentity) {
       this.loadItemCollections();
     } else if (this.enableItemCollections) {
       this.collectionLoadState = 'error';
-      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      this.collectionError = 'Für persönliche Auswahllisten ist eine Anmeldung erforderlich.';
     }
   }
 
@@ -1187,7 +1223,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const session = this.getItemCollectionSession();
     if (!session.identity) {
       this.collectionLoadState = 'error';
-      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      this.collectionError = 'Für persönliche Auswahllisten ist eine Anmeldung erforderlich.';
       return;
     }
     this.collectionLoadState = 'loading';
@@ -1198,8 +1234,7 @@ export class ItemExplorerFacade implements OnDestroy {
       .subscribe({
         next: (payload) => {
           if (!this.isCurrentItemCollectionSession(session)) return;
-          this.itemCollections = payload.collections || [];
-          this.activeCollectionId = payload.activeCollectionId || null;
+          this.applyItemCollectionsPayload(payload);
           this.collectionLoadState = 'loaded';
           if (!this.itemListLoading && !this.itemListError) {
             this.recalculateCollectionSummaries();
@@ -1210,8 +1245,8 @@ export class ItemExplorerFacade implements OnDestroy {
           this.collectionLoadState = 'error';
           this.collectionError =
             error?.status === 401
-              ? 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.'
-              : 'Kollektionen konnten nicht geladen werden.';
+              ? 'Für persönliche Auswahllisten ist eine Anmeldung erforderlich.'
+              : 'Auswahllisten konnten nicht geladen werden.';
         },
       });
   }
@@ -1220,15 +1255,15 @@ export class ItemExplorerFacade implements OnDestroy {
     if (this.collectionBusy) return null;
     const session = this.getItemCollectionSession();
     if (!session.identity) {
-      this.collectionError = 'Für persönliche Kollektionen ist eine Anmeldung erforderlich.';
+      this.collectionError = 'Für persönliche Auswahllisten ist eine Anmeldung erforderlich.';
       return null;
     }
     this.collectionBusy = true;
     this.collectionError = '';
     const name =
       this.itemCollections.length === 0
-        ? 'Meine Kollektion'
-        : `Kollektion ${this.itemCollections.length + 1}`;
+        ? 'Meine Auswahlliste'
+        : `Auswahlliste ${this.itemCollections.length + 1}`;
     try {
       const payload = await firstValueFrom(
         this.api.createItemCollection(this.acpId, name, this.getPerspectiveForViewerRequests()),
@@ -1238,7 +1273,7 @@ export class ItemExplorerFacade implements OnDestroy {
       return this.activeItemCollection;
     } catch {
       if (!this.isCurrentItemCollectionSession(session)) return null;
-      this.collectionError = 'Die Kollektion konnte nicht erstellt werden.';
+      this.collectionError = 'Die Auswahlliste konnte nicht erstellt werden.';
       return null;
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
@@ -1257,13 +1292,14 @@ export class ItemExplorerFacade implements OnDestroy {
           this.acpId,
           collectionId || null,
           this.getPerspectiveForViewerRequests(),
+          this.collectionViewMode,
         ),
       );
       if (!this.isCurrentItemCollectionSession(session)) return;
       this.applyItemCollectionsPayload(payload);
     } catch {
       if (!this.isCurrentItemCollectionSession(session)) return;
-      this.collectionError = 'Die aktive Kollektion konnte nicht gespeichert werden.';
+      this.collectionError = 'Die aktive Auswahlliste konnte nicht gespeichert werden.';
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
     }
@@ -1299,7 +1335,7 @@ export class ItemExplorerFacade implements OnDestroy {
   async renameActiveCollection() {
     const collection = this.activeItemCollection;
     if (!collection || this.collectionBusy) return;
-    const name = window.prompt('Name der Kollektion', collection.name)?.trim();
+    const name = window.prompt('Name der Auswahlliste', collection.name)?.trim();
     if (!name || name === collection.name) return;
     await this.persistActiveCollectionUpdate({ name });
   }
@@ -1307,7 +1343,7 @@ export class ItemExplorerFacade implements OnDestroy {
   async deleteActiveCollection() {
     const collection = this.activeItemCollection;
     if (!collection || this.collectionBusy) return;
-    if (!window.confirm(`Kollektion „${collection.name}“ löschen?`)) return;
+    if (!window.confirm(`Auswahlliste „${collection.name}“ löschen?`)) return;
     const session = this.getItemCollectionSession();
     if (!session.identity) return;
     this.collectionBusy = true;
@@ -1325,7 +1361,7 @@ export class ItemExplorerFacade implements OnDestroy {
       if (!this.activeItemCollection) this.showCollectionDrawer = false;
     } catch {
       if (!this.isCurrentItemCollectionSession(session)) return;
-      this.collectionError = 'Die Kollektion konnte nicht gelöscht werden.';
+      this.collectionError = 'Die Auswahlliste konnte nicht gelöscht werden.';
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
     }
@@ -1355,7 +1391,7 @@ export class ItemExplorerFacade implements OnDestroy {
       URL.revokeObjectURL(url);
     } catch {
       if (!this.isCurrentItemCollectionSession(session)) return;
-      this.collectionError = 'Die Kollektion konnte nicht exportiert werden.';
+      this.collectionError = 'Die Auswahlliste konnte nicht exportiert werden.';
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
     }
@@ -1384,6 +1420,7 @@ export class ItemExplorerFacade implements OnDestroy {
     if (update.name !== undefined) collection.name = update.name;
     if (update.rowKeys !== undefined) collection.rowKeys = [...update.rowKeys];
     this.recalculateCollectionSummaries();
+    this.applyFilter(false);
     this.collectionBusy = true;
     this.collectionError = '';
     try {
@@ -1401,10 +1438,11 @@ export class ItemExplorerFacade implements OnDestroy {
       if (!this.isCurrentItemCollectionSession(session)) return;
       const index = this.itemCollections.findIndex((candidate) => candidate.id === previous.id);
       if (index >= 0) this.itemCollections[index] = previous;
+      this.applyFilter(false);
       this.collectionError =
         error?.status === 409
-          ? 'Die Kollektion wurde parallel geändert und wird neu geladen.'
-          : 'Die Kollektion konnte nicht gespeichert werden.';
+          ? 'Die Auswahlliste wurde parallel geändert und wird neu geladen.'
+          : 'Die Auswahlliste konnte nicht gespeichert werden.';
       if (error?.status === 409) this.loadItemCollections(true);
     } finally {
       if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
@@ -1413,13 +1451,48 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private applyItemCollectionsPayload(payload: {
     activeCollectionId: string | null;
+    collectionViewMode?: 'all' | 'active';
     collections: ItemCollection[];
   }) {
     this.itemCollections = payload.collections || [];
     this.activeCollectionId = payload.activeCollectionId || null;
+    this.collectionViewMode =
+      payload.collectionViewMode === 'active' && this.activeCollectionId ? 'active' : 'all';
     this.collectionLoadState = 'loaded';
     if (!this.itemListLoading && !this.itemListError) {
       this.recalculateCollectionSummaries();
+    }
+    this.applyFilter(false);
+  }
+
+  async setCollectionViewMode(mode: 'all' | 'active') {
+    const nextMode = mode === 'active' && this.activeItemCollection ? 'active' : 'all';
+    if (nextMode === this.collectionViewMode || this.collectionBusy) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    const previousMode = this.collectionViewMode;
+    this.collectionViewMode = nextMode;
+    this.collectionBusy = true;
+    this.collectionError = '';
+    this.applyFilter(false);
+    try {
+      const payload = await firstValueFrom(
+        this.api.activateItemCollection(
+          this.acpId,
+          this.activeCollectionId,
+          this.getPerspectiveForViewerRequests(),
+          nextMode,
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.applyItemCollectionsPayload(payload);
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.collectionViewMode = previousMode;
+      this.applyFilter(false);
+      this.collectionError = 'Die Ansicht der Auswahlliste konnte nicht gespeichert werden.';
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
     }
   }
 
@@ -1479,9 +1552,17 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Filtering ---
   applyFilter(shouldPersist = true) {
     const term = this.filterText.toLowerCase();
+    const activeCollectionRowKeys =
+      this.collectionViewMode === 'active' && this.activeItemCollection
+        ? new Set(this.activeItemCollection.rowKeys)
+        : null;
 
     this.filteredItems = this.items.filter((item) => {
       if (!this.isItemVisibleByBaseRules(item)) {
+        return false;
+      }
+
+      if (activeCollectionRowKeys && !activeCollectionRowKeys.has(item.rowKey)) {
         return false;
       }
 
@@ -1704,6 +1785,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private applySort(shouldPersist = true) {
+    this.ensureVisibleSortField();
     if (this.sortField === '__manual__') {
       const rank = new Map<string, number>();
       this.itemOrder.forEach((entry, idx) => rank.set(entry, idx));
@@ -1768,6 +1850,13 @@ export class ItemExplorerFacade implements OnDestroy {
     if (shouldPersist) {
       this.saveUiPreferences();
     }
+  }
+
+  private ensureVisibleSortField() {
+    if (this.sortField !== 'rowNumber' || this.referenceNumberVisible) return;
+    this.sortField = DEFAULT_EXPLORER_SORT_FIELD;
+    this.sortIsMeta = false;
+    this.sortDir = DEFAULT_EXPLORER_SORT_DIR;
   }
 
   private compareSortValues(aVal: unknown, bVal: unknown, direction: 'asc' | 'desc'): number {
@@ -1956,10 +2045,11 @@ export class ItemExplorerFacade implements OnDestroy {
           const count = Number(result?.renumberedCount) || 0;
           this.renumberBusy = false;
           this.closeRenumberDialog();
-          this.numberingSuccessMessage =
+          this.numberingSuccessMessage = `${
             count === 1
-              ? 'Eine Zeile wurde neu nummeriert.'
-              : `${count} Zeilen wurden neu nummeriert.`;
+              ? 'Eine Referenznummer im vollständigen Itembestand wurde'
+              : `${count} Referenznummern im vollständigen Itembestand wurden`
+          } neu vergeben. ${this.filteredItems.length} Zeilen werden aktuell angezeigt.`;
           this.reloadItems();
         },
         error: (error) => {
@@ -1987,10 +2077,10 @@ export class ItemExplorerFacade implements OnDestroy {
   getRenumberingActionTitle(): string {
     return this.isRenumberingBlocked()
       ? this.getRenumberingBlockedMessage()
-      : 'Stabile Zeilennummerierung neu berechnen';
+      : 'Referenznummern im vollständigen Itembestand neu vergeben';
   }
 
-  private getRenumberingBlockedMessage(): string {
+  getRenumberingBlockedMessage(): string {
     if (!this.latestExplorerState) {
       return 'Bitte warten Sie, bis der Explorer-Status geladen wurde.';
     }
@@ -2002,7 +2092,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     return this.explorerUiStatus === 'SAVING'
       ? 'Bitte warten Sie, bis die Explorer-Änderungen gespeichert wurden.'
-      : 'Bitte speichern oder verwerfen Sie den Entwurf, bevor Sie neu nummerieren.';
+      : 'Bitte speichern oder verwerfen Sie den Entwurf, bevor Sie Referenznummern neu vergeben.';
   }
 
   getSortIndicator(field: string): string {
@@ -4024,6 +4114,9 @@ export class ItemExplorerFacade implements OnDestroy {
 
   saveMetadataSettings() {
     this.columns = this.filterVisibleColumns(this.allColumns);
+    this.ensureVisibleSortField();
+    this.applySort(false);
+    this.columnManagerOriginalSettings = null;
     this.showColumnManager = false;
     this.restoreFocusAfterOverlayClose();
     this.queueDraftPatch(
@@ -4032,6 +4125,7 @@ export class ItemExplorerFacade implements OnDestroy {
         metadataColumns: {
           visible: [...this.metadataSettings.visible],
           order: [...this.metadataSettings.order],
+          referenceNumberVisible: this.referenceNumberVisible,
         },
       },
       true,
@@ -4039,8 +4133,12 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   resetToDefault() {
-    this.metadataSettings = { visible: [], order: [] };
+    this.metadataSettings = { visible: [], order: [], referenceNumberVisible: false };
     this.columns = this.filterVisibleColumns(this.allColumns);
+  }
+
+  toggleReferenceNumberVisibility() {
+    this.metadataSettings.referenceNumberVisible = !this.referenceNumberVisible;
   }
 
   private resolveMetadataSettings(featureConfig: Record<string, any>): MetadataSettings {
@@ -4060,6 +4158,7 @@ export class ItemExplorerFacade implements OnDestroy {
       return {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
       };
     }
 
@@ -4068,7 +4167,7 @@ export class ItemExplorerFacade implements OnDestroy {
       ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
       : [];
 
-    return { visible: legacy, order: legacy };
+    return { visible: legacy, order: legacy, referenceNumberVisible: false };
   }
 
   private buildUiPreferences(): Record<string, unknown> {
@@ -4543,6 +4642,15 @@ export class ItemExplorerFacade implements OnDestroy {
       this.applySharedExplorerEnvelope(envelope, true);
       this.reloadItems();
       this.lastDraftOperationError = '';
+      this.draftSaveSuccessMessage =
+        'Entwurf gespeichert. Referenznummern können bei Bedarf separat neu vergeben werden.';
+      if (this.draftSaveMessageResetTimeout) {
+        clearTimeout(this.draftSaveMessageResetTimeout);
+      }
+      this.draftSaveMessageResetTimeout = setTimeout(() => {
+        this.draftSaveMessageResetTimeout = null;
+        this.draftSaveSuccessMessage = '';
+      }, 5000);
       if (!this.showLeaveWithChangesDialog) {
         this.restoreFocusAfterOverlayClose();
       }
@@ -4652,13 +4760,26 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   openColumnManager() {
+    if (this.showColumnManager) {
+      return;
+    }
     this.rememberFocusBeforeOverlay();
+    this.columnManagerOriginalSettings = {
+      visible: [...this.metadataSettings.visible],
+      order: [...this.metadataSettings.order],
+      referenceNumberVisible: this.referenceNumberVisible,
+    };
     this.showColumnManager = true;
   }
 
   closeColumnManager() {
     if (!this.showColumnManager) {
       return;
+    }
+    if (this.columnManagerOriginalSettings) {
+      this.metadataSettings = this.columnManagerOriginalSettings;
+      this.columns = this.filterVisibleColumns(this.allColumns);
+      this.columnManagerOriginalSettings = null;
     }
     this.showColumnManager = false;
     this.restoreFocusAfterOverlayClose();
@@ -4992,6 +5113,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
     this.pendingDraftChangeType = changeType;
     this.explorerUiStatus = 'DIRTY';
+    this.draftSaveSuccessMessage = '';
 
     if (this.draftPatchTimeout) {
       clearTimeout(this.draftPatchTimeout);

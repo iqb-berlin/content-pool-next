@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from "typeorm";
 
-export class RemoveUserPasswordHash1784700000000
-  implements MigrationInterface
-{
+export class RemoveUserPasswordHash1784700000000 implements MigrationInterface {
   name = "RemoveUserPasswordHash1784700000000";
 
   public async up(queryRunner: QueryRunner): Promise<void> {

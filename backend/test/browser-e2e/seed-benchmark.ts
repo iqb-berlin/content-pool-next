@@ -104,6 +104,18 @@ function createUnitFiles(unit: BenchmarkUnit) {
   ];
 }
 
+async function addBaselineCompatibilityColumns(
+  dataSource: DataSource,
+): Promise<void> {
+  // The benchmark runs the current test harness against an older application
+  // checkout whose User entity still selects this column. It is intentionally
+  // kept only in the disposable benchmark schema and is unused by the candidate.
+  await dataSource.query(`
+    ALTER TABLE "users"
+    ADD COLUMN IF NOT EXISTS "password_hash" character varying NOT NULL DEFAULT ''
+  `);
+}
+
 async function seed(): Promise<void> {
   const database = process.env.DB_DATABASE || "";
   if (
@@ -121,6 +133,7 @@ async function seed(): Promise<void> {
   try {
     const dataSource = app.get(DataSource);
     await dataSource.synchronize(true);
+    await addBaselineCompatibilityColumns(dataSource);
 
     const units = createUnits();
     const acp = await dataSource.getRepository(Acp).save(

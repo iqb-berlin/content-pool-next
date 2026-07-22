@@ -87,9 +87,9 @@ describe("UsersService", () => {
 
     it("should throw ConflictException for duplicate username", async () => {
       repo.findOne.mockResolvedValue(mockUser);
-      await expect(
-        service.create({ username: "john" }),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create({ username: "john" })).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -118,5 +118,4 @@ describe("UsersService", () => {
       expect(repo.save).toHaveBeenCalled();
     });
   });
-
 });

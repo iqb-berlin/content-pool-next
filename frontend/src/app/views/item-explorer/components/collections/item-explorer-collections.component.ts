@@ -26,6 +26,8 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
   @ViewChild('collectionDialog') private collectionDialog?: ElementRef<HTMLElement>;
   @ViewChild('collectionSearch') private collectionSearch?: ElementRef<HTMLInputElement>;
   @ViewChild('removeSelectedButton') private removeSelectedButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild('removeConfirmation', { read: ElementRef })
+  private removeConfirmation?: ElementRef<HTMLElement>;
 
   private detailsTrigger: HTMLElement | null = null;
   private collectionIdSource: string | null = null;
@@ -109,7 +111,7 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
     this.detailsTrigger = trigger;
     this.resetDialogState();
     this.vm.openCollectionDialog();
-    setTimeout(() => this.collectionSearch?.nativeElement.focus());
+    this.focusCollectionSearch();
   }
 
   closeDetails(): void {
@@ -157,7 +159,7 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
     if (!this.selectedCount || this.vm.collectionBusy) return;
     this.removeConfirmationError = '';
     this.showRemoveConfirmation = true;
-    setTimeout(() => this.getConfirmationDialog()?.querySelector<HTMLElement>('button')?.focus());
+    this.focusRemoveConfirmation();
   }
 
   cancelRemoveConfirmation(): void {
@@ -174,7 +176,7 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
       this.selectedRowKeys.clear();
       this.showRemoveConfirmation = false;
       this.filteredSource = null;
-      setTimeout(() => this.collectionSearch?.nativeElement.focus());
+      this.focusCollectionSearch();
     } else {
       this.removeConfirmationError =
         this.vm.collectionError || 'Die ausgewählten Einträge konnten nicht entfernt werden.';
@@ -244,7 +246,29 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
   }
 
   private getConfirmationDialog(): HTMLElement | null {
-    return document.querySelector('.collection-remove-confirmation .dialog');
+    return this.removeConfirmation?.nativeElement.querySelector('.dialog') || null;
+  }
+
+  private focusRemoveConfirmation(attempt = 0): void {
+    setTimeout(() => {
+      const button = this.getConfirmationDialog()?.querySelector<HTMLElement>('button');
+      if (button) {
+        button.focus();
+      } else if (attempt < 2 && this.showRemoveConfirmation) {
+        this.focusRemoveConfirmation(attempt + 1);
+      }
+    });
+  }
+
+  private focusCollectionSearch(attempt = 0): void {
+    setTimeout(() => {
+      const search = this.collectionSearch?.nativeElement;
+      if (search) {
+        search.focus();
+      } else if (attempt < 2 && this.vm.showCollectionDialog) {
+        this.focusCollectionSearch(attempt + 1);
+      }
+    });
   }
 
   private getFocusableElements(container: HTMLElement): HTMLElement[] {

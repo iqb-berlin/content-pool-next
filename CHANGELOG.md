@@ -49,6 +49,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   paginated collection-detail editing.
 - Route all application-user authentication through Keycloak OIDC while
   retaining ACP-specific credential-list access for restricted viewers.
+- Return OIDC logout to the installer-approved `/login` URL so existing
+  Keycloak client settings accept the post-logout redirect.
 
 ### Breaking changes
 

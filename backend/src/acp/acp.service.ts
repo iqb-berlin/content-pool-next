@@ -365,9 +365,17 @@ export class AcpService {
 
     const currentConfig = config.featureConfig || {};
     const normalizedConfig = normalizeFeatureConfig(currentConfig);
+    const currentMetadataColumns =
+      normalizedConfig.metadataColumns &&
+      typeof normalizedConfig.metadataColumns === "object" &&
+      !Array.isArray(normalizedConfig.metadataColumns)
+        ? (normalizedConfig.metadataColumns as Record<string, unknown>)
+        : {};
     normalizedConfig.metadataColumns = {
+      ...currentMetadataColumns,
       visible: dto.visibleColumns,
       order: dto.columnOrder || dto.visibleColumns,
+      configured: true,
     };
 
     config.featureConfig = normalizedConfig;

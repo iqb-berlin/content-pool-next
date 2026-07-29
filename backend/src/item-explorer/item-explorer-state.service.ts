@@ -24,6 +24,8 @@ export interface ExplorerActor {
 export interface ExplorerMetadataColumns {
   visible: string[];
   order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
   referenceNumberVisible?: boolean;
 }
 
@@ -649,9 +651,15 @@ export class ItemExplorerStateService {
 
     const visible = this.asStringArray(rawMetadataColumns.visible);
     const order = this.asStringArray(rawMetadataColumns.order);
+    const configured =
+      rawMetadataColumns.configured === true ||
+      visible.length > 0 ||
+      order.length > 0;
     const metadataColumns: ExplorerMetadataColumns = {
       visible: visible.length ? visible : order,
       order: order.length ? order : visible,
+      configured,
+      widths: this.normalizeMetadataColumnWidths(rawMetadataColumns.widths),
       ...(rawMetadataColumns.referenceNumberVisible === true
         ? { referenceNumberVisible: true }
         : {}),
@@ -709,15 +717,30 @@ export class ItemExplorerStateService {
     );
     const visible = this.asStringArray(state.metadataColumns?.visible);
     const order = this.asStringArray(state.metadataColumns?.order);
+    const widths = this.normalizeMetadataColumnWidths(
+      state.metadataColumns?.widths,
+    );
+    const existingMetadataColumns = this.asRecord(
+      normalizedFeatureConfig.metadataColumns,
+    );
+    const definitions = Array.isArray(existingMetadataColumns.definitions)
+      ? existingMetadataColumns.definitions
+      : [];
 
     if (
+      state.metadataColumns.configured ||
       visible.length ||
       order.length ||
-      state.metadataColumns.referenceNumberVisible
+      state.metadataColumns.referenceNumberVisible ||
+      Object.keys(widths).length ||
+      definitions.length
     ) {
       normalizedFeatureConfig.metadataColumns = {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured: state.metadataColumns.configured === true,
+        ...(definitions.length ? { definitions } : {}),
+        ...(Object.keys(widths).length ? { widths } : {}),
         ...(state.metadataColumns.referenceNumberVisible
           ? { referenceNumberVisible: true }
           : {}),
@@ -777,6 +800,10 @@ export class ItemExplorerStateService {
 
     const visible = this.asStringArray(metadataColumnsRaw.visible);
     const order = this.asStringArray(metadataColumnsRaw.order);
+    const configured =
+      metadataColumnsRaw.configured === true ||
+      visible.length > 0 ||
+      order.length > 0;
 
     return {
       ui: this.asRecord(payload.ui),
@@ -784,6 +811,8 @@ export class ItemExplorerStateService {
       metadataColumns: {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured,
+        widths: this.normalizeMetadataColumnWidths(metadataColumnsRaw.widths),
         ...(metadataColumnsRaw.referenceNumberVisible === true
           ? { referenceNumberVisible: true }
           : {}),
@@ -803,6 +832,8 @@ export class ItemExplorerStateService {
       metadataColumns: {
         visible: [...current.metadataColumns.visible],
         order: [...current.metadataColumns.order],
+        configured: current.metadataColumns.configured,
+        widths: { ...current.metadataColumns.widths },
         ...(current.metadataColumns.referenceNumberVisible
           ? { referenceNumberVisible: true }
           : {}),
@@ -825,9 +856,17 @@ export class ItemExplorerStateService {
     if (patch.metadataColumns) {
       const visible = this.asStringArray(patch.metadataColumns.visible);
       const order = this.asStringArray(patch.metadataColumns.order);
+      const configured =
+        patch.metadataColumns.configured === true ||
+        visible.length > 0 ||
+        order.length > 0;
       merged.metadataColumns = {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured,
+        widths: this.normalizeMetadataColumnWidths(
+          patch.metadataColumns.widths,
+        ),
         ...(patch.metadataColumns.referenceNumberVisible === true
           ? { referenceNumberVisible: true }
           : {}),
@@ -983,12 +1022,10 @@ export class ItemExplorerStateService {
         continue;
       }
       const normalizedValues = this.normalizeTagArray(value);
-      if (
-        normalizedValues.length ||
-        parseItemRowKeyParts(normalizedItemKey) !== null
-      ) {
-        tags[normalizedItemKey] = normalizedValues;
-      }
+      // Explicit empty arrays are deletion tombstones. They must also be
+      // retained for regular (non partial-credit) rows so an imported tag
+      // cannot reappear after the draft is saved and reloaded.
+      tags[normalizedItemKey] = normalizedValues;
     }
 
     return tags;
@@ -1018,7 +1055,6 @@ export class ItemExplorerStateService {
         continue;
       }
       const isPartialRow = parseItemRowKeyParts(normalizedKey) !== null;
-
       const itemValue = this.asRecord(value);
       const nextItemValue: Record<string, unknown> = { ...itemValue };
 
@@ -1026,10 +1062,8 @@ export class ItemExplorerStateService {
         const tags = this.normalizeTagArray(itemValue.tags);
         if (tags.length) {
           nextItemValue.tags = tags;
-        } else if (isPartialRow) {
-          nextItemValue.tags = [];
         } else {
-          delete nextItemValue.tags;
+          nextItemValue.tags = [];
         }
       }
 
@@ -1092,6 +1126,20 @@ export class ItemExplorerStateService {
           .filter((entry) => entry.length > 0),
       ),
     );
+  }
+
+  private normalizeMetadataColumnWidths(
+    value: unknown,
+  ): Record<string, number> {
+    const source = this.asRecord(value);
+    const widths: Record<string, number> = {};
+    for (const [rawId, rawWidth] of Object.entries(source).slice(0, 100)) {
+      const id = rawId.trim().slice(0, 200);
+      const width = Number(rawWidth);
+      if (!id || !Number.isFinite(width)) continue;
+      widths[id] = Math.min(600, Math.max(80, Math.round(width)));
+    }
+    return widths;
   }
 
   private asRecord(value: unknown): Record<string, unknown> {

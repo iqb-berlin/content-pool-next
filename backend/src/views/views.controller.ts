@@ -176,6 +176,11 @@ class UpdateItemCollectionDto {
   @IsString({ each: true })
   rowKeys?: string[];
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  shared?: boolean;
+
   @ApiPropertyOptional({ enum: ["editor", "read-only"] })
   @IsOptional()
   @IsIn(["editor", "read-only"])
@@ -582,6 +587,26 @@ export class ViewsController {
       this.requireCollectionIdentity(req),
       collectionId,
       dto,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Post("acp/:acpId/items/collections/:collectionId/copy")
+  @UseGuards(AcpAccessGuard)
+  @ApiOperation({
+    summary: "Copy an available item collection as a private list",
+  })
+  async copyItemCollection(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
+    @Body() dto: CreateItemCollectionDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId, req);
+    return this.itemCollectionsService.copyItemCollection(
+      acpId,
+      this.requireCollectionIdentity(req),
+      collectionId,
       this.isEditorPerspective(req, dto.perspective),
     );
   }

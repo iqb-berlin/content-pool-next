@@ -604,17 +604,27 @@ describe("AcpService", () => {
         acpId: "acp-1",
         accessModel: AccessModel.PRIVATE,
         featureConfig: expect.objectContaining({
-          metadataColumns: {
+          metadataColumns: expect.objectContaining({
             visible: ["a"],
             order: ["a"],
-          },
+            configured: true,
+          }),
         }),
       });
 
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce({
         acpId: "acp-1",
-        featureConfig: {},
+        featureConfig: {
+          metadataColumns: {
+            visible: ["old"],
+            order: ["old"],
+            configured: true,
+            definitions: [{ id: "custom", label: "Eigene Spalte" }],
+            widths: { custom: 260 },
+            referenceNumberVisible: true,
+          },
+        },
       });
 
       await service.updateMetadataColumns("acp-1", {
@@ -625,10 +635,14 @@ describe("AcpService", () => {
       expect(accessConfigRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
-            metadataColumns: {
+            metadataColumns: expect.objectContaining({
               visible: ["a", "b"],
               order: ["b", "a"],
-            },
+              configured: true,
+              definitions: [{ id: "custom", label: "Eigene Spalte" }],
+              widths: { custom: 260 },
+              referenceNumberVisible: true,
+            }),
           }),
         }),
       );

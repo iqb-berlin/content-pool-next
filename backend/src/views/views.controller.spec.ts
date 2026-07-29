@@ -62,6 +62,10 @@ describe("ViewsController", () => {
         activeCollectionId: "collection-1",
         collections: [],
       }),
+      copyItemCollection: jest.fn().mockResolvedValue({
+        activeCollectionId: "collection-copy",
+        collections: [],
+      }),
       mutateItemCollectionRows: jest.fn().mockResolvedValue({
         collectionId: "collection-1",
         version: 3,
@@ -540,7 +544,18 @@ describe("ViewsController", () => {
     await controller.updateItemCollection(
       "acp-1",
       "collection-1",
-      { baseVersion: 2, rowKeys: ["uuid::1"], perspective: "editor" },
+      {
+        baseVersion: 2,
+        rowKeys: ["uuid::1"],
+        shared: true,
+        perspective: "editor",
+      },
+      request,
+    );
+    await controller.copyItemCollection(
+      "acp-1",
+      "shared-collection",
+      { perspective: "editor" },
       request,
     );
     await controller.mutateItemCollectionRows(
@@ -567,7 +582,17 @@ describe("ViewsController", () => {
       "acp-1",
       { kind: "user", userId: "user-1" },
       "collection-1",
-      expect.objectContaining({ baseVersion: 2, rowKeys: ["uuid::1"] }),
+      expect.objectContaining({
+        baseVersion: 2,
+        rowKeys: ["uuid::1"],
+        shared: true,
+      }),
+      true,
+    );
+    expect(itemCollectionsService.copyItemCollection).toHaveBeenCalledWith(
+      "acp-1",
+      { kind: "user", userId: "user-1" },
+      "shared-collection",
       true,
     );
     expect(

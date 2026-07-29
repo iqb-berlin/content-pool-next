@@ -358,6 +358,10 @@ export interface Credential {
 export interface MetadataColumnsConfig {
   visible?: string[];
   order?: string[];
+  configured?: boolean;
+  referenceNumberVisible?: boolean;
+  definitions?: Array<{ id: string; label: string }>;
+  widths?: Record<string, number>;
 }
 
 export interface FeatureConfig {
@@ -382,6 +386,8 @@ export interface FeatureConfig {
   enableItemListTags?: boolean;
   showOnlyItemsWithEmpiricalDifficulty?: boolean;
   showAudioVideoCodingVariables?: boolean;
+  showGeneralCodingInstructions?: boolean;
+  preferManualCodingInstructions?: boolean;
   enableItemExplorerConditionalVisibility?: boolean;
   enablePlayerFocusHighlight?: boolean;
   showItemExplorerPlayerTargetInfo?: boolean;
@@ -494,6 +500,9 @@ export interface ItemCollection {
   updatedAt: string;
   unavailableRowKeys: string[];
   summary: ItemCollectionSummary;
+  shared: boolean;
+  ownedByCurrentUser: boolean;
+  ownerLabel: string;
 }
 
 export interface ItemCollectionsPayload {
@@ -517,7 +526,9 @@ export interface ItemCollectionRowsMutationResult {
 export interface ItemExplorerMetadataColumns {
   visible?: string[];
   order?: string[];
+  configured?: boolean;
   referenceNumberVisible?: boolean;
+  widths?: Record<string, number>;
 }
 
 export interface ItemExplorerSharedState {

@@ -440,6 +440,55 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
         </label>
         <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[showGeneralCodingInstructionsKey]" />
+          <span>Allgemeine Kodierungshinweise anzeigen</span>
+        </label>
+        <label class="feature-toggle">
+          <input type="checkbox" [(ngModel)]="featureConfig[preferManualCodingInstructionsKey]" />
+          <span>Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden</span>
+        </label>
+        <div class="indent-section">
+          <label class="help-text">Zusätzliche Metadatenspalten</label>
+          <span class="help-text">
+            Diese Spalten werden im Item-Explorer auch dann angeboten, wenn sie nicht in den
+            VOMD-/Importdaten definiert sind. Der Wert wird über die jeweilige Metadaten-ID gelesen.
+          </span>
+          <div class="tags-editor" style="margin-top: 8px;">
+            @for (entry of metadataColumnDefinitions; track $index) {
+              <div class="tag-add">
+                <input
+                  class="tag-input"
+                  type="text"
+                  [(ngModel)]="entry.id"
+                  placeholder="Metadaten-ID"
+                  [attr.aria-label]="'ID der zusätzlichen Spalte ' + ($index + 1)"
+                />
+                <input
+                  class="tag-input"
+                  type="text"
+                  [(ngModel)]="entry.label"
+                  placeholder="Anzeigename"
+                  [attr.aria-label]="'Name der zusätzlichen Spalte ' + ($index + 1)"
+                />
+                <button
+                  class="tag-remove"
+                  type="button"
+                  (click)="removeMetadataColumnDefinition($index)"
+                >
+                  ✕
+                </button>
+              </div>
+            }
+            <button
+              class="btn btn-outline btn-sm"
+              type="button"
+              (click)="addMetadataColumnDefinition()"
+            >
+              + Spalte
+            </button>
+          </div>
+        </div>
+        <label class="feature-toggle">
           <input
             type="checkbox"
             [(ngModel)]="featureConfig[enableItemExplorerConditionalVisibilityKey]"
@@ -847,6 +896,8 @@ export class AccessConfigComponent implements OnInit {
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
+  readonly showGeneralCodingInstructionsKey = 'showGeneralCodingInstructions';
+  readonly preferManualCodingInstructionsKey = 'preferManualCodingInstructions';
   readonly enableItemExplorerConditionalVisibilityKey = 'enableItemExplorerConditionalVisibility';
   readonly showOnlyItemsWithEmpiricalDifficultyKey = 'showOnlyItemsWithEmpiricalDifficulty';
   readonly enablePlayerFocusHighlightKey = 'enablePlayerFocusHighlight';
@@ -875,6 +926,7 @@ export class AccessConfigComponent implements OnInit {
   itemSubIdLabelEntries: Array<{ value: string; label: string }> = [];
   personalItemCategoryValues: string[] = [];
   personalItemTags: Array<{ label: string; color: string }> = [];
+  metadataColumnDefinitions: Array<{ id: string; label: string }> = [];
   accessSaved = false;
   featuresSaved = false;
   credentials: Credential[] = [];
@@ -1013,6 +1065,13 @@ export class AccessConfigComponent implements OnInit {
                 : '#3498db',
             }))
           : [];
+        const metadataColumns = this.featureConfig['metadataColumns'];
+        this.metadataColumnDefinitions = Array.isArray(metadataColumns?.definitions)
+          ? metadataColumns.definitions.map((entry: any) => ({
+              id: String(entry?.id || ''),
+              label: String(entry?.label || ''),
+            }))
+          : [];
       },
     });
   }
@@ -1104,6 +1163,17 @@ export class AccessConfigComponent implements OnInit {
     this.featureConfig[this.personalItemTagsKey] = this.personalItemTags
       .map((tag) => ({ label: tag.label.trim(), color: tag.color }))
       .filter((tag) => tag.label);
+    const metadataColumns =
+      this.featureConfig['metadataColumns'] &&
+      typeof this.featureConfig['metadataColumns'] === 'object'
+        ? this.featureConfig['metadataColumns']
+        : {};
+    this.featureConfig['metadataColumns'] = {
+      ...metadataColumns,
+      definitions: this.metadataColumnDefinitions
+        .map((entry) => ({ id: entry.id.trim(), label: entry.label.trim() }))
+        .filter((entry) => entry.id && entry.label),
+    };
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
     const data: any = {
@@ -1142,6 +1212,11 @@ export class AccessConfigComponent implements OnInit {
     this.featureConfig[this.showAudioVideoCodingVariablesKey] =
       showAudioVideoCodingVariables !== false;
 
+    this.featureConfig[this.showGeneralCodingInstructionsKey] =
+      this.featureConfig[this.showGeneralCodingInstructionsKey] === true;
+    this.featureConfig[this.preferManualCodingInstructionsKey] =
+      this.featureConfig[this.preferManualCodingInstructionsKey] !== false;
+
     const enablePlayerFocusHighlight = this.featureConfig[this.enablePlayerFocusHighlightKey];
     this.featureConfig[this.enablePlayerFocusHighlightKey] = enablePlayerFocusHighlight === true;
 
@@ -1162,6 +1237,14 @@ export class AccessConfigComponent implements OnInit {
 
   addPersonalItemCategoryValue() {
     this.personalItemCategoryValues.push('');
+  }
+
+  addMetadataColumnDefinition() {
+    this.metadataColumnDefinitions.push({ id: '', label: '' });
+  }
+
+  removeMetadataColumnDefinition(index: number) {
+    this.metadataColumnDefinitions.splice(index, 1);
   }
 
   removePersonalItemCategoryValue(index: number) {

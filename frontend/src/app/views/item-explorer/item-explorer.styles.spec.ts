@@ -35,6 +35,15 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(tableStyles).toMatch(/\.explorer-table th\.sticky-col\s*\{[^}]*z-index:\s*40/s);
   });
 
+  it('uses one opaque selection surface for sticky and scrolling cells', () => {
+    expect(tableStyles).toContain('--selected-row-background: color-mix(');
+    expect(tableStyles).toMatch(
+      /tr\.active \.sticky-col\s*\{[^}]*var\(--selected-row-background\)/s,
+    );
+    expect(tableStyles).toMatch(/tr\.active td\s*\{[^}]*var\(--selected-row-background\)/s);
+    expect(tableStyles).not.toMatch(/tr\.active td\s*\{[^}]*rgba\(/s);
+  });
+
   it('stacks the table and preview on narrow screens', () => {
     expect(featureStyles).toContain('@media (max-width: 700px)');
     expect(featureStyles).toContain('flex-direction: column');

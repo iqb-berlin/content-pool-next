@@ -89,9 +89,16 @@
                     <code class="variable-id">{{ coding.id }}</code>
                   </div>
                 </div>
-                @if ($any(coding).manualInstructionText) {
+                @if (vm.shouldShowVariableManualInstruction(coding)) {
                   <div class="global-manual-instruction">
-                    <strong>📖 Variable-Instruktion:</strong>
+                    <strong>
+                      📖
+                      {{
+                        vm.codingVariableFocus.status === 'unique'
+                          ? 'Manuelle Kodieranweisung:'
+                          : 'Allgemeiner Kodierungshinweis:'
+                      }}
+                    </strong>
                     <div
                       class="html-content"
                       [innerHTML]="$any(coding).manualInstructionText"
@@ -118,7 +125,7 @@
                           ></div>
                         </div>
                       }
-                      @if (code.ruleSetDescriptions.length) {
+                      @if (vm.shouldShowAutomaticCodingRules(coding, code)) {
                         <ul class="rule-list">
                           @for (rule of code.ruleSetDescriptions; track rule) {
                             <li>{{ rule }}</li>

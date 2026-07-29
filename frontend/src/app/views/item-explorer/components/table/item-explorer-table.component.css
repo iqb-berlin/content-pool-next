@@ -89,6 +89,11 @@
   background: #f8f9fa;
 }
 .explorer-table {
+  --selected-row-background: color-mix(
+    in srgb,
+    var(--color-primary-light) 10%,
+    var(--color-surface)
+  );
   font-size: 0.85rem;
   margin-bottom: 0;
   width: 100%;
@@ -153,10 +158,10 @@
   z-index: 41;
 }
 tr.active .number-col {
-  background: rgba(41, 128, 185, 0.1) !important;
+  background: var(--selected-row-background) !important;
 }
 tr.active .sticky-col {
-  background: rgba(41, 128, 185, 0.1);
+  background: var(--selected-row-background) !important;
 }
 .meta-cell {
   font-size: 0.8rem;
@@ -170,8 +175,10 @@ tr.active .sticky-col {
   color: var(--color-primary-light);
 }
 tr.active td {
-  background: rgba(41, 128, 185, 0.1) !important;
-  border-left: 3px solid var(--color-primary-light);
+  background: var(--selected-row-background) !important;
+}
+tr.active td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-primary-light);
 }
 tr:not(.active) {
   cursor: pointer;

@@ -634,12 +634,23 @@ export class ApiService {
   updateItemCollection(
     acpId: string,
     collectionId: string,
-    update: { baseVersion: number; name?: string; rowKeys?: string[] },
+    update: { baseVersion: number; name?: string; rowKeys?: string[]; shared?: boolean },
     perspective: ItemExplorerPerspective,
   ): Observable<ItemCollectionsPayload> {
     return this.http.patch<ItemCollectionsPayload>(
       `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}`,
       { ...update, perspective },
+    );
+  }
+
+  copyItemCollection(
+    acpId: string,
+    collectionId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.post<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}/copy`,
+      { perspective },
     );
   }
 

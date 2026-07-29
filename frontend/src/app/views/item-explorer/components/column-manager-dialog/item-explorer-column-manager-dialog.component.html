@@ -44,10 +44,7 @@
           <button
             class="btn btn-outline btn-sm"
             (click)="vm.resetToDefault()"
-            [disabled]="
-              !vm.metadataSettings.visible.length &&
-              vm.metadataSettings.referenceNumberVisible !== true
-            "
+            [disabled]="!vm.canResetMetadataSettings"
           >
             🔄 Standard
           </button>
@@ -57,13 +54,13 @@
           @for (col of vm.filteredAllColumns; track col.id) {
             <div
               class="column-tile"
-              [class.active]="vm.metadataSettings.visible.includes(col.id)"
+              [class.active]="vm.isColumnVisible(col)"
               (click)="vm.toggleColumnVisibility(col)"
             >
               <div class="tile-check">
                 <input
                   type="checkbox"
-                  [checked]="vm.metadataSettings.visible.includes(col.id)"
+                  [checked]="vm.isColumnVisible(col)"
                   (click)="$event.stopPropagation()"
                   (change)="vm.toggleColumnVisibility(col)"
                 />
@@ -72,12 +69,29 @@
                 <span class="tile-label">{{ col.label }}</span>
                 <span class="tile-id">ID: {{ col.id }}</span>
               </div>
-              @if (vm.metadataSettings.visible.includes(col.id)) {
+              <label class="tile-width" (click)="$event.stopPropagation()">
+                <span>Breite</span>
+                <input
+                  type="number"
+                  min="80"
+                  max="600"
+                  step="10"
+                  [ngModel]="vm.getColumnWidth(col)"
+                  (ngModelChange)="vm.setColumnWidth(col, $event)"
+                  [attr.aria-label]="'Breite für ' + col.label"
+                />
+                <span>px</span>
+              </label>
+              @if (vm.isColumnVisible(col)) {
                 <div class="tile-actions" (click)="$event.stopPropagation()">
                   <button
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnUp(col)"
-                    [disabled]="vm.metadataSettings.order[0] === col.id"
+                    [disabled]="
+                      (vm.metadataSettings.configured
+                        ? vm.metadataSettings.order[0]
+                        : vm.allColumns[0]?.id) === col.id
+                    "
                     title="Nach oben"
                   >
                     ↑
@@ -86,7 +100,9 @@
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnDown(col)"
                     [disabled]="
-                      vm.metadataSettings.order[vm.metadataSettings.order.length - 1] === col.id
+                      (vm.metadataSettings.configured
+                        ? vm.metadataSettings.order[vm.metadataSettings.order.length - 1]
+                        : vm.allColumns[vm.allColumns.length - 1]?.id) === col.id
                     "
                     title="Nach unten"
                   >
@@ -105,7 +121,12 @@
 
         <div class="column-manager-footer">
           <div class="selection-info">
-            {{ vm.metadataSettings.visible.length }} von {{ vm.allColumns.length }} Spalten gewählt
+            {{
+              vm.metadataSettings.configured
+                ? vm.metadataSettings.visible.length
+                : vm.allColumns.length
+            }}
+            von {{ vm.allColumns.length }} Spalten gewählt
           </div>
           <div class="footer-actions">
             <button class="btn btn-outline" (click)="vm.closeColumnManager()">Abbrechen</button>

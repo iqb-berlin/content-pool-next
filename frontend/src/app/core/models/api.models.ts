@@ -509,6 +509,7 @@ export interface ItemCollectionsPayload {
   activeCollectionId: string | null;
   collectionViewMode: 'all' | 'active';
   collections: ItemCollection[];
+  sharedCollectionsTruncated: boolean;
 }
 
 export type ItemCollectionRowsMutation =

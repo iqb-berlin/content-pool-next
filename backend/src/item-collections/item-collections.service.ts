@@ -22,6 +22,7 @@ import {
   ItemCollectionSummary,
   ItemCollectionViewMode,
   ItemCollectionsPayload,
+  SharedItemCollectionSource,
   StoredItemCollection,
 } from "./item-collection.models";
 import { ItemCollectionStore } from "./item-collection.store";
@@ -96,7 +97,7 @@ export class ItemCollectionsService {
     );
     const sharedSource = ownSource
       ? undefined
-      : (await this.getSharedCollectionSources(acpId, identity)).find(
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
           (source) => source.collection.id === sourceCollectionId,
         )?.collection;
     const source = ownSource || sharedSource;
@@ -335,7 +336,7 @@ export class ItemCollectionsService {
     collectionViewMode?: ItemCollectionViewMode,
   ): Promise<ItemCollectionsPayload> {
     const sharedCollectionIds = new Set(
-      (await this.getSharedCollectionSources(acpId, identity)).map(
+      (await this.getSharedCollectionSources(acpId, identity)).sources.map(
         (source) => source.collection.id,
       ),
     );
@@ -408,7 +409,7 @@ export class ItemCollectionsService {
     );
     const sharedCollection = ownCollection
       ? undefined
-      : (await this.getSharedCollectionSources(acpId, identity)).find(
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
           (source) => source.collection.id === collectionId,
         )?.collection;
     const collection = ownCollection || sharedCollection;
@@ -571,25 +572,26 @@ export class ItemCollectionsService {
   private async getSharedCollectionSources(
     acpId: string,
     identity: StablePreferenceIdentity,
-  ): Promise<Array<{ collection: StoredItemCollection; ownerLabel: string }>> {
-    const sources = await this.store.readSharedCollections(
+  ): Promise<{ sources: SharedItemCollectionSource[]; truncated: boolean }> {
+    const rawSources = await this.store.readSharedCollections(
       acpId,
       identity,
       MAX_SHARED_ITEM_COLLECTIONS + 1,
     );
-    if (sources.length > MAX_SHARED_ITEM_COLLECTIONS) {
-      throw new BadRequestException(
-        `At most ${MAX_SHARED_ITEM_COLLECTIONS} shared item collections can be displayed in an ACP`,
-      );
-    }
-    return sources.flatMap((source) => {
-      const collection = this.normalizeState({
-        collections: [source.collection],
-      }).collections[0];
-      return collection?.shared
-        ? [{ collection, ownerLabel: source.ownerLabel }]
-        : [];
-    });
+    const sources = rawSources
+      .slice(0, MAX_SHARED_ITEM_COLLECTIONS)
+      .flatMap((source) => {
+        const collection = this.normalizeState({
+          collections: [source.collection],
+        }).collections[0];
+        return collection?.shared
+          ? [{ collection, ownerLabel: source.ownerLabel }]
+          : [];
+      });
+    return {
+      sources,
+      truncated: rawSources.length > MAX_SHARED_ITEM_COLLECTIONS,
+    };
   }
 
   private async resolveViews(
@@ -610,7 +612,7 @@ export class ItemCollectionsService {
     const itemsByRowKey = new Map(
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
-    const sharedSources = await this.getSharedCollectionSources(
+    const sharedCollectionResult = await this.getSharedCollectionSources(
       acpId,
       identity,
     );
@@ -620,7 +622,7 @@ export class ItemCollectionsService {
         ownerLabel: "Ich",
         ownedByCurrentUser: true,
       })),
-      ...sharedSources.map((source) => ({
+      ...sharedCollectionResult.sources.map((source) => ({
         ...source,
         ownedByCurrentUser: false,
       })),
@@ -660,6 +662,7 @@ export class ItemCollectionsService {
           ? "active"
           : "all",
       collections,
+      sharedCollectionsTruncated: sharedCollectionResult.truncated,
     };
   }
 

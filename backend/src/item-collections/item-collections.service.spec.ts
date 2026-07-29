@@ -532,7 +532,7 @@ describe("ItemCollectionsService", () => {
     );
   });
 
-  it("rejects an ACP-wide shared collection result beyond the bounded limit", async () => {
+  it("returns a bounded ACP-wide shared collection result with a truncation marker", async () => {
     const timestamp = "2026-07-01T10:00:00.000Z";
     store.readSharedCollections.mockResolvedValue(
       Array.from({ length: 1_001 }, (_, index) => ({
@@ -549,9 +549,16 @@ describe("ItemCollectionsService", () => {
       })),
     );
 
-    await expect(service.getItemCollections("acp-1", owner)).rejects.toThrow(
-      "At most 1000 shared item collections",
+    const result = await service.getItemCollections("acp-1", owner);
+
+    expect(result.collections).toHaveLength(1_000);
+    expect(result.collections[0]).toEqual(
+      expect.objectContaining({ id: "shared-0", ownedByCurrentUser: false }),
     );
+    expect(result.collections.at(-1)).toEqual(
+      expect.objectContaining({ id: "shared-999", ownedByCurrentUser: false }),
+    );
+    expect(result.sharedCollectionsTruncated).toBe(true);
     expect(store.readSharedCollections).toHaveBeenCalledWith(
       "acp-1",
       owner,

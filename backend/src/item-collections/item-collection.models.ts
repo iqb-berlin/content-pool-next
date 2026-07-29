@@ -45,6 +45,7 @@ export interface ItemCollectionsPayload {
   activeCollectionId: string | null;
   collectionViewMode: ItemCollectionViewMode;
   collections: ItemCollectionView[];
+  sharedCollectionsTruncated: boolean;
 }
 
 export interface ItemCollectionRowsMutation {

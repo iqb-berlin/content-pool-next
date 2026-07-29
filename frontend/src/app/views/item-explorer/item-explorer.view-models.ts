@@ -171,6 +171,7 @@ export type ItemExplorerCollectionsViewModel = ReadonlyViewModelSlice<
     | 'collectionError'
     | 'collectionLoadState'
     | 'collectionViewMode'
+    | 'sharedCollectionsTruncated'
     | 'createCollection'
     | 'copyActiveCollection'
     | 'deleteActiveCollection'

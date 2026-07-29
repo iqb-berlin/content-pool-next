@@ -116,6 +116,11 @@
   @if (vm.collectionError && vm.collectionLoadState !== 'error') {
     <div class="alert alert-error collection-error">{{ vm.collectionError }}</div>
   }
+  @if (vm.sharedCollectionsTruncated && vm.collectionLoadState === 'loaded') {
+    <div class="alert collection-limit-warning" role="status">
+      Es werden nur die 1.000 zuletzt geänderten freigegebenen Auswahllisten angezeigt.
+    </div>
+  }
   @if (vm.showCollectionDialog && vm.activeItemCollection; as collection) {
     <div class="collection-modal-backdrop" (click)="closeDetails()">
       <div

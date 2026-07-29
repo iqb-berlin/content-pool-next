@@ -206,6 +206,7 @@ export class ItemExplorerFacade implements OnDestroy {
   collectionLoadState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
   collectionBusy = false;
   collectionError = '';
+  sharedCollectionsTruncated = false;
   showCollectionDialog = false;
   private collectionSessionIdentity: string | null = null;
   private collectionSessionVersion = 0;
@@ -1283,6 +1284,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionViewMode = 'all';
     this.collectionBusy = false;
     this.collectionError = '';
+    this.sharedCollectionsTruncated = false;
     this.collectionLoadState = 'idle';
     this.showCollectionDialog = false;
     this.applyFilter(false);
@@ -1652,6 +1654,7 @@ export class ItemExplorerFacade implements OnDestroy {
     activeCollectionId: string | null;
     collectionViewMode?: 'all' | 'active';
     collections: ItemCollection[];
+    sharedCollectionsTruncated?: boolean;
   }) {
     this.itemCollections = (payload.collections || []).map((collection) => ({
       ...collection,
@@ -1660,6 +1663,7 @@ export class ItemExplorerFacade implements OnDestroy {
       ownerLabel: collection.ownerLabel || 'Ich',
     }));
     this.activeCollectionId = payload.activeCollectionId || null;
+    this.sharedCollectionsTruncated = payload.sharedCollectionsTruncated === true;
     this.collectionViewMode =
       payload.collectionViewMode === 'active' && this.activeCollectionId ? 'active' : 'all';
     this.collectionLoadState = 'loaded';
@@ -5491,10 +5495,61 @@ export class ItemExplorerFacade implements OnDestroy {
         error,
         'Fehler beim Aktualisieren des Entwurfs.',
       );
-      this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
-      this.pendingDraftChangeType = changeType;
+      const patchQueuedWhileSaving = this.pendingDraftPatch;
+      const queuedChangeType = this.pendingDraftChangeType;
+      const tagUpdateFailed = Object.prototype.hasOwnProperty.call(patch, 'tags');
+      const retryPatch = this.mergeDraftPatches(
+        this.withoutDraftPatchField(patch, tagUpdateFailed ? 'tags' : ''),
+        this.withoutDraftPatchField(patchQueuedWhileSaving, tagUpdateFailed ? 'tags' : ''),
+      );
+      this.pendingDraftPatch = Object.keys(retryPatch).length ? retryPatch : null;
+      this.pendingDraftChangeType = this.pendingDraftPatch
+        ? patchQueuedWhileSaving
+          ? queuedChangeType
+          : changeType
+        : 'UI_UPDATE';
+      if (tagUpdateFailed) {
+        this.rollbackItemTagsToLatestExplorerState();
+      }
       return false;
     }
+  }
+
+  private withoutDraftPatchField(
+    patch: Record<string, unknown> | null,
+    field: string,
+  ): Record<string, unknown> {
+    if (!patch) return {};
+    if (!field) return { ...patch };
+    const result = { ...patch };
+    delete result[field];
+    return result;
+  }
+
+  private rollbackItemTagsToLatestExplorerState(): void {
+    const activeState = this.getExplorerStateForCurrentPerspective();
+    const stateTags = this.normalizeTags(activeState.tags);
+    const itemProperties = this.isRecord(activeState.itemProperties)
+      ? (activeState.itemProperties as Record<string, Record<string, unknown>>)
+      : {};
+
+    for (const item of this.items) {
+      const keys = this.getItemStateKeys(item);
+      const tagsFromState = this.getTagsForKeys(stateTags, keys);
+      const itemProps = this.getItemPropsForKeys(itemProperties, keys);
+      item.tags =
+        tagsFromState !== null
+          ? [...tagsFromState]
+          : Array.isArray(itemProps?.['tags'])
+            ? this.normalizeTagValues(itemProps['tags'])
+            : [];
+    }
+    this.itemTags = {};
+    this.hydrateItemTagsFromItems();
+    if (Object.keys(stateTags).length) {
+      this.itemTags = { ...this.itemTags, ...stateTags };
+    }
+    this.applyFilter(false);
   }
 
   private normalizeTags(rawTags: unknown): Record<string, string[]> {

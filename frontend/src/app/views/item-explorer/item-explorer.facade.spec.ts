@@ -1359,6 +1359,54 @@ describe('ItemExplorerFacade', () => {
     consoleError.mockRestore();
   });
 
+  it('restores a removed tag when saving the optimistic change fails', async () => {
+    const envelope = createExplorerEnvelope({ status: 'DIRTY' });
+    envelope.draftState.tags = { 'row-1': ['Alt'] };
+    envelope.activeState.tags = { 'row-1': ['Alt'] };
+    const component = createFacade({
+      api: {
+        patchItemExplorerDraft: vi.fn(() =>
+          throwError(() => ({
+            status: 500,
+            error: { message: 'Tag konnte nicht gespeichert werden' },
+          })),
+        ),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.canEditExplorer = true;
+    component.explorerVersion = 3;
+    component.latestExplorerState = envelope;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'row-1',
+        rowKey: 'row-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '01',
+        metadata: {},
+        tags: ['Alt'],
+      },
+    ];
+    component.itemTags = { 'row-1': ['Alt'] };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    component.removeItemTag('row-1', 'Alt');
+    expect(component.itemTags['row-1']).toEqual([]);
+    expect(component.items[0].tags).toEqual([]);
+
+    const flushed = await (component as any).flushDraftPatch();
+
+    expect(flushed).toBe(false);
+    expect(component.itemTags['row-1']).toEqual(['Alt']);
+    expect(component.items[0].tags).toEqual(['Alt']);
+    expect((component as any).pendingDraftPatch).toBeNull();
+    expect(component.lastDraftOperationError).toBe('Tag konnte nicht gespeichert werden');
+    consoleError.mockRestore();
+  });
+
   it('blocks renumbering while draft changes are pending or being saved', () => {
     const recalculateItemRowNumbers = vi.fn(() => of({ renumberedCount: 0 }));
 

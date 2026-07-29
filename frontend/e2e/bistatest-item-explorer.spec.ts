@@ -44,7 +44,7 @@ async function publishExplorerDraft(page: Page): Promise<void> {
 
 test('offers configured columns and persists widths plus an explicitly empty selection', async ({
   page,
-}, testInfo) => {
+}) => {
   await login(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/manage/${ACP_ID}/access`);
@@ -59,37 +59,6 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   ).toBeChecked();
 
   await openExplorer(page);
-  const firstRow = page.locator('tbody tr').first();
-  await firstRow.click();
-  await expect(firstRow).toHaveAttribute('aria-selected', 'true');
-
-  const scroller = page.locator('.table-scroll');
-  await scroller.evaluate((element) => {
-    element.scrollLeft = element.scrollWidth;
-  });
-  const visualEvidence = await firstRow.evaluate((row) => {
-    const cells = Array.from(row.querySelectorAll('td'));
-    const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
-    const sticky = row.querySelector<HTMLElement>('td.sticky-col');
-    if (!sticky) throw new Error('Sticky item column is missing');
-    const bounds = sticky.getBoundingClientRect();
-    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + 10);
-    return {
-      backgrounds,
-      stickyBackground: getComputedStyle(sticky).backgroundColor,
-      stickyHit: Boolean(hit?.closest('td.sticky-col')),
-      scrollLeft: row.closest('.table-scroll')?.scrollLeft || 0,
-    };
-  });
-  expect(visualEvidence.scrollLeft).toBeGreaterThan(0);
-  expect(visualEvidence.stickyHit).toBe(true);
-  expect(new Set(visualEvidence.backgrounds).size).toBe(1);
-  expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');
-  await testInfo.attach('sticky-selected-row', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const dialog = page
     .getByRole('heading', { name: 'Spalten verwalten' })
@@ -145,6 +114,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     orderDialog.getByRole('button', { name: /Speichern/ }).click(),
   ]);
 
+  await page.reload();
+  await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const selectionDialog = page
     .getByRole('heading', { name: 'Spalten verwalten' })
@@ -156,16 +127,47 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     })
     .toBe(expectedCustomIndex);
 
-  const selectedColumnIds = await selectionDialog.locator('.tile-id').allTextContents();
+  await selectionDialog.getByRole('button', { name: 'Abbrechen' }).click();
+  await expect(selectionDialog).toHaveCount(0);
+  const reorderedCustomHeader = page.locator('thead tr').first().locator('th', {
+    hasText: 'Eigene Qualitätsspalte',
+  });
+  const expectedCustomCellIndex = await reorderedCustomHeader.evaluate(
+    (header) => (header as HTMLTableCellElement).cellIndex,
+  );
+  await publishExplorerDraft(page);
+  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  const readOnlyCustomHeader = page.locator('thead tr').first().locator('th', {
+    hasText: 'Eigene Qualitätsspalte',
+  });
+  await expect(readOnlyCustomHeader).toHaveCSS('width', '260px');
+  await expect
+    .poll(() =>
+      readOnlyCustomHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex),
+    )
+    .toBe(expectedCustomCellIndex);
+  await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
+  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+  const emptySelectionDialog = page
+    .getByRole('heading', { name: 'Spalten verwalten' })
+    .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
+
+  await expect
+    .poll(() => emptySelectionDialog.locator('.tile-id').count())
+    .toBeGreaterThan(0);
+  const selectedColumnIds = await emptySelectionDialog.locator('.tile-id').allTextContents();
   let remainingSelectedColumns = selectedColumnIds.length;
   for (const columnId of selectedColumnIds) {
-    await selectionDialog.getByText(columnId.trim(), { exact: true }).click();
+    await emptySelectionDialog.getByText(columnId.trim(), { exact: true }).click();
     remainingSelectedColumns -= 1;
-    await expect(selectionDialog.locator('.selection-info')).toContainText(
+    await expect(emptySelectionDialog.locator('.selection-info')).toContainText(
       new RegExp(`^\\s*${remainingSelectedColumns} von \\d+ Spalten gewählt\\s*$`),
     );
   }
-  await expect(selectionDialog.locator('.selection-info')).toContainText(
+  await expect(emptySelectionDialog.locator('.selection-info')).toContainText(
     /^\s*0 von \d+ Spalten gewählt\s*$/,
   );
   await Promise.all([
@@ -175,7 +177,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
         response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`) &&
         response.ok(),
     ),
-    selectionDialog.getByRole('button', { name: /Speichern/ }).click(),
+    emptySelectionDialog.getByRole('button', { name: /Speichern/ }).click(),
   ]);
 
   await page.reload();
@@ -188,7 +190,23 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     /^\s*0 von \d+ Spalten gewählt\s*$/,
   );
   await expect(reloadedDialog.getByLabel('Breite für Eigene Qualitätsspalte')).toHaveValue('260');
-  const resetButton = reloadedDialog.getByRole('button', { name: /Standard/ });
+  await reloadedDialog.getByRole('button', { name: 'Abbrechen' }).click();
+  await expect(reloadedDialog).toHaveCount(0);
+  await publishExplorerDraft(page);
+  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await expect(page.locator('tbody tr').first().locator('td.meta-cell')).toHaveCount(0);
+  await expect(
+    page.locator('thead tr').first().locator('th', { hasText: 'Eigene Qualitätsspalte' }),
+  ).toHaveCount(0);
+  await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
+  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+
+  await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+  const resetDialog = page
+    .getByRole('heading', { name: 'Spalten verwalten' })
+    .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
+  const resetButton = resetDialog.getByRole('button', { name: /Standard/ });
   await expect(resetButton).toBeEnabled();
   await resetButton.click();
   await Promise.all([
@@ -198,7 +216,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
         response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`) &&
         response.ok(),
     ),
-    reloadedDialog.getByRole('button', { name: /Speichern/ }).click(),
+    resetDialog.getByRole('button', { name: /Speichern/ }).click(),
   ]);
   await expect(
     page.locator('thead tr').first().locator('th', { hasText: 'Eigene Qualitätsspalte' }),

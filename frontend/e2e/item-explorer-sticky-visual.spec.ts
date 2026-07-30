@@ -58,6 +58,7 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   expect(visualEvidence.stickyHit).toBe(true);
   expect(new Set(visualEvidence.backgrounds).size).toBe(1);
   expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');
+  await expect(firstRow.locator('td.tags-cell')).toHaveCSS('display', 'table-cell');
 
   const noPreviewBackgrounds = await page.locator('tbody tr.no-preview').evaluate((row) =>
     Array.from(row.querySelectorAll('td')).map(

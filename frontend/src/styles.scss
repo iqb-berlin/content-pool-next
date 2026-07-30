@@ -392,6 +392,10 @@ app-item-explorer {
   }
 
   .tags-cell {
+    vertical-align: middle;
+  }
+
+  .tags-cell-content {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;

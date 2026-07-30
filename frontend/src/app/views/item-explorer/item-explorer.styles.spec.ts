@@ -44,6 +44,19 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(tableStyles).not.toMatch(/tr\.active td\s*\{[^}]*rgba\(/s);
   });
 
+  it.each([
+    ['no-preview', '--no-preview-row-background'],
+    ['excluded', '--excluded-row-background'],
+  ])('uses one opaque status surface for %s rows', (rowClass, backgroundVariable) => {
+    expect(tableStyles).toContain(`${backgroundVariable}: color-mix(`);
+    expect(tableStyles).toMatch(
+      new RegExp(
+        `tr\\.${rowClass}:not\\(\\.active\\) td\\s*\\{[^}]*var\\(${backgroundVariable}\\)[^}]*!important`,
+        's',
+      ),
+    );
+  });
+
   it('stacks the table and preview on narrow screens', () => {
     expect(featureStyles).toContain('@media (max-width: 700px)');
     expect(featureStyles).toContain('flex-direction: column');

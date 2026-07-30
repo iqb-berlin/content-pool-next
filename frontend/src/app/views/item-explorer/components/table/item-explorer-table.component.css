@@ -94,6 +94,16 @@
     var(--color-primary-light) 10%,
     var(--color-surface)
   );
+  --no-preview-row-background: color-mix(
+    in srgb,
+    var(--color-warning) 5%,
+    var(--color-surface)
+  );
+  --excluded-row-background: color-mix(
+    in srgb,
+    var(--color-danger) 4%,
+    var(--color-surface)
+  );
   font-size: 0.85rem;
   margin-bottom: 0;
   width: 100%;
@@ -220,9 +230,9 @@ tr:not(.active) {
   align-items: flex-start;
   gap: 4px;
 }
-.explorer-table tbody tr.no-preview td {
-  background: rgba(243, 156, 18, 0.05);
+.explorer-table tbody tr.no-preview:not(.active) td {
+  background: var(--no-preview-row-background) !important;
 }
 .explorer-table tbody tr.excluded:not(.active) td {
-  background: rgba(231, 76, 60, 0.04);
+  background: var(--excluded-row-background) !important;
 }

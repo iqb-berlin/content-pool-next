@@ -12,7 +12,7 @@ async function openExplorer(page: Page): Promise<void> {
   await expect(page.locator('tbody tr')).toHaveCount(2);
 }
 
-test('keeps sticky cells opaque and paints the complete selected row while scrolling', async ({
+test('keeps sticky cells opaque and paints complete row states while scrolling', async ({
   page,
 }, testInfo) => {
   await openExplorer(page);
@@ -58,6 +58,15 @@ test('keeps sticky cells opaque and paints the complete selected row while scrol
   expect(visualEvidence.stickyHit).toBe(true);
   expect(new Set(visualEvidence.backgrounds).size).toBe(1);
   expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');
+
+  const noPreviewBackgrounds = await page.locator('tbody tr.no-preview').evaluate((row) =>
+    Array.from(row.querySelectorAll('td')).map(
+      (cell) => getComputedStyle(cell).backgroundColor,
+    ),
+  );
+  expect(new Set(noPreviewBackgrounds).size).toBe(1);
+  expect(noPreviewBackgrounds[0]).not.toBe('rgba(0, 0, 0, 0)');
+
   await testInfo.attach(`sticky-selected-row-${testInfo.project.name}`, {
     body: await page.screenshot(),
     contentType: 'image/png',

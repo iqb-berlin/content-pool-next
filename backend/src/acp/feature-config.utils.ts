@@ -3,7 +3,10 @@ type UnknownRecord = Record<string, unknown>;
 interface MetadataColumnsConfig {
   visible: string[];
   order: string[];
+  configured?: boolean;
   referenceNumberVisible?: boolean;
+  definitions?: Array<{ id: string; label: string }>;
+  widths?: Record<string, number>;
 }
 
 function asRecord(value: unknown): UnknownRecord {
@@ -56,6 +59,37 @@ function normalizeStringMap(value: unknown): Record<string, string> {
   return normalized;
 }
 
+function normalizeMetadataColumnDefinitions(
+  value: unknown,
+): Array<{ id: string; label: string }> {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const definitions: Array<{ id: string; label: string }> = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const id =
+      typeof record.id === "string" ? record.id.trim().slice(0, 200) : "";
+    const label =
+      typeof record.label === "string" ? record.label.trim().slice(0, 200) : "";
+    if (!id || !label || seen.has(id)) continue;
+    seen.add(id);
+    definitions.push({ id, label });
+  }
+  return definitions.slice(0, 100);
+}
+
+function normalizeMetadataColumnWidths(value: unknown): Record<string, number> {
+  const source = asRecord(value);
+  const widths: Record<string, number> = {};
+  for (const [rawId, rawWidth] of Object.entries(source).slice(0, 100)) {
+    const id = rawId.trim().slice(0, 200);
+    const width = Number(rawWidth);
+    if (!id || !Number.isFinite(width)) continue;
+    widths[id] = Math.min(600, Math.max(80, Math.round(width)));
+  }
+  return widths;
+}
+
 function normalizeMetadataColumns(
   metadataColumnsRaw: unknown,
   legacyItemListColumnsRaw: unknown,
@@ -63,16 +97,31 @@ function normalizeMetadataColumns(
   const metadataColumns = asRecord(metadataColumnsRaw);
   const visible = asStringArray(metadataColumns.visible);
   const order = asStringArray(metadataColumns.order);
+  const explicitlyConfigured = metadataColumns.configured === true;
+  const hasColumnSelection = visible.length > 0 || order.length > 0;
   const referenceNumberVisible =
     metadataColumns.referenceNumberVisible === true;
+  const definitions = normalizeMetadataColumnDefinitions(
+    metadataColumns.definitions,
+  );
+  const widths = normalizeMetadataColumnWidths(metadataColumns.widths);
 
-  if (visible.length || order.length || referenceNumberVisible) {
+  if (
+    explicitlyConfigured ||
+    hasColumnSelection ||
+    referenceNumberVisible ||
+    definitions.length ||
+    Object.keys(widths).length
+  ) {
     const normalizedVisible = visible.length ? visible : order;
     const normalizedOrder = order.length ? order : normalizedVisible;
     return {
       visible: normalizedVisible,
       order: normalizedOrder,
+      ...(explicitlyConfigured ? { configured: true } : {}),
       ...(referenceNumberVisible ? { referenceNumberVisible: true } : {}),
+      ...(definitions.length ? { definitions } : {}),
+      ...(Object.keys(widths).length ? { widths } : {}),
     };
   }
 
@@ -102,6 +151,10 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
 
   normalized.enablePersonalItemData = source.enablePersonalItemData === true;
   normalized.enableItemCollections = source.enableItemCollections === true;
+  normalized.showGeneralCodingInstructions =
+    source.showGeneralCodingInstructions === true;
+  normalized.preferManualCodingInstructions =
+    source.preferManualCodingInstructions !== false;
   normalized.personalItemCategoryLabel =
     typeof source.personalItemCategoryLabel === "string" &&
     source.personalItemCategoryLabel.trim()

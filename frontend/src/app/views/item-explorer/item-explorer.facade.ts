@@ -36,6 +36,7 @@ import type {
 import {
   CodingVariableFocusResolution,
   CodingVariableFocusStatus,
+  DeepReadonly,
   ExplorerItem,
   ExplorerUiStatus,
   ItemParameterUploadResult,
@@ -154,6 +155,8 @@ export class ItemExplorerFacade implements OnDestroy {
   enableTags = false;
   availableTags: string[] = [];
   showAudioVideoCodingVariables = true;
+  showGeneralCodingInstructions = false;
+  preferManualCodingInstructions = true;
   itemExplorerConditionalVisibilityEnabled = false;
   playerFocusHighlightEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = true;
@@ -203,6 +206,7 @@ export class ItemExplorerFacade implements OnDestroy {
   collectionLoadState: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
   collectionBusy = false;
   collectionError = '';
+  sharedCollectionsTruncated = false;
   showCollectionDialog = false;
   private collectionSessionIdentity: string | null = null;
   private collectionSessionVersion = 0;
@@ -258,9 +262,12 @@ export class ItemExplorerFacade implements OnDestroy {
   perspectiveSwitchBusy = false;
   showColumnManager = false;
   allColumns: MetadataColumn[] = [];
+  private configuredMetadataColumns: MetadataColumn[] = [];
   metadataSettings: MetadataSettings = {
     visible: [],
     order: [],
+    configured: false,
+    widths: {},
     referenceNumberVisible: false,
   };
   private columnManagerOriginalSettings: MetadataSettings | null = null;
@@ -367,6 +374,24 @@ export class ItemExplorerFacade implements OnDestroy {
     });
   }
 
+  shouldShowVariableManualInstruction(coding: DeepReadonly<CodingAsText>): boolean {
+    return Boolean(
+      (coding as any).manualInstructionText &&
+      (this.codingVariableFocus.status === 'unique' || this.showGeneralCodingInstructions),
+    );
+  }
+
+  shouldShowAutomaticCodingRules(
+    coding: DeepReadonly<CodingAsText>,
+    code: DeepReadonly<CodingAsText['codes'][number]>,
+  ): boolean {
+    if (!code.ruleSetDescriptions.length) return false;
+    if (!this.preferManualCodingInstructions) return true;
+    return !(
+      this.shouldShowVariableManualInstruction(coding) || (code as any).manualInstructionText
+    );
+  }
+
   get codingVariableFocus(): CodingVariableFocusResolution {
     const targetId = this.getPlayerTarget(this.selectedItem);
     const emptyResolution = (
@@ -388,13 +413,24 @@ export class ItemExplorerFacade implements OnDestroy {
     const normalizedTarget = targetId.toLowerCase();
     const codings = this.currentCodingSchemeAsText || [];
     const rawVariables = this.getCurrentCodingVariables();
-    const rawMatchIndices = rawVariables.flatMap((variable, index) =>
-      this.getCodingVariableIdentifiers(variable).some(
-        (identifier) => identifier.toLowerCase() === normalizedTarget,
-      )
+    // A Studio item target denotes a variable ID. Aliases are a fallback only:
+    // treating both with equal priority makes GeoGebra targets such as `01`
+    // ambiguous when a derived/read-only variable happens to use `01` as alias.
+    const directIdMatchIndices = rawVariables.flatMap((variable, index) =>
+      String(variable?.id || '')
+        .trim()
+        .toLowerCase() === normalizedTarget
         ? [index]
         : [],
     );
+    const aliasMatchIndices = rawVariables.flatMap((variable, index) =>
+      String(variable?.alias || '')
+        .trim()
+        .toLowerCase() === normalizedTarget
+        ? [index]
+        : [],
+    );
+    const rawMatchIndices = directIdMatchIndices.length ? directIdMatchIndices : aliasMatchIndices;
 
     if (rawMatchIndices.length > 1) {
       return emptyResolution(
@@ -488,9 +524,23 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.metadataSettings.referenceNumberVisible === true;
   }
 
+  get canResetMetadataSettings(): boolean {
+    return (
+      this.metadataSettings.configured ||
+      Object.keys(this.metadataSettings.widths).length > 0 ||
+      this.referenceNumberVisible
+    );
+  }
+
   get activeItemCollection(): ItemCollection | null {
     return (
       this.itemCollections.find((collection) => collection.id === this.activeCollectionId) || null
+    );
+  }
+
+  get canEditActiveCollection(): boolean {
+    return (
+      Boolean(this.activeItemCollection) && this.activeItemCollection?.ownedByCurrentUser !== false
     );
   }
 
@@ -657,6 +707,10 @@ export class ItemExplorerFacade implements OnDestroy {
       list = list.filter(
         (c) => c.label.toLowerCase().includes(term) || c.id.toLowerCase().includes(term),
       );
+    }
+
+    if (!this.metadataSettings.configured) {
+      return list;
     }
 
     // Sort columns: selected/ordered ones first, then alphabetical
@@ -875,6 +929,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.authSessionSubscription = this.authService.currentUser$
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
+        this.checkUserRole();
         this.syncPersonalItemDataSession();
         this.syncItemCollectionSession();
       });
@@ -892,6 +947,8 @@ export class ItemExplorerFacade implements OnDestroy {
           this.enableTags = !!fc.enableItemListTags;
           this.availableTags = fc.availableTags || [];
           this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
+          this.showGeneralCodingInstructions = fc.showGeneralCodingInstructions === true;
+          this.preferManualCodingInstructions = fc.preferManualCodingInstructions !== false;
           this.itemExplorerConditionalVisibilityEnabled =
             fc.enableItemExplorerConditionalVisibility === true;
           this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
@@ -913,6 +970,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
           // Load metadata column settings
           this.metadataSettings = this.resolveMetadataSettings(fc);
+          this.configuredMetadataColumns = this.resolveConfiguredMetadataColumns(fc);
           void this.reloadSharedExplorerStateAndItems();
           this.syncPersonalItemDataSession();
           this.syncItemCollectionSession();
@@ -1151,10 +1209,15 @@ export class ItemExplorerFacade implements OnDestroy {
   private getAvailableMetadataColumns(sourceColumns: MetadataColumn[]): MetadataColumn[] {
     const importedIds = new Set(IMPORTED_PARAMETER_COLUMNS.map((column) => column.id));
     const normalizedSourceColumns = sourceColumns.filter((column) => !importedIds.has(column.id));
-    return [
-      ...normalizedSourceColumns.map((column) => ({ ...column, kind: 'text' as const })),
-      ...IMPORTED_PARAMETER_COLUMNS,
-    ];
+    const columnsById = new Map<string, MetadataColumn>();
+    normalizedSourceColumns.forEach((column) =>
+      columnsById.set(column.id, { ...column, kind: 'text' as const }),
+    );
+    this.configuredMetadataColumns.forEach((column) =>
+      columnsById.set(column.id, { ...columnsById.get(column.id), ...column, kind: 'text' }),
+    );
+    IMPORTED_PARAMETER_COLUMNS.forEach((column) => columnsById.set(column.id, column));
+    return Array.from(columnsById.values());
   }
 
   getMetadataColumnDisplayValue(item: ReadonlyExplorerItem, column: MetadataColumn): string {
@@ -1221,6 +1284,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionViewMode = 'all';
     this.collectionBusy = false;
     this.collectionError = '';
+    this.sharedCollectionsTruncated = false;
     this.collectionLoadState = 'idle';
     this.showCollectionDialog = false;
     this.applyFilter(false);
@@ -1293,9 +1357,11 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionBusy = true;
     this.collectionError = '';
     const name =
-      this.itemCollections.length === 0
+      this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length === 0
         ? 'Meine Auswahlliste'
-        : `Auswahlliste ${this.itemCollections.length + 1}`;
+        : `Auswahlliste ${
+            this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length + 1
+          }`;
     try {
       const payload = await firstValueFrom(
         this.api.createItemCollection(this.acpId, name, this.getPerspectiveForViewerRequests()),
@@ -1345,6 +1411,10 @@ export class ItemExplorerFacade implements OnDestroy {
     let collection = this.activeItemCollection;
     if (!collection) collection = await this.createCollection();
     if (!collection) return;
+    if (collection.ownedByCurrentUser === false) {
+      this.collectionError = 'Freigegebene Auswahllisten anderer Personen sind schreibgeschützt.';
+      return;
+    }
     const mutation = this.getActiveCollectionRowKeySet().has(item.rowKey)
       ? { removeRowKeys: [item.rowKey] }
       : { addRowKeys: [item.rowKey] };
@@ -1367,7 +1437,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   async renameActiveCollection() {
     const collection = this.activeItemCollection;
-    if (!collection || this.collectionBusy) return;
+    if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return;
     const name = window.prompt('Name der Auswahlliste', collection.name)?.trim();
     if (!name || name === collection.name) return;
     await this.persistActiveCollectionUpdate({ name });
@@ -1375,7 +1445,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   async deleteActiveCollection() {
     const collection = this.activeItemCollection;
-    if (!collection || this.collectionBusy) return;
+    if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return;
     if (!window.confirm(`Auswahlliste „${collection.name}“ löschen?`)) return;
     const session = this.getItemCollectionSession();
     if (!session.identity) return;
@@ -1430,6 +1500,44 @@ export class ItemExplorerFacade implements OnDestroy {
     }
   }
 
+  async setActiveCollectionShared(shared: boolean) {
+    const collection = this.activeItemCollection;
+    if (
+      !collection ||
+      collection.ownedByCurrentUser === false ||
+      this.collectionBusy ||
+      collection.shared === shared
+    ) {
+      return;
+    }
+    await this.persistActiveCollectionUpdate({ shared });
+  }
+
+  async copyActiveCollection() {
+    const collection = this.activeItemCollection;
+    if (!collection || collection.ownedByCurrentUser !== false || this.collectionBusy) return;
+    const session = this.getItemCollectionSession();
+    if (!session.identity) return;
+    this.collectionBusy = true;
+    this.collectionError = '';
+    try {
+      const payload = await firstValueFrom(
+        this.api.copyItemCollection(
+          this.acpId,
+          collection.id,
+          this.getPerspectiveForViewerRequests(),
+        ),
+      );
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.applyItemCollectionsPayload(payload);
+    } catch {
+      if (!this.isCurrentItemCollectionSession(session)) return;
+      this.collectionError = 'Die freigegebene Auswahlliste konnte nicht kopiert werden.';
+    } finally {
+      if (this.isCurrentItemCollectionSession(session)) this.collectionBusy = false;
+    }
+  }
+
   formatDuration(rawSeconds: number): string {
     const seconds = Math.max(0, Math.round(Number(rawSeconds) || 0));
     const hours = Math.floor(seconds / 3600);
@@ -1444,7 +1552,7 @@ export class ItemExplorerFacade implements OnDestroy {
     mutation: { addRowKeys: string[] } | { removeRowKeys: string[] } | { clear: true },
   ): Promise<boolean> {
     const collection = this.activeItemCollection;
-    if (!collection || this.collectionBusy) return false;
+    if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return false;
     const session = this.getItemCollectionSession();
     if (!session.identity) return false;
     const previous = structuredClone(collection);
@@ -1499,14 +1607,19 @@ export class ItemExplorerFacade implements OnDestroy {
     }
   }
 
-  private async persistActiveCollectionUpdate(update: { name?: string; rowKeys?: string[] }) {
+  private async persistActiveCollectionUpdate(update: {
+    name?: string;
+    rowKeys?: string[];
+    shared?: boolean;
+  }) {
     const collection = this.activeItemCollection;
-    if (!collection || this.collectionBusy) return;
+    if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return;
     const session = this.getItemCollectionSession();
     if (!session.identity) return;
     const previous = structuredClone(collection);
     if (update.name !== undefined) collection.name = update.name;
     if (update.rowKeys !== undefined) collection.rowKeys = [...update.rowKeys];
+    if (update.shared !== undefined) collection.shared = update.shared;
     this.recalculateCollectionSummaries();
     this.applyFilter(false);
     this.collectionBusy = true;
@@ -1541,9 +1654,16 @@ export class ItemExplorerFacade implements OnDestroy {
     activeCollectionId: string | null;
     collectionViewMode?: 'all' | 'active';
     collections: ItemCollection[];
+    sharedCollectionsTruncated?: boolean;
   }) {
-    this.itemCollections = payload.collections || [];
+    this.itemCollections = (payload.collections || []).map((collection) => ({
+      ...collection,
+      shared: collection.shared === true,
+      ownedByCurrentUser: collection.ownedByCurrentUser !== false,
+      ownerLabel: collection.ownerLabel || 'Ich',
+    }));
     this.activeCollectionId = payload.activeCollectionId || null;
+    this.sharedCollectionsTruncated = payload.sharedCollectionsTruncated === true;
     this.collectionViewMode =
       payload.collectionViewMode === 'active' && this.activeCollectionId ? 'active' : 'all';
     this.collectionLoadState = 'loaded';
@@ -3934,7 +4054,10 @@ export class ItemExplorerFacade implements OnDestroy {
   removeItemTag(uuid: string, tag: string) {
     if (!this.canEditExplorer) return;
     if (this.itemTags[uuid]) {
-      this.itemTags[uuid] = this.itemTags[uuid].filter((t) => t !== tag);
+      const nextTags = this.itemTags[uuid].filter((t) => t !== tag);
+      this.itemTags = { ...this.itemTags, [uuid]: nextTags };
+      const item = this.items.find((candidate) => candidate.rowKey === uuid);
+      if (item) item.tags = [...nextTags];
       this.saveTags();
       this.applyFilter(false);
     }
@@ -4044,7 +4167,11 @@ export class ItemExplorerFacade implements OnDestroy {
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
     this.hasExplorerEditPermission = this.isAcpManager || this.authService.isAdmin;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
-    if (!this.hasExplorerEditPermission) {
+    const oidcProfileStillLoading =
+      this.authService.isLoggedIn &&
+      this.authService.isOidcUser &&
+      this.authService.currentUser === null;
+    if (!this.hasExplorerEditPermission && !oidcProfileStillLoading) {
       this.viewPerspective = 'read-only';
     }
     this.syncEffectiveExplorerPermissions();
@@ -4119,7 +4246,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
-    if (!this.metadataSettings?.visible?.length) {
+    if (!this.metadataSettings.configured) {
       return allColumns; // Show all if no settings
     }
 
@@ -4145,7 +4272,32 @@ export class ItemExplorerFacade implements OnDestroy {
     return orderedColumns;
   }
 
+  isColumnVisible(column: MetadataColumn): boolean {
+    return !this.metadataSettings.configured || this.metadataSettings.visible.includes(column.id);
+  }
+
+  getColumnWidth(column: MetadataColumn): number {
+    return this.metadataSettings.widths[column.id] || 180;
+  }
+
+  setColumnWidth(column: MetadataColumn, value: unknown) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return;
+    this.metadataSettings.widths = {
+      ...this.metadataSettings.widths,
+      [column.id]: Math.min(600, Math.max(80, Math.round(parsed))),
+    };
+  }
+
+  private ensureExplicitMetadataSelection() {
+    if (this.metadataSettings.configured) return;
+    this.metadataSettings.visible = this.allColumns.map((column) => column.id);
+    this.metadataSettings.order = this.allColumns.map((column) => column.id);
+    this.metadataSettings.configured = true;
+  }
+
   toggleColumnVisibility(column: MetadataColumn) {
+    this.ensureExplicitMetadataSelection();
     const colIndex = this.metadataSettings.visible.indexOf(column.id);
     if (colIndex === -1) {
       this.metadataSettings.visible.push(column.id);
@@ -4163,6 +4315,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   moveColumnUp(column: MetadataColumn) {
+    this.ensureExplicitMetadataSelection();
     const index = this.metadataSettings.order.indexOf(column.id);
     if (index > 0) {
       [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = [
@@ -4174,6 +4327,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   moveColumnDown(column: MetadataColumn) {
+    this.ensureExplicitMetadataSelection();
     const index = this.metadataSettings.order.indexOf(column.id);
     if (index >= 0 && index < this.metadataSettings.order.length - 1) {
       [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = [
@@ -4230,6 +4384,8 @@ export class ItemExplorerFacade implements OnDestroy {
         metadataColumns: {
           visible: [...this.metadataSettings.visible],
           order: [...this.metadataSettings.order],
+          configured: this.metadataSettings.configured,
+          widths: { ...this.metadataSettings.widths },
           referenceNumberVisible: this.referenceNumberVisible,
         },
       },
@@ -4238,7 +4394,13 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   resetToDefault() {
-    this.metadataSettings = { visible: [], order: [], referenceNumberVisible: false };
+    this.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: false,
+      widths: {},
+      referenceNumberVisible: false,
+    };
     this.columns = this.filterVisibleColumns(this.allColumns);
   }
 
@@ -4263,6 +4425,8 @@ export class ItemExplorerFacade implements OnDestroy {
       return {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured: metadataColumns.configured === true || visible.length > 0 || order.length > 0,
+        widths: this.normalizeMetadataColumnWidths(metadataColumns.widths),
         referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
       };
     }
@@ -4272,7 +4436,40 @@ export class ItemExplorerFacade implements OnDestroy {
       ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
       : [];
 
-    return { visible: legacy, order: legacy, referenceNumberVisible: false };
+    return {
+      visible: legacy,
+      order: legacy,
+      configured: legacy.length > 0,
+      widths: {},
+      referenceNumberVisible: false,
+    };
+  }
+
+  private resolveConfiguredMetadataColumns(featureConfig: Record<string, any>): MetadataColumn[] {
+    const definitions = featureConfig?.['metadataColumns']?.definitions;
+    if (!Array.isArray(definitions)) return [];
+    const seen = new Set<string>();
+    const columns: MetadataColumn[] = [];
+    definitions.forEach((entry: unknown) => {
+      if (!this.isRecord(entry)) return;
+      const id = String(entry['id'] || '').trim();
+      const label = String(entry['label'] || '').trim();
+      if (!id || !label || seen.has(id)) return;
+      seen.add(id);
+      columns.push({ id, label, kind: 'text' });
+    });
+    return columns;
+  }
+
+  private normalizeMetadataColumnWidths(raw: unknown): Record<string, number> {
+    if (!this.isRecord(raw)) return {};
+    const widths: Record<string, number> = {};
+    Object.entries(raw).forEach(([id, value]) => {
+      const width = Number(value);
+      if (!id.trim() || !Number.isFinite(width)) return;
+      widths[id] = Math.min(600, Math.max(80, Math.round(width)));
+    });
+    return widths;
   }
 
   private buildUiPreferences(): Record<string, unknown> {
@@ -4872,6 +5069,8 @@ export class ItemExplorerFacade implements OnDestroy {
     this.columnManagerOriginalSettings = {
       visible: [...this.metadataSettings.visible],
       order: [...this.metadataSettings.order],
+      configured: this.metadataSettings.configured,
+      widths: { ...this.metadataSettings.widths },
       referenceNumberVisible: this.referenceNumberVisible,
     };
     this.showColumnManager = true;
@@ -5296,10 +5495,61 @@ export class ItemExplorerFacade implements OnDestroy {
         error,
         'Fehler beim Aktualisieren des Entwurfs.',
       );
-      this.pendingDraftPatch = this.mergeDraftPatches(this.pendingDraftPatch, patch);
-      this.pendingDraftChangeType = changeType;
+      const patchQueuedWhileSaving = this.pendingDraftPatch;
+      const queuedChangeType = this.pendingDraftChangeType;
+      const tagUpdateFailed = Object.prototype.hasOwnProperty.call(patch, 'tags');
+      const retryPatch = this.mergeDraftPatches(
+        this.withoutDraftPatchField(patch, tagUpdateFailed ? 'tags' : ''),
+        this.withoutDraftPatchField(patchQueuedWhileSaving, tagUpdateFailed ? 'tags' : ''),
+      );
+      this.pendingDraftPatch = Object.keys(retryPatch).length ? retryPatch : null;
+      this.pendingDraftChangeType = this.pendingDraftPatch
+        ? patchQueuedWhileSaving
+          ? queuedChangeType
+          : changeType
+        : 'UI_UPDATE';
+      if (tagUpdateFailed) {
+        this.rollbackItemTagsToLatestExplorerState();
+      }
       return false;
     }
+  }
+
+  private withoutDraftPatchField(
+    patch: Record<string, unknown> | null,
+    field: string,
+  ): Record<string, unknown> {
+    if (!patch) return {};
+    if (!field) return { ...patch };
+    const result = { ...patch };
+    delete result[field];
+    return result;
+  }
+
+  private rollbackItemTagsToLatestExplorerState(): void {
+    const activeState = this.getExplorerStateForCurrentPerspective();
+    const stateTags = this.normalizeTags(activeState.tags);
+    const itemProperties = this.isRecord(activeState.itemProperties)
+      ? (activeState.itemProperties as Record<string, Record<string, unknown>>)
+      : {};
+
+    for (const item of this.items) {
+      const keys = this.getItemStateKeys(item);
+      const tagsFromState = this.getTagsForKeys(stateTags, keys);
+      const itemProps = this.getItemPropsForKeys(itemProperties, keys);
+      item.tags =
+        tagsFromState !== null
+          ? [...tagsFromState]
+          : Array.isArray(itemProps?.['tags'])
+            ? this.normalizeTagValues(itemProps['tags'])
+            : [];
+    }
+    this.itemTags = {};
+    this.hydrateItemTagsFromItems();
+    if (Object.keys(stateTags).length) {
+      this.itemTags = { ...this.itemTags, ...stateTags };
+    }
+    this.applyFilter(false);
   }
 
   private normalizeTags(rawTags: unknown): Record<string, string[]> {
@@ -5318,9 +5568,10 @@ export class ItemExplorerFacade implements OnDestroy {
         ),
       );
 
-      if (normalizedValues.length || normalizedItemId.includes('::')) {
-        tags[normalizedItemId] = normalizedValues;
-      }
+      // An explicit empty array is a deletion tombstone. Dropping it would
+      // allow stale tags from the imported item payload to reappear when the
+      // server returns the updated draft state.
+      tags[normalizedItemId] = normalizedValues;
     }
 
     return tags;

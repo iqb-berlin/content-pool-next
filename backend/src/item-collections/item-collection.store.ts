@@ -24,6 +24,59 @@ export class ItemCollectionStore {
     return record?.preferences || null;
   }
 
+  async readSharedCollections(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    limit: number,
+  ): Promise<Array<{ collection: unknown; ownerLabel: string }>> {
+    const boundedLimit = Math.min(10_001, Math.max(1, Math.floor(limit)));
+    const identityColumn =
+      identity.kind === "user" ? "user_id" : "credential_id";
+    const identityId =
+      identity.kind === "user" ? identity.userId : identity.credentialId;
+    const rows = await this.itemPreferenceRepository.query(
+      `
+        SELECT
+          shared_collection.collection AS "collection",
+          COALESCE(
+            NULLIF(owner_user."display_name", ''),
+            NULLIF(owner_user."username", ''),
+            NULLIF(preference."credential_username", ''),
+            NULLIF(owner_credential."username", ''),
+            'Unbekannt'
+          ) AS "ownerLabel"
+        FROM "acp_item_preferences" preference
+        LEFT JOIN "users" owner_user
+          ON owner_user."id" = preference."user_id"
+        LEFT JOIN "acp_credentials" owner_credential
+          ON owner_credential."id" = preference."credential_id"
+        CROSS JOIN LATERAL jsonb_array_elements(
+          CASE
+            WHEN jsonb_typeof(preference."preferences" -> 'collections') = 'array'
+              THEN preference."preferences" -> 'collections'
+            ELSE '[]'::jsonb
+          END
+        ) AS shared_collection(collection)
+        WHERE preference."acp_id" = $1
+          AND preference."view_id" = '${COLLECTION_VIEW_ID}'
+          AND preference."${identityColumn}" IS DISTINCT FROM $2::uuid
+          AND shared_collection.collection ->> 'shared' = 'true'
+        ORDER BY
+          COALESCE(shared_collection.collection ->> 'updatedAt', '') DESC,
+          COALESCE(shared_collection.collection ->> 'id', '') ASC
+        LIMIT $3
+      `,
+      [acpId, identityId, boundedLimit],
+    );
+    return (Array.isArray(rows) ? rows : []).map((row) => ({
+      collection: row?.collection,
+      ownerLabel:
+        typeof row?.ownerLabel === "string" && row.ownerLabel.trim()
+          ? row.ownerLabel.trim()
+          : "Unbekannt",
+    }));
+  }
+
   async mutate(
     acpId: string,
     identity: StablePreferenceIdentity,

@@ -22,6 +22,7 @@ import {
   ItemCollectionSummary,
   ItemCollectionViewMode,
   ItemCollectionsPayload,
+  SharedItemCollectionSource,
   StoredItemCollection,
 } from "./item-collection.models";
 import { ItemCollectionStore } from "./item-collection.store";
@@ -29,6 +30,7 @@ import { ItemCollectionStore } from "./item-collection.store";
 const MAX_COLLECTION_ROWS = 10_000;
 const MAX_ROW_KEY_LENGTH = 500;
 const MAX_ITEM_COLLECTIONS = 100;
+const MAX_SHARED_ITEM_COLLECTIONS = 1_000;
 
 @Injectable()
 export class ItemCollectionsService {
@@ -45,7 +47,7 @@ export class ItemCollectionsService {
   ): Promise<ItemCollectionsPayload> {
     const preferences = await this.store.readPreferences(acpId, identity);
     const state = this.normalizeState(preferences);
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async createItemCollection(
@@ -63,6 +65,7 @@ export class ItemCollectionsService {
       version: 1,
       createdAt: now,
       updatedAt: now,
+      shared: false,
     };
     const state = await this.mutateState(
       acpId,
@@ -78,14 +81,65 @@ export class ItemCollectionsService {
         lockedState.activeCollectionId = collection.id;
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
+  }
+
+  async copyItemCollection(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    sourceCollectionId: string,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const ownPreferences = await this.store.readPreferences(acpId, identity);
+    const ownState = this.normalizeState(ownPreferences);
+    const ownSource = ownState.collections.find(
+      (collection) => collection.id === sourceCollectionId,
+    );
+    const sharedSource = ownSource
+      ? undefined
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+          (source) => source.collection.id === sourceCollectionId,
+        )?.collection;
+    const source = ownSource || sharedSource;
+    if (!source) throw new NotFoundException("Item collection not found");
+
+    const now = new Date().toISOString();
+    const copy: StoredItemCollection = {
+      id: uuidv4(),
+      name: this.normalizeName(`${source.name} (Kopie)`),
+      rowKeys: [...source.rowKeys],
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      shared: false,
+    };
+    const state = await this.mutateState(
+      acpId,
+      identity,
+      true,
+      (lockedState) => {
+        if (lockedState.collections.length >= MAX_ITEM_COLLECTIONS) {
+          throw new BadRequestException(
+            `At most ${MAX_ITEM_COLLECTIONS} item collections can be stored`,
+          );
+        }
+        lockedState.collections.push(copy);
+        lockedState.activeCollectionId = copy.id;
+      },
+    );
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async updateItemCollection(
     acpId: string,
     identity: StablePreferenceIdentity,
     collectionId: string,
-    update: { name?: unknown; rowKeys?: unknown; baseVersion?: unknown },
+    update: {
+      name?: unknown;
+      rowKeys?: unknown;
+      shared?: unknown;
+      baseVersion?: unknown;
+    },
     canEditExplorerState = false,
   ): Promise<ItemCollectionsPayload> {
     const normalizedName =
@@ -130,6 +184,8 @@ export class ItemCollectionsService {
           );
         }
         if (normalizedName !== undefined) collection.name = normalizedName;
+        if (update.shared !== undefined)
+          collection.shared = update.shared === true;
         if (normalizedRowKeys !== undefined && knownRowKeys) {
           const previouslyStored = new Set(collection.rowKeys);
           const invalidRowKey = normalizedRowKeys.find(
@@ -147,7 +203,7 @@ export class ItemCollectionsService {
         collection.updatedAt = new Date().toISOString();
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async mutateItemCollectionRows(
@@ -279,16 +335,22 @@ export class ItemCollectionsService {
     canEditExplorerState = false,
     collectionViewMode?: ItemCollectionViewMode,
   ): Promise<ItemCollectionsPayload> {
+    const sharedCollectionIds = new Set(
+      (await this.getSharedCollectionSources(acpId, identity)).sources.map(
+        (source) => source.collection.id,
+      ),
+    );
     const state = await this.mutateState(
       acpId,
       identity,
-      false,
+      true,
       (lockedState) => {
         if (
           collectionId &&
           !lockedState.collections.some(
             (collection) => collection.id === collectionId,
-          )
+          ) &&
+          !sharedCollectionIds.has(collectionId)
         ) {
           throw new NotFoundException("Item collection not found");
         }
@@ -302,7 +364,7 @@ export class ItemCollectionsService {
         }
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async deleteItemCollection(
@@ -331,7 +393,7 @@ export class ItemCollectionsService {
         }
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async exportItemCollectionCsv(
@@ -342,9 +404,15 @@ export class ItemCollectionsService {
   ): Promise<Buffer> {
     const preferences = await this.store.readPreferences(acpId, identity);
     const state = this.normalizeState(preferences);
-    const collection = state.collections.find(
+    const ownCollection = state.collections.find(
       (candidate) => candidate.id === collectionId,
     );
+    const sharedCollection = ownCollection
+      ? undefined
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+          (source) => source.collection.id === collectionId,
+        )?.collection;
+    const collection = ownCollection || sharedCollection;
     if (!collection) throw new NotFoundException("Item collection not found");
 
     const explorerState = await this.itemExplorerStateService.getStateForViewer(
@@ -443,6 +511,7 @@ export class ItemCollectionsService {
                 rawCollection.updatedAt,
                 createdAt,
               ),
+              shared: rawCollection.shared === true,
             };
           })
           .filter(
@@ -453,21 +522,13 @@ export class ItemCollectionsService {
     const requestedActiveId = String(
       preferences.activeCollectionId || "",
     ).trim();
-    const hasRequestedActiveCollection = collections.some(
-      (collection) => collection.id === requestedActiveId,
-    );
-    const activeCollectionId = hasRequestedActiveCollection
-      ? requestedActiveId
-      : collections[0]?.id || null;
+    const activeCollectionId = requestedActiveId || collections[0]?.id || null;
     const requestedViewMode: ItemCollectionViewMode =
       preferences.collectionViewMode === "active" ? "active" : "all";
     return {
       collections,
       activeCollectionId,
-      collectionViewMode:
-        hasRequestedActiveCollection && activeCollectionId
-          ? requestedViewMode
-          : "all",
+      collectionViewMode: activeCollectionId ? requestedViewMode : "all",
     };
   }
 
@@ -508,9 +569,35 @@ export class ItemCollectionsService {
       : fallback || new Date().toISOString();
   }
 
+  private async getSharedCollectionSources(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+  ): Promise<{ sources: SharedItemCollectionSource[]; truncated: boolean }> {
+    const rawSources = await this.store.readSharedCollections(
+      acpId,
+      identity,
+      MAX_SHARED_ITEM_COLLECTIONS + 1,
+    );
+    const sources = rawSources
+      .slice(0, MAX_SHARED_ITEM_COLLECTIONS)
+      .flatMap((source) => {
+        const collection = this.normalizeState({
+          collections: [source.collection],
+        }).collections[0];
+        return collection?.shared
+          ? [{ collection, ownerLabel: source.ownerLabel }]
+          : [];
+      });
+    return {
+      sources,
+      truncated: rawSources.length > MAX_SHARED_ITEM_COLLECTIONS,
+    };
+  }
+
   private async resolveViews(
     acpId: string,
     state: ItemCollectionState,
+    identity: StablePreferenceIdentity,
     canEditExplorerState: boolean,
   ): Promise<ItemCollectionsPayload> {
     const explorerState = await this.itemExplorerStateService.getStateForViewer(
@@ -525,10 +612,23 @@ export class ItemCollectionsService {
     const itemsByRowKey = new Map(
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
-    return {
-      activeCollectionId: state.activeCollectionId,
-      collectionViewMode: state.collectionViewMode,
-      collections: state.collections.map((collection) => {
+    const sharedCollectionResult = await this.getSharedCollectionSources(
+      acpId,
+      identity,
+    );
+    const sources = [
+      ...state.collections.map((collection) => ({
+        collection,
+        ownerLabel: "Ich",
+        ownedByCurrentUser: true,
+      })),
+      ...sharedCollectionResult.sources.map((source) => ({
+        ...source,
+        ownedByCurrentUser: false,
+      })),
+    ];
+    const collections = sources.map(
+      ({ collection, ownerLabel, ownedByCurrentUser }) => {
         const unavailableRowKeys = collection.rowKeys.filter(
           (rowKey) => !itemsByRowKey.has(rowKey),
         );
@@ -537,10 +637,32 @@ export class ItemCollectionsService {
           .filter((item): item is VomdItemData => Boolean(item));
         return {
           ...collection,
+          shared: collection.shared === true,
+          ownerLabel,
+          ownedByCurrentUser,
           unavailableRowKeys,
           summary: this.calculateSummary(items, collection.rowKeys.length),
         };
-      }),
+      },
+    );
+    const requestedActiveId = state.activeCollectionId;
+    const requestedActiveFound = collections.some(
+      (collection) => collection.id === requestedActiveId,
+    );
+    const activeCollectionId = requestedActiveFound
+      ? requestedActiveId
+      : collections.find((collection) => collection.ownedByCurrentUser)?.id ||
+        null;
+    return {
+      activeCollectionId,
+      collectionViewMode:
+        state.collectionViewMode === "active" &&
+        requestedActiveFound &&
+        activeCollectionId
+          ? "active"
+          : "all",
+      collections,
+      sharedCollectionsTruncated: sharedCollectionResult.truncated,
     };
   }
 

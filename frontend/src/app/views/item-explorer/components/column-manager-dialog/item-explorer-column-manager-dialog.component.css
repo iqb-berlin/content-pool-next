@@ -96,3 +96,19 @@
   display: flex;
   gap: 4px;
 }
+.tile-width {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+}
+.tile-width input {
+  width: 72px;
+  padding: 5px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+}

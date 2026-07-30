@@ -138,4 +138,46 @@ describe("normalizeFeatureConfig", () => {
       "metadataColumns.referenceNumberVisible",
     );
   });
+
+  it("applies the ACP coding display defaults", () => {
+    expect(normalizeFeatureConfig({})).toMatchObject({
+      showGeneralCodingInstructions: false,
+      preferManualCodingInstructions: true,
+    });
+    expect(
+      normalizeFeatureConfig({
+        showGeneralCodingInstructions: true,
+        preferManualCodingInstructions: false,
+      }),
+    ).toMatchObject({
+      showGeneralCodingInstructions: true,
+      preferManualCodingInstructions: false,
+    });
+  });
+
+  it("keeps explicit empty column selections, definitions and bounded widths", () => {
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          visible: [],
+          order: [],
+          configured: true,
+          definitions: [
+            { id: " custom ", label: " Eigene Spalte " },
+            { id: "custom", label: "Duplikat" },
+            { id: "", label: "Ungültig" },
+          ],
+          widths: { custom: 720, narrow: 20, invalid: "x" },
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        visible: [],
+        order: [],
+        configured: true,
+        definitions: [{ id: "custom", label: "Eigene Spalte" }],
+        widths: { custom: 600, narrow: 80 },
+      },
+    });
+  });
 });

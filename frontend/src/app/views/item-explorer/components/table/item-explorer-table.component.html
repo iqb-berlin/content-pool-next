@@ -149,7 +149,13 @@
             </th>
           }
           @for (col of vm.columns; track col.id) {
-            <th (click)="vm.sortByMeta(col.id)" class="sortable">
+            <th
+              (click)="vm.sortByMeta(col.id)"
+              class="sortable"
+              [style.width.px]="vm.getColumnWidth(col)"
+              [style.minWidth.px]="vm.getColumnWidth(col)"
+              [style.maxWidth.px]="vm.getColumnWidth(col)"
+            >
               {{ col.label }} {{ vm.getMetaSortIndicator(col.id) }}
             </th>
           }
@@ -222,7 +228,11 @@
             </th>
           }
           @for (col of vm.columns; track col.id) {
-            <th>
+            <th
+              [style.width.px]="vm.getColumnWidth(col)"
+              [style.minWidth.px]="vm.getColumnWidth(col)"
+              [style.maxWidth.px]="vm.getColumnWidth(col)"
+            >
               <input
                 class="col-filter-input"
                 [ngModel]="vm.columnFilters[col.id]"
@@ -296,7 +306,11 @@
                 <input
                   type="checkbox"
                   [checked]="vm.isItemInActiveCollection(item)"
-                  [disabled]="vm.collectionBusy || vm.collectionLoadState !== 'loaded'"
+                  [disabled]="
+                    vm.collectionBusy ||
+                    vm.collectionLoadState !== 'loaded' ||
+                    (!!vm.activeItemCollection && !vm.canEditActiveCollection)
+                  "
                   (change)="vm.toggleItemInActiveCollection(item)"
                   [attr.aria-label]="'Item ' + item.itemId + ' in Auswahlliste auswählen'"
                 />
@@ -348,45 +362,52 @@
               <td>{{ item.meanTaskDifficulty ?? '' }}</td>
             }
             @for (col of vm.columns; track col.id) {
-              <td class="meta-cell">
+              <td
+                class="meta-cell"
+                [style.width.px]="vm.getColumnWidth(col)"
+                [style.minWidth.px]="vm.getColumnWidth(col)"
+                [style.maxWidth.px]="vm.getColumnWidth(col)"
+              >
                 {{ vm.getMetadataColumnDisplayValue(item, col) }}
               </td>
             }
             @if (vm.enableTags) {
               <td class="tags-cell" (click)="$event.stopPropagation()">
-                @for (tag of vm.itemTags[item.rowKey] || []; track tag) {
-                  <span
-                    class="badge badge-info tag-badge"
-                    (click)="vm.removeItemTag(item.rowKey, tag)"
-                    >{{ tag }}
-                    @if (vm.canEditExplorer) {
-                      ✕
-                    }
-                  </span>
-                }
-                @if (vm.canEditExplorer) {
-                  <div class="tag-add-container">
-                    @if (vm.availableTags.length > 0) {
-                      <select
-                        class="tag-select"
-                        [attr.aria-label]="'Tag für ' + item.itemId + ' hinzufügen'"
-                        (change)="vm.addItemTag(item.rowKey, $event)"
-                      >
-                        <option value="">+Tag</option>
-                        @for (tag of vm.availableTags; track tag) {
-                          <option [value]="tag">{{ tag }}</option>
-                        }
-                      </select>
-                    }
-                    <input
-                      type="text"
-                      class="tag-input-inline"
-                      placeholder="Neu..."
-                      (keydown.enter)="vm.addCustomTag(item.rowKey, $event)"
-                      (blur)="vm.addCustomTag(item.rowKey, $event)"
-                    />
-                  </div>
-                }
+                <div class="tags-cell-content">
+                  @for (tag of vm.itemTags[item.rowKey] || []; track tag) {
+                    <span
+                      class="badge badge-info tag-badge"
+                      (click)="vm.removeItemTag(item.rowKey, tag)"
+                      >{{ tag }}
+                      @if (vm.canEditExplorer) {
+                        ✕
+                      }
+                    </span>
+                  }
+                  @if (vm.canEditExplorer) {
+                    <div class="tag-add-container">
+                      @if (vm.availableTags.length > 0) {
+                        <select
+                          class="tag-select"
+                          [attr.aria-label]="'Tag für ' + item.itemId + ' hinzufügen'"
+                          (change)="vm.addItemTag(item.rowKey, $event)"
+                        >
+                          <option value="">+Tag</option>
+                          @for (tag of vm.availableTags; track tag) {
+                            <option [value]="tag">{{ tag }}</option>
+                          }
+                        </select>
+                      }
+                      <input
+                        type="text"
+                        class="tag-input-inline"
+                        placeholder="Neu..."
+                        (keydown.enter)="vm.addCustomTag(item.rowKey, $event)"
+                        (blur)="vm.addCustomTag(item.rowKey, $event)"
+                      />
+                    </div>
+                  }
+                </div>
               </td>
             }
             @if (vm.showPersonalItemData) {

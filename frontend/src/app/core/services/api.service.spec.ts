@@ -1124,15 +1124,26 @@ describe('ApiService', () => {
       httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));
 
       service
-        .updateItemCollection('acp1', 'c1', { baseVersion: 2, rowKeys: ['uuid-1'] }, 'editor')
+        .updateItemCollection(
+          'acp1',
+          'c1',
+          { baseVersion: 2, rowKeys: ['uuid-1'], shared: true },
+          'editor',
+        )
         .subscribe();
+      service.copyItemCollection('acp1', 'shared-1', 'read-only').subscribe();
       service.exportItemCollectionCsv('acp1', 'c1', 'editor').subscribe();
 
       expect(httpClientMock.patch).toHaveBeenCalledWith('/api/view/acp/acp1/items/collections/c1', {
         baseVersion: 2,
         rowKeys: ['uuid-1'],
+        shared: true,
         perspective: 'editor',
       });
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/shared-1/copy',
+        { perspective: 'read-only' },
+      );
       expect(httpClientMock.post).toHaveBeenCalledWith(
         '/api/view/acp/acp1/items/collections/c1/export.csv?perspective=editor',
         {},

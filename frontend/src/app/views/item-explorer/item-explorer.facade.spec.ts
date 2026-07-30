@@ -141,6 +141,42 @@ function setPreviewStatus(
   }
 }
 
+describe('ItemExplorerFacade role initialization', () => {
+  it('does not lock an OIDC manager into read-only while the profile is still loading', () => {
+    const component = createFacade({
+      authService: {
+        hasAcpRole: () => false,
+        isAdmin: false,
+        isLoggedIn: true,
+        isOidcUser: true,
+        currentUser: null,
+      },
+    });
+
+    component.viewPerspective = 'editor';
+    component.checkUserRole();
+
+    expect(component.viewPerspective).toBe('editor');
+    expect(component.canEditExplorer).toBe(false);
+  });
+
+  it('keeps credential sessions in read-only mode', () => {
+    const component = createFacade({
+      authService: {
+        hasAcpRole: () => false,
+        isAdmin: false,
+        isLoggedIn: true,
+        isOidcUser: false,
+        currentUser: null,
+      },
+    });
+
+    component.checkUserRole();
+
+    expect(component.viewPerspective).toBe('read-only');
+  });
+});
+
 function createExplorerEnvelope(
   overrides?: Partial<{
     canEdit: boolean;
@@ -1049,6 +1085,8 @@ describe('ItemExplorerFacade', () => {
     component.metadataSettings = {
       visible: ['subject'],
       order: ['subject'],
+      configured: true,
+      widths: { subject: 220 },
       referenceNumberVisible: false,
     };
 
@@ -1061,8 +1099,114 @@ describe('ItemExplorerFacade', () => {
     expect(component.metadataSettings).toEqual({
       visible: ['subject'],
       order: ['subject'],
+      configured: true,
+      widths: { subject: 220 },
       referenceNumberVisible: false,
     });
+  });
+
+  it('distinguishes the default column set from an explicitly empty selection', () => {
+    const component = createFacade();
+    component.allColumns = [
+      { id: 'subject', label: 'Fach' },
+      { id: 'custom', label: 'Eigene Spalte' },
+    ];
+
+    component.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: false,
+      widths: {},
+    };
+    expect(component.filterVisibleColumns(component.allColumns)).toHaveLength(2);
+
+    component.metadataSettings.configured = true;
+    expect(component.filterVisibleColumns(component.allColumns)).toEqual([]);
+  });
+
+  it('adds access-configured columns and clamps widths without changing the default selection', () => {
+    const component = createFacade();
+    (component as any).configuredMetadataColumns = [
+      { id: 'custom', label: 'Eigene Spalte', kind: 'text' },
+    ];
+    const columns = (component as any).getAvailableMetadataColumns([
+      { id: 'subject', label: 'Fach' },
+    ]);
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'subject', label: 'Fach' }),
+        expect.objectContaining({ id: 'custom', label: 'Eigene Spalte' }),
+      ]),
+    );
+
+    component.setColumnWidth({ id: 'custom', label: 'Eigene Spalte' }, 900);
+    expect(component.getColumnWidth({ id: 'custom', label: 'Eigene Spalte' })).toBe(600);
+    expect(component.metadataSettings.configured).toBe(false);
+    expect(component.filterVisibleColumns(component.allColumns)).toEqual(component.allColumns);
+    expect(component.canResetMetadataSettings).toBe(true);
+  });
+
+  it('materializes the default column order before moving a column', () => {
+    const component = createFacade();
+    component.allColumns = [
+      { id: 'first', label: 'Zuerst' },
+      { id: 'second', label: 'Danach' },
+    ];
+    component.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: false,
+      widths: {},
+    };
+
+    component.moveColumnUp(component.allColumns[1]);
+
+    expect(component.metadataSettings).toMatchObject({
+      visible: ['first', 'second'],
+      order: ['second', 'first'],
+      configured: true,
+    });
+    expect(component.columns.map((column) => column.id)).toEqual(['second', 'first']);
+  });
+
+  it('allows an explicitly empty selection to be reset to defaults', () => {
+    const component = createFacade();
+    component.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: true,
+      widths: {},
+    };
+
+    expect(component.canResetMetadataSettings).toBe(true);
+    component.resetToDefault();
+    expect(component.canResetMetadataSettings).toBe(false);
+  });
+
+  it('keeps an empty tag tombstone visible in the draft state immediately', () => {
+    const component = createFacade();
+    component.canEditExplorer = true;
+    (component as any).suppressDraftPatch = true;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Aufgabe',
+        description: '',
+        variableId: 'V1',
+        metadata: {},
+        tags: ['Prüfen'],
+      },
+    ];
+    component.itemTags = { 'uuid-1': ['Prüfen'] };
+
+    component.removeItemTag('uuid-1', 'Prüfen');
+
+    expect(component.itemTags).toEqual({ 'uuid-1': [] });
+    expect(component.items[0].tags).toEqual([]);
+    expect((component as any).normalizeTags({ 'uuid-1': [] })).toEqual({ 'uuid-1': [] });
   });
 
   it('ignores stale item-list responses after a newer reload completes', () => {
@@ -1212,6 +1356,54 @@ describe('ItemExplorerFacade', () => {
     );
     expect(component.explorerUiStatus).toBe('ERROR');
     expect(reloadItems).toHaveBeenCalledTimes(1);
+    consoleError.mockRestore();
+  });
+
+  it('restores a removed tag when saving the optimistic change fails', async () => {
+    const envelope = createExplorerEnvelope({ status: 'DIRTY' });
+    envelope.draftState.tags = { 'row-1': ['Alt'] };
+    envelope.activeState.tags = { 'row-1': ['Alt'] };
+    const component = createFacade({
+      api: {
+        patchItemExplorerDraft: vi.fn(() =>
+          throwError(() => ({
+            status: 500,
+            error: { message: 'Tag konnte nicht gespeichert werden' },
+          })),
+        ),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.canEditExplorer = true;
+    component.explorerVersion = 3;
+    component.latestExplorerState = envelope;
+    component.items = [
+      {
+        itemId: 'ITEM_1',
+        uuid: 'row-1',
+        rowKey: 'row-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: '',
+        variableId: '01',
+        metadata: {},
+        tags: ['Alt'],
+      },
+    ];
+    component.itemTags = { 'row-1': ['Alt'] };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    component.removeItemTag('row-1', 'Alt');
+    expect(component.itemTags['row-1']).toEqual([]);
+    expect(component.items[0].tags).toEqual([]);
+
+    const flushed = await (component as any).flushDraftPatch();
+
+    expect(flushed).toBe(false);
+    expect(component.itemTags['row-1']).toEqual(['Alt']);
+    expect(component.items[0].tags).toEqual(['Alt']);
+    expect((component as any).pendingDraftPatch).toBeNull();
+    expect(component.lastDraftOperationError).toBe('Tag konnte nicht gespeichert werden');
     consoleError.mockRestore();
   });
 
@@ -2146,7 +2338,7 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('marks a valid base-variable alias shadow as ambiguous when the alias is targeted', () => {
+  it('prefers an exact variable id over an alias shadow for the item target', () => {
     const component = createFacade();
     component.selectedItem = {
       itemId: 'ITEM_3',
@@ -2173,9 +2365,106 @@ describe('ItemExplorerFacade', () => {
       { id: 'BASE_A', label: 'Gesamtscore', codes: [] },
     ] as any;
 
-    expect(component.codingVariableFocus.status).toBe('ambiguous');
-    expect(component.codingVariableFocusMessage).toContain('nicht eindeutig');
-    expect(component.filteredCodingSchemeAsText).toHaveLength(2);
+    expect(component.codingVariableFocus.status).toBe('unique');
+    expect(component.codingVariableFocus.codingId).toBe('BASE_A');
+    expect(component.filteredCodingSchemeAsText).toEqual([
+      expect.objectContaining({ label: 'Basiswert' }),
+    ]);
+  });
+
+  it('focuses only MDB007 variable 01 when the aggregate uses 01 as its alias', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '01',
+      uuid: '596680ba-fccd-40d7-9886-d174873e43ef',
+      unitId: 'MDB007',
+      unitLabel: 'Lieblingsbücher_2',
+      description: 'GeoGebra item',
+      variableId: '01',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: '01', alias: '_01', sourceType: 'BASE' },
+        {
+          id: '01_1',
+          alias: '01',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['01', '01_ggb_bilderbuecherAngeklickt'],
+        },
+        { id: '_button01', alias: '_button01', sourceType: 'BASE_NO_VALUE' },
+        { id: '_intro01', alias: '_intro01', sourceType: 'BASE_NO_VALUE' },
+        { id: '_outro01', alias: '_outro01', sourceType: 'BASE_NO_VALUE' },
+        { id: '_source01', alias: '_source01', sourceType: 'BASE_NO_VALUE' },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: '_01', label: 'Variable 01', codes: [] },
+      { id: '01', label: 'Aggregat', codes: [] },
+      { id: '_button01', label: '', codes: [] },
+      { id: '_intro01', label: '', codes: [] },
+      { id: '_outro01', label: '', codes: [] },
+      { id: '_source01', label: '', codes: [] },
+    ] as any;
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: '01',
+      codingId: '_01',
+      isDerived: false,
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Variable 01',
+    ]);
+  });
+
+  it('separates general coding hints from selected-variable manual instructions', () => {
+    const component = createFacade();
+    const coding = {
+      id: 'V1',
+      label: 'Variable 1',
+      manualInstructionText: '<p>Manuell prüfen</p>',
+      codes: [
+        {
+          id: '1',
+          score: 1,
+          label: 'Richtig',
+          manualInstructionText: null,
+          ruleSetDescriptions: ['Automatische Regel'],
+        },
+      ],
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [{ id: 'V1', sourceType: 'BASE' }],
+    };
+    component.currentCodingSchemeAsText = [coding];
+    component.selectedItem = {
+      itemId: 'i1',
+      uuid: 'uuid-1',
+      unitId: 'u1',
+      unitLabel: 'Unit 1',
+      variableId: 'V1',
+      metadata: {},
+    } as any;
+
+    component.showGeneralCodingInstructions = false;
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
+    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
+
+    component.preferManualCodingInstructions = false;
+    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
+
+    component.selectedItem = {
+      ...component.selectedItem,
+      variableId: '',
+    } as any;
+    expect(component.shouldShowVariableManualInstruction(coding)).toBe(false);
+    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
+    component.showGeneralCodingInstructions = true;
+    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
   });
 
   it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {

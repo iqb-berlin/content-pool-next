@@ -33,6 +33,16 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    {
+      name: 'firefox',
+      testMatch: /item-explorer-sticky-visual\.spec\.ts/,
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      testMatch: /item-explorer-sticky-visual\.spec\.ts/,
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
   webServer: [
     {

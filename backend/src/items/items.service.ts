@@ -5,7 +5,6 @@ import { Acp, AcpAccessConfig, AccessModel } from "../database/entities";
 import { UnitParserService, VomdItemData } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
-import { parseItemRowKeyParts } from "./item-row-key.util";
 import { ItemParameterImportPipeline } from "./item-parameter-import.pipeline";
 
 const SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY =
@@ -402,9 +401,7 @@ export class ItemsService {
     for (const [itemId, props] of Object.entries(itemProperties || {})) {
       if (!Array.isArray(props?.tags)) continue;
       const normalized = this.normalizeTagArray(props.tags);
-      if (normalized.length || parseItemRowKeyParts(itemId) !== null) {
-        tags[itemId] = normalized;
-      }
+      tags[itemId] = normalized;
     }
     return tags;
   }

@@ -47,6 +47,8 @@ export type ReadonlyExplorerItem = DeepReadonly<ExplorerItem>;
 export interface MetadataSettings {
   visible: string[];
   order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
   referenceNumberVisible?: boolean;
 }
 

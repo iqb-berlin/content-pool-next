@@ -20,10 +20,40 @@
           <option [ngValue]="null">Noch keine Auswahlliste</option>
         }
         @for (collection of vm.itemCollections; track collection.id) {
-          <option [value]="collection.id">{{ collection.name }}</option>
+          <option [value]="collection.id">
+            {{ collection.name }}
+            @if (!collection.ownedByCurrentUser) {
+              — {{ collection.ownerLabel }}
+            } @else if (collection.shared) {
+              — geteilt
+            }
+          </option>
         }
       </select>
       <button class="btn btn-outline btn-sm" (click)="vm.createCollection()">Neu</button>
+      @if (vm.activeItemCollection; as activeCollection) {
+        @if (activeCollection.ownedByCurrentUser) {
+          <label class="collection-share-toggle">
+            <input
+              type="checkbox"
+              [checked]="activeCollection.shared"
+              [disabled]="vm.collectionBusy"
+              (change)="vm.setActiveCollectionShared($any($event.target).checked)"
+            />
+            Für diesen ACP freigeben
+          </label>
+        } @else {
+          <span class="collection-owner">Geteilt von {{ activeCollection.ownerLabel }}</span>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            [disabled]="vm.collectionBusy"
+            (click)="vm.copyActiveCollection()"
+          >
+            Private Kopie erstellen
+          </button>
+        }
+      }
       <div class="collection-view-toggle" role="group" aria-label="Angezeigte Items">
         <button
           class="btn btn-outline btn-sm"
@@ -48,14 +78,14 @@
       </div>
       <button
         class="btn btn-outline btn-sm"
-        [disabled]="!vm.activeItemCollection || vm.collectionBusy"
+        [disabled]="!vm.canEditActiveCollection || vm.collectionBusy"
         (click)="vm.renameActiveCollection()"
       >
         Umbenennen
       </button>
       <button
         class="btn btn-outline btn-sm"
-        [disabled]="!vm.activeItemCollection || vm.collectionBusy"
+        [disabled]="!vm.canEditActiveCollection || vm.collectionBusy"
         (click)="vm.clearActiveCollection()"
       >
         Leeren
@@ -86,6 +116,11 @@
   @if (vm.collectionError && vm.collectionLoadState !== 'error') {
     <div class="alert alert-error collection-error">{{ vm.collectionError }}</div>
   }
+  @if (vm.sharedCollectionsTruncated && vm.collectionLoadState === 'loaded') {
+    <div class="alert collection-limit-warning" role="status">
+      Es werden nur die 1.000 zuletzt geänderten freigegebenen Auswahllisten angezeigt.
+    </div>
+  }
   @if (vm.showCollectionDialog && vm.activeItemCollection; as collection) {
     <div class="collection-modal-backdrop" (click)="closeDetails()">
       <div
@@ -101,6 +136,9 @@
           <div>
             <h2 id="collection-dialog-title">{{ collection.name }}</h2>
             <p id="collection-dialog-summary">
+              @if (!collection.ownedByCurrentUser) {
+                <span>Geteilt von {{ collection.ownerLabel }} · schreibgeschützt · </span>
+              }
               <strong>{{ vm.formatDuration(collection.summary.testTimeSeconds) }}</strong>
               · {{ collection.summary.rowCount }} Zeilen · {{ collection.summary.itemCount }} Items
               · {{ collection.summary.unitCount }} Units
@@ -136,14 +174,25 @@
             >
               CSV exportieren
             </button>
-            <button
-              class="btn btn-danger btn-sm"
-              type="button"
-              [disabled]="vm.collectionBusy"
-              (click)="deleteActiveCollection()"
-            >
-              Auswahlliste löschen
-            </button>
+            @if (collection.ownedByCurrentUser) {
+              <button
+                class="btn btn-danger btn-sm"
+                type="button"
+                [disabled]="vm.collectionBusy"
+                (click)="deleteActiveCollection()"
+              >
+                Auswahlliste löschen
+              </button>
+            } @else {
+              <button
+                class="btn btn-outline btn-sm"
+                type="button"
+                [disabled]="vm.collectionBusy"
+                (click)="vm.copyActiveCollection()"
+              >
+                Private Kopie erstellen
+              </button>
+            }
           </div>
         </div>
 
@@ -157,7 +206,11 @@
           @if (vm.activeCollectionItems.length === 0) {
             <div class="collection-modal-empty">
               <strong>Noch keine Items ausgewählt.</strong>
-              <span>Fügen Sie Items über die Checkboxen der Itemtabelle hinzu.</span>
+              @if (collection.ownedByCurrentUser) {
+                <span>Fügen Sie Items über die Checkboxen der Itemtabelle hinzu.</span>
+              } @else {
+                <span>Diese freigegebene Auswahlliste ist leer.</span>
+              }
             </div>
           } @else if (filteredCollectionItems.length === 0) {
             <div class="collection-modal-empty">
@@ -174,7 +227,7 @@
                       aria-label="Alle Einträge auf dieser Seite auswählen"
                       [checked]="currentPageFullySelected"
                       [indeterminate]="currentPagePartiallySelected"
-                      [disabled]="vm.collectionBusy"
+                      [disabled]="vm.collectionBusy || !collection.ownedByCurrentUser"
                       (change)="toggleCurrentPage($any($event.target).checked)"
                     />
                   </th>
@@ -194,7 +247,7 @@
                         type="checkbox"
                         [attr.aria-label]="'Eintrag ' + entry.position + ' auswählen'"
                         [checked]="selectedRowKeys.has(entry.rowKey)"
-                        [disabled]="vm.collectionBusy"
+                        [disabled]="vm.collectionBusy || !collection.ownedByCurrentUser"
                         (change)="toggleRowSelection(entry.rowKey, $any($event.target).checked)"
                       />
                     </td>
@@ -213,15 +266,17 @@
                       <td><span class="collection-warning">Nicht verfügbar</span></td>
                     }
                     <td class="collection-action-col">
-                      <button
-                        class="btn btn-outline btn-sm"
-                        type="button"
-                        [disabled]="vm.collectionBusy"
-                        [attr.aria-label]="'Eintrag ' + entry.position + ' entfernen'"
-                        (click)="removeOne(entry.rowKey)"
-                      >
-                        Entfernen
-                      </button>
+                      @if (collection.ownedByCurrentUser) {
+                        <button
+                          class="btn btn-outline btn-sm"
+                          type="button"
+                          [disabled]="vm.collectionBusy"
+                          [attr.aria-label]="'Eintrag ' + entry.position + ' entfernen'"
+                          (click)="removeOne(entry.rowKey)"
+                        >
+                          Entfernen
+                        </button>
+                      }
                     </td>
                   </tr>
                 }
@@ -256,15 +311,17 @@
               Weiter
             </button>
           </div>
-          <button
-            #removeSelectedButton
-            class="btn btn-danger btn-sm"
-            type="button"
-            [disabled]="selectedCount === 0 || vm.collectionBusy"
-            (click)="openRemoveConfirmation()"
-          >
-            Ausgewählte entfernen ({{ selectedCount }})
-          </button>
+          @if (collection.ownedByCurrentUser) {
+            <button
+              #removeSelectedButton
+              class="btn btn-danger btn-sm"
+              type="button"
+              [disabled]="selectedCount === 0 || vm.collectionBusy"
+              (click)="openRemoveConfirmation()"
+            >
+              Ausgewählte entfernen ({{ selectedCount }})
+            </button>
+          }
         </footer>
       </div>
     </div>

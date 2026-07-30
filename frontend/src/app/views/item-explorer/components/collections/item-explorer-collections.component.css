@@ -4,6 +4,15 @@
 .collection-label {
   font-size: 0.85rem;
 }
+.collection-share-toggle,
+.collection-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
 .collection-view-toggle {
   display: inline-flex;
   align-items: center;
@@ -14,6 +23,13 @@
 .collection-view-toggle .btn:last-child {
   margin-left: -1px;
   border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.collection-limit-warning {
+  margin: 0 20px 10px;
+  border-color: #d7a928;
+  background: #fff8dc;
+  color: #71560a;
 }
 
 .collection-modal-backdrop {

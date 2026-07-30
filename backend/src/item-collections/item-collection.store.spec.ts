@@ -16,6 +16,7 @@ describe("ItemCollectionStore", () => {
     };
     repository = {
       findOne: jest.fn(),
+      query: jest.fn().mockResolvedValue([]),
       manager: {
         transaction: jest.fn(async (operation) => operation(manager)),
       },
@@ -53,6 +54,37 @@ describe("ItemCollectionStore", () => {
         credentialId: "credential-1",
       },
     });
+  });
+
+  it("reads only projected shared collections with a bounded database query", async () => {
+    repository.query.mockResolvedValue([
+      {
+        collection: { id: "shared", shared: true },
+        ownerLabel: " Charlotte ",
+      },
+    ]);
+
+    await expect(
+      store.readSharedCollections(
+        "acp-1",
+        {
+          kind: "user",
+          userId: "user-1",
+        },
+        1001,
+      ),
+    ).resolves.toEqual([
+      {
+        collection: { id: "shared", shared: true },
+        ownerLabel: "Charlotte",
+      },
+    ]);
+    expect(repository.query).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /jsonb_array_elements[\s\S]*collection ->> 'shared' = 'true'[\s\S]*LIMIT \$3/,
+      ),
+      ["acp-1", "user-1", 1001],
+    );
   });
 
   it("locks the owner row and updates only collection-owned JSON fields", async () => {

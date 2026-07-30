@@ -987,6 +987,7 @@ describe("ItemsService", () => {
 
     await expect(service.getItemTags("acp-1")).resolves.toEqual({
       itemA: ["tag-a", "tag-b"],
+      itemB: [],
       "uuid-1::1": [],
     });
   });

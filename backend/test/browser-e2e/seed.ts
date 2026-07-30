@@ -19,8 +19,11 @@ import {
 
 const ACP_ID = "10000000-0000-4000-8000-000000000001";
 const REGRESSION_ACP_ID = "10000000-0000-4000-8000-000000000101";
+const BISTATEST_ACP_ID = "10000000-0000-4000-8000-000000000201";
 const MANAGER_ID = "10000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "e2e-manager";
+const VIEWER_ID = "10000000-0000-4000-8000-000000000003";
+const VIEWER_USERNAME = "e2e-viewer";
 const CREDENTIAL_USERNAME = "e2e-reviewer";
 const CREDENTIAL_PASSWORD = "Reviewer-E2E-123!";
 
@@ -82,6 +85,14 @@ async function seed(): Promise<void> {
         id: MANAGER_ID,
         username: MANAGER_USERNAME,
         displayName: "E2E Manager",
+        isAppAdmin: false,
+      }),
+    );
+    await dataSource.getRepository(User).save(
+      dataSource.getRepository(User).create({
+        id: VIEWER_ID,
+        username: VIEWER_USERNAME,
+        displayName: "E2E Viewer",
         isAppAdmin: false,
       }),
     );
@@ -500,11 +511,263 @@ async function seed(): Promise<void> {
       );
     }
 
+    const bistaItemProperties = {
+      "bista-item-uuid-01": {
+        empiricalDifficulty: -0.4,
+        tags: ["Alt"],
+        infit: 0.98,
+        discrimination: 0.62,
+        solutionRate: 0.73,
+        itemTimeSeconds: 30,
+        stimulusTimeSeconds: 20,
+      },
+      "bista-item-uuid-general": {
+        empiricalDifficulty: 0.2,
+        infit: 1.04,
+        discrimination: 0.51,
+        solutionRate: 0.58,
+        itemTimeSeconds: 45,
+        stimulusTimeSeconds: 20,
+      },
+    };
+    const bistaAcp = await dataSource.getRepository(Acp).save(
+      dataSource.getRepository(Acp).create({
+        id: BISTATEST_ACP_ID,
+        packageId: "browser-e2e-bistatest-package",
+        name: "BiStaTest Item Explorer ACP",
+        description: "BiStaTest ticket acceptance fixture",
+        acpIndex: {
+          version: "0.5.0",
+          packageId: "browser-e2e-bistatest-package",
+          assessmentParts: [
+            {
+              id: "bista-part",
+              name: "BiStaTest",
+              units: [
+                {
+                  id: "MDB007",
+                  name: "Lieblingsbücher_2",
+                  items: [
+                    { id: "01", name: "GeoGebra", sourceVariable: "01" },
+                    {
+                      id: "G",
+                      name: "Allgemeine Hinweise",
+                      sourceVariable: "",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        itemProperties: bistaItemProperties,
+        settings: {},
+      }),
+    );
+    await dataSource.getRepository(AcpUserRole).save(
+      dataSource.getRepository(AcpUserRole).create({
+        userId: manager.id,
+        acpId: bistaAcp.id,
+        role: AcpRole.ACP_MANAGER,
+      }),
+    );
+    await dataSource.getRepository(AcpUserRole).save(
+      dataSource.getRepository(AcpUserRole).create({
+        userId: VIEWER_ID,
+        acpId: bistaAcp.id,
+        role: AcpRole.READ_ONLY,
+      }),
+    );
+    await dataSource.getRepository(AcpAccessConfig).save(
+      dataSource.getRepository(AcpAccessConfig).create({
+        acpId: bistaAcp.id,
+        accessModel: AccessModel.REGISTERED,
+        allowRegistered: true,
+        featureConfig: {
+          enableItemList: true,
+          enableItemListFilter: true,
+          enableItemListSort: true,
+          enableItemClick: true,
+          enableUnitView: true,
+          enableItemListTags: true,
+          availableTags: ["Alt", "Neu"],
+          persistUserPreferences: true,
+          enableItemCollections: true,
+          showGeneralCodingInstructions: false,
+          preferManualCodingInstructions: true,
+          metadataColumns: {
+            definitions: [
+              { id: "customQuality", label: "Eigene Qualitätsspalte" },
+            ],
+          },
+        },
+      }),
+    );
+    const bistaSharedState = {
+      ui: {},
+      tags: { "bista-item-uuid-01": ["Alt"] },
+      metadataColumns: { visible: [], order: [] },
+      itemOrder: [],
+      itemProperties: bistaItemProperties,
+    };
+    await dataSource.getRepository(AcpItemExplorerState).save(
+      dataSource.getRepository(AcpItemExplorerState).create({
+        acpId: bistaAcp.id,
+        publishedState: bistaSharedState,
+        draftState: bistaSharedState,
+        status: "CLEAN",
+        version: 1,
+        publishedVersion: 1,
+      }),
+    );
+
+    const bistaDirectory = join(fixtureDirectory, "bistatest");
+    await mkdir(bistaDirectory, { recursive: true });
+    const bistaFiles = [
+      {
+        name: "MDB007.xml",
+        type: "UNIT_XML",
+        content: `<?xml version="1.0" encoding="UTF-8"?>
+<Unit>
+  <Id>MDB007</Id>
+  <Label>Lieblingsbücher_2</Label>
+  <Description>GeoGebra regression fixture based on MDB007</Description>
+  <DefinitionRef player="iqb-player-aspect@2.11">MDB007.voud</DefinitionRef>
+  <CodingSchemeRef>MDB007.vocs</CodingSchemeRef>
+  <Reference>MDB007.vomd</Reference>
+</Unit>`,
+      },
+      {
+        name: "MDB007.vomd",
+        type: "ITEM_METADATA",
+        content: JSON.stringify({
+          profiles: [],
+          items: [
+            {
+              id: "01",
+              uuid: "bista-item-uuid-01",
+              description: "BiStaTest GeoGebra Item",
+              variableId: "01",
+              variableReadOnlyId: "01_1",
+              useUnitAliasAsPrefix: false,
+              profiles: [],
+            },
+            {
+              id: "G",
+              uuid: "bista-item-uuid-general",
+              description: "Item ohne ausgewählte Kodiervariable",
+              variableId: "",
+              useUnitAliasAsPrefix: false,
+              profiles: [],
+            },
+          ],
+        }),
+      },
+      {
+        name: "MDB007.voud",
+        type: "UNIT_DEFINITION",
+        content: JSON.stringify({
+          pages: [
+            {
+              elements: [
+                { id: "_intro01" },
+                { id: "01", alias: "_01" },
+                { id: "_button01" },
+                { id: "_outro01" },
+                { id: "_source01" },
+              ],
+            },
+          ],
+        }),
+      },
+      {
+        name: "MDB007.vocs",
+        type: "CODING_SCHEME",
+        content: JSON.stringify({
+          version: "3.0",
+          variableCodings: [
+            {
+              id: "01",
+              alias: "_01",
+              label: "Variable 01",
+              sourceType: "BASE",
+              deriveSources: [],
+              manualInstruction: "<p>Nur Segment Bilderbücher markieren.</p>",
+              codeModel: "MANUAL_AND_RULES",
+              codes: [
+                {
+                  id: 1,
+                  score: 1,
+                  label: "richtig",
+                  ruleSets: [
+                    {
+                      ruleOperatorAnd: true,
+                      rules: [{ method: "MATCH", parameters: ["true"] }],
+                    },
+                  ],
+                  manualInstruction: "",
+                },
+              ],
+            },
+            {
+              id: "01_1",
+              alias: "01",
+              label: "Abgeleitete Variable",
+              sourceType: "SUM_SCORE",
+              deriveSources: ["01", "01_ggb_bilderbuecherAngeklickt"],
+              manualInstruction: "",
+              codes: [],
+            },
+            {
+              id: "GEN",
+              label: "Allgemeiner Hinweis",
+              sourceType: "BASE",
+              deriveSources: [],
+              manualInstruction:
+                "<p>Allgemeiner Testhinweis zur Kodierung.</p>",
+              codeModel: "MANUAL_AND_RULES",
+              codes: [],
+            },
+            ...["_button01", "_intro01", "_outro01", "_source01"].map((id) => ({
+              id,
+              alias: id,
+              label: "",
+              sourceType: "BASE_NO_VALUE",
+              deriveSources: [],
+              manualInstruction: "",
+              codes: [],
+            })),
+          ],
+        }),
+      },
+      {
+        name: "iqb-player-aspect-2.11.6.html",
+        type: "PLAYER",
+        content:
+          "<!doctype html><html><body>BiStaTest E2E Player</body></html>",
+      },
+    ];
+    for (const file of bistaFiles) {
+      const filePath = join(bistaDirectory, file.name);
+      await writeFile(filePath, file.content, "utf8");
+      await dataSource.getRepository(AcpFile).save(
+        dataSource.getRepository(AcpFile).create({
+          acpId: bistaAcp.id,
+          filePath,
+          originalName: file.name,
+          fileType: file.type,
+          fileSize: Buffer.byteLength(file.content),
+        }),
+      );
+    }
+
     process.stdout.write(
       JSON.stringify({
         acpId: ACP_ID,
         regressionAcpId: REGRESSION_ACP_ID,
+        bistaTestAcpId: BISTATEST_ACP_ID,
         managerUsername: MANAGER_USERNAME,
+        viewerUsername: VIEWER_USERNAME,
         credentialUsername: CREDENTIAL_USERNAME,
       }) + "\n",
     );

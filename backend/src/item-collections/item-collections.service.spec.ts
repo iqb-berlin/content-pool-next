@@ -15,6 +15,7 @@ describe("ItemCollectionsService", () => {
   beforeEach(() => {
     store = {
       readPreferences: jest.fn().mockResolvedValue(null),
+      readSharedCollections: jest.fn().mockResolvedValue([]),
       mutate: jest.fn(),
     };
     itemExplorerStateService = {
@@ -218,10 +219,10 @@ describe("ItemCollectionsService", () => {
       "acp-1",
       owner,
       "collection-1",
-      { baseVersion: 2, name: "Neu" },
+      { baseVersion: 2, name: "Neu", shared: true },
     );
     expect(result.collections[0]).toEqual(
-      expect.objectContaining({ name: "Neu", version: 3 }),
+      expect.objectContaining({ name: "Neu", shared: true, version: 3 }),
     );
   });
 
@@ -477,6 +478,205 @@ describe("ItemCollectionsService", () => {
     );
     expect(result.collections).toEqual([]);
     expect(result.activeCollectionId).toBeNull();
+  });
+
+  it("exposes only ACP-shared foreign collections as read-only views", async () => {
+    store.readPreferences.mockResolvedValue({
+      collections: [
+        {
+          id: "own-private",
+          name: "Meine Liste",
+          rowKeys: [],
+          version: 1,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-01T10:00:00.000Z",
+        },
+      ],
+      activeCollectionId: "own-private",
+    });
+    store.readSharedCollections.mockResolvedValue([
+      {
+        ownerLabel: "Charlotte",
+        collection: {
+          id: "foreign-shared",
+          name: "Geteilte Liste",
+          rowKeys: [],
+          version: 2,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-02T10:00:00.000Z",
+          shared: true,
+        },
+      },
+    ]);
+
+    const result = await service.getItemCollections("acp-1", owner);
+
+    expect(result.collections).toEqual([
+      expect.objectContaining({
+        id: "own-private",
+        ownedByCurrentUser: true,
+        shared: false,
+        ownerLabel: "Ich",
+      }),
+      expect.objectContaining({
+        id: "foreign-shared",
+        ownedByCurrentUser: false,
+        shared: true,
+        ownerLabel: "Charlotte",
+      }),
+    ]);
+    expect(result.collections).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "foreign-private" }),
+      ]),
+    );
+  });
+
+  it("returns a bounded ACP-wide shared collection result with a truncation marker", async () => {
+    const timestamp = "2026-07-01T10:00:00.000Z";
+    store.readSharedCollections.mockResolvedValue(
+      Array.from({ length: 1_001 }, (_, index) => ({
+        ownerLabel: `Owner ${index}`,
+        collection: {
+          id: `shared-${index}`,
+          name: `Liste ${index}`,
+          rowKeys: [],
+          version: 1,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          shared: true,
+        },
+      })),
+    );
+
+    const result = await service.getItemCollections("acp-1", owner);
+
+    expect(result.collections).toHaveLength(1_000);
+    expect(result.collections[0]).toEqual(
+      expect.objectContaining({ id: "shared-0", ownedByCurrentUser: false }),
+    );
+    expect(result.collections.at(-1)).toEqual(
+      expect.objectContaining({ id: "shared-999", ownedByCurrentUser: false }),
+    );
+    expect(result.sharedCollectionsTruncated).toBe(true);
+    expect(store.readSharedCollections).toHaveBeenCalledWith(
+      "acp-1",
+      owner,
+      1_001,
+    );
+  });
+
+  it("copies a shared collection into an independent private owner list", async () => {
+    const preferences: Record<string, unknown> = { collections: [] };
+    store.readPreferences.mockResolvedValue(preferences);
+    store.readSharedCollections.mockResolvedValue([
+      {
+        ownerLabel: "Charlotte",
+        collection: {
+          id: "foreign-shared",
+          name: "Geteilte Liste",
+          rowKeys: ["uuid-1::1"],
+          version: 3,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-02T10:00:00.000Z",
+          shared: true,
+        },
+      },
+    ]);
+    store.mutate.mockImplementation(async (...args: any[]) => {
+      const state = args[3](preferences);
+      preferences.collections = state.collections;
+      preferences.activeCollectionId = state.activeCollectionId;
+      return state;
+    });
+
+    const result = await service.copyItemCollection(
+      "acp-1",
+      owner,
+      "foreign-shared",
+    );
+    const copy = result.collections.find(
+      (collection) => collection.ownedByCurrentUser,
+    );
+    expect(copy).toEqual(
+      expect.objectContaining({
+        name: "Geteilte Liste (Kopie)",
+        rowKeys: ["uuid-1::1"],
+        shared: false,
+        ownedByCurrentUser: true,
+      }),
+    );
+    expect(copy?.id).not.toBe("foreign-shared");
+    expect(result.activeCollectionId).toBe(copy?.id);
+  });
+
+  it("activates a shared foreign collection without granting edit ownership", async () => {
+    const preferences: Record<string, unknown> = { collections: [] };
+    store.readSharedCollections.mockResolvedValue([
+      {
+        ownerLabel: "Charlotte",
+        collection: {
+          id: "foreign-shared",
+          name: "Geteilte Liste",
+          rowKeys: [],
+          version: 2,
+          createdAt: "2026-07-01T10:00:00.000Z",
+          updatedAt: "2026-07-02T10:00:00.000Z",
+          shared: true,
+        },
+      },
+    ]);
+    store.mutate.mockImplementation(async (...args: any[]) => {
+      const state = args[3](preferences);
+      preferences.activeCollectionId = state.activeCollectionId;
+      preferences.collectionViewMode = state.collectionViewMode;
+      return state;
+    });
+
+    const result = await service.activateItemCollection(
+      "acp-1",
+      owner,
+      "foreign-shared",
+      false,
+      "active",
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        activeCollectionId: "foreign-shared",
+        collectionViewMode: "active",
+      }),
+    );
+    expect(result.collections[0]).toEqual(
+      expect.objectContaining({
+        id: "foreign-shared",
+        ownedByCurrentUser: false,
+        shared: true,
+      }),
+    );
+    expect(store.mutate).toHaveBeenCalledWith(
+      "acp-1",
+      owner,
+      true,
+      expect.any(Function),
+    );
+  });
+
+  it("does not allow foreign shared collections to be changed through owner mutations", async () => {
+    const preferences = { collections: [], activeCollectionId: null };
+    store.mutate.mockImplementation(async (...args: any[]) =>
+      args[3](preferences),
+    );
+
+    await expect(
+      service.updateItemCollection("acp-1", owner, "foreign-shared", {
+        baseVersion: 1,
+        name: "Manipuliert",
+      }),
+    ).rejects.toThrow(NotFoundException);
+    await expect(
+      service.deleteItemCollection("acp-1", owner, "foreign-shared"),
+    ).rejects.toThrow(NotFoundException);
   });
 
   it("exports collection rows together with personal row metadata", async () => {

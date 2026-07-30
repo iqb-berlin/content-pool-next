@@ -86,6 +86,10 @@ describe('ItemExplorer presentational components', () => {
     expect(template).toContain(binding);
   });
 
+  it('keeps the default-column reset available for an explicitly empty selection', () => {
+    expect(columnManagerTemplate).toContain('[disabled]="!vm.canResetMetadataSettings"');
+  });
+
   it('gives the collection selector an accessible name', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
   });
@@ -96,6 +100,20 @@ describe('ItemExplorer presentational components', () => {
     expect(collectionsTemplate).toContain('pagedCollectionItems');
     expect(collectionsTemplate).toContain('Alle Einträge auf dieser Seite auswählen');
     expect(collectionsTemplate).toContain('[error]="removeConfirmationError"');
+  });
+
+  it('binds ACP coding flags to general and manual instructions', () => {
+    expect(codingTemplate).toContain('vm.shouldShowVariableManualInstruction(coding)');
+    expect(codingTemplate).toContain('vm.shouldShowAutomaticCodingRules(coding, code)');
+    expect(codingTemplate).toContain('Manuelle Kodieranweisung:');
+    expect(codingTemplate).toContain('Allgemeiner Kodierungshinweis:');
+  });
+
+  it('exposes read-only sharing and private-copy actions for collections', () => {
+    expect(collectionsTemplate).toContain('Für diesen ACP freigeben');
+    expect(collectionsTemplate).toContain('Geteilt von {{ activeCollection.ownerLabel }}');
+    expect(collectionsTemplate).toContain('(click)="vm.copyActiveCollection()"');
+    expect(collectionsTemplate).toContain('collection.ownedByCurrentUser');
   });
 
   it('filters and paginates large collections without exposing more than 50 rows', () => {

@@ -1,14 +1,14 @@
-name: Promote Release
+name: Promote Production Exception
 
 on:
   workflow_dispatch:
     inputs:
       candidate:
-        description: Release candidate tag, for example v0.2.0-rc.1
+        description: Release candidate tag, for example v0.3.0-rc.5
         required: true
         type: string
-      staging_evidence:
-        description: Link or identifier for the successful staging checklist
+      exception_issue:
+        description: Repository issue documenting the approved production-only exception
         required: true
         type: string
 
@@ -25,6 +25,6 @@ jobs:
     uses: ./.github/workflows/promote-release-core.yml
     with:
       candidate: ${{ inputs.candidate }}
-      validation_mode: staging
-      validation_evidence: ${{ inputs.staging_evidence }}
+      validation_mode: production-exception
+      validation_evidence: ${{ inputs.exception_issue }}
     secrets: inherit

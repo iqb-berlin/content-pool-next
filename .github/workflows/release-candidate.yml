@@ -32,10 +32,11 @@ jobs:
     permissions:
       checks: read
       contents: read
+      packages: read
     outputs:
       release: ${{ steps.release.outputs.release }}
       version: ${{ steps.release.outputs.version }}
-      built_at: ${{ steps.release.outputs.built_at }}
+      built_at: ${{ steps.identity.outputs.built_at }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -73,10 +74,8 @@ jobs:
         run: |
           version="$(tr -d '[:space:]' < VERSION)"
           release="v${version}-rc.${RC_NUMBER}"
-          built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "release=${release}" >> "$GITHUB_OUTPUT"
-          echo "built_at=${built_at}" >> "$GITHUB_OUTPUT"
       - name: Require successful quality gate for this commit
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,22 +88,65 @@ jobs:
           }
       - name: Reject reused release candidate
         env:
+          GH_TOKEN: ${{ github.token }}
           RELEASE: ${{ steps.release.outputs.release }}
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE}" >/dev/null 2>&1; then
-            echo "Tag ${RELEASE} already exists" >&2
-            exit 1
+            git fetch --force origin "refs/tags/${RELEASE}:refs/tags/${RELEASE}"
+            test "$(git rev-list -n 1 "$RELEASE")" = "$GITHUB_SHA" || {
+              echo "Tag ${RELEASE} belongs to a different commit" >&2
+              exit 1
+            }
+            if gh release view "$RELEASE" >/dev/null 2>&1; then
+              echo "Release candidate ${RELEASE} is already published" >&2
+              exit 1
+            fi
+            echo "Retrying ${RELEASE} after an incomplete publication"
           fi
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve retry-safe build identity
+        id: identity
+        env:
+          RELEASE: ${{ steps.release.outputs.release }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          built_at=""
+          for image in "$BACKEND_IMAGE" "$FRONTEND_IMAGE"; do
+            ref="${image}:${RELEASE}-build"
+            if metadata="$(docker buildx imagetools inspect "$ref" --format '{{json .}}' 2>/dev/null)"; then
+              revisions="$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.revision"]] | unique | .[]' <<<"$metadata")"
+              versions="$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.version"]] | unique | .[]' <<<"$metadata")"
+              created="$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.created"]] | unique | .[]' <<<"$metadata")"
+              test "$revisions" = "$GITHUB_SHA"
+              test "$versions" = "$VERSION"
+              test -n "$created"
+              if [[ -n "$built_at" ]]; then
+                test "$built_at" = "$created"
+              else
+                built_at="$created"
+              fi
+            fi
+          done
+          if [[ -z "$built_at" ]]; then
+            built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          fi
+          echo "built_at=${built_at}" >> "$GITHUB_OUTPUT"
 
   backend:
     name: Build and scan backend
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
+      digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
@@ -114,33 +156,51 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Reject an existing candidate image
+      - name: Resolve existing candidate build
+        id: existing
         env:
           RELEASE: ${{ needs.validate.outputs.release }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          ! docker buildx imagetools inspect "${BACKEND_IMAGE}:${RELEASE}" >/dev/null 2>&1
-          ! docker buildx imagetools inspect "${BACKEND_IMAGE}:sha-${GITHUB_SHA}" >/dev/null 2>&1
+          ref="${BACKEND_IMAGE}:${RELEASE}-build"
+          if ! metadata="$(docker buildx imagetools inspect "$ref" --format '{{json .}}' 2>/dev/null)"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.revision"]] | unique | .[]' <<<"$metadata")" = "$GITHUB_SHA"
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.version"]] | unique | .[]' <<<"$metadata")" = "$VERSION"
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.created"]] | unique | .[]' <<<"$metadata")" = "${{ needs.validate.outputs.built_at }}"
+          echo "digest=$(jq -r .manifest.digest <<<"$metadata")" >> "$GITHUB_OUTPUT"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
       - name: Build backend once
         id: build
+        if: steps.existing.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile.prod
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ needs.validate.outputs.release }}
-            ${{ env.BACKEND_IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ env.BACKEND_IMAGE }}:${{ needs.validate.outputs.release }}-build
           build-args: |
             APP_VERSION=${{ needs.validate.outputs.version }}
             APP_COMMIT=${{ github.sha }}
             APP_BUILT_AT=${{ needs.validate.outputs.built_at }}
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+      - name: Resolve backend digest
+        id: image
+        env:
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          digest="${EXISTING_DIGEST:-$BUILT_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Scan published backend image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.BACKEND_IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.BACKEND_IMAGE }}@${{ steps.image.outputs.digest }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
@@ -150,11 +210,12 @@ jobs:
     name: Build and scan frontend
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
+      digest: ${{ steps.image.outputs.digest }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-qemu-action@v3
@@ -164,33 +225,51 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Reject an existing candidate image
+      - name: Resolve existing candidate build
+        id: existing
         env:
           RELEASE: ${{ needs.validate.outputs.release }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          ! docker buildx imagetools inspect "${FRONTEND_IMAGE}:${RELEASE}" >/dev/null 2>&1
-          ! docker buildx imagetools inspect "${FRONTEND_IMAGE}:sha-${GITHUB_SHA}" >/dev/null 2>&1
+          ref="${FRONTEND_IMAGE}:${RELEASE}-build"
+          if ! metadata="$(docker buildx imagetools inspect "$ref" --format '{{json .}}' 2>/dev/null)"; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.revision"]] | unique | .[]' <<<"$metadata")" = "$GITHUB_SHA"
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.version"]] | unique | .[]' <<<"$metadata")" = "$VERSION"
+          test "$(jq -r '[.image[]?.config.Labels["org.opencontainers.image.created"]] | unique | .[]' <<<"$metadata")" = "${{ needs.validate.outputs.built_at }}"
+          echo "digest=$(jq -r .manifest.digest <<<"$metadata")" >> "$GITHUB_OUTPUT"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
       - name: Build frontend once
         id: build
+        if: steps.existing.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile.prod
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ needs.validate.outputs.release }}
-            ${{ env.FRONTEND_IMAGE }}:sha-${{ github.sha }}
+          tags: ${{ env.FRONTEND_IMAGE }}:${{ needs.validate.outputs.release }}-build
           build-args: |
             APP_VERSION=${{ needs.validate.outputs.version }}
             APP_COMMIT=${{ github.sha }}
             APP_BUILT_AT=${{ needs.validate.outputs.built_at }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+      - name: Resolve frontend digest
+        id: image
+        env:
+          EXISTING_DIGEST: ${{ steps.existing.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          digest="${EXISTING_DIGEST:-$BUILT_DIGEST}"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
       - name: Scan published frontend image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.FRONTEND_IMAGE }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ env.FRONTEND_IMAGE }}@${{ steps.image.outputs.digest }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
@@ -202,10 +281,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build runtime bundle and manifest
         env:
           RELEASE: ${{ needs.validate.outputs.release }}
@@ -233,14 +319,42 @@ jobs:
             --required-configuration CONTENT_POOL_FRONTEND_IMAGE \
             --output dist/release-manifest.json
           (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+      - name: Publish verified image tags
+        env:
+          RELEASE: ${{ needs.validate.outputs.release }}
+          BACKEND_DIGEST: ${{ needs.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ needs.frontend.outputs.digest }}
+        run: |
+          ensure_tag() {
+            local target="$1" source="$2" expected="$3" actual
+            if docker buildx imagetools inspect "$target" >/dev/null 2>&1; then
+              actual="$(docker buildx imagetools inspect "$target" --format '{{json .}}' | jq -r .manifest.digest)"
+              test "$actual" = "$expected" || {
+                echo "${target} already points to ${actual}, expected ${expected}" >&2
+                return 1
+              }
+            else
+              docker buildx imagetools create --tag "$target" "$source"
+            fi
+            actual="$(docker buildx imagetools inspect "$target" --format '{{json .}}' | jq -r .manifest.digest)"
+            test "$actual" = "$expected"
+          }
+          ensure_tag "${BACKEND_IMAGE}:${RELEASE}" "${BACKEND_IMAGE}@${BACKEND_DIGEST}" "$BACKEND_DIGEST"
+          ensure_tag "${BACKEND_IMAGE}:sha-${GITHUB_SHA}" "${BACKEND_IMAGE}@${BACKEND_DIGEST}" "$BACKEND_DIGEST"
+          ensure_tag "${FRONTEND_IMAGE}:${RELEASE}" "${FRONTEND_IMAGE}@${FRONTEND_DIGEST}" "$FRONTEND_DIGEST"
+          ensure_tag "${FRONTEND_IMAGE}:sha-${GITHUB_SHA}" "${FRONTEND_IMAGE}@${FRONTEND_DIGEST}" "$FRONTEND_DIGEST"
       - name: Create annotated candidate tag
         env:
           RELEASE: ${{ needs.validate.outputs.release }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$RELEASE" "$GITHUB_SHA" -m "Release candidate ${RELEASE}"
-          git push origin "refs/tags/${RELEASE}"
+          if git rev-parse --verify "refs/tags/${RELEASE}" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$RELEASE")" = "$GITHUB_SHA"
+          else
+            git tag -a "$RELEASE" "$GITHUB_SHA" -m "Release candidate ${RELEASE}"
+            git push origin "refs/tags/${RELEASE}"
+          fi
       - name: Create GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}

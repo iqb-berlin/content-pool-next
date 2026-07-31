@@ -273,8 +273,10 @@ run_health_check() {
     api_url="http://localhost/api"
     frontend_url="http://localhost"
   fi
-  ./scripts/check-health.sh "$MODE" "$keycloak_url" "$api_url" "$frontend_url" \
-    "$TARGET_APPLICATION_VERSION" "$TARGET_COMMIT"
+  HEALTH_CHECK_ATTEMPTS="${HEALTH_CHECK_ATTEMPTS:-24}" \
+    HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-5}" \
+    ./scripts/check-health.sh "$MODE" "$keycloak_url" "$api_url" "$frontend_url" \
+      "$TARGET_APPLICATION_VERSION" "$TARGET_COMMIT"
 }
 
 restore_previous_application() {

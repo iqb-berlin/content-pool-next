@@ -24,9 +24,17 @@ person as production approver:
 1. Merge a release PR into `master` after the required `release-gate` succeeds.
 2. Run **Release Candidate** from `master`, provide the RC number and the exact
    migration classification from `CHANGELOG.md`.
-3. The workflow builds and scans backend/frontend images once, publishes a
-   `vX.Y.Z-rc.N` prerelease, and records immutable image digests in
-   `release-manifest.json`.
+3. The workflow builds backend/frontend images under retryable `-build` tags
+   and scans both immutable digests. Only after both scans pass does it publish
+   the final `vX.Y.Z-rc.N` and `sha-*` image tags, the prerelease, and
+   `release-manifest.json`. Re-running an incomplete candidate reuses a build
+   only after its version, source commit, and build timestamp match.
+
+If a candidate from the older non-retryable workflow left partial RC and SHA
+tags without publishing a Git tag or GitHub release, run **Cleanup Failed
+Release Candidate** with that RC, its exact source commit, and the required
+confirmation text. The cleanup refuses candidates with a Git tag/release and
+refuses package versions carrying any additional tag.
 4. Deploy the candidate to the isolated staging stack:
 
    ```bash
@@ -51,6 +59,26 @@ person as production approver:
 Migration classification `manual` intentionally cannot use the normal
 promotion workflow. Redesign the migration as expand/contract or use a reviewed
 maintenance plan outside the routine release process.
+
+## Production-only exception
+
+An unavailable staging environment is not staging evidence. If an urgent
+release must go directly to production, open the **Production-only release
+exception** issue template and complete every item under **Required production
+preconditions**. The issue must remain open as the operational record.
+
+Run **Promote Production Exception** with the candidate and that repository
+issue URL. The separate workflow validates the issue marker and completed
+preconditions, records `production-exception` in the stable release notes, and
+still requires approval through the protected `production` environment. It
+validates candidate checksums, source identity, migration classification, and
+image digests, but does not claim that staging validation occurred.
+
+Promotion does not deploy the application. After promotion, use the normal
+production update command during the recorded maintenance window, complete the
+post-deployment checks in the exception issue, attach the deployment record,
+and then close the issue. If the preconditions cannot be completed, do not
+promote or deploy the candidate.
 
 ## First managed deployment
 

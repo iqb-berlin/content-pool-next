@@ -52,7 +52,7 @@ jobs:
         with:
           fetch-depth: 0
       - run: ./scripts/check-release-metadata.sh
-      - run: python3 -m unittest scripts/test_release_manifest.py
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - run: ./scripts/test-deployment-scripts.sh
 
   backend-test:

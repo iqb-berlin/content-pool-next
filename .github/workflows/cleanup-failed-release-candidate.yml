@@ -1,0 +1,84 @@
+name: Cleanup Failed Release Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Failed candidate, for example v0.3.0-rc.3
+        required: true
+        type: string
+      source_commit:
+        description: Exact 40-character source commit recorded in the image tag
+        required: true
+        type: string
+      confirmation:
+        description: Type delete-failed-candidate
+        required: true
+        type: string
+
+concurrency:
+  group: cleanup-failed-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Delete orphaned candidate image versions
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate failed candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          test "$CONFIRMATION" = delete-failed-candidate
+          [[ "$CANDIDATE" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*$ ]]
+          [[ "$SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          ! git ls-remote --exit-code --tags origin "refs/tags/${CANDIDATE}" >/dev/null 2>&1
+          ! gh release view "$CANDIDATE" >/dev/null 2>&1
+      - name: Delete exact orphaned package versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER}"
+          sha_tag="sha-${SOURCE_COMMIT}"
+          deleted=0
+          for package in content-pool-backend content-pool-frontend; do
+            versions="$(gh api --paginate --slurp \
+              "orgs/${owner}/packages/container/${package}/versions?per_page=100")"
+            matches="$(jq --arg candidate "$CANDIDATE" --arg sha "$sha_tag" '[
+              .[][]
+              | select(
+                  (.metadata.container.tags | index($candidate)) != null
+                  or (.metadata.container.tags | index($sha)) != null
+                )
+            ]' <<<"$versions")"
+            while IFS= read -r version; do
+              [[ -n "$version" ]] || continue
+              id="$(jq -r .id <<<"$version")"
+              unexpected="$(jq --arg candidate "$CANDIDATE" --arg sha "$sha_tag" -r '[
+                .metadata.container.tags[]
+                | select(. != $candidate and . != $sha)
+              ] | join(",")' <<<"$version")"
+              test -z "$unexpected" || {
+                echo "Refusing to delete ${package} version ${id}; additional tags: ${unexpected}" >&2
+                exit 1
+              }
+              gh api --method DELETE \
+                "orgs/${owner}/packages/container/${package}/versions/${id}"
+              echo "Deleted ${package} version ${id} (${CANDIDATE}, ${sha_tag})"
+              deleted=$((deleted + 1))
+            done < <(jq -c '.[]' <<<"$matches")
+          done
+          test "$deleted" -gt 0 || {
+            echo "No orphaned image version matched ${CANDIDATE} and ${sha_tag}" >&2
+            exit 1
+          }

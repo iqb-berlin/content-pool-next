@@ -40,6 +40,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   workflows and install all required browser dependencies in CI.
 - Update transitive `brace-expansion` dependencies to patched releases and
   document the scanner exception for fixed 1.x and 2.x backports.
+- Make release-candidate image publication retry-safe and add an explicit,
+  protected production-only exception path that does not claim staging evidence.
 
 ### Breaking changes
 

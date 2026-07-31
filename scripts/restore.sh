@@ -140,6 +140,8 @@ docker compose "${CONTENT_POOL_COMPOSE_ARGS[@]}" up -d --wait --wait-timeout 180
 if [[ "$HEALTH_CHECK" -eq 1 ]]; then
   release="$(cp_env_get .env APPLICATION_VERSION)"
   commit="$(cp_env_get .env RELEASE_COMMIT)"
+  export HEALTH_CHECK_ATTEMPTS="${HEALTH_CHECK_ATTEMPTS:-24}"
+  export HEALTH_CHECK_INTERVAL_SECONDS="${HEALTH_CHECK_INTERVAL_SECONDS:-5}"
   if [[ -n "$BASE_URL" ]]; then
     ./scripts/check-health.sh "$MODE" "$(cp_env_get .env OIDC_PUBLIC_ISSUER_URL)" \
       "${BASE_URL%/}/api" "${BASE_URL%/}" "$release" "$commit"

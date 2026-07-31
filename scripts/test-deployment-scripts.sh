@@ -18,6 +18,14 @@ grep -q 'up -d --wait --wait-timeout 180' "$ROOT_DIR/scripts/restore.sh" || {
   echo "not every managed update/rollback start waits for stack readiness" >&2
   exit 1
 }
+grep -q 'HEALTH_CHECK_ATTEMPTS="${HEALTH_CHECK_ATTEMPTS:-24}"' "$ROOT_DIR/scripts/update.sh" || {
+  echo "managed updates do not enable bounded health-check retries" >&2
+  exit 1
+}
+grep -q 'HEALTH_CHECK_ATTEMPTS="${HEALTH_CHECK_ATTEMPTS:-24}"' "$ROOT_DIR/scripts/restore.sh" || {
+  echo "managed restores do not enable bounded health-check retries" >&2
+  exit 1
+}
 
 temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/content-pool-script-test.XXXXXX")"
 trap 'rm -rf "$temp_dir"' EXIT
@@ -31,6 +39,122 @@ if [[ "${1:-}" == compose && "${2:-}" == version ]]; then exit 0; fi
 exit 0
 SH
 chmod +x "$temp_dir/bin/docker"
+
+health_bin="$temp_dir/health-bin"
+mkdir -p "$health_bin"
+cat > "$health_bin/docker" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+cat > "$health_bin/curl" <<'SH'
+#!/usr/bin/env bash
+set -eu
+
+url=""
+output_file=""
+write_format=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o)
+      output_file="$2"
+      shift 2
+      ;;
+    -w)
+      write_format="$2"
+      shift 2
+      ;;
+    http://*|https://*)
+      url="$1"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+[[ -n "$url" ]] || exit 2
+current_attempt="$(cat "$HEALTH_TEST_STATE" 2>/dev/null || true)"
+current_attempt="${current_attempt:-0}"
+if [[ "$url" == *"/.well-known/openid-configuration" ]]; then
+  current_attempt=$((current_attempt + 1))
+  printf '%s\n' "$current_attempt" >"$HEALTH_TEST_STATE"
+fi
+current_attempt="${current_attempt:-1}"
+
+status=200
+version=0.3.0
+case "$HEALTH_TEST_SCENARIO" in
+  transient)
+    if [[ "$current_attempt" -eq 1 && "$url" == *"/.well-known/openid-configuration" ]]; then
+      status=503
+    fi
+    ;;
+  persistent)
+    if [[ "$url" == *"/.well-known/openid-configuration" ]]; then
+      status=503
+    fi
+    ;;
+  identity-mismatch)
+    if [[ "$url" == */version || "$url" == */version.json ]]; then
+      version=0.2.0
+    fi
+    ;;
+  mixed-then-current)
+    if [[ "$current_attempt" -eq 1 && "$url" == */version.json ]]; then
+      version=0.2.0
+    fi
+    ;;
+esac
+
+if [[ "$url" == */version || "$url" == */version.json ]]; then
+  printf '{"version":"%s","commit":"%s","builtAt":"2026-07-31T12:25:34Z"}\n' \
+    "$version" "$HEALTH_TEST_COMMIT" >"$output_file"
+elif [[ -n "$write_format" ]]; then
+  printf '%s' "$status"
+fi
+SH
+chmod +x "$health_bin/docker" "$health_bin/curl"
+
+health_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+health_state="$temp_dir/health-state"
+health_log="$temp_dir/health.log"
+
+run_health_test() {
+  local scenario="$1"
+  local attempts="$2"
+  : >"$health_state"
+  HEALTH_TEST_SCENARIO="$scenario" \
+  HEALTH_TEST_STATE="$health_state" \
+  HEALTH_TEST_COMMIT="$health_commit" \
+  HEALTH_CHECK_ATTEMPTS="$attempts" \
+  HEALTH_CHECK_INTERVAL_SECONDS=0 \
+  HEALTH_CHECK_CONNECT_TIMEOUT_SECONDS=1 \
+  HEALTH_CHECK_MAX_TIME_SECONDS=1 \
+  PATH="$health_bin:$PATH" \
+    "$ROOT_DIR/scripts/check-health.sh" server \
+      https://auth.example/realms/iqb https://content.example/api https://content.example \
+      0.3.0 "$health_commit" >"$health_log" 2>&1
+}
+
+run_health_test transient 3
+test "$(cat "$health_state")" = 2
+grep -q 'Health check attempt 2/3' "$health_log"
+
+if run_health_test persistent 3; then
+  echo "health check accepted a persistent external failure" >&2
+  exit 1
+fi
+test "$(cat "$health_state")" = 3
+
+if run_health_test identity-mismatch 2; then
+  echo "health check accepted a persistent release identity mismatch" >&2
+  exit 1
+fi
+test "$(cat "$health_state")" = 2
+
+run_health_test mixed-then-current 2
+test "$(cat "$health_state")" = 2
 
 (
   cd "$temp_dir"

@@ -26,7 +26,36 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 - No special instructions.
 
-## [0.2.0] - Unreleased
+## [0.3.0] - 2026-07-31
+
+### Changes
+
+- Add BiStaTest-oriented Item Explorer configuration for displaying general
+  coding instructions and preferring manually authored instructions.
+- Persist custom metadata column definitions and widths, and improve column
+  selection, sticky table layout, row selection, and row-state feedback.
+- Allow users to share item collections, activate shared collections, and copy
+  them into their own collections.
+- Expand responsive, interaction, and cross-browser coverage for Item Explorer
+  workflows and install all required browser dependencies in CI.
+
+### Breaking changes
+
+- None.
+
+### Configuration
+
+- None.
+
+### Database migrations
+
+- Classification: `none`
+
+### Rollback
+
+- No special instructions.
+
+## [0.2.0] - 2026-07-22
 
 ### Changes
 
@@ -87,5 +116,6 @@ All notable changes to ContentPool are documented in this file. Releases use
 - After an application rollback, users created by 0.2.0 continue to sign in
   through Keycloak; no local password is synthesized for them.
 
-[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.1.3...v0.2.0

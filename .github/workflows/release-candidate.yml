@@ -100,6 +100,7 @@ jobs:
     name: Build and scan backend
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -150,6 +151,7 @@ jobs:
     name: Build and scan frontend
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write

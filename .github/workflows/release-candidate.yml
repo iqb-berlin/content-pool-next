@@ -143,6 +143,7 @@ jobs:
           image-ref: ${{ env.BACKEND_IMAGE }}@${{ steps.build.outputs.digest }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          ignorefile: .trivyignore.yaml
           exit-code: '1'
 
   frontend:
@@ -192,6 +193,7 @@ jobs:
           image-ref: ${{ env.FRONTEND_IMAGE }}@${{ steps.build.outputs.digest }}
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          ignorefile: .trivyignore.yaml
           exit-code: '1'
 
   publish:

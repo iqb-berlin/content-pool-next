@@ -38,6 +38,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   them into their own collections.
 - Expand responsive, interaction, and cross-browser coverage for Item Explorer
   workflows and install all required browser dependencies in CI.
+- Update transitive `brace-expansion` dependencies to patched releases and
+  document the scanner exception for fixed 1.x and 2.x backports.
 
 ### Breaking changes
 

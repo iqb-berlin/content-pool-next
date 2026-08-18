@@ -461,6 +461,7 @@ app-item-explorer {
   }
 
   .personal-category-select,
+  .personal-category-input,
   .personal-note-input {
     width: 100%;
     box-sizing: border-box;
@@ -471,7 +472,8 @@ app-item-explorer {
     font: inherit;
   }
 
-  .personal-category-select {
+  .personal-category-select,
+  .personal-category-input {
     padding: 5px 7px;
   }
 

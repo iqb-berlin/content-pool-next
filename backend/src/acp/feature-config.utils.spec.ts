@@ -38,6 +38,31 @@ describe("normalizeFeatureConfig", () => {
     expect(normalized.personalItemCategoryValues).toEqual(["x".repeat(200)]);
   });
 
+  it("keeps legacy available tags usable as personal markers", () => {
+    const normalized = normalizeFeatureConfig({
+      enablePersonalItemData: true,
+      availableTags: [" Prüfen ", "Prüfen", "Offen"],
+      personalItemTags: [],
+    });
+
+    expect(normalized.personalItemTags).toEqual([
+      { label: "Prüfen", color: "#3498db" },
+      { label: "Offen", color: "#3498db" },
+    ]);
+  });
+
+  it("does not mix shared tags into an explicitly configured personal marker list", () => {
+    const normalized = normalizeFeatureConfig({
+      enablePersonalItemData: true,
+      availableTags: ["Gemeinsam"],
+      personalItemTags: [{ label: "Persönlich", color: "#ff0000" }],
+    });
+
+    expect(normalized.personalItemTags).toEqual([
+      { label: "Persönlich", color: "#ff0000" },
+    ]);
+  });
+
   it("defaults player focus highlight to disabled when the flag is missing", () => {
     const normalized = normalizeFeatureConfig({
       enableItemList: true,

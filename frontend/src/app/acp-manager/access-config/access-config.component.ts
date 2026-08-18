@@ -515,7 +515,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
         @if (featureConfig['enableItemListTags']) {
           <div class="indent-section">
-            <label class="help-text">Verfügbare Tags:</label>
+            <label class="help-text">Verfügbare gemeinsame Tags (nur Manager/Admins):</label>
             <div class="tags-editor">
               @for (tag of availableTags; track $index) {
                 <div class="tag-item">
@@ -545,7 +545,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enablePersonalItemDataKey]" />
-          <span>Persönliche Arbeitsdaten im Item-Explorer aktivieren</span>
+          <span> Persönliche Arbeitsdaten für angemeldete und externe Personen aktivieren </span>
         </label>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enableItemCollectionsKey]" />
@@ -564,7 +564,9 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               placeholder="Kompetenzstufe"
             />
 
-            <label class="help-text" style="margin-top: 10px;">Mögliche Kategorien</label>
+            <label class="help-text" style="margin-top: 10px;">
+              Mögliche Kategorien (ohne Vorgaben ist Freitext erlaubt)
+            </label>
             <div class="tags-editor">
               @for (value of personalItemCategoryValues; track $index) {
                 <div class="tag-add">
@@ -603,7 +605,9 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               placeholder="Markierungen"
             />
 
-            <label class="help-text" style="margin-top: 10px;">Markierungen und Farben</label>
+            <label class="help-text" style="margin-top: 10px;">
+              Persönliche Markierungen und Farben (in READ ONLY bearbeitbar)
+            </label>
             <div class="tags-editor">
               @for (tag of personalItemTags; track $index) {
                 <div class="tag-add personal-tag-config-row">
@@ -980,7 +984,10 @@ export class AccessConfigComponent implements OnInit {
     { key: 'enableItemClick', label: 'Item-Klick → Navigation zur Aufgabe' },
     { key: 'enableItemListFilter', label: 'Item-Liste filtern erlauben' },
     { key: 'enableItemListSort', label: 'Item-Liste sortieren erlauben' },
-    { key: 'enableItemListTags', label: 'Item-Tagging erlauben' },
+    {
+      key: 'enableItemListTags',
+      label: 'Gemeinsame ACP-Tags erlauben (nur Manager/Admins bearbeitbar)',
+    },
   ];
 
   constructor(

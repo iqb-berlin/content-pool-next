@@ -412,18 +412,32 @@
             }
             @if (vm.showPersonalItemData) {
               <td class="personal-data-cell" (click)="$event.stopPropagation()">
-                <select
-                  class="personal-category-select"
-                  [attr.aria-label]="vm.personalItemCategoryLabel + ' für ' + item.itemId"
-                  [ngModel]="vm.personalItemData[item.rowKey]?.category || ''"
-                  [disabled]="!vm.canChangePersonalItemData"
-                  (ngModelChange)="vm.setPersonalItemCategory(item.rowKey, $event)"
-                >
-                  <option value="">–</option>
-                  @for (category of vm.personalItemCategoryValues; track category) {
-                    <option [value]="category">{{ category }}</option>
-                  }
-                </select>
+                @if (vm.personalItemCategoryValues.length > 0) {
+                  <select
+                    class="personal-category-select"
+                    [attr.aria-label]="vm.personalItemCategoryLabel + ' für ' + item.itemId"
+                    [ngModel]="vm.personalItemData[item.rowKey]?.category || ''"
+                    [disabled]="!vm.canChangePersonalItemData"
+                    (ngModelChange)="vm.setPersonalItemCategory(item.rowKey, $event)"
+                  >
+                    <option value="">–</option>
+                    @for (category of vm.personalItemCategoryValues; track category) {
+                      <option [value]="category">{{ category }}</option>
+                    }
+                  </select>
+                } @else {
+                  <input
+                    class="personal-category-input"
+                    type="text"
+                    maxlength="200"
+                    [attr.aria-label]="vm.personalItemCategoryLabel + ' für ' + item.itemId"
+                    [placeholder]="vm.personalItemCategoryLabel"
+                    [ngModel]="vm.personalItemData[item.rowKey]?.category || ''"
+                    [disabled]="!vm.canChangePersonalItemData"
+                    (ngModelChange)="vm.setPersonalItemCategory(item.rowKey, $event)"
+                    (blur)="vm.flushPersonalItemDataSave()"
+                  />
+                }
               </td>
               <td class="personal-data-cell" (click)="$event.stopPropagation()">
                 <div class="personal-tag-list">

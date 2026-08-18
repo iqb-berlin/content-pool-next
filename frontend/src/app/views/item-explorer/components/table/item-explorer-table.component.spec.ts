@@ -11,6 +11,12 @@ describe('ItemExplorerTableComponent', () => {
     );
   });
 
+  it('keeps a personal category editable when no configured values exist', () => {
+    expect(template).toContain('@if (vm.personalItemCategoryValues.length > 0)');
+    expect(template).toContain('class="personal-category-input"');
+    expect(template).toContain('(blur)="vm.flushPersonalItemDataSave()"');
+  });
+
   it('renders a gapless view position and an optional stable reference number', () => {
     expect(template).toContain('<td class="number-col">{{ i + 1 }}</td>');
     expect(template).toContain('@if (vm.referenceNumberVisible)');

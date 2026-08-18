@@ -295,6 +295,11 @@ ACP managers configure the category label and allowed values as well as marker l
 the access configuration. Notes use a plain textarea and are never interpreted as Markdown or HTML.
 Clearing a field removes it from the stored row data.
 
+When no category values are configured, the category remains editable as plain text. For existing
+ACP configurations that only contain the older `availableTags` list, those values are also offered
+as personal markers until a dedicated personal marker list is saved. Shared ACP tags remain a
+separate manager-owned draft/published value.
+
 Personal working data is stored separately from the shared draft/published Explorer state in
 `acp_item_preferences`, under the `item-explorer` view. Normal users are scoped by user ID and
 credential logins by their stable credential ID. Consequently, publishing, discarding, or previewing

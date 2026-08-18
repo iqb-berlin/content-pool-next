@@ -172,9 +172,18 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
     source.personalItemTagLabel.trim()
       ? source.personalItemTagLabel.trim().slice(0, 100)
       : "Markierungen";
-  normalized.personalItemTags = normalizePersonalItemTags(
-    source.personalItemTags,
-  );
+  const personalItemTags = normalizePersonalItemTags(source.personalItemTags);
+  const legacyAvailableTags = Array.from(
+    new Set(
+      asStringArray(source.availableTags).map((value) => value.slice(0, 100)),
+    ),
+  ).slice(0, 50);
+  normalized.personalItemTags =
+    normalized.enablePersonalItemData === true &&
+    personalItemTags.length === 0 &&
+    legacyAvailableTags.length > 0
+      ? legacyAvailableTags.map((label) => ({ label, color: "#3498db" }))
+      : personalItemTags;
 
   normalized.itemSubIdLabel =
     typeof source.itemSubIdLabel === "string" &&

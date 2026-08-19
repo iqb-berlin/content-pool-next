@@ -109,6 +109,7 @@ function registerPlayerDom(component: ItemExplorerFacade, postMessage = vi.fn())
     hasFrame: vi.fn(() => true),
     postMessage,
     focus: vi.fn(() => true),
+    setPrintLabelOverrides: vi.fn(),
     startAutoResize: vi.fn(),
     stopAutoResize: vi.fn(),
   };
@@ -2704,6 +2705,166 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
+  it('uses the internal MDB007 variable id before resolving its GeoGebra sources', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '01',
+      uuid: '596680ba-fccd-40d7-9886-d174873e43ef',
+      unitId: 'MDB007',
+      unitLabel: 'Lieblingsbücher_2',
+      description: 'GeoGebra item',
+      variableId: '01',
+      variableReadOnlyId: '01_1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: '01', alias: '_01', sourceType: 'BASE', deriveSources: [] },
+        {
+          id: '01_1',
+          alias: '01',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['01', '01_ggb_bilderbuecherAngeklickt'],
+        },
+        {
+          id: '01_ggb_bilderbuecherAngeklickt',
+          alias: 'ggb-source',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: '_01', label: 'Variable 01', codes: [] },
+      { id: '01', label: 'Aggregat', codes: [] },
+      { id: 'ggb-source', label: 'GeoGebra-Quelle', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: '01_1',
+      codingId: '01',
+      isDerived: true,
+    });
+    expect(component.selectedItemTarget).toBe('01_1');
+    expect(component.selectedPreviewTarget).toBe('01');
+  });
+
+  it('uses the visible player alias after identifying a base variable by its internal id', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === 'PLAYER_04'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '03',
+      uuid: 'uuid-03',
+      unitId: 'DLB013',
+      unitLabel: 'DLB013',
+      description: 'Base item',
+      variableId: 'PLAYER_04',
+      variableReadOnlyId: 'internal-04',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'internal-04',
+          alias: 'PLAYER_04',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('internal-04');
+    expect(component.selectedPreviewTarget).toBe('PLAYER_04');
+  });
+
+  it('uses a base-variable alias when a derive source contains only its internal id', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === 'PLAYER_BASE'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '15',
+      uuid: 'uuid-15',
+      unitId: 'DHB023',
+      unitLabel: 'DHB023',
+      description: 'Derived item',
+      variableId: '09',
+      variableReadOnlyId: 'internal-total',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'internal-base',
+          alias: 'PLAYER_BASE',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+        {
+          id: 'internal-total',
+          alias: '09',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['internal-base'],
+        },
+      ],
+    };
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('internal-total');
+    expect(component.selectedPreviewTarget).toBe('PLAYER_BASE');
+  });
+
+  it('blocks alias fallback when an explicitly internal variable id is missing', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: 'ITEM_404',
+      uuid: 'uuid-404',
+      unitId: 'UNIT_404',
+      unitLabel: 'UNIT_404',
+      description: 'Item with stale internal variable id',
+      variableId: 'VISIBLE_TARGET',
+      variableReadOnlyId: 'missing-internal-id',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'different-internal-id',
+          alias: 'missing-internal-id',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'missing-internal-id', label: 'Wrong alias match', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'not-found',
+      targetId: 'missing-internal-id',
+      matches: [],
+    });
+    expect(component.selectedPreviewTarget).toBe('');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(false);
+  });
+
   it('separates general coding hints from selected-variable manual instructions', () => {
     const component = createFacade();
     const coding = {
@@ -3569,6 +3730,148 @@ describe('ItemExplorerFacade', () => {
       'TOTAL',
     ]);
     expect(component.selectedPreviewTarget).toBe('BASE_A');
+  });
+
+  it.each([
+    {
+      unitId: 'DHB023',
+      itemId: '15',
+      visibleAlias: '09',
+      internalId: 'd_1755788097974',
+      wrongBaseAlias: '10',
+      sources: ['08a', '08b', '08c', '08d', '08e'],
+    },
+    {
+      unitId: 'DHB002',
+      itemId: '09',
+      visibleAlias: '02',
+      internalId: 'd_1755785953558',
+      wrongBaseAlias: '03',
+      sources: ['01a', '01b', '01c', '01d', '01e'],
+    },
+  ])(
+    'resolves $unitId$itemId by internal id despite the $visibleAlias id/alias collision',
+    ({ unitId, itemId, visibleAlias, internalId, wrongBaseAlias, sources }) => {
+      const component = createFacade();
+      component.selectedItem = {
+        itemId,
+        uuid: `${unitId}-${itemId}`,
+        unitId,
+        unitLabel: unitId,
+        description: 'Summenitem',
+        variableId: visibleAlias,
+        variableReadOnlyId: internalId,
+        metadata: {},
+      } as any;
+      component.currentCodingScheme = {
+        variableCodings: [
+          {
+            id: visibleAlias,
+            alias: wrongBaseAlias,
+            sourceType: 'BASE',
+            deriveSources: [],
+          },
+          ...sources.map((source) => ({
+            id: source,
+            alias: source,
+            sourceType: 'BASE',
+            deriveSources: [],
+          })),
+          {
+            id: internalId,
+            alias: visibleAlias,
+            sourceType: 'SUM_SCORE',
+            deriveSources: sources,
+          },
+        ],
+      };
+      component.currentCodingSchemeAsText = [
+        { id: wrongBaseAlias, label: 'Falsche Basisvariable', codes: [] },
+        ...sources.map((source) => ({ id: source, label: source, codes: [] })),
+        { id: visibleAlias, label: 'Summenvariable', codes: [] },
+      ] as any;
+
+      (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+      expect(component.selectedItemTarget).toBe(internalId);
+      expect(component.selectedPreviewTarget).toBe(sources[0]);
+      expect(component.codingVariableFocus).toMatchObject({
+        status: 'unique',
+        targetId: internalId,
+        codingId: visibleAlias,
+        isDerived: true,
+        sourceIds: sources,
+      });
+    },
+  );
+
+  it('maps Aspect print aliases to the fachliche DLB013 item ids', () => {
+    const component = createFacade();
+    component.unit = { id: 'DLB013' };
+    component.items = [
+      {
+        itemId: '03',
+        uuid: 'uuid-03',
+        rowKey: 'uuid-03',
+        unitId: 'DLB013',
+        unitLabel: 'DLB013',
+        description: 'Item 03',
+        variableId: '04',
+        variableReadOnlyId: 'internal-04',
+        metadata: {},
+      },
+      {
+        itemId: '04',
+        uuid: 'uuid-04',
+        rowKey: 'uuid-04',
+        unitId: 'DLB013',
+        unitLabel: 'DLB013',
+        description: 'Item 04',
+        variableId: '05',
+        variableReadOnlyId: 'internal-05',
+        metadata: {},
+      },
+    ] as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'internal-04', alias: '04', sourceType: 'BASE', deriveSources: [] },
+        { id: 'internal-05', alias: '05', sourceType: 'BASE', deriveSources: [] },
+      ],
+    };
+
+    expect((component as any).buildPrintLabelOverrides()).toEqual({
+      '04': 'DLB01303',
+      '05': 'DLB01304',
+      'internal-04': 'DLB01303',
+      'internal-05': 'DLB01304',
+    });
+  });
+
+  it('keeps unprefixed item ids unchanged in Aspect print labels', () => {
+    const component = createFacade();
+    component.unit = { id: 'MDB007', dependencies: [] } as any;
+    component.items = [
+      {
+        itemId: '01',
+        uuid: 'uuid-01',
+        rowKey: 'uuid-01',
+        unitId: 'MDB007',
+        unitLabel: 'MDB007',
+        description: 'GeoGebra item',
+        variableId: '01',
+        variableReadOnlyId: '01_1',
+        useUnitAliasAsPrefix: false,
+        metadata: {},
+      },
+    ] as any;
+    component.currentCodingScheme = {
+      variableCodings: [{ id: '01_1', alias: '01', sourceType: 'BASE', deriveSources: [] }],
+    };
+
+    expect((component as any).buildPrintLabelOverrides()).toEqual({
+      '01': '01',
+      '01_1': '01',
+    });
   });
 
   it('offers known coding variables even when no standard preview target exists', () => {

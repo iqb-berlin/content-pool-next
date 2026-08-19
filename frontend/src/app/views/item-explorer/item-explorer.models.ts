@@ -46,6 +46,8 @@ export interface ExplorerItem {
   description: string;
   variableId: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
+  useUnitAliasAsPrefix?: boolean;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   meanTaskDifficulty?: number;
@@ -124,6 +126,8 @@ export interface PreviewTargetOption {
 export interface PreviewTargetResolution {
   itemTarget: string;
   isDerived: boolean;
+  isAmbiguous?: boolean;
+  blocksAutomaticTarget?: boolean;
   options: PreviewTargetOption[];
   defaultTargetId: string;
 }

@@ -172,7 +172,9 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                       <thead>
                         <tr>
                           <th>Item</th>
-                          <th>Variable</th>
+                          <th>Player-Variable</th>
+                          <th>Quellvariable</th>
+                          <th>Interne Variablen-ID</th>
                           @for (column of structuredData.metadataColumns; track column.id) {
                             <th>{{ column.label }}</th>
                           }
@@ -189,6 +191,12 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                             </td>
                             <td>
                               <code>{{ item.variableId || '–' }}</code>
+                            </td>
+                            <td>
+                              <code>{{ item.sourceVariable || '–' }}</code>
+                            </td>
+                            <td>
+                              <code>{{ item.variableReadOnlyId || '–' }}</code>
                             </td>
                             @for (column of structuredData.metadataColumns; track column.id) {
                               <td>{{ item.metadata[column.id] || '–' }}</td>

@@ -93,6 +93,14 @@ const TABLE_COLUMN_SORT_FIELDS: Readonly<Record<string, string>> = {
 };
 const METADATA_COLUMN_KEY_PREFIX = 'metadata:';
 type ItemListLoadOutcome = 'loaded' | 'version-mismatch' | 'superseded' | 'error';
+type CodingVariableMatchStatus = 'unique' | 'missing-target' | 'not-found' | 'ambiguous';
+interface CodingVariableMatch {
+  status: CodingVariableMatchStatus;
+  reference: string;
+  variable?: any;
+  index?: number;
+  matchIndices: number[];
+}
 const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'infit', label: 'Infit', kind: 'number' },
   { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
@@ -421,7 +429,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get codingVariableFocus(): CodingVariableFocusResolution {
-    const targetId = this.getPlayerTarget(this.selectedItem);
+    const rawVariables = this.getCurrentCodingVariables();
+    const variableMatch = this.resolveItemCodingVariable(this.selectedItem, rawVariables);
+    const targetId = variableMatch.reference;
     const emptyResolution = (
       status: Exclude<CodingVariableFocusStatus, 'unique'>,
       matches: CodingAsText[] = [],
@@ -434,49 +444,35 @@ export class ItemExplorerFacade implements OnDestroy {
       sourceIds: [],
     });
 
-    if (!targetId) {
+    if (variableMatch.status === 'missing-target') {
       return emptyResolution('missing-target');
     }
 
-    const normalizedTarget = targetId.toLowerCase();
     const codings = this.currentCodingSchemeAsText || [];
-    const rawVariables = this.getCurrentCodingVariables();
-    // A Studio item target denotes a variable ID. Aliases are a fallback only:
-    // treating both with equal priority makes GeoGebra targets such as `01`
-    // ambiguous when a derived/read-only variable happens to use `01` as alias.
-    const directIdMatchIndices = rawVariables.flatMap((variable, index) =>
-      String(variable?.id || '')
-        .trim()
-        .toLowerCase() === normalizedTarget
-        ? [index]
-        : [],
-    );
-    const aliasMatchIndices = rawVariables.flatMap((variable, index) =>
-      String(variable?.alias || '')
-        .trim()
-        .toLowerCase() === normalizedTarget
-        ? [index]
-        : [],
-    );
-    const rawMatchIndices = directIdMatchIndices.length ? directIdMatchIndices : aliasMatchIndices;
-
-    if (rawMatchIndices.length > 1) {
+    if (variableMatch.status === 'ambiguous') {
       return emptyResolution(
         'ambiguous',
-        rawMatchIndices
+        variableMatch.matchIndices
           .map((index) => codings[index])
           .filter((coding): coding is CodingAsText => Boolean(coding)),
       );
     }
 
-    if (rawMatchIndices.length === 1) {
-      const matchIndex = rawMatchIndices[0];
+    if (
+      variableMatch.status === 'not-found' &&
+      String(this.selectedItem?.variableReadOnlyId || '').trim()
+    ) {
+      return emptyResolution('not-found');
+    }
+
+    if (variableMatch.status === 'unique' && variableMatch.index !== undefined) {
+      const matchIndex = variableMatch.index;
       const textMatch = codings[matchIndex];
       if (!textMatch) {
         return emptyResolution('not-found');
       }
 
-      const rawVariable = rawVariables[matchIndex];
+      const rawVariable = variableMatch.variable;
       const sourceType = this.getCodingVariableSourceType(rawVariable);
       return {
         status: 'unique',
@@ -488,6 +484,7 @@ export class ItemExplorerFacade implements OnDestroy {
       };
     }
 
+    const normalizedTarget = targetId.toLowerCase();
     const directMatches = codings.filter(
       (coding) =>
         String(coding.id || '')
@@ -609,6 +606,9 @@ export class ItemExplorerFacade implements OnDestroy {
     const storedId = this.getStoredPreviewTargetId(this.selectedItem);
     if (storedId) {
       return storedId;
+    }
+    if (this.previewTargetResolution.blocksAutomaticTarget) {
+      return '';
     }
     return this.previewTargetResolution.defaultTargetId || this.getPlayerTarget(this.selectedItem);
   }
@@ -2700,6 +2700,7 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!assets.unit) {
       this.playerSrcDoc = null;
       this.definitionContent = null;
+      this.syncPreviewTargetResolution(this.selectedItem);
       return;
     }
 
@@ -2716,6 +2717,7 @@ export class ItemExplorerFacade implements OnDestroy {
     } else {
       this.definitionContent = assets.definition;
     }
+    this.syncPreviewTargetResolution(this.selectedItem);
   }
 
   private applyResponseStateResult(result: any): void {
@@ -3080,6 +3082,9 @@ export class ItemExplorerFacade implements OnDestroy {
         enabledNavigationTargets: ['next', 'previous', 'first', 'last', 'end'],
       },
     });
+    this.playerDom?.setPrintLabelOverrides(
+      this.pagingMode === 'print-ids' ? this.buildPrintLabelOverrides() : {},
+    );
     this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'started' });
     this.playerReadyTiming = null;
     this.scheduleLegacyPageNavigation(sessionId, startPage, usesPagedNavigation);
@@ -3185,7 +3190,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   getPlayerTarget(item?: ReadonlyExplorerItem | null): string {
     if (!item) return '';
-    return String(item.sourceVariable || item.variableId || '').trim();
+    return String(item.variableReadOnlyId || item.sourceVariable || item.variableId || '').trim();
   }
 
   private getEffectivePlayerTarget(item?: ReadonlyExplorerItem | null): string {
@@ -3218,6 +3223,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const codingVariables = this.getCurrentCodingVariables();
     const fallbackOptions = this.getAllPreviewTargetOptions(codingVariables);
     const itemTarget = this.getPlayerTarget(item);
+    const visiblePlayerTarget = this.getVisiblePlayerTarget(item);
     if (!itemTarget) {
       return {
         itemTarget: '',
@@ -3228,36 +3234,47 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     if (!codingVariables.length) {
+      const fallbackTarget = visiblePlayerTarget || itemTarget;
       return {
         itemTarget,
         isDerived: false,
-        options: [this.createFallbackPreviewTargetOption(itemTarget)],
-        defaultTargetId: itemTarget,
+        options: [this.createFallbackPreviewTargetOption(fallbackTarget)],
+        defaultTargetId: fallbackTarget,
       };
     }
 
-    const variableLookup = this.buildCodingVariableLookup(codingVariables);
-    const selectedCodingVariable = variableLookup.get(itemTarget.toLowerCase());
-    if (!selectedCodingVariable) {
+    const variableMatch = this.resolveItemCodingVariable(item, codingVariables);
+    if (variableMatch.status !== 'unique' || !variableMatch.variable) {
+      const hasStrictInternalReference = Boolean(String(item?.variableReadOnlyId || '').trim());
+      const blocksAutomaticTarget =
+        variableMatch.status === 'ambiguous' ||
+        (hasStrictInternalReference && variableMatch.status === 'not-found');
       return {
         itemTarget,
         isDerived: false,
+        isAmbiguous: variableMatch.status === 'ambiguous',
+        blocksAutomaticTarget,
         options: this.dedupePreviewTargetOptions([
           ...fallbackOptions,
           this.createFallbackPreviewTargetOption(itemTarget),
         ]),
-        defaultTargetId: itemTarget,
+        defaultTargetId: blocksAutomaticTarget ? '' : itemTarget,
       };
     }
 
+    const selectedCodingVariable = variableMatch.variable;
     const resolvedItemTarget = this.getCodingVariableId(selectedCodingVariable, itemTarget);
     const derivedOptions = this.collectBasePreviewTargetOptions(
       selectedCodingVariable,
-      variableLookup,
+      codingVariables,
     );
     const isDerived = this.isDerivedCodingVariable(selectedCodingVariable);
+    const basePlayerTarget = this.resolvePlayerVariableReference(
+      selectedCodingVariable,
+      visiblePlayerTarget,
+    );
     const defaultTargetId =
-      isDerived && derivedOptions.length ? derivedOptions[0].id : resolvedItemTarget;
+      isDerived && derivedOptions.length ? derivedOptions[0].id : basePlayerTarget;
 
     return {
       itemTarget: resolvedItemTarget,
@@ -3265,7 +3282,11 @@ export class ItemExplorerFacade implements OnDestroy {
       options: this.dedupePreviewTargetOptions([
         ...derivedOptions,
         ...fallbackOptions,
-        this.createPreviewTargetOption(selectedCodingVariable, resolvedItemTarget),
+        this.createPreviewTargetOption(
+          selectedCodingVariable,
+          isDerived ? resolvedItemTarget : basePlayerTarget,
+          !isDerived,
+        ),
       ]),
       defaultTargetId,
     };
@@ -3317,28 +3338,106 @@ export class ItemExplorerFacade implements OnDestroy {
     return sanitizedHtml || null;
   }
 
-  private buildCodingVariableLookup(variables: any[]): Map<string, any> {
-    const lookup = new Map<string, any>();
-    variables.forEach((variable) => {
-      this.getCodingVariableIdentifiers(variable).forEach((identifier) => {
-        const key = identifier.toLowerCase();
-        if (!lookup.has(key)) {
-          lookup.set(key, variable);
-        }
-      });
-    });
-    return lookup;
+  private resolveItemCodingVariable(
+    item: ReadonlyExplorerItem | null | undefined,
+    variables: any[],
+  ): CodingVariableMatch {
+    if (!item) {
+      return { status: 'missing-target', reference: '', matchIndices: [] };
+    }
+
+    const internalId = String(item.variableReadOnlyId || '').trim();
+    if (internalId) {
+      return this.resolveCodingVariableReference(internalId, variables, false);
+    }
+
+    const legacyReference = String(item.sourceVariable || item.variableId || '').trim();
+    return this.resolveCodingVariableReference(legacyReference, variables, true);
+  }
+
+  private resolveCodingVariableReference(
+    reference: string,
+    variables: any[],
+    allowAliasFallback: boolean,
+  ): CodingVariableMatch {
+    const normalizedReference = String(reference || '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedReference) {
+      return { status: 'missing-target', reference: '', matchIndices: [] };
+    }
+
+    const idMatches = variables.flatMap((variable, index) =>
+      String(variable?.id || '')
+        .trim()
+        .toLowerCase() === normalizedReference
+        ? [index]
+        : [],
+    );
+    if (idMatches.length === 1) {
+      const index = idMatches[0];
+      return {
+        status: 'unique',
+        reference: String(reference).trim(),
+        variable: variables[index],
+        index,
+        matchIndices: idMatches,
+      };
+    }
+    if (idMatches.length > 1) {
+      return {
+        status: 'ambiguous',
+        reference: String(reference).trim(),
+        matchIndices: idMatches,
+      };
+    }
+
+    if (allowAliasFallback) {
+      const aliasMatches = variables.flatMap((variable, index) =>
+        String(variable?.alias || '')
+          .trim()
+          .toLowerCase() === normalizedReference
+          ? [index]
+          : [],
+      );
+      if (aliasMatches.length === 1) {
+        const index = aliasMatches[0];
+        return {
+          status: 'unique',
+          reference: String(reference).trim(),
+          variable: variables[index],
+          index,
+          matchIndices: aliasMatches,
+        };
+      }
+      if (aliasMatches.length > 1) {
+        return {
+          status: 'ambiguous',
+          reference: String(reference).trim(),
+          matchIndices: aliasMatches,
+        };
+      }
+    }
+
+    return {
+      status: 'not-found',
+      reference: String(reference).trim(),
+      matchIndices: [],
+    };
   }
 
   private getAllPreviewTargetOptions(variables: any[]): PreviewTargetOption[] {
     return this.dedupePreviewTargetOptions(
-      variables.map((variable) => this.createPreviewTargetOption(variable)),
+      variables.map((variable) => {
+        const playerTarget = this.resolvePlayerVariableReference(variable);
+        return this.createPreviewTargetOption(variable, playerTarget, true);
+      }),
     );
   }
 
   private collectBasePreviewTargetOptions(
     variable: any,
-    variableLookup: Map<string, any>,
+    variables: any[],
     visited = new Set<string>(),
   ): PreviewTargetOption[] {
     const variableId = this.getCodingVariableId(variable);
@@ -3352,25 +3451,34 @@ export class ItemExplorerFacade implements OnDestroy {
 
     const deriveSources = this.getCodingVariableSources(variable);
     if (!deriveSources.length) {
-      return [this.createPreviewTargetOption(variable, variableId)];
+      const playerTarget = this.resolvePlayerVariableReference(variable, variableId);
+      return [this.createPreviewTargetOption(variable, playerTarget, true)];
     }
 
     const options = deriveSources.flatMap((sourceId) => {
-      const sourceVariable = variableLookup.get(sourceId.toLowerCase());
-      if (!sourceVariable) {
+      const sourceMatch = this.resolveCodingVariableReference(sourceId, variables, true);
+      if (sourceMatch.status !== 'unique' || !sourceMatch.variable) {
         return [this.createFallbackPreviewTargetOption(sourceId)];
       }
+      const sourceVariable = sourceMatch.variable;
       if (!this.isDerivedCodingVariable(sourceVariable)) {
-        return [this.createPreviewTargetOption(sourceVariable, sourceId)];
+        const playerTarget = this.resolvePlayerVariableReference(sourceVariable, sourceId);
+        return [this.createPreviewTargetOption(sourceVariable, playerTarget, true)];
       }
-      return this.collectBasePreviewTargetOptions(sourceVariable, variableLookup, new Set(visited));
+      return this.collectBasePreviewTargetOptions(sourceVariable, variables, new Set(visited));
     });
 
     return this.dedupePreviewTargetOptions(options);
   }
 
-  private createPreviewTargetOption(variable: any, fallbackId = ''): PreviewTargetOption {
-    const id = this.getCodingVariableId(variable, fallbackId);
+  private createPreviewTargetOption(
+    variable: any,
+    fallbackId = '',
+    useFallbackAsTarget = false,
+  ): PreviewTargetOption {
+    const id = useFallbackAsTarget
+      ? String(fallbackId || '').trim() || this.getCodingVariableId(variable)
+      : this.getCodingVariableId(variable, fallbackId);
     const label = this.getCodingVariableLabel(variable, id);
     return {
       id,
@@ -3418,6 +3526,96 @@ export class ItemExplorerFacade implements OnDestroy {
           .filter((value) => value.length > 0),
       ),
     );
+  }
+
+  private buildPrintLabelOverrides(): Record<string, string> {
+    const variables = this.getCurrentCodingVariables();
+    const unitId = String(this.unit?.id || this.selectedItem?.unitId || '').trim();
+    if (!variables.length || !unitId) return {};
+
+    const labelsByIdentifier = new Map<string, Set<string>>();
+    this.items
+      .filter((item) => item.unitId === unitId)
+      .forEach((item) => {
+        const match = this.resolveItemCodingVariable(item, variables);
+        if (match.status !== 'unique' || !match.variable) return;
+
+        const itemLabel = this.formatPrintItemId(item);
+        this.collectBaseCodingVariables(match.variable, variables).forEach((variable) => {
+          this.getCodingVariableIdentifiers(variable).forEach((identifier) => {
+            const key = identifier.toLowerCase();
+            const labels = labelsByIdentifier.get(key) || new Set<string>();
+            labels.add(itemLabel);
+            labelsByIdentifier.set(key, labels);
+          });
+        });
+      });
+
+    const overrides: Record<string, string> = {};
+    labelsByIdentifier.forEach((labels, identifier) => {
+      if (labels.size === 1) {
+        overrides[identifier] = Array.from(labels)[0];
+      }
+    });
+    return overrides;
+  }
+
+  private collectBaseCodingVariables(
+    variable: any,
+    variables: any[],
+    visited = new Set<string>(),
+  ): any[] {
+    const variableId = this.getCodingVariableId(variable).toLowerCase();
+    if (variableId) {
+      if (visited.has(variableId)) return [];
+      visited.add(variableId);
+    }
+
+    const sources = this.getCodingVariableSources(variable);
+    if (!sources.length) return [variable];
+
+    return sources.flatMap((sourceId) => {
+      const sourceMatch = this.resolveCodingVariableReference(sourceId, variables, true);
+      if (sourceMatch.status !== 'unique' || !sourceMatch.variable) return [];
+      return this.collectBaseCodingVariables(sourceMatch.variable, variables, new Set(visited));
+    });
+  }
+
+  private formatPrintItemId(item: ReadonlyExplorerItem): string {
+    const unitId = String(item.unitId || '').trim();
+    const itemId = String(item.itemId || '').trim();
+    if (!unitId) return itemId;
+    if (item.useUnitAliasAsPrefix === false) return itemId;
+
+    const withoutRepeatedUnit = itemId.toLowerCase().startsWith(unitId.toLowerCase())
+      ? itemId.slice(unitId.length).replace(/^[_-]+/, '')
+      : itemId;
+    return `${unitId}${withoutRepeatedUnit}`;
+  }
+
+  private getVisiblePlayerTarget(item?: ReadonlyExplorerItem | null): string {
+    if (!item) return '';
+    return String(item.sourceVariable || item.variableId || '').trim();
+  }
+
+  private resolvePlayerVariableReference(variable: any, preferredReference = ''): string {
+    const candidates = Array.from(
+      new Set(
+        [preferredReference, variable?.alias, variable?.id]
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    if (!candidates.length) return '';
+
+    if (this.definitionContent) {
+      const definitionTarget = candidates.find((candidate) =>
+        Boolean(this.voudService.resolvePlayerTargetLocation(this.definitionContent!, candidate)),
+      );
+      if (definitionTarget) return definitionTarget;
+    }
+
+    return candidates[0];
   }
 
   private getCodingVariableId(variable: any, fallbackId = ''): string {

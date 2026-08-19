@@ -8,6 +8,11 @@ const emptyItemList: ItemListResult = {
   subIdLabels: {},
   unitMetadata: {},
   codingSchemes: {},
+  variableIdentityConsistency: {
+    checkedItemCount: 0,
+    collisionCount: 0,
+    collisions: [],
+  },
 };
 
 describe("NumberedItemListCache", () => {

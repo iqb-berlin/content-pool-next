@@ -74,6 +74,8 @@ export interface FilePreviewVomdData {
     id: string;
     description: string;
     variableId?: string;
+    sourceVariable?: string;
+    variableReadOnlyId?: string;
     metadata: Record<string, string>;
   }[];
 }
@@ -766,9 +768,9 @@ export class FilesService {
         return {
           id: String(item?.id || ""),
           description: String(item?.description || item?.label || ""),
-          variableId: this.pickFirstNonEmptyString([
-            item?.sourceVariable,
-            item?.variableId,
+          variableId: this.pickFirstNonEmptyString([item?.variableId]),
+          sourceVariable: this.pickFirstNonEmptyString([item?.sourceVariable]),
+          variableReadOnlyId: this.pickFirstNonEmptyString([
             item?.variableReadOnlyId,
           ]),
           metadata,

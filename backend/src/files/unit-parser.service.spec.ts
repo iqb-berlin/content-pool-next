@@ -228,7 +228,8 @@ describe("UnitParserService", () => {
         expect.objectContaining({
           id: "i1",
           name: "Item 1",
-          sourceVariable: "V1",
+          sourceVariable: undefined,
+          variableId: "V1",
         }),
       ]),
     );
@@ -445,7 +446,7 @@ describe("UnitParserService", () => {
     expect(saved.acpIndex.assessmentParts[0].units[0].dependencies).toEqual([]);
   });
 
-  it("uses sourceVariable as fallback when variableId is missing in VOMD items", async () => {
+  it("keeps sourceVariable separate when variableId is missing in VOMD items", async () => {
     const vomdWithSourceVariable = JSON.stringify({
       profiles: [],
       items: [
@@ -470,10 +471,94 @@ describe("UnitParserService", () => {
     expect(result.items[0]).toEqual(
       expect.objectContaining({
         itemId: "i2",
-        variableId: "SRC_VAR_2",
+        variableId: "",
         sourceVariable: "SRC_VAR_2",
       }),
     );
+  });
+
+  it("transports visible, legacy and internal variable references separately", async () => {
+    const vomdWithDistinctReferences = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: "15",
+          description: "Summenitem",
+          variableId: "09",
+          sourceVariable: "legacy-09",
+          variableReadOnlyId: "d_1755788097974",
+          profiles: [],
+        },
+      ],
+    });
+
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return vomdWithDistinctReferences;
+      if (path === "/tmp/u1.vocs") return "{}";
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1");
+
+    expect(result.items[0]).toEqual(
+      expect.objectContaining({
+        itemId: "15",
+        variableId: "09",
+        sourceVariable: "legacy-09",
+        variableReadOnlyId: "d_1755788097974",
+      }),
+    );
+  });
+
+  it("reports id/alias collisions against the exact internal variable id", async () => {
+    const collisionVomd = JSON.stringify({
+      profiles: [],
+      items: [
+        {
+          id: "15",
+          description: "Summenitem",
+          variableId: "09",
+          variableReadOnlyId: "d_1755788097974",
+          profiles: [],
+        },
+      ],
+    });
+    const collisionVocs = JSON.stringify({
+      variableCodings: [
+        { id: "09", alias: "10", sourceType: "BASE" },
+        {
+          id: "d_1755788097974",
+          alias: "09",
+          sourceType: "SUM_SCORE",
+          deriveSources: ["08a", "08b", "08c", "08d", "08e"],
+        },
+      ],
+    });
+
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return collisionVomd;
+      if (path === "/tmp/u1.vocs") return collisionVocs;
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1");
+
+    expect(result.variableIdentityConsistency).toEqual({
+      checkedItemCount: 1,
+      collisionCount: 1,
+      collisions: [
+        {
+          unitId: "u1",
+          itemId: "15",
+          variableId: "09",
+          variableReadOnlyId: "d_1755788097974",
+          resolvedVariableId: "d_1755788097974",
+          legacyResolvedVariableId: "09",
+        },
+      ],
+    });
   });
 
   it("numbers prefixed items by the source Item-ID shown in the Explorer", async () => {
@@ -511,12 +596,13 @@ describe("UnitParserService", () => {
       return "";
     });
 
-    await service.getItemListFromFiles("acp-1");
+    const result = await service.getItemListFromFiles("acp-1");
 
     expect(itemRowNumberingService.assignNumbers).toHaveBeenCalledWith(
       "acp-1",
       [expect.objectContaining({ itemId: "i1", rowKey: "u1_i1" })],
     );
+    expect(result.items[0].useUnitAliasAsPrefix).toBe(false);
   });
 
   it("merges item properties across legacy, resolved and UUID aliases", async () => {
@@ -1272,6 +1358,11 @@ describe("UnitParserService", () => {
         subIdLabels: {},
         unitMetadata: {},
         codingSchemes: {},
+        variableIdentityConsistency: {
+          checkedItemCount: 0,
+          collisionCount: 0,
+          collisions: [],
+        },
       });
     const options = {
       itemPropertiesOverride: {

@@ -20,7 +20,9 @@ export interface ItemData {
   unitId: string;
   unitName: string;
   name: string;
+  variableId?: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
   infit?: number;
@@ -86,7 +88,10 @@ export class ItemsService {
               unitId: unit.id,
               unitName: unit.name,
               name: item.name || fileRow.description || item.id,
+              variableId: fileRow.variableId || item.variableId,
               sourceVariable: fileRow.sourceVariable || item.sourceVariable,
+              variableReadOnlyId:
+                fileRow.variableReadOnlyId || item.variableReadOnlyId,
               metadata: {
                 ...(item.metadata || {}),
                 ...(fileRow.metadata || {}),
@@ -111,7 +116,9 @@ export class ItemsService {
           unitId: unit.id,
           unitName: unit.name,
           name: item.name || item.id,
+          variableId: item.variableId,
           sourceVariable: item.sourceVariable,
+          variableReadOnlyId: item.variableReadOnlyId,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
           ...(this.toFiniteNumber(props.infit) !== undefined

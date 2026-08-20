@@ -472,13 +472,21 @@ export class ItemExplorerFacade implements OnDestroy {
         return emptyResolution('not-found');
       }
 
+      const effectiveTextMatch = this.enrichDerivedCodingDisplay(
+        this.selectedItem,
+        rawVariables,
+        variableMatch,
+        textMatch,
+        codings,
+      );
+
       const rawVariable = variableMatch.variable;
       const sourceType = this.getCodingVariableSourceType(rawVariable);
       return {
         status: 'unique',
         targetId,
-        codingId: textMatch.id,
-        matches: [textMatch],
+        codingId: effectiveTextMatch.id,
+        matches: [effectiveTextMatch],
         isDerived: sourceType !== 'BASE' && sourceType !== 'BASE_NO_VALUE',
         sourceIds: this.getCodingVariableSources(rawVariable),
       };
@@ -3426,6 +3434,63 @@ export class ItemExplorerFacade implements OnDestroy {
     };
   }
 
+  private enrichDerivedCodingDisplay(
+    item: ReadonlyExplorerItem | null | undefined,
+    variables: any[],
+    identityMatch: CodingVariableMatch,
+    identityCoding: CodingAsText,
+    codings: CodingAsText[],
+  ): CodingAsText {
+    if (
+      identityMatch.status !== 'unique' ||
+      !identityMatch.variable ||
+      !this.isDerivedCodingVariable(identityMatch.variable)
+    ) {
+      return identityCoding;
+    }
+
+    const visibleReference = this.getVisiblePlayerTarget(item).toLowerCase();
+    if (!visibleReference) return identityCoding;
+
+    for (const sourceReference of this.getCodingVariableSources(identityMatch.variable)) {
+      const sourceMatch = this.resolveCodingVariableReference(sourceReference, variables, true);
+      if (
+        sourceMatch.status !== 'unique' ||
+        !sourceMatch.variable ||
+        sourceMatch.index === undefined
+      ) {
+        continue;
+      }
+
+      const matchesVisibleReference = this.getCodingVariableIdentifiers(sourceMatch.variable).some(
+        (identifier) => identifier.toLowerCase() === visibleReference,
+      );
+      if (!matchesVisibleReference) continue;
+
+      const sourceCoding = codings[sourceMatch.index];
+      if (!sourceCoding) return identityCoding;
+
+      const identityManualInstruction = (identityCoding as any).manualInstructionText;
+      const sourceManualInstruction = (sourceCoding as any).manualInstructionText;
+      const inheritManualInstruction = !identityManualInstruction && sourceManualInstruction;
+      const inheritCodes = !identityCoding.codes.length && sourceCoding.codes.length;
+      if (!inheritManualInstruction && !inheritCodes) return identityCoding;
+
+      return {
+        ...identityCoding,
+        ...(inheritManualInstruction
+          ? {
+              hasManualInstruction: true,
+              manualInstructionText: sourceManualInstruction,
+            }
+          : {}),
+        ...(inheritCodes ? { codes: sourceCoding.codes } : {}),
+      } as CodingAsText;
+    }
+
+    return identityCoding;
+  }
+
   private getAllPreviewTargetOptions(variables: any[]): PreviewTargetOption[] {
     return this.dedupePreviewTargetOptions(
       variables.map((variable) => {
@@ -3542,12 +3607,15 @@ export class ItemExplorerFacade implements OnDestroy {
 
         const itemLabel = this.formatPrintItemId(item);
         this.collectBaseCodingVariables(match.variable, variables).forEach((variable) => {
-          this.getCodingVariableIdentifiers(variable).forEach((identifier) => {
-            const key = identifier.toLowerCase();
-            const labels = labelsByIdentifier.get(key) || new Set<string>();
-            labels.add(itemLabel);
-            labelsByIdentifier.set(key, labels);
-          });
+          const preferredReference =
+            variable === match.variable ? this.getVisiblePlayerTarget(item) : '';
+          const playerReference = this.resolvePlayerVariableReference(variable, preferredReference);
+          if (!playerReference) return;
+
+          const key = playerReference.toLowerCase();
+          const labels = labelsByIdentifier.get(key) || new Set<string>();
+          labels.add(itemLabel);
+          labelsByIdentifier.set(key, labels);
         });
       });
 

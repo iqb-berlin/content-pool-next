@@ -2705,7 +2705,7 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('uses the internal MDB007 variable id before resolving its GeoGebra sources', () => {
+  it('uses the internal MDB007 variable id for the player and its coded source for instructions', () => {
     const component = createFacade();
     component.selectedItem = {
       itemId: '01',
@@ -2719,7 +2719,21 @@ describe('ItemExplorerFacade', () => {
     } as any;
     component.currentCodingScheme = {
       variableCodings: [
-        { id: '01', alias: '_01', sourceType: 'BASE', deriveSources: [] },
+        {
+          id: '01',
+          alias: '_01',
+          sourceType: 'BASE',
+          deriveSources: [],
+          manualInstruction: '<p>Nur Segment Bilderbücher markieren.</p>',
+          codes: [
+            {
+              id: 1,
+              score: 1,
+              label: 'richtig',
+              ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['true'] }] }],
+            },
+          ],
+        },
         {
           id: '01_1',
           alias: '01',
@@ -2735,7 +2749,12 @@ describe('ItemExplorerFacade', () => {
       ],
     };
     component.currentCodingSchemeAsText = [
-      { id: '_01', label: 'Variable 01', codes: [] },
+      {
+        id: '_01',
+        label: 'Variable 01',
+        manualInstructionText: '<p>Nur Segment Bilderbücher markieren.</p>',
+        codes: [{ id: '1', label: 'richtig', ruleSetDescriptions: ['MATCH true'] }],
+      },
       { id: '01', label: 'Aggregat', codes: [] },
       { id: 'ggb-source', label: 'GeoGebra-Quelle', codes: [] },
     ] as any;
@@ -2748,6 +2767,25 @@ describe('ItemExplorerFacade', () => {
       codingId: '01',
       isDerived: true,
     });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Aggregat',
+    ]);
+    expect(
+      component.shouldShowVariableManualInstruction(component.filteredCodingSchemeAsText[0]),
+    ).toBe(true);
+    expect(
+      component.shouldShowAutomaticCodingRules(
+        component.filteredCodingSchemeAsText[0],
+        component.filteredCodingSchemeAsText[0].codes[0],
+      ),
+    ).toBe(false);
+    component.preferManualCodingInstructions = false;
+    expect(
+      component.shouldShowAutomaticCodingRules(
+        component.filteredCodingSchemeAsText[0],
+        component.filteredCodingSchemeAsText[0].codes[0],
+      ),
+    ).toBe(true);
     expect(component.selectedItemTarget).toBe('01_1');
     expect(component.selectedPreviewTarget).toBe('01');
   });
@@ -2785,6 +2823,66 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.selectedItemTarget).toBe('internal-04');
     expect(component.selectedPreviewTarget).toBe('PLAYER_04');
+  });
+
+  it('keeps aggregate codes while inheriting a missing manual instruction from its source', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '15',
+      uuid: 'uuid-15',
+      unitId: 'DHB023',
+      unitLabel: 'DHB023',
+      description: 'Partial-credit aggregate',
+      variableId: 'BASE_A',
+      variableReadOnlyId: 'TOTAL',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'BASE_A',
+          sourceType: 'BASE',
+          manualInstruction: '<p>Source instruction</p>',
+          codes: [{ id: 1 }],
+        },
+        {
+          id: 'TOTAL',
+          alias: 'BASE_A',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['BASE_A'],
+          codes: [{ id: 'PARTIAL_CREDIT' }],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      {
+        id: 'BASE_A',
+        label: 'Source',
+        manualInstructionText: '<p>Source instruction</p>',
+        codes: [{ id: '1', ruleSetDescriptions: [] }],
+      },
+      {
+        id: 'BASE_A',
+        label: 'Partial-Credit-Aggregat',
+        codes: [{ id: 'PARTIAL_CREDIT', ruleSetDescriptions: [] }],
+      },
+    ] as any;
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'TOTAL',
+      codingId: 'BASE_A',
+      isDerived: true,
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Partial-Credit-Aggregat',
+    ]);
+    expect((component.filteredCodingSchemeAsText[0] as any).manualInstructionText).toBe(
+      '<p>Source instruction</p>',
+    );
+    expect(component.filteredCodingSchemeAsText[0].codes.map((code) => code.id)).toEqual([
+      'PARTIAL_CREDIT',
+    ]);
   });
 
   it('uses a base-variable alias when a derive source contains only its internal id', () => {
@@ -3842,8 +3940,6 @@ describe('ItemExplorerFacade', () => {
     expect((component as any).buildPrintLabelOverrides()).toEqual({
       '04': 'DLB01303',
       '05': 'DLB01304',
-      'internal-04': 'DLB01303',
-      'internal-05': 'DLB01304',
     });
   });
 
@@ -3870,7 +3966,6 @@ describe('ItemExplorerFacade', () => {
 
     expect((component as any).buildPrintLabelOverrides()).toEqual({
       '01': '01',
-      '01_1': '01',
     });
   });
 

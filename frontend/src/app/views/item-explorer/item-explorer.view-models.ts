@@ -97,7 +97,7 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'collectionBusy'
     | 'collectionLoadState'
     | 'columnFilters'
-    | 'columns'
+    | 'tableColumns'
     | 'enableItemCollections'
     | 'enableTags'
     | 'excludedItemsCount'
@@ -110,6 +110,9 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'getMetaSortIndicator'
     | 'getMetadataColumnDisplayValue'
     | 'getColumnWidth'
+    | 'getStickyTableColumnLeft'
+    | 'getTableColumnSortIndicator'
+    | 'getTableColumnDisplayValue'
     | 'getPersonalTagColor'
     | 'getPlayerTarget'
     | 'getSortIndicator'
@@ -117,6 +120,8 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'hasMeanTaskDifficulty'
     | 'hasPartialCredit'
     | 'isItemExcluded'
+    | 'isStickyTableColumn'
+    | 'isTableColumnSortable'
     | 'isItemInActiveCollection'
     | 'itemSubIdLabel'
     | 'itemListLoading'
@@ -153,6 +158,7 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
     | 'setCollectionViewMode'
     | 'sortBy'
     | 'sortByMeta'
+    | 'sortTableColumn'
     | 'toggleItemInActiveCollection'
     | 'toggleShowExcludedItems'
   >
@@ -291,7 +297,7 @@ export type ItemExplorerUploadDialogsViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
-    | 'allColumns'
+    | 'allTableColumns'
     | 'canResetMetadataSettings'
     | 'closeColumnManager'
     | 'columnFilterText'
@@ -308,6 +314,7 @@ export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
     | 'showColumnManager'
     | 'toggleColumnVisibility'
     | 'toggleReferenceNumberVisibility'
+    | 'tableColumns'
   >
 >;
 

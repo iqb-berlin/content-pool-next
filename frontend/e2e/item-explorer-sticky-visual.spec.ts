@@ -27,12 +27,14 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   }
   await columnDialog.getByRole('button', { name: /Speichern/ }).click();
   await expect(columnDialog).toHaveCount(0);
+  await expect(page.locator('.status-pill')).not.toHaveText('Speichern läuft');
 
   const firstRow = page.locator('tbody tr').first();
-  await firstRow.click();
+  const scroller = page.locator('.table-scroll');
+  await scroller.focus();
+  await scroller.press('ArrowDown');
   await expect(firstRow).toHaveAttribute('aria-selected', 'true');
 
-  const scroller = page.locator('.table-scroll');
   await scroller.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
@@ -42,10 +44,13 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
     const sticky = row.querySelector<HTMLElement>('td.sticky-col');
     if (!sticky) throw new Error('Sticky item column is missing');
     const bounds = sticky.getBoundingClientRect();
-    const hit = document.elementFromPoint(
-      bounds.left + bounds.width / 2,
-      bounds.top + bounds.height / 2,
-    );
+    const hit = Array.from(
+      { length: Math.max(0, Math.floor(bounds.height)) },
+      (_, offset) => document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.bottom - offset - 1,
+      ),
+    ).find((candidate) => candidate?.closest('td.sticky-col') === sticky);
     return {
       backgrounds,
       stickyBackground: getComputedStyle(sticky).backgroundColor,
@@ -72,4 +77,43 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+});
+
+test('keeps a reordered reference-number header aligned while scrolling', async ({ page }) => {
+  await openExplorer(page);
+
+  await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+  const columnDialog = page
+    .getByRole('heading', { name: 'Spalten verwalten' })
+    .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
+  const resetButton = columnDialog.getByRole('button', { name: /Standard/ });
+  if (await resetButton.isEnabled()) await resetButton.click();
+  await columnDialog.getByRole('checkbox', { name: 'Referenz-Nr.' }).check();
+  const referenceTile = columnDialog.locator('.column-tile', { hasText: 'ID: referenceNumber' });
+  await referenceTile.getByTitle('Nach unten').click();
+  await columnDialog.getByRole('button', { name: /Speichern/ }).click();
+  await expect(columnDialog).toHaveCount(0);
+
+  const itemHeader = page.getByRole('columnheader', { name: /^Item-ID(?:\s|$)/ });
+  const referenceHeader = page.getByRole('columnheader', { name: /^Referenz-Nr\.(?:\s|$)/ });
+  expect(await itemHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex)).toBeLessThan(
+    await referenceHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex),
+  );
+  const scroller = page.locator('.table-scroll');
+  await scroller.evaluate((element) => {
+    element.scrollLeft = element.scrollWidth;
+  });
+
+  const alignment = await page.locator('table.explorer-table').evaluate((table) => {
+    const header = table.querySelector<HTMLElement>('thead th.reference-number-col');
+    const cell = table.querySelector<HTMLElement>('tbody td.reference-number-col');
+    if (!header || !cell) throw new Error('Reference-number cells are missing');
+    return {
+      headerX: header.getBoundingClientRect().x,
+      cellX: cell.getBoundingClientRect().x,
+      headerLeft: getComputedStyle(header).left,
+    };
+  });
+  expect(alignment.headerLeft).toBe('auto');
+  expect(Math.abs(alignment.headerX - alignment.cellX)).toBeLessThanOrEqual(1);
 });

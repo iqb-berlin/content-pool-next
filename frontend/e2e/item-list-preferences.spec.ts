@@ -355,7 +355,9 @@ test('paginates large personal collections and removes selections across pages',
   await expect(
     collectionDialog.getByRole('button', { name: 'Auswahlliste löschen' }),
   ).toBeInViewport();
-  await expect(collectionDialog.getByRole('button', { name: 'Details schließen' })).toBeInViewport();
+  await expect(
+    collectionDialog.getByRole('button', { name: 'Details schließen' }),
+  ).toBeInViewport();
 
   await collectionDialog.getByRole('checkbox', { name: 'Eintrag 1 auswählen' }).check();
   await collectionDialog.getByRole('button', { name: 'Weiter' }).click();
@@ -411,14 +413,13 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.getByText(/2 Referenznummern im vollständigen Itembestand/)).toBeVisible();
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
-  await page.getByLabel(/Referenz-Nr/).check();
+  await page.getByRole('checkbox', { name: 'Referenz-Nr.' }).check();
   await page
     .getByRole('button', { name: /Speichern/ })
     .last()
     .click();
   await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeVisible();
-  await expect(page.locator('tbody tr td.number-col').nth(0)).toHaveText('1');
-  await expect(page.locator('tbody tr td.number-col').nth(2)).toHaveText('2');
+  await expect(page.locator('tbody tr td.reference-number-col')).toHaveText(['1', '2']);
 
   const tableScroll = page.locator('.table-scroll');
   await tableScroll.evaluate((element) => {

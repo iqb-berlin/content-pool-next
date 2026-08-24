@@ -11,11 +11,14 @@ describe('ItemExplorerTableComponent', () => {
     );
   });
 
-  it('renders a gapless view position and an optional stable reference number', () => {
+  it('renders a gapless view position and the configured unified table columns', () => {
     expect(template).toContain('<td class="number-col">{{ i + 1 }}</td>');
-    expect(template).toContain('@if (vm.referenceNumberVisible)');
-    expect(template).toContain('Referenz-Nr.');
+    expect(template).toContain('@let tableColumns = vm.tableColumns;');
+    expect(template).toContain('@for (col of tableColumns; track col.key)');
+    expect(template).toContain('vm.isStickyTableColumn(col, tableColumns)');
+    expect(template).toContain("@case ('system:referenceNumber')");
     expect(template).toContain('{{ item.rowNumber }}');
+    expect(template).toContain('[style.width.px]="vm.getColumnWidth(col)"');
   });
 
   it('offers a dedicated empty state for an empty active selection list', () => {

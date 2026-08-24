@@ -27,6 +27,14 @@ export interface ExplorerMetadataColumns {
   configured: boolean;
   widths: Record<string, number>;
   referenceNumberVisible?: boolean;
+  layout?: ExplorerTableColumnLayout;
+}
+
+export interface ExplorerTableColumnLayout {
+  visible: string[];
+  order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
 }
 
 export interface ExplorerSharedStatePayload {
@@ -663,6 +671,7 @@ export class ItemExplorerStateService {
       ...(rawMetadataColumns.referenceNumberVisible === true
         ? { referenceNumberVisible: true }
         : {}),
+      ...this.withTableColumnLayout(rawMetadataColumns.layout),
     };
 
     const itemProperties = this.normalizeItemProperties(acp.itemProperties);
@@ -726,6 +735,9 @@ export class ItemExplorerStateService {
     const definitions = Array.isArray(existingMetadataColumns.definitions)
       ? existingMetadataColumns.definitions
       : [];
+    const layout = this.normalizeTableColumnLayout(
+      state.metadataColumns.layout,
+    );
 
     if (
       state.metadataColumns.configured ||
@@ -733,7 +745,8 @@ export class ItemExplorerStateService {
       order.length ||
       state.metadataColumns.referenceNumberVisible ||
       Object.keys(widths).length ||
-      definitions.length
+      definitions.length ||
+      layout
     ) {
       normalizedFeatureConfig.metadataColumns = {
         visible: visible.length ? visible : order,
@@ -744,6 +757,7 @@ export class ItemExplorerStateService {
         ...(state.metadataColumns.referenceNumberVisible
           ? { referenceNumberVisible: true }
           : {}),
+        ...(layout ? { layout } : {}),
       };
     } else {
       delete normalizedFeatureConfig.metadataColumns;
@@ -816,6 +830,7 @@ export class ItemExplorerStateService {
         ...(metadataColumnsRaw.referenceNumberVisible === true
           ? { referenceNumberVisible: true }
           : {}),
+        ...this.withTableColumnLayout(metadataColumnsRaw.layout),
       },
       itemOrder: this.asStringArray(payload.itemOrder),
       itemProperties: this.normalizeItemProperties(payload.itemProperties),
@@ -837,6 +852,7 @@ export class ItemExplorerStateService {
         ...(current.metadataColumns.referenceNumberVisible
           ? { referenceNumberVisible: true }
           : {}),
+        ...this.withTableColumnLayout(current.metadataColumns.layout),
       },
       itemOrder: [...current.itemOrder],
       itemProperties: this.normalizeItemProperties(current.itemProperties),
@@ -870,6 +886,7 @@ export class ItemExplorerStateService {
         ...(patch.metadataColumns.referenceNumberVisible === true
           ? { referenceNumberVisible: true }
           : {}),
+        ...this.withTableColumnLayout(patch.metadataColumns.layout),
       };
     }
 
@@ -1140,6 +1157,44 @@ export class ItemExplorerStateService {
       widths[id] = Math.min(600, Math.max(80, Math.round(width)));
     }
     return widths;
+  }
+
+  private normalizeTableColumnWidths(value: unknown): Record<string, number> {
+    const source = this.asRecord(value);
+    const widths: Record<string, number> = {};
+    for (const [rawKey, rawWidth] of Object.entries(source).slice(0, 120)) {
+      const key = rawKey.trim().slice(0, 220);
+      const width = Number(rawWidth);
+      if (!key || !Number.isFinite(width)) continue;
+      widths[key] = Math.min(600, Math.max(80, Math.round(width)));
+    }
+    return widths;
+  }
+
+  private normalizeTableColumnLayout(
+    value: unknown,
+  ): ExplorerTableColumnLayout | undefined {
+    const source = this.asRecord(value);
+    const visible = this.asStringArray(source.visible);
+    const order = this.asStringArray(source.order);
+    const configured =
+      source.configured === true || visible.length > 0 || order.length > 0;
+    const widths = this.normalizeTableColumnWidths(source.widths);
+    if (!configured && Object.keys(widths).length === 0) return undefined;
+    return {
+      visible:
+        source.configured === true ? visible : visible.length ? visible : order,
+      order: order.length ? order : visible,
+      configured,
+      widths,
+    };
+  }
+
+  private withTableColumnLayout(value: unknown): {
+    layout?: ExplorerTableColumnLayout;
+  } {
+    const layout = this.normalizeTableColumnLayout(value);
+    return layout ? { layout } : {};
   }
 
   private asRecord(value: unknown): Record<string, unknown> {

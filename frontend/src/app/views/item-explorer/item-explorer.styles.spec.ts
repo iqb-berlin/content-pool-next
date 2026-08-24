@@ -35,6 +35,14 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(tableStyles).toMatch(/\.explorer-table th\.sticky-col\s*\{[^}]*z-index:\s*40/s);
   });
 
+  it('applies the horizontal reference-number offset only while that column is sticky', () => {
+    expect(tableStyles).toMatch(/\.reference-number-col\.sticky-col\s*\{[^}]*left:\s*72px/s);
+    expect(tableStyles).toMatch(
+      /\.reference-number-col\.sticky-col \+ \.sticky-col\s*\{[^}]*left:\s*144px/s,
+    );
+    expect(tableStyles).not.toMatch(/(?:^|\n)\.reference-number-col\s*\{/);
+  });
+
   it('uses one opaque selection surface for sticky and scrolling cells', () => {
     expect(tableStyles).toContain('--selected-row-background: color-mix(');
     expect(tableStyles).toMatch(

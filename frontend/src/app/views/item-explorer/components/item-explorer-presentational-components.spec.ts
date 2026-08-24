@@ -90,6 +90,13 @@ describe('ItemExplorer presentational components', () => {
     expect(columnManagerTemplate).toContain('[disabled]="!vm.canResetMetadataSettings"');
   });
 
+  it('tracks unified column-manager entries by their namespaced key', () => {
+    expect(columnManagerTemplate).toContain(
+      '@for (col of vm.filteredAllColumns; track col.key)',
+    );
+    expect(columnManagerTemplate).not.toContain('track col.id');
+  });
+
   it('gives the collection selector an accessible name', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
   });

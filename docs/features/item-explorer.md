@@ -20,7 +20,8 @@ The explorer state payload can include:
 
 - UI state,
 - item tags,
-- metadata column visibility and order,
+- table-column visibility, order, and widths (including system, metadata, tag, and personal
+  columns),
 - manual item ordering,
 - per-item properties such as empirical difficulty or exclusion flags.
 

@@ -40,6 +40,7 @@ import {
   ExplorerItem,
   ExplorerUiStatus,
   ItemParameterUploadResult,
+  ItemExplorerTableColumn,
   MetadataColumn,
   MetadataSettings,
   PendingPersonalRowUpdate,
@@ -70,6 +71,27 @@ import {
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+const TABLE_COLUMN_KEYS = {
+  referenceNumber: 'system:referenceNumber',
+  itemId: 'system:itemId',
+  unitLabel: 'system:unitLabel',
+  subId: 'system:subId',
+  empiricalDifficulty: 'system:empiricalDifficulty',
+  meanTaskDifficulty: 'system:meanTaskDifficulty',
+  tags: 'system:tags',
+  personalCategory: 'personal:category',
+  personalTags: 'personal:tags',
+  personalNote: 'personal:note',
+} as const;
+const TABLE_COLUMN_SORT_FIELDS: Readonly<Record<string, string>> = {
+  [TABLE_COLUMN_KEYS.referenceNumber]: 'rowNumber',
+  [TABLE_COLUMN_KEYS.itemId]: 'itemId',
+  [TABLE_COLUMN_KEYS.unitLabel]: 'unitLabel',
+  [TABLE_COLUMN_KEYS.subId]: 'subIdDisplay',
+  [TABLE_COLUMN_KEYS.empiricalDifficulty]: 'empiricalDifficulty',
+  [TABLE_COLUMN_KEYS.meanTaskDifficulty]: 'meanTaskDifficulty',
+};
+const METADATA_COLUMN_KEY_PREFIX = 'metadata:';
 type ItemListLoadOutcome = 'loaded' | 'version-mismatch' | 'superseded' | 'error';
 const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'infit', label: 'Infit', kind: 'number' },
@@ -269,6 +291,12 @@ export class ItemExplorerFacade implements OnDestroy {
     configured: false,
     widths: {},
     referenceNumberVisible: false,
+    layout: {
+      visible: [],
+      order: [],
+      configured: false,
+      widths: {},
+    },
   };
   private columnManagerOriginalSettings: MetadataSettings | null = null;
   columnFilterText = '';
@@ -521,6 +549,10 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get referenceNumberVisible(): boolean {
+    const layout = this.metadataSettings.layout;
+    if (layout?.configured) {
+      return layout.visible.includes(TABLE_COLUMN_KEYS.referenceNumber);
+    }
     return this.metadataSettings.referenceNumberVisible === true;
   }
 
@@ -528,7 +560,9 @@ export class ItemExplorerFacade implements OnDestroy {
     return (
       this.metadataSettings.configured ||
       Object.keys(this.metadataSettings.widths).length > 0 ||
-      this.referenceNumberVisible
+      this.referenceNumberVisible ||
+      this.metadataSettings.layout?.configured === true ||
+      Object.keys(this.metadataSettings.layout?.widths || {}).length > 0
     );
   }
 
@@ -700,23 +734,151 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.codingSortDir === 'asc' ? '↑' : '↓';
   }
 
-  get filteredAllColumns() {
-    let list = [...this.allColumns];
+  get allTableColumns(): ItemExplorerTableColumn[] {
+    const columns: ItemExplorerTableColumn[] = [
+      {
+        key: TABLE_COLUMN_KEYS.referenceNumber,
+        id: 'referenceNumber',
+        label: 'Referenz-Nr.',
+        source: 'system',
+        defaultWidth: 140,
+      },
+      {
+        key: TABLE_COLUMN_KEYS.itemId,
+        id: 'itemId',
+        label: 'Item-ID',
+        source: 'system',
+        defaultWidth: 220,
+      },
+      {
+        key: TABLE_COLUMN_KEYS.unitLabel,
+        id: 'unitLabel',
+        label: 'Aufgabe',
+        source: 'system',
+        defaultWidth: 200,
+      },
+    ];
+    if (this.hasPartialCredit) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.subId,
+        id: 'subId',
+        label: this.itemSubIdLabel,
+        source: 'system',
+        defaultWidth: 140,
+      });
+    }
+    if (this.hasEmpiricalDifficulty) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.empiricalDifficulty,
+        id: 'empiricalDifficulty',
+        label: 'Empirische Itemschwierigkeit',
+        source: 'system',
+        defaultWidth: 210,
+      });
+    }
+    if (this.hasMeanTaskDifficulty) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.meanTaskDifficulty,
+        id: 'meanTaskDifficulty',
+        label: 'Mittlere Aufgabenschwierigkeit',
+        source: 'system',
+        defaultWidth: 230,
+      });
+    }
+    columns.push(
+      ...this.allColumns.map((metadataColumn) => ({
+        key: this.getMetadataTableColumnKey(metadataColumn.id),
+        id: metadataColumn.id,
+        label: metadataColumn.label,
+        source: 'metadata' as const,
+        defaultWidth: 180,
+        metadataColumn,
+      })),
+    );
+    if (this.enableTags) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.tags,
+        id: 'tags',
+        label: 'Tags',
+        source: 'system',
+        defaultWidth: 220,
+      });
+    }
+    if (this.showPersonalItemData) {
+      columns.push(
+        {
+          key: TABLE_COLUMN_KEYS.personalCategory,
+          id: 'personalCategory',
+          label: this.personalItemCategoryLabel,
+          source: 'personal',
+          defaultWidth: 200,
+        },
+        {
+          key: TABLE_COLUMN_KEYS.personalTags,
+          id: 'personalTags',
+          label: this.personalItemTagLabel,
+          source: 'personal',
+          defaultWidth: 240,
+        },
+        {
+          key: TABLE_COLUMN_KEYS.personalNote,
+          id: 'personalNote',
+          label: 'Notiz',
+          source: 'personal',
+          defaultWidth: 280,
+        },
+      );
+    }
+    return columns;
+  }
+
+  get tableColumns(): ItemExplorerTableColumn[] {
+    const available = this.allTableColumns;
+    const layout = this.metadataSettings.layout;
+    if (!layout?.configured) {
+      const visibleMetadata = new Set(this.columns.map((column) => column.id));
+      return available.filter((column) => {
+        if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return this.referenceNumberVisible;
+        return column.source !== 'metadata' || visibleMetadata.has(column.id);
+      });
+    }
+    const availableByKey = new Map(available.map((column) => [column.key, column]));
+    const visible = new Set(layout.visible);
+    const ordered = layout.order
+      .map((key) => availableByKey.get(key))
+      .filter((column): column is ItemExplorerTableColumn => column !== undefined)
+      .filter((column) => visible.has(column.key));
+    const orderedKeys = new Set(ordered.map((column) => column.key));
+    for (const column of available) {
+      if (visible.has(column.key) && !orderedKeys.has(column.key)) {
+        ordered.push(column);
+        orderedKeys.add(column.key);
+      }
+    }
+    return ordered;
+  }
+
+  get filteredAllColumns(): ItemExplorerTableColumn[] {
+    let list = [...this.allTableColumns];
     if (this.columnFilterText) {
       const term = this.columnFilterText.toLowerCase();
       list = list.filter(
-        (c) => c.label.toLowerCase().includes(term) || c.id.toLowerCase().includes(term),
+        (c) =>
+          c.label.toLowerCase().includes(term) ||
+          c.id.toLowerCase().includes(term) ||
+          c.key.toLowerCase().includes(term),
       );
     }
 
-    if (!this.metadataSettings.configured) {
+    const layout = this.metadataSettings.layout;
+    if (!layout?.configured) {
       return list;
     }
 
     // Sort columns: selected/ordered ones first, then alphabetical
     return list.sort((a, b) => {
-      const indexA = this.metadataSettings.order.indexOf(a.id);
-      const indexB = this.metadataSettings.order.indexOf(b.id);
+      const indexA = layout.order.indexOf(a.key);
+      const indexB = layout.order.indexOf(b.key);
 
       // Both are in the custom order
       if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -1220,7 +1382,10 @@ export class ItemExplorerFacade implements OnDestroy {
     return Array.from(columnsById.values());
   }
 
-  getMetadataColumnDisplayValue(item: ReadonlyExplorerItem, column: MetadataColumn): string {
+  getMetadataColumnDisplayValue(
+    item: ReadonlyExplorerItem,
+    column: DeepReadonly<MetadataColumn>,
+  ): string {
     if (column.kind === 'booklet') {
       return (item.bookletOccurrences || []).map((occurrence) => occurrence.booklet).join(' | ');
     }
@@ -2082,9 +2247,27 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private ensureVisibleSortField() {
-    if (this.sortField !== 'rowNumber' || this.referenceNumberVisible) return;
-    this.sortField = DEFAULT_EXPLORER_SORT_FIELD;
-    this.sortIsMeta = false;
+    if (this.sortField === '__manual__') return;
+    const visibleColumns = this.tableColumns;
+    const currentColumnKey = this.sortIsMeta
+      ? this.getMetadataTableColumnKey(this.sortField)
+      : Object.keys(TABLE_COLUMN_SORT_FIELDS).find(
+          (key) => TABLE_COLUMN_SORT_FIELDS[key] === this.sortField,
+        );
+    if (!currentColumnKey || visibleColumns.some((column) => column.key === currentColumnKey)) {
+      return;
+    }
+    const replacement =
+      visibleColumns.find((column) => column.key === TABLE_COLUMN_KEYS.unitLabel) ||
+      visibleColumns.find((column) => this.isTableColumnSortable(column));
+    if (!replacement) return;
+    if (replacement.source === 'metadata') {
+      this.sortField = replacement.id;
+      this.sortIsMeta = true;
+    } else {
+      this.sortField = TABLE_COLUMN_SORT_FIELDS[replacement.key];
+      this.sortIsMeta = false;
+    }
     this.sortDir = DEFAULT_EXPLORER_SORT_DIR;
   }
 
@@ -4304,20 +4487,46 @@ export class ItemExplorerFacade implements OnDestroy {
     return orderedColumns;
   }
 
-  isColumnVisible(column: MetadataColumn): boolean {
-    return !this.metadataSettings.configured || this.metadataSettings.visible.includes(column.id);
+  isColumnVisible(column: ItemExplorerTableColumn | MetadataColumn): boolean {
+    if (!('key' in column)) {
+      return !this.metadataSettings.configured || this.metadataSettings.visible.includes(column.id);
+    }
+    const layout = this.metadataSettings.layout;
+    if (layout?.configured) return layout.visible.includes(column.key);
+    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return this.referenceNumberVisible;
+    return column.source !== 'metadata' || this.isColumnVisible(column.metadataColumn!);
   }
 
-  getColumnWidth(column: MetadataColumn): number {
-    return this.metadataSettings.widths[column.id] || 180;
+  getColumnWidth(column: ItemExplorerTableColumn | MetadataColumn): number {
+    if (!('key' in column)) {
+      return (
+        this.metadataSettings.layout?.widths[this.getMetadataTableColumnKey(column.id)] ||
+        this.metadataSettings.widths[column.id] ||
+        180
+      );
+    }
+    return (
+      this.metadataSettings.layout?.widths[column.key] ||
+      (column.source === 'metadata' ? this.metadataSettings.widths[column.id] : undefined) ||
+      column.defaultWidth
+    );
   }
 
-  setColumnWidth(column: MetadataColumn, value: unknown) {
+  setColumnWidth(column: ItemExplorerTableColumn | MetadataColumn, value: unknown) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return;
-    this.metadataSettings.widths = {
-      ...this.metadataSettings.widths,
-      [column.id]: Math.min(600, Math.max(80, Math.round(parsed))),
+    const width = Math.min(600, Math.max(80, Math.round(parsed)));
+    if (!('key' in column)) {
+      this.metadataSettings.widths = {
+        ...this.metadataSettings.widths,
+        [column.id]: width,
+      };
+      return;
+    }
+    this.ensureExplicitTableLayout();
+    this.metadataSettings.layout!.widths = {
+      ...this.metadataSettings.layout!.widths,
+      [column.key]: width,
     };
   }
 
@@ -4328,46 +4537,215 @@ export class ItemExplorerFacade implements OnDestroy {
     this.metadataSettings.configured = true;
   }
 
-  toggleColumnVisibility(column: MetadataColumn) {
-    this.ensureExplicitMetadataSelection();
-    const colIndex = this.metadataSettings.visible.indexOf(column.id);
-    if (colIndex === -1) {
-      this.metadataSettings.visible.push(column.id);
-      if (!this.metadataSettings.order.includes(column.id)) {
-        this.metadataSettings.order.push(column.id);
-      }
-    } else {
-      this.metadataSettings.visible.splice(colIndex, 1);
-      const orderIndex = this.metadataSettings.order.indexOf(column.id);
-      if (orderIndex !== -1) {
-        this.metadataSettings.order.splice(orderIndex, 1);
-      }
+  private ensureExplicitTableLayout() {
+    if (this.metadataSettings.layout?.configured) return;
+    const visible = this.tableColumns.map((column) => column.key);
+    const hidden = this.allTableColumns
+      .map((column) => column.key)
+      .filter((key) => !visible.includes(key));
+    this.metadataSettings.layout = {
+      visible,
+      order: [...visible, ...hidden],
+      configured: true,
+      widths: { ...(this.metadataSettings.layout?.widths || {}) },
+    };
+  }
+
+  private syncLegacyMetadataSettingsFromLayout() {
+    const layout = this.metadataSettings.layout;
+    if (!layout?.configured) return;
+    const metadataIds = new Set(this.allColumns.map((column) => column.id));
+    const toMetadataId = (key: string) =>
+      key.startsWith(METADATA_COLUMN_KEY_PREFIX)
+        ? key.slice(METADATA_COLUMN_KEY_PREFIX.length)
+        : '';
+    this.metadataSettings.visible = layout.visible
+      .map(toMetadataId)
+      .filter((id) => metadataIds.has(id));
+    this.metadataSettings.order = layout.order
+      .map(toMetadataId)
+      .filter((id) => metadataIds.has(id));
+    this.metadataSettings.configured = true;
+    this.metadataSettings.referenceNumberVisible = layout.visible.includes(
+      TABLE_COLUMN_KEYS.referenceNumber,
+    );
+    const legacyWidths: Record<string, number> = { ...this.metadataSettings.widths };
+    for (const column of this.allColumns) {
+      const width = layout.widths[this.getMetadataTableColumnKey(column.id)];
+      if (width) legacyWidths[column.id] = width;
     }
+    this.metadataSettings.widths = legacyWidths;
     this.columns = this.filterVisibleColumns(this.allColumns);
   }
 
-  moveColumnUp(column: MetadataColumn) {
-    this.ensureExplicitMetadataSelection();
-    const index = this.metadataSettings.order.indexOf(column.id);
-    if (index > 0) {
-      [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = [
-        this.metadataSettings.order[index - 1],
-        this.metadataSettings.order[index],
-      ];
-      this.columns = this.filterVisibleColumns(this.allColumns);
+  private getMetadataTableColumnKey(id: string): string {
+    return `${METADATA_COLUMN_KEY_PREFIX}${id}`;
+  }
+
+  isTableColumnSortable(column: ItemExplorerTableColumn): boolean {
+    return column.source === 'metadata' || Boolean(TABLE_COLUMN_SORT_FIELDS[column.key]);
+  }
+
+  sortTableColumn(column: ItemExplorerTableColumn) {
+    if (!this.isTableColumnSortable(column)) return;
+    if (column.source === 'metadata') {
+      this.sortByMeta(column.id);
+      return;
+    }
+    this.sortBy(TABLE_COLUMN_SORT_FIELDS[column.key]);
+  }
+
+  getTableColumnSortIndicator(column: ItemExplorerTableColumn): string {
+    if (column.source === 'metadata') return this.getMetaSortIndicator(column.id);
+    const sortField = TABLE_COLUMN_SORT_FIELDS[column.key];
+    return sortField ? this.getSortIndicator(sortField) : '';
+  }
+
+  getTableColumnDisplayValue(
+    item: ReadonlyExplorerItem,
+    column: DeepReadonly<ItemExplorerTableColumn>,
+  ): string {
+    return column.metadataColumn
+      ? String(this.getMetadataColumnDisplayValue(item, column.metadataColumn) ?? '')
+      : '';
+  }
+
+  isStickyTableColumn(
+    column: DeepReadonly<ItemExplorerTableColumn>,
+    columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
+  ): boolean {
+    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
+      return columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber;
+    }
+    if (column.key !== TABLE_COLUMN_KEYS.itemId) return false;
+    return (
+      columns[0]?.key === TABLE_COLUMN_KEYS.itemId ||
+      (columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber &&
+        columns[1]?.key === TABLE_COLUMN_KEYS.itemId)
+    );
+  }
+
+  getStickyTableColumnLeft(
+    column: DeepReadonly<ItemExplorerTableColumn>,
+    columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
+  ): number | null {
+    if (!this.isStickyTableColumn(column, columns)) return null;
+    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return 72;
+    const referenceColumn =
+      columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber ? columns[0] : undefined;
+    return 72 + (referenceColumn ? this.getColumnWidth(referenceColumn) : 0);
+  }
+
+  private clearHiddenTableColumnFilters() {
+    const visibleColumns = this.tableColumns;
+    const sharedFilterKeys = new Set(
+      visibleColumns
+        .filter(
+          (column) =>
+            column.source !== 'personal' && column.key !== TABLE_COLUMN_KEYS.referenceNumber,
+        )
+        .map((column) => column.id),
+    );
+    for (const filterKey of Object.keys(this.columnFilters)) {
+      if (!sharedFilterKeys.has(filterKey)) delete this.columnFilters[filterKey];
+    }
+    const personalFilterKeys = new Set(
+      visibleColumns
+        .filter((column) => column.source === 'personal')
+        .map((column) => column.id),
+    );
+    for (const filterKey of Object.keys(this.personalColumnFilters)) {
+      if (!personalFilterKeys.has(filterKey)) delete this.personalColumnFilters[filterKey];
     }
   }
 
-  moveColumnDown(column: MetadataColumn) {
-    this.ensureExplicitMetadataSelection();
-    const index = this.metadataSettings.order.indexOf(column.id);
-    if (index >= 0 && index < this.metadataSettings.order.length - 1) {
-      [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = [
-        this.metadataSettings.order[index + 1],
-        this.metadataSettings.order[index],
-      ];
+  toggleColumnVisibility(column: ItemExplorerTableColumn | MetadataColumn) {
+    if (!('key' in column)) {
+      this.ensureExplicitMetadataSelection();
+      const colIndex = this.metadataSettings.visible.indexOf(column.id);
+      if (colIndex === -1) {
+        this.metadataSettings.visible.push(column.id);
+        if (!this.metadataSettings.order.includes(column.id)) {
+          this.metadataSettings.order.push(column.id);
+        }
+      } else {
+        this.metadataSettings.visible.splice(colIndex, 1);
+        const orderIndex = this.metadataSettings.order.indexOf(column.id);
+        if (orderIndex !== -1) this.metadataSettings.order.splice(orderIndex, 1);
+      }
       this.columns = this.filterVisibleColumns(this.allColumns);
+      return;
     }
+    this.ensureExplicitTableLayout();
+    const layout = this.metadataSettings.layout!;
+    const colIndex = layout.visible.indexOf(column.key);
+    if (colIndex === -1) {
+      layout.visible.push(column.key);
+      if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
+        layout.order = [column.key, ...layout.order.filter((key) => key !== column.key)];
+      } else if (!layout.order.includes(column.key)) {
+        layout.order.push(column.key);
+      }
+    } else {
+      layout.visible.splice(colIndex, 1);
+      const orderIndex = layout.order.indexOf(column.key);
+      if (orderIndex !== -1) {
+        layout.order.splice(orderIndex, 1);
+      }
+    }
+    this.syncLegacyMetadataSettingsFromLayout();
+  }
+
+  moveColumnUp(column: ItemExplorerTableColumn | MetadataColumn) {
+    if (!('key' in column)) {
+      this.ensureExplicitMetadataSelection();
+      const index = this.metadataSettings.order.indexOf(column.id);
+      if (index > 0) {
+        [this.metadataSettings.order[index], this.metadataSettings.order[index - 1]] = [
+          this.metadataSettings.order[index - 1],
+          this.metadataSettings.order[index],
+        ];
+        this.columns = this.filterVisibleColumns(this.allColumns);
+      }
+      return;
+    }
+    this.moveTableColumn(column, -1);
+  }
+
+  moveColumnDown(column: ItemExplorerTableColumn | MetadataColumn) {
+    if (!('key' in column)) {
+      this.ensureExplicitMetadataSelection();
+      const index = this.metadataSettings.order.indexOf(column.id);
+      if (index >= 0 && index < this.metadataSettings.order.length - 1) {
+        [this.metadataSettings.order[index], this.metadataSettings.order[index + 1]] = [
+          this.metadataSettings.order[index + 1],
+          this.metadataSettings.order[index],
+        ];
+        this.columns = this.filterVisibleColumns(this.allColumns);
+      }
+      return;
+    }
+    this.moveTableColumn(column, 1);
+  }
+
+  private moveTableColumn(column: ItemExplorerTableColumn, delta: -1 | 1) {
+    this.ensureExplicitTableLayout();
+    const layout = this.metadataSettings.layout!;
+    const visibleOrder = this.tableColumns.map((entry) => entry.key);
+    const visibleIndex = visibleOrder.indexOf(column.key);
+    const neighborKey = visibleOrder[visibleIndex + delta];
+    if (visibleIndex < 0 || !neighborKey) return;
+
+    for (const key of visibleOrder) {
+      if (!layout.order.includes(key)) layout.order.push(key);
+    }
+    const index = layout.order.indexOf(column.key);
+    const neighborIndex = layout.order.indexOf(neighborKey);
+    [layout.order[index], layout.order[neighborIndex]] = [
+      layout.order[neighborIndex],
+      layout.order[index],
+    ];
+    this.syncLegacyMetadataSettingsFromLayout();
   }
 
   enableManualOrderMode() {
@@ -4404,21 +4782,36 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   saveMetadataSettings() {
+    this.syncLegacyMetadataSettingsFromLayout();
+    const layout = this.metadataSettings.layout || {
+      visible: [],
+      order: [],
+      configured: false,
+      widths: {},
+    };
     this.columns = this.filterVisibleColumns(this.allColumns);
+    this.clearHiddenTableColumnFilters();
     this.ensureVisibleSortField();
-    this.applySort(false);
+    this.applyFilter(false);
     this.columnManagerOriginalSettings = null;
     this.showColumnManager = false;
     this.restoreFocusAfterOverlayClose();
     this.queueDraftPatch(
       'METADATA_COLUMNS_CHANGED',
       {
+        ui: this.buildUiPreferences(),
         metadataColumns: {
           visible: [...this.metadataSettings.visible],
           order: [...this.metadataSettings.order],
           configured: this.metadataSettings.configured,
           widths: { ...this.metadataSettings.widths },
           referenceNumberVisible: this.referenceNumberVisible,
+          layout: {
+            visible: [...layout.visible],
+            order: [...layout.order],
+            configured: layout.configured,
+            widths: { ...layout.widths },
+          },
         },
       },
       true,
@@ -4432,12 +4825,21 @@ export class ItemExplorerFacade implements OnDestroy {
       configured: false,
       widths: {},
       referenceNumberVisible: false,
+      layout: {
+        visible: [],
+        order: [],
+        configured: false,
+        widths: {},
+      },
     };
     this.columns = this.filterVisibleColumns(this.allColumns);
   }
 
   toggleReferenceNumberVisibility() {
-    this.metadataSettings.referenceNumberVisible = !this.referenceNumberVisible;
+    const column = this.allTableColumns.find(
+      (entry) => entry.key === TABLE_COLUMN_KEYS.referenceNumber,
+    );
+    if (column) this.toggleColumnVisibility(column);
   }
 
   private resolveMetadataSettings(featureConfig: Record<string, any>): MetadataSettings {
@@ -4460,6 +4862,7 @@ export class ItemExplorerFacade implements OnDestroy {
         configured: metadataColumns.configured === true || visible.length > 0 || order.length > 0,
         widths: this.normalizeMetadataColumnWidths(metadataColumns.widths),
         referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
+        layout: this.resolveTableColumnLayout(metadataColumns.layout),
       };
     }
 
@@ -4474,6 +4877,23 @@ export class ItemExplorerFacade implements OnDestroy {
       configured: legacy.length > 0,
       widths: {},
       referenceNumberVisible: false,
+      layout: this.resolveTableColumnLayout(undefined),
+    };
+  }
+
+  private resolveTableColumnLayout(raw: unknown) {
+    const layout = this.isRecord(raw) ? raw : {};
+    const visible = Array.isArray(layout['visible'])
+      ? layout['visible'].filter((entry: unknown): entry is string => typeof entry === 'string')
+      : [];
+    const order = Array.isArray(layout['order'])
+      ? layout['order'].filter((entry: unknown): entry is string => typeof entry === 'string')
+      : [];
+    return {
+      visible: layout['configured'] === true ? visible : visible.length ? visible : order,
+      order: order.length ? order : visible,
+      configured: layout['configured'] === true || visible.length > 0 || order.length > 0,
+      widths: this.normalizeMetadataColumnWidths(layout['widths']),
     };
   }
 
@@ -5104,6 +5524,16 @@ export class ItemExplorerFacade implements OnDestroy {
       configured: this.metadataSettings.configured,
       widths: { ...this.metadataSettings.widths },
       referenceNumberVisible: this.referenceNumberVisible,
+      ...(this.metadataSettings.layout
+        ? {
+            layout: {
+              visible: [...this.metadataSettings.layout.visible],
+              order: [...this.metadataSettings.layout.order],
+              configured: this.metadataSettings.layout.configured,
+              widths: { ...this.metadataSettings.layout.widths },
+            },
+          }
+        : {}),
     };
     this.showColumnManager = true;
   }

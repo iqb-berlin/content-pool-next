@@ -155,9 +155,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     .getByRole('heading', { name: 'Spalten verwalten' })
     .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
 
-  await expect
-    .poll(() => emptySelectionDialog.locator('.tile-id').count())
-    .toBeGreaterThan(0);
+  await expect.poll(() => emptySelectionDialog.locator('.tile-id').count()).toBeGreaterThan(0);
   const selectedColumnIds = await emptySelectionDialog.locator('.tile-id').allTextContents();
   let remainingSelectedColumns = selectedColumnIds.length;
   for (const columnId of selectedColumnIds) {
@@ -389,4 +387,154 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
     viewerPage.getByLabel('Aktive persönliche Auswahlliste auswählen'),
   ).not.toContainText('E2E Manager');
   await viewerContext.close();
+});
+
+test('sorts VERA items by the complete visible Item-ID in both directions', async ({ page }) => {
+  const veraItems = [
+    {
+      itemId: '01',
+      uuid: 'vera-mdv010-01',
+      rowKey: 'vera-mdv010-01',
+      rowNumber: 6,
+      unitId: 'MDV010',
+      unitLabel: 'VERA Aufgabe 10',
+      description: 'Item 01',
+      variableId: '',
+      metadata: {},
+    },
+    {
+      itemId: '10',
+      uuid: 'vera-mdv002-10',
+      rowKey: 'vera-mdv002-10',
+      rowNumber: 5,
+      unitId: 'MDV002',
+      unitLabel: 'VERA Aufgabe 2',
+      description: 'Item 10',
+      variableId: '',
+      metadata: {},
+    },
+    {
+      itemId: '01',
+      uuid: 'vera-mdv002-01',
+      rowKey: 'vera-mdv002-01::10',
+      rowNumber: 3,
+      subId: '10',
+      subIdDisplay: '10',
+      unitId: 'MDV002',
+      unitLabel: 'VERA Aufgabe 2',
+      description: 'Partial Credit 10',
+      variableId: '',
+      metadata: {},
+    },
+    {
+      itemId: '02',
+      uuid: 'vera-mdv002-02',
+      rowKey: 'vera-mdv002-02',
+      rowNumber: 4,
+      unitId: 'MDV002',
+      unitLabel: 'VERA Aufgabe 2',
+      description: 'Item 02',
+      variableId: '',
+      metadata: {},
+    },
+    {
+      itemId: '01',
+      uuid: 'vera-mdv002-01',
+      rowKey: 'vera-mdv002-01::2-b',
+      rowNumber: 2,
+      subId: '2',
+      subIdDisplay: '2',
+      unitId: 'MDV002',
+      unitLabel: 'VERA Aufgabe 2',
+      description: 'Partial Credit 2b',
+      variableId: '',
+      metadata: {},
+    },
+    {
+      itemId: '01',
+      uuid: 'vera-mdv002-01',
+      rowKey: 'vera-mdv002-01::2-a',
+      rowNumber: 1,
+      subId: '2',
+      subIdDisplay: '2',
+      unitId: 'MDV002',
+      unitLabel: 'VERA Aufgabe 2',
+      description: 'Partial Credit 2a',
+      variableId: '',
+      metadata: {},
+    },
+  ];
+  await page.route(`**/api/acp/${ACP_ID}/files/item-list*`, async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    await route.fulfill({ response, json: { ...payload, items: veraItems } });
+  });
+  await login(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
+  await expect(page.locator('tbody tr')).toHaveCount(veraItems.length);
+
+  const itemIdHeader = page.getByRole('columnheader', { name: /Item-ID/ });
+  const ascendingPatch = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`) &&
+      response.ok(),
+  );
+  await itemIdHeader.click();
+  await ascendingPatch;
+  await expect(itemIdHeader).toContainText('↑');
+
+  const rows = page.locator('tbody tr');
+  const ascendingRowIds = await rows.evaluateAll((elements) => elements.map((row) => row.id));
+  expect(ascendingRowIds).toEqual([
+    'item-explorer-row-vera-mdv002-01--2-a',
+    'item-explorer-row-vera-mdv002-01--2-b',
+    'item-explorer-row-vera-mdv002-01--10',
+    'item-explorer-row-vera-mdv002-02',
+    'item-explorer-row-vera-mdv002-10',
+    'item-explorer-row-vera-mdv010-01',
+  ]);
+  await expect(rows.first().locator('.unit-id')).toHaveText('MDV002');
+  await expect(rows.first().locator('.item-id')).toHaveText('01');
+
+  const descendingPatch = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`) &&
+      response.ok(),
+  );
+  await itemIdHeader.click();
+  await descendingPatch;
+  await expect(itemIdHeader).toContainText('↓');
+  await expect
+    .poll(() => rows.evaluateAll((elements) => elements.map((row) => row.id)))
+    .toEqual([...ascendingRowIds].reverse());
+
+  await page.reload();
+  await expect(page.locator('tbody tr')).toHaveCount(veraItems.length);
+  await expect(page.getByRole('columnheader', { name: /Item-ID/ })).toContainText('↓');
+  await expect
+    .poll(() => page.locator('tbody tr').evaluateAll((elements) => elements.map((row) => row.id)))
+    .toEqual([...ascendingRowIds].reverse());
+
+  const discardButton = page.getByRole('button', { name: /Verwerfen/ }).first();
+  await expect(discardButton).toBeEnabled();
+  await discardButton.click();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft/discard`) &&
+        response.ok(),
+    ),
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().includes(`/api/acp/${ACP_ID}/files/item-list`) &&
+        response.ok(),
+    ),
+    page.getByRole('button', { name: 'Änderungen verwerfen', exact: true }).click(),
+  ]);
+  await expect(discardButton).toBeDisabled();
 });

@@ -998,6 +998,115 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
+  it('sorts VERA rows by the complete visible item id with deterministic tie-breakers', () => {
+    const component = createFacade();
+    component.items = [
+      {
+        itemId: '01',
+        uuid: 'uuid-mdv010-01',
+        rowKey: 'uuid-mdv010-01',
+        rowNumber: 6,
+        unitId: 'MDV010',
+        unitLabel: 'Aufgabe 10',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: '10',
+        uuid: 'uuid-mdv002-10',
+        rowKey: 'uuid-mdv002-10',
+        rowNumber: 5,
+        unitId: 'MDV002',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: '01',
+        uuid: 'uuid-mdv002-01',
+        rowKey: 'uuid-mdv002-01::10',
+        rowNumber: 3,
+        subId: '10',
+        subIdDisplay: '10',
+        unitId: 'MDV002',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: '02',
+        uuid: 'uuid-mdv002-02',
+        rowKey: 'uuid-mdv002-02',
+        rowNumber: 4,
+        unitId: 'MDV002',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: '01',
+        uuid: 'uuid-mdv002-01',
+        rowKey: 'uuid-mdv002-01::2-b',
+        rowNumber: 2,
+        subId: '2',
+        subIdDisplay: '2',
+        unitId: 'MDV002',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: '01',
+        uuid: 'uuid-mdv002-01',
+        rowKey: 'uuid-mdv002-01::2-a',
+        rowNumber: 1,
+        subId: '2',
+        subIdDisplay: '2',
+        unitId: 'MDV002',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.filteredItems = [...component.items];
+    (component as any).applyUiPreferences({
+      sortField: 'itemId',
+      sortDir: 'asc',
+      sortIsMeta: false,
+    });
+
+    (component as any).applySort(false);
+
+    const ascendingRowKeys = component.filteredItems.map((item) => item.rowKey);
+    expect(ascendingRowKeys).toEqual([
+      'uuid-mdv002-01::2-a',
+      'uuid-mdv002-01::2-b',
+      'uuid-mdv002-01::10',
+      'uuid-mdv002-02',
+      'uuid-mdv002-10',
+      'uuid-mdv010-01',
+    ]);
+    expect(component.filteredItems.map((item) => item.rowNumber)).toEqual([1, 2, 3, 4, 5, 6]);
+
+    (component as any).applyUiPreferences({
+      sortField: 'itemId',
+      sortDir: 'desc',
+      sortIsMeta: false,
+    });
+    (component as any).applySort(false);
+
+    expect(component.filteredItems.map((item) => item.rowKey)).toEqual(
+      [...ascendingRowKeys].reverse(),
+    );
+    expect(component.filteredItems.map((item) => item.rowNumber)).toEqual([6, 5, 4, 3, 2, 1]);
+  });
+
   it('falls back to task sorting when the saved reference-number sort is hidden', () => {
     const component = createFacade();
     component.sortField = 'rowNumber';

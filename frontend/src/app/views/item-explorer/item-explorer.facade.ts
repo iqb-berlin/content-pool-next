@@ -2027,6 +2027,10 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     this.filteredItems.sort((a, b) => {
+      if (!this.sortIsMeta && this.sortField === 'itemId') {
+        return this.compareVisibleItemIds(a, b, this.sortDir);
+      }
+
       let aVal: any = '';
       let bVal: any = '';
 
@@ -2097,6 +2101,34 @@ export class ItemExplorerFacade implements OnDestroy {
     return String(aVal ?? '')
       .toLowerCase()
       .localeCompare(String(bVal ?? '').toLowerCase(), undefined, { numeric: true });
+  }
+
+  private compareVisibleItemIds(
+    a: ReadonlyExplorerItem,
+    b: ReadonlyExplorerItem,
+    direction: 'asc' | 'desc',
+  ): number {
+    const comparisons = [
+      this.compareDeterministicSortText(`${a.unitId}${a.itemId}`, `${b.unitId}${b.itemId}`),
+      this.compareDeterministicSortText(a.subId, b.subId),
+      this.compareDeterministicSortText(this.getStableRowKey(a), this.getStableRowKey(b)),
+    ];
+    const cmp = comparisons.find((comparison) => comparison !== 0) ?? 0;
+    return direction === 'asc' ? cmp : -cmp;
+  }
+
+  private compareDeterministicSortText(aVal: unknown, bVal: unknown): number {
+    const naturalCmp = this.compareSortText(aVal, bVal);
+    if (naturalCmp !== 0) {
+      return naturalCmp;
+    }
+
+    const aText = String(aVal ?? '');
+    const bText = String(bVal ?? '');
+    if (aText === bText) {
+      return 0;
+    }
+    return aText < bText ? -1 : 1;
   }
 
   // --- CSV Upload Handling ---

@@ -33,9 +33,12 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   await expect(selectedRow).toHaveAttribute('aria-selected', 'true');
 
   const scroller = page.locator('.table-scroll');
-  await scroller.evaluate((element) => {
+  await scroller.evaluate(async (element) => {
     element.scrollLeft = element.scrollWidth;
     element.scrollTop = element.scrollHeight;
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
   });
   const visualEvidence = await selectedRow.evaluate((row) => {
     const cells = Array.from(row.querySelectorAll('td'));

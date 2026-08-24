@@ -17,6 +17,7 @@ import { AsyncCacheStatus, AsyncLruCache } from "./async-lru-cache";
 import {
   extractLabelText,
   extractValueText,
+  extractVomdTimeSeconds,
   isValidVomdItem,
   parseUnitXml,
   parseVomd,
@@ -177,6 +178,10 @@ export class ItemListParser {
           const entries = vomdData.unitProfiles[0]?.entries;
           unitMetadata[parsed.unitId] = Array.isArray(entries) ? entries : [];
         }
+        const vomdStimulusTimeSeconds = extractVomdTimeSeconds(
+          vomdData.unitProfiles,
+          "iqb_time_stimulus",
+        );
 
         if (parsed.codingSchemeRef) {
           const vocsFile = allFiles.find(
@@ -206,6 +211,10 @@ export class ItemListParser {
             continue;
           }
           const metadata: Record<string, string> = {};
+          const vomdItemTimeSeconds = extractVomdTimeSeconds(
+            item.profiles,
+            "iqb_time_item",
+          );
           for (const profile of item.profiles || []) {
             for (const entry of profile.entries || []) {
               const entryId = entry.id;
@@ -307,8 +316,11 @@ export class ItemListParser {
               infit: optionalNumber("infit"),
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
-              itemTimeSeconds: optionalNumber("itemTimeSeconds"),
-              stimulusTimeSeconds: optionalNumber("stimulusTimeSeconds"),
+              itemTimeSeconds:
+                optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
+              stimulusTimeSeconds:
+                optionalNumber("stimulusTimeSeconds") ??
+                vomdStimulusTimeSeconds,
               bookletOccurrences,
               tags: Array.isArray(rowProperties.tags)
                 ? rowProperties.tags.map(String)

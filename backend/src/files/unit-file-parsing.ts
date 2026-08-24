@@ -135,3 +135,29 @@ export function extractValueText(valueAsText: any): string {
   }
   return "";
 }
+
+export function extractVomdTimeSeconds(
+  profiles: unknown,
+  entryId: "iqb_time_item" | "iqb_time_stimulus",
+): number | undefined {
+  if (!Array.isArray(profiles)) return undefined;
+
+  for (const profile of profiles) {
+    if (!isRecord(profile) || !Array.isArray(profile.entries)) continue;
+
+    for (const entry of profile.entries) {
+      if (!isRecord(entry) || entry.id !== entryId) continue;
+      const rawValue = entry.value;
+      if (
+        typeof rawValue !== "number" &&
+        (typeof rawValue !== "string" || rawValue.trim().length === 0)
+      ) {
+        continue;
+      }
+      const seconds = Number(rawValue);
+      if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+    }
+  }
+
+  return undefined;
+}

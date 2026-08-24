@@ -517,4 +517,24 @@ test('sorts VERA items by the complete visible Item-ID in both directions', asyn
   await expect
     .poll(() => page.locator('tbody tr').evaluateAll((elements) => elements.map((row) => row.id)))
     .toEqual([...ascendingRowIds].reverse());
+
+  const discardButton = page.getByRole('button', { name: /Verwerfen/ }).first();
+  await expect(discardButton).toBeEnabled();
+  await discardButton.click();
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft/discard`) &&
+        response.ok(),
+    ),
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'GET' &&
+        response.url().includes(`/api/acp/${ACP_ID}/files/item-list`) &&
+        response.ok(),
+    ),
+    page.getByRole('button', { name: 'Änderungen verwerfen', exact: true }).click(),
+  ]);
+  await expect(discardButton).toBeDisabled();
 });

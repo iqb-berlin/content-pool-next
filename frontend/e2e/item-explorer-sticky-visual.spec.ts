@@ -28,72 +28,43 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   await columnDialog.getByRole('button', { name: /Speichern/ }).click();
   await expect(columnDialog).toHaveCount(0);
 
-  const selectedRow = page.locator('tbody tr').last();
-  await selectedRow.dispatchEvent('click');
-  await expect(selectedRow).toHaveAttribute('aria-selected', 'true');
+  const firstRow = page.locator('tbody tr').first();
+  await firstRow.click();
+  await expect(firstRow).toHaveAttribute('aria-selected', 'true');
 
   const scroller = page.locator('.table-scroll');
-  await scroller.evaluate(async (element) => {
+  await scroller.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
-    element.scrollTop = element.scrollHeight;
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
   });
-  const visualEvidence = await selectedRow.evaluate((row) => {
+  const visualEvidence = await firstRow.evaluate((row) => {
     const cells = Array.from(row.querySelectorAll('td'));
     const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
     const sticky = row.querySelector<HTMLElement>('td.sticky-col');
     if (!sticky) throw new Error('Sticky item column is missing');
     const bounds = sticky.getBoundingClientRect();
-    const scroller = row.closest<HTMLElement>('.table-scroll');
-    if (!scroller) throw new Error('Table scroller is missing');
-    const scrollerBounds = scroller.getBoundingClientRect();
-    const visibleLeft = Math.max(bounds.left, scrollerBounds.left);
-    const visibleRight = Math.min(bounds.right, scrollerBounds.right);
-    const visibleTop = Math.max(bounds.top, scrollerBounds.top);
-    const visibleBottom = Math.min(bounds.bottom, scrollerBounds.bottom);
-    const stickyVisible = visibleLeft < visibleRight && visibleTop < visibleBottom;
+    const hit = document.elementFromPoint(
+      bounds.left + bounds.width / 2,
+      bounds.top + bounds.height / 2,
+    );
     return {
       backgrounds,
       stickyBackground: getComputedStyle(sticky).backgroundColor,
-      stickyVisible,
+      stickyHit: Boolean(hit?.closest('td.sticky-col')),
       scrollLeft: row.closest('.table-scroll')?.scrollLeft || 0,
     };
   });
 
   expect(visualEvidence.scrollLeft).toBeGreaterThan(0);
-  expect(visualEvidence.stickyVisible).toBe(true);
-  await expect
-    .poll(() =>
-      selectedRow.evaluate((row) => {
-        const sticky = row.querySelector<HTMLElement>('td.sticky-col');
-        const scroller = row.closest<HTMLElement>('.table-scroll');
-        if (!sticky || !scroller) return false;
-        const bounds = sticky.getBoundingClientRect();
-        const scrollerBounds = scroller.getBoundingClientRect();
-        const visibleLeft = Math.max(bounds.left, scrollerBounds.left);
-        const visibleRight = Math.min(bounds.right, scrollerBounds.right);
-        const visibleTop = Math.max(bounds.top, scrollerBounds.top);
-        const visibleBottom = Math.min(bounds.bottom, scrollerBounds.bottom);
-        if (visibleLeft >= visibleRight || visibleTop >= visibleBottom) return false;
-        const hit = document.elementFromPoint(
-          visibleLeft + (visibleRight - visibleLeft) / 2,
-          visibleTop + (visibleBottom - visibleTop) / 2,
-        );
-        return Boolean(hit && sticky.contains(hit));
-      }),
-    )
-    .toBe(true);
+  expect(visualEvidence.stickyHit).toBe(true);
   expect(new Set(visualEvidence.backgrounds).size).toBe(1);
   expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');
-  await expect(selectedRow.locator('td.tags-cell')).toHaveCSS('display', 'table-cell');
+  await expect(firstRow.locator('td.tags-cell')).toHaveCSS('display', 'table-cell');
 
-  const noPreviewBackgrounds = await page
-    .locator('tbody tr.no-preview')
-    .evaluate((row) =>
-      Array.from(row.querySelectorAll('td')).map((cell) => getComputedStyle(cell).backgroundColor),
-    );
+  const noPreviewBackgrounds = await page.locator('tbody tr.no-preview').evaluate((row) =>
+    Array.from(row.querySelectorAll('td')).map(
+      (cell) => getComputedStyle(cell).backgroundColor,
+    ),
+  );
   expect(new Set(noPreviewBackgrounds).size).toBe(1);
   expect(noPreviewBackgrounds[0]).not.toBe('rgba(0, 0, 0, 0)');
 

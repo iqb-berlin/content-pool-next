@@ -91,9 +91,7 @@ describe('ItemExplorer presentational components', () => {
   });
 
   it('tracks unified column-manager entries by their namespaced key', () => {
-    expect(columnManagerTemplate).toContain(
-      '@for (col of vm.filteredAllColumns; track col.key)',
-    );
+    expect(columnManagerTemplate).toContain('@for (col of vm.filteredAllColumns; track col.key)');
     expect(columnManagerTemplate).not.toContain('track col.id');
   });
 

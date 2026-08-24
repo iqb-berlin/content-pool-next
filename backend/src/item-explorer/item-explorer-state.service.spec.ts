@@ -471,7 +471,8 @@ describe("ItemExplorerStateService", () => {
       },
       { baseVersion: 1, changeType: "METADATA_COLUMNS_CHANGED" },
     );
-    const normalizedWidths = envelope.draftState.metadataColumns.layout?.widths || {};
+    const normalizedWidths =
+      envelope.draftState.metadataColumns.layout?.widths || {};
 
     expect(Object.keys(normalizedWidths)).toHaveLength(111);
     expect(normalizedWidths[longMetadataKey]).toBe(333);

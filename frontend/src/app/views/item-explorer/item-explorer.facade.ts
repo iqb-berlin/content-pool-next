@@ -4650,9 +4650,7 @@ export class ItemExplorerFacade implements OnDestroy {
       if (!sharedFilterKeys.has(filterKey)) delete this.columnFilters[filterKey];
     }
     const personalFilterKeys = new Set(
-      visibleColumns
-        .filter((column) => column.source === 'personal')
-        .map((column) => column.id),
+      visibleColumns.filter((column) => column.source === 'personal').map((column) => column.id),
     );
     for (const filterKey of Object.keys(this.personalColumnFilters)) {
       if (!personalFilterKeys.has(filterKey)) delete this.personalColumnFilters[filterKey];

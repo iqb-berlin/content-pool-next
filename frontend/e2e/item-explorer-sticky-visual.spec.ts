@@ -43,19 +43,31 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
     const sticky = row.querySelector<HTMLElement>('td.sticky-col');
     if (!sticky) throw new Error('Sticky item column is missing');
     const bounds = sticky.getBoundingClientRect();
-    const hit = document.elementFromPoint(
-      bounds.left + bounds.width / 2,
-      bounds.top + bounds.height / 2,
-    );
+    const scroller = row.closest<HTMLElement>('.table-scroll');
+    if (!scroller) throw new Error('Table scroller is missing');
+    const scrollerBounds = scroller.getBoundingClientRect();
+    const visibleLeft = Math.max(bounds.left, scrollerBounds.left);
+    const visibleRight = Math.min(bounds.right, scrollerBounds.right);
+    const visibleTop = Math.max(bounds.top, scrollerBounds.top);
+    const visibleBottom = Math.min(bounds.bottom, scrollerBounds.bottom);
+    const stickyVisible = visibleLeft < visibleRight && visibleTop < visibleBottom;
+    const hit = stickyVisible
+      ? document.elementFromPoint(
+          visibleLeft + (visibleRight - visibleLeft) / 2,
+          visibleTop + (visibleBottom - visibleTop) / 2,
+        )
+      : null;
     return {
       backgrounds,
       stickyBackground: getComputedStyle(sticky).backgroundColor,
       stickyHit: Boolean(hit?.closest('td.sticky-col')),
+      stickyVisible,
       scrollLeft: row.closest('.table-scroll')?.scrollLeft || 0,
     };
   });
 
   expect(visualEvidence.scrollLeft).toBeGreaterThan(0);
+  expect(visualEvidence.stickyVisible).toBe(true);
   expect(visualEvidence.stickyHit).toBe(true);
   expect(new Set(visualEvidence.backgrounds).size).toBe(1);
   expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');

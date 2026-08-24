@@ -29,7 +29,7 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   await expect(columnDialog).toHaveCount(0);
 
   const firstRow = page.locator('tbody tr').first();
-  await firstRow.click();
+  await firstRow.locator('td.sticky-col').click();
   await expect(firstRow).toHaveAttribute('aria-selected', 'true');
 
   const scroller = page.locator('.table-scroll');

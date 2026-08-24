@@ -160,8 +160,12 @@ and legacy `itemListMetadataColumns` data can coexist safely.
 That matters for:
 
 - item list column visibility,
-- item explorer column order,
+- item explorer column order and widths across system, metadata, tag, and personal columns,
 - backward compatibility with older ACP configuration payloads.
+
+The unified table layout is stored alongside the legacy metadata-only fields. Older saved
+configurations therefore retain their visibility, order, and widths until a manager explicitly
+creates a full table layout.
 
 ## Credential Security Rules
 

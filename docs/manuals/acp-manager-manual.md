@@ -521,10 +521,17 @@ Vor dem Speichern zeigt die Anwendung eine Aenderungsuebersicht.
 
 Ueber `Spalten verwalten` bestimmen Sie:
 
-- welche Metadaten-Spalten sichtbar sind
+- welche fachlichen Spalten sichtbar sind
 - in welcher Reihenfolge sie erscheinen
+- welche Breite die einzelnen Spalten haben
+
+Die Verwaltung umfasst feste Spalten wie `Item-ID` und `Aufgabe`, konfigurierte
+Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe`, `Markierungen`
+und `Notiz`. Technische Bedienungsspalten wie die laufende Position oder die Auswahl
+fuer eine Auswahlliste bleiben fest.
 
 Diese Einstellungen werden veroeffentlicht und damit Teil der gemeinsamen ACP-Konfiguration.
+Vorhandene reine Metadatenspalten-Konfigurationen werden weiterhin uebernommen.
 
 ### Tags verwalten
 

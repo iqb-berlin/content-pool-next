@@ -57,6 +57,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await expect(
     page.getByLabel('Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden'),
   ).toBeChecked();
+  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').check();
+  await saveFeatureConfig(page);
 
   await openExplorer(page);
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
@@ -65,7 +67,11 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
   await expect(dialog).toContainText('Eigene Qualitätsspalte');
   await expect(dialog).toContainText('ID: customQuality');
+  await expect(dialog).toContainText('Aufgabe');
+  await expect(dialog).toContainText('Kompetenzstufe');
   await dialog.getByLabel('Breite für Eigene Qualitätsspalte').fill('260');
+  await dialog.getByLabel('Breite für Aufgabe').fill('310');
+  await dialog.getByLabel('Breite für Kompetenzstufe').fill('230');
 
   await Promise.all([
     page.waitForResponse(
@@ -83,6 +89,14 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   });
   await expect(customHeader).toHaveCount(1);
   await expect(customHeader).toHaveCSS('width', '260px');
+  await expect(page.getByRole('columnheader', { name: /^Aufgabe(?:\s|$)/ })).toHaveCSS(
+    'width',
+    '310px',
+  );
+  await expect(page.getByRole('columnheader', { name: /^Kompetenzstufe(?:\s|$)/ })).toHaveCSS(
+    'width',
+    '230px',
+  );
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const orderDialog = page
@@ -104,6 +118,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
       return orderedIdsAfter.findIndex((value) => value.includes('customQuality'));
     })
     .toBe(expectedCustomIndex);
+  const taskTile = orderDialog.locator('.column-tile', { hasText: 'ID: unitLabel' });
+  await taskTile.getByTitle('Nach unten').click();
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -135,6 +151,18 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   const expectedCustomCellIndex = await reorderedCustomHeader.evaluate(
     (header) => (header as HTMLTableCellElement).cellIndex,
   );
+  const reorderedTaskHeader = page.getByRole('columnheader', { name: /^Aufgabe(?:\s|$)/ });
+  const expectedTaskCellIndex = await reorderedTaskHeader.evaluate(
+    (header) => (header as HTMLTableCellElement).cellIndex,
+  );
+  await expect(reorderedTaskHeader).toHaveCSS('width', '310px');
+  const reorderedCompetenceHeader = page.getByRole('columnheader', {
+    name: /^Kompetenzstufe(?:\s|$)/,
+  });
+  const expectedCompetenceCellIndex = await reorderedCompetenceHeader.evaluate(
+    (header) => (header as HTMLTableCellElement).cellIndex,
+  );
+  await expect(reorderedCompetenceHeader).toHaveCSS('width', '230px');
   await publishExplorerDraft(page);
   await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
   await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
@@ -147,6 +175,20 @@ test('offers configured columns and persists widths plus an explicitly empty sel
       readOnlyCustomHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex),
     )
     .toBe(expectedCustomCellIndex);
+  const readOnlyTaskHeader = page.getByRole('columnheader', { name: /^Aufgabe(?:\s|$)/ });
+  await expect(readOnlyTaskHeader).toHaveCSS('width', '310px');
+  await expect
+    .poll(() => readOnlyTaskHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex))
+    .toBe(expectedTaskCellIndex);
+  const readOnlyCompetenceHeader = page.getByRole('columnheader', {
+    name: /^Kompetenzstufe(?:\s|$)/,
+  });
+  await expect(readOnlyCompetenceHeader).toHaveCSS('width', '230px');
+  await expect
+    .poll(() =>
+      readOnlyCompetenceHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex),
+    )
+    .toBe(expectedCompetenceCellIndex);
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
   await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
 
@@ -156,7 +198,9 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     .locator('xpath=ancestor::div[contains(@class, "column-manager-dialog")]');
 
   await expect.poll(() => emptySelectionDialog.locator('.tile-id').count()).toBeGreaterThan(0);
-  const selectedColumnIds = await emptySelectionDialog.locator('.tile-id').allTextContents();
+  const selectedColumnIds = await emptySelectionDialog
+    .locator('.column-tile.active .tile-id')
+    .allTextContents();
   let remainingSelectedColumns = selectedColumnIds.length;
   for (const columnId of selectedColumnIds) {
     await emptySelectionDialog.getByText(columnId.trim(), { exact: true }).click();
@@ -242,6 +286,10 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await expect(
     page.locator('tbody tr').first().locator('.tag-badge', { hasText: 'Alt' }),
   ).toHaveCount(0);
+
+  await page.goto(`/manage/${ACP_ID}/access`);
+  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').uncheck();
+  await saveFeatureConfig(page);
 });
 
 test('applies coding configuration defaults and the alternative combinations in editor and read-only views', async ({
@@ -271,10 +319,14 @@ test('applies coding configuration defaults and the alternative combinations in 
   await page.getByRole('button', { name: /Schließen/ }).click();
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  await page
-    .getByLabel('Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden')
-    .uncheck();
-  await page.getByLabel('Allgemeine Kodierungshinweise anzeigen').check();
+  const preferManualToggle = page.getByLabel(
+    'Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden',
+  );
+  await preferManualToggle.uncheck();
+  await expect(preferManualToggle).not.toBeChecked();
+  const generalInstructionsToggle = page.getByLabel('Allgemeine Kodierungshinweise anzeigen');
+  await generalInstructionsToggle.check();
+  await expect(generalInstructionsToggle).toBeChecked();
   await saveFeatureConfig(page);
 
   await openExplorer(page);

@@ -362,6 +362,14 @@ export interface MetadataColumnsConfig {
   referenceNumberVisible?: boolean;
   definitions?: Array<{ id: string; label: string }>;
   widths?: Record<string, number>;
+  layout?: ItemExplorerTableColumnLayout;
+}
+
+export interface ItemExplorerTableColumnLayout {
+  visible?: string[];
+  order?: string[];
+  configured?: boolean;
+  widths?: Record<string, number>;
 }
 
 export interface FeatureConfig {
@@ -530,6 +538,7 @@ export interface ItemExplorerMetadataColumns {
   configured?: boolean;
   referenceNumberVisible?: boolean;
   widths?: Record<string, number>;
+  layout?: ItemExplorerTableColumnLayout;
 }
 
 export interface ItemExplorerSharedState {

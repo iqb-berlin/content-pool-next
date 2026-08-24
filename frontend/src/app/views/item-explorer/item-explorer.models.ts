@@ -16,6 +16,24 @@ export interface MetadataColumn {
   kind?: 'text' | 'number' | 'booklet' | 'position';
 }
 
+export type ItemExplorerTableColumnSource = 'system' | 'metadata' | 'personal';
+
+export interface ItemExplorerTableColumn {
+  key: string;
+  id: string;
+  label: string;
+  source: ItemExplorerTableColumnSource;
+  defaultWidth: number;
+  metadataColumn?: MetadataColumn;
+}
+
+export interface TableColumnLayoutSettings {
+  visible: string[];
+  order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
+}
+
 export interface ExplorerItem {
   itemId: string;
   uuid: string;
@@ -50,6 +68,7 @@ export interface MetadataSettings {
   configured: boolean;
   widths: Record<string, number>;
   referenceNumberVisible?: boolean;
+  layout?: TableColumnLayoutSettings;
 }
 
 export interface PersonalItemTagConfig {

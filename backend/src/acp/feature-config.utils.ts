@@ -7,6 +7,14 @@ interface MetadataColumnsConfig {
   referenceNumberVisible?: boolean;
   definitions?: Array<{ id: string; label: string }>;
   widths?: Record<string, number>;
+  layout?: TableColumnLayoutConfig;
+}
+
+interface TableColumnLayoutConfig {
+  visible: string[];
+  order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
 }
 
 function asRecord(value: unknown): UnknownRecord {
@@ -90,6 +98,37 @@ function normalizeMetadataColumnWidths(value: unknown): Record<string, number> {
   return widths;
 }
 
+function normalizeTableColumnWidths(value: unknown): Record<string, number> {
+  const source = asRecord(value);
+  const widths: Record<string, number> = {};
+  for (const [rawKey, rawWidth] of Object.entries(source).slice(0, 120)) {
+    const key = rawKey.trim().slice(0, 220);
+    const width = Number(rawWidth);
+    if (!key || !Number.isFinite(width)) continue;
+    widths[key] = Math.min(600, Math.max(80, Math.round(width)));
+  }
+  return widths;
+}
+
+function normalizeTableColumnLayout(
+  value: unknown,
+): TableColumnLayoutConfig | undefined {
+  const source = asRecord(value);
+  const visible = asStringArray(source.visible);
+  const order = asStringArray(source.order);
+  const configured =
+    source.configured === true || visible.length > 0 || order.length > 0;
+  const widths = normalizeTableColumnWidths(source.widths);
+  if (!configured && Object.keys(widths).length === 0) return undefined;
+  return {
+    visible:
+      source.configured === true ? visible : visible.length ? visible : order,
+    order: order.length ? order : visible,
+    configured,
+    widths,
+  };
+}
+
 function normalizeMetadataColumns(
   metadataColumnsRaw: unknown,
   legacyItemListColumnsRaw: unknown,
@@ -105,13 +144,15 @@ function normalizeMetadataColumns(
     metadataColumns.definitions,
   );
   const widths = normalizeMetadataColumnWidths(metadataColumns.widths);
+  const layout = normalizeTableColumnLayout(metadataColumns.layout);
 
   if (
     explicitlyConfigured ||
     hasColumnSelection ||
     referenceNumberVisible ||
     definitions.length ||
-    Object.keys(widths).length
+    Object.keys(widths).length ||
+    layout
   ) {
     const normalizedVisible = visible.length ? visible : order;
     const normalizedOrder = order.length ? order : normalizedVisible;
@@ -122,6 +163,7 @@ function normalizeMetadataColumns(
       ...(referenceNumberVisible ? { referenceNumberVisible: true } : {}),
       ...(definitions.length ? { definitions } : {}),
       ...(Object.keys(widths).length ? { widths } : {}),
+      ...(layout ? { layout } : {}),
     };
   }
 

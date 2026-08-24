@@ -7,31 +7,15 @@
           <span class="drawer-icon" style="background: var(--color-primary)">👁️</span>
           <div>
             <h2>Spalten verwalten</h2>
-            <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
+            <small>Breite, Sichtbarkeit und Reihenfolge aller fachlichen Spalten festlegen</small>
           </div>
         </div>
         <button class="btn btn-sm btn-outline" (click)="vm.closeColumnManager()">✕</button>
       </div>
       <div class="overlay-content">
-        <section class="base-column-settings" aria-labelledby="base-columns-heading">
-          <h3 id="base-columns-heading">Grundspalten</h3>
-          <label class="base-column-option">
-            <input
-              type="checkbox"
-              [checked]="vm.metadataSettings.referenceNumberVisible === true"
-              (change)="vm.toggleReferenceNumberVisibility()"
-            />
-            <span>
-              <strong>Referenz-Nr.</strong>
-              <small
-                >Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken
-                sichtbar.</small
-              >
-            </span>
-          </label>
-        </section>
-
-        <h3>Metadatenspalten</h3>
+        @let visibleColumns = vm.tableColumns;
+        @let allColumns = vm.allTableColumns;
+        <h3>Tabellenspalten</h3>
         <div class="column-manager-toolbar">
           <div class="search-container">
             <input
@@ -51,7 +35,7 @@
         </div>
 
         <div class="column-grid">
-          @for (col of vm.filteredAllColumns; track col.id) {
+          @for (col of vm.filteredAllColumns; track col.key) {
             <div
               class="column-tile"
               [class.active]="vm.isColumnVisible(col)"
@@ -61,6 +45,7 @@
                 <input
                   type="checkbox"
                   [checked]="vm.isColumnVisible(col)"
+                  [attr.aria-label]="col.label"
                   (click)="$event.stopPropagation()"
                   (change)="vm.toggleColumnVisibility(col)"
                 />
@@ -87,11 +72,7 @@
                   <button
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnUp(col)"
-                    [disabled]="
-                      (vm.metadataSettings.configured
-                        ? vm.metadataSettings.order[0]
-                        : vm.allColumns[0]?.id) === col.id
-                    "
+                    [disabled]="visibleColumns[0]?.key === col.key"
                     title="Nach oben"
                   >
                     ↑
@@ -99,11 +80,7 @@
                   <button
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnDown(col)"
-                    [disabled]="
-                      (vm.metadataSettings.configured
-                        ? vm.metadataSettings.order[vm.metadataSettings.order.length - 1]
-                        : vm.allColumns[vm.allColumns.length - 1]?.id) === col.id
-                    "
+                    [disabled]="visibleColumns[visibleColumns.length - 1]?.key === col.key"
                     title="Nach unten"
                   >
                     ↓
@@ -121,12 +98,8 @@
 
         <div class="column-manager-footer">
           <div class="selection-info">
-            {{
-              vm.metadataSettings.configured
-                ? vm.metadataSettings.visible.length
-                : vm.allColumns.length
-            }}
-            von {{ vm.allColumns.length }} Spalten gewählt
+            {{ visibleColumns.length }}
+            von {{ allColumns.length }} Spalten gewählt
           </div>
           <div class="footer-actions">
             <button class="btn btn-outline" (click)="vm.closeColumnManager()">Abbrechen</button>

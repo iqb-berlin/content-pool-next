@@ -1189,6 +1189,24 @@ describe('ItemExplorerFacade', () => {
     ).toBe(true);
   });
 
+  it('keeps an enabled reference number directly before the sticky Item-ID column', () => {
+    const component = createFacade();
+
+    component.toggleReferenceNumberVisibility();
+
+    const tableColumns = component.tableColumns;
+    const tableColumnsSpy = vi.spyOn(component, 'tableColumns', 'get');
+
+    expect(tableColumns.slice(0, 2).map((column) => column.id)).toEqual([
+      'referenceNumber',
+      'itemId',
+    ]);
+    expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
+    expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
+    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(212);
+    expect(tableColumnsSpy).not.toHaveBeenCalled();
+  });
+
   it('restores column settings when the column manager is cancelled', () => {
     const component = createFacade();
     component.metadataSettings = {
@@ -1276,6 +1294,165 @@ describe('ItemExplorerFacade', () => {
       configured: true,
     });
     expect(component.columns.map((column) => column.id)).toEqual(['second', 'first']);
+  });
+
+  it('offers fixed, configured, and personal columns in one configurable table layout', () => {
+    const component = createFacade();
+    component.allColumns = [{ id: 'customQuality', label: 'Eigene Qualitätsspalte' }];
+    component.columns = [...component.allColumns];
+    component.enableTags = true;
+    component.enablePersonalItemData = true;
+    component.personalItemCategoryLabel = 'Kompetenzstufe';
+    (component as any).personalDataSessionIdentity = 'oidc:test-user';
+
+    expect(component.allTableColumns.map((column) => column.label)).toEqual([
+      'Referenz-Nr.',
+      'Item-ID',
+      'Aufgabe',
+      'Eigene Qualitätsspalte',
+      'Tags',
+      'Kompetenzstufe',
+      'Markierungen',
+      'Notiz',
+    ]);
+
+    const taskColumn = component.allTableColumns.find((column) => column.id === 'unitLabel')!;
+    const competenceColumn = component.allTableColumns.find(
+      (column) => column.id === 'personalCategory',
+    )!;
+    component.setColumnWidth(taskColumn, 310);
+    component.setColumnWidth(competenceColumn, 230);
+    component.moveColumnDown(taskColumn);
+
+    expect(component.getColumnWidth(taskColumn)).toBe(310);
+    expect(component.getColumnWidth(competenceColumn)).toBe(230);
+    expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'itemId',
+      'customQuality',
+      'unitLabel',
+      'tags',
+      'personalCategory',
+      'personalTags',
+      'personalNote',
+    ]);
+    expect(component.metadataSettings).toMatchObject({
+      configured: true,
+      visible: ['customQuality'],
+      order: ['customQuality'],
+      layout: {
+        configured: true,
+        widths: {
+          'system:unitLabel': 310,
+          'personal:category': 230,
+        },
+      },
+    });
+  });
+
+  it('skips unavailable dynamic columns when moving visible table columns', () => {
+    const component = createFacade();
+    component.hasPartialCredit = false;
+    component.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: true,
+      widths: {},
+      layout: {
+        visible: ['system:itemId', 'system:subId', 'system:unitLabel'],
+        order: ['system:itemId', 'system:subId', 'system:unitLabel'],
+        configured: true,
+        widths: {},
+      },
+    };
+    const taskColumn = component.allTableColumns.find((column) => column.id === 'unitLabel')!;
+
+    component.moveColumnUp(taskColumn);
+
+    expect(component.tableColumns.map((column) => column.id)).toEqual(['unitLabel', 'itemId']);
+    expect(component.metadataSettings.layout?.order).toEqual([
+      'system:unitLabel',
+      'system:subId',
+      'system:itemId',
+    ]);
+
+    component.moveColumnDown(taskColumn);
+
+    expect(component.tableColumns.map((column) => column.id)).toEqual(['itemId', 'unitLabel']);
+  });
+
+  it('clears hidden column filters and switches to a visible sort when settings are saved', () => {
+    const component = createFacade();
+    component.items = [
+      {
+        itemId: 'ITEM_2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'UNIT_2',
+        unitLabel: 'Beta',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+      {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Alpha',
+        description: '',
+        variableId: '',
+        metadata: {},
+      },
+    ];
+    component.columnFilters = { unitLabel: 'Alpha' };
+    component.sortField = 'unitLabel';
+    component.filteredItems = [...component.items];
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['ITEM_1']);
+    const queueDraftPatch = vi.spyOn(component as any, 'queueDraftPatch');
+    const taskColumn = component.allTableColumns.find((column) => column.id === 'unitLabel')!;
+
+    component.toggleColumnVisibility(taskColumn);
+    component.saveMetadataSettings();
+
+    expect(component.columnFilters).not.toHaveProperty('unitLabel');
+    expect(component.sortField).toBe('itemId');
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['ITEM_1', 'ITEM_2']);
+    expect(queueDraftPatch).toHaveBeenCalledWith(
+      'METADATA_COLUMNS_CHANGED',
+      expect.objectContaining({
+        ui: expect.objectContaining({
+          sortField: 'itemId',
+          sortIsMeta: false,
+          columnFilters: {},
+        }),
+      }),
+      true,
+    );
+  });
+
+  it('keeps legacy metadata-only column settings compatible with the unified layout', () => {
+    const component = createFacade();
+    component.allColumns = [
+      { id: 'first', label: 'Erste Metadatenspalte' },
+      { id: 'second', label: 'Zweite Metadatenspalte' },
+    ];
+    component.metadataSettings = (component as any).resolveMetadataSettings({
+      metadataColumns: {
+        visible: ['second'],
+        order: ['second'],
+        widths: { second: 260 },
+      },
+    });
+    component.columns = component.filterVisibleColumns(component.allColumns);
+
+    expect(component.metadataSettings.layout?.configured).toBe(false);
+    expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'itemId',
+      'unitLabel',
+      'second',
+    ]);
+    expect(component.getColumnWidth(component.tableColumns[2])).toBe(260);
   });
 
   it('allows an explicitly empty selection to be reset to defaults', () => {
@@ -4517,6 +4694,7 @@ describe('ItemExplorerFacade', () => {
         empiricalDifficulty: 2,
       },
     ];
+    component.hasEmpiricalDifficulty = true;
     component.columnFilters = { empiricalDifficulty: '-2..0' };
 
     component.applyFilter(false);

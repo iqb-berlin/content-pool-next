@@ -157,10 +157,10 @@
   z-index: 31;
   font-variant-numeric: tabular-nums;
 }
-.reference-number-col {
+.reference-number-col.sticky-col {
   left: 72px;
 }
-.reference-number-col + .sticky-col {
+.reference-number-col.sticky-col + .sticky-col {
   left: 144px;
 }
 .explorer-table th.number-col {

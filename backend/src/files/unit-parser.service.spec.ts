@@ -579,6 +579,131 @@ describe("UnitParserService", () => {
     ]);
   });
 
+  it("uses VOMD item and unit times for item-list and partial-credit rows", async () => {
+    const vomdWithTimes = JSON.stringify({
+      profiles: [
+        {
+          entries: [
+            {
+              id: "iqb_time_stimulus",
+              label: [{ lang: "de", value: "Stimuluszeit" }],
+              value: "90",
+              valueAsText: { lang: "de", value: "01:30" },
+            },
+          ],
+        },
+      ],
+      items: [
+        {
+          id: "i1",
+          uuid: "uuid-1",
+          profiles: [
+            {
+              entries: [
+                {
+                  id: "iqb_time_item",
+                  label: [{ lang: "de", value: "Itemzeit" }],
+                  value: "30",
+                  valueAsText: { lang: "de", value: "00:30" },
+                },
+              ],
+            },
+          ],
+        },
+        {
+          id: "i2",
+          uuid: "uuid-2",
+          profiles: [
+            {
+              entries: [
+                {
+                  id: "iqb_time_item",
+                  value: 45,
+                  valueAsText: { lang: "de", value: "00:45" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return vomdWithTimes;
+      if (path === "/tmp/u1.vocs") return "{}";
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1", {
+      itemPropertiesOverride: {
+        "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
+        "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
+      },
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        uuid: "uuid-1",
+        rowKey: "uuid-1::A",
+        itemTimeSeconds: 30,
+        stimulusTimeSeconds: 90,
+        metadata: expect.objectContaining({ iqb_time_item: "00:30" }),
+      }),
+      expect.objectContaining({
+        uuid: "uuid-1",
+        rowKey: "uuid-1::B",
+        itemTimeSeconds: 30,
+        stimulusTimeSeconds: 90,
+      }),
+      expect.objectContaining({
+        uuid: "uuid-2",
+        rowKey: "uuid-2",
+        itemTimeSeconds: 45,
+        stimulusTimeSeconds: 90,
+      }),
+    ]);
+  });
+
+  it("keeps explicit Explorer times as overrides for VOMD times", async () => {
+    const vomdWithTimes = JSON.stringify({
+      profiles: [
+        {
+          entries: [{ id: "iqb_time_stimulus", value: "90" }],
+        },
+      ],
+      items: [
+        {
+          id: "i1",
+          uuid: "uuid-1",
+          profiles: [{ entries: [{ id: "iqb_time_item", value: "30" }] }],
+        },
+      ],
+    });
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return vomdWithTimes;
+      if (path === "/tmp/u1.vocs") return "{}";
+      return "";
+    });
+
+    const result = await service.getItemListFromFiles("acp-1", {
+      itemPropertiesOverride: {
+        "uuid-1": {
+          itemTimeSeconds: 40,
+          stimulusTimeSeconds: 120,
+        },
+      },
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        uuid: "uuid-1",
+        itemTimeSeconds: 40,
+        stimulusTimeSeconds: 120,
+      }),
+    ]);
+  });
+
   it("expands one VOMD item into labeled partial-credit rows", async () => {
     accessConfigRepo.findOne.mockResolvedValueOnce({
       acpId: "acp-1",

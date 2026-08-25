@@ -93,9 +93,11 @@
             @for (coding of vm.filteredCodingSchemeAsText; track coding.id) {
               <div class="coding-item">
                 <div class="coding-item-header">
-                  <h4>{{ coding.label || coding.id }}</h4>
+                  <h4>Kodiervariable {{ coding.id }}</h4>
                   <div class="header-tags">
-                    <code class="variable-id">{{ coding.id }}</code>
+                    @if (vm.getCodingVariableDisplayLabel(coding); as displayLabel) {
+                      <span class="variable-label">Bezeichnung: {{ displayLabel }}</span>
+                    }
                   </div>
                 </div>
                 @if (vm.shouldShowVariableManualInstruction(coding)) {

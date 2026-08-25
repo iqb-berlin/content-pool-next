@@ -2870,6 +2870,21 @@ describe('ItemExplorerFacade', () => {
     });
   });
 
+  it('does not present numeric coding labels as item or variable identities', () => {
+    const component = createFacade();
+
+    expect(
+      component.getCodingVariableDisplayLabel({ id: '02', label: '1', codes: [] } as any),
+    ).toBe('');
+    expect(
+      component.getCodingVariableDisplayLabel({
+        id: 'internal-02',
+        label: 'Aufgabe 2',
+        codes: [],
+      } as any),
+    ).toBe('Aufgabe 2');
+  });
+
   it('recovers DSB04101 through its unique legacy player alias', () => {
     const component = createFacade({
       resolvePlayerTargetLocation: (_definition, variableId) =>

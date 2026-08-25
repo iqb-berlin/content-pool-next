@@ -255,6 +255,7 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     | 'codingVariableFocusMessage'
     | 'currentCodingSchemeAsText'
     | 'filteredCodingSchemeAsText'
+    | 'getCodingVariableDisplayLabel'
     | 'getCodingSortIndicator'
     | 'itemSubIdLabel'
     | 'preferManualCodingInstructions'

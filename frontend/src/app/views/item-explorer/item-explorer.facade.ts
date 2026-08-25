@@ -419,6 +419,18 @@ export class ItemExplorerFacade implements OnDestroy {
     );
   }
 
+  getCodingVariableDisplayLabel(coding: DeepReadonly<CodingAsText>): string {
+    const id = String(coding.id || '').trim();
+    const label = String(coding.label || '').trim();
+    if (!label || label.toLowerCase() === id.toLowerCase()) {
+      return '';
+    }
+    if (/^\d+$/.test(id) && /^\d+$/.test(label)) {
+      return '';
+    }
+    return label;
+  }
+
   shouldShowAutomaticCodingRules(
     coding: DeepReadonly<CodingAsText>,
     code: DeepReadonly<CodingAsText['codes'][number]>,

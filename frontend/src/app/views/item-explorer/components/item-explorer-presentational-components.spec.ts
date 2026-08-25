@@ -114,6 +114,11 @@ describe('ItemExplorer presentational components', () => {
     expect(codingTemplate).toContain('Allgemeiner Kodierungshinweis:');
   });
 
+  it('uses the coding variable id as the unambiguous card heading', () => {
+    expect(codingTemplate).toContain('<h4>Kodiervariable {{ coding.id }}</h4>');
+    expect(codingTemplate).not.toContain('<h4>{{ coding.label || coding.id }}</h4>');
+  });
+
   it('exposes read-only sharing and private-copy actions for collections', () => {
     expect(collectionsTemplate).toContain('Für diesen ACP freigeben');
     expect(collectionsTemplate).toContain('Geteilt von {{ activeCollection.ownerLabel }}');

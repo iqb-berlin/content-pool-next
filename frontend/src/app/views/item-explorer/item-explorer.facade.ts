@@ -3309,6 +3309,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const derivedOptions = this.collectBasePreviewTargetOptions(
       selectedCodingVariable,
       codingVariables,
+      visiblePlayerTarget,
     );
     const isDerived = this.isDerivedCodingVariable(selectedCodingVariable);
     const basePlayerTarget = this.resolvePlayerVariableReference(
@@ -3589,6 +3590,7 @@ export class ItemExplorerFacade implements OnDestroy {
   private collectBasePreviewTargetOptions(
     variable: any,
     variables: any[],
+    preferredReference = '',
     visited = new Set<string>(),
   ): PreviewTargetOption[] {
     const variableId = this.getCodingVariableId(variable);
@@ -3612,14 +3614,47 @@ export class ItemExplorerFacade implements OnDestroy {
         return [this.createFallbackPreviewTargetOption(sourceId)];
       }
       const sourceVariable = sourceMatch.variable;
+      const sourcePlayerReference = this.getPreferredDerivedSourceReference(
+        sourceVariable,
+        sourceId,
+        preferredReference,
+      );
       if (!this.isDerivedCodingVariable(sourceVariable)) {
-        const playerTarget = this.resolvePlayerVariableReference(sourceVariable, sourceId);
+        const playerTarget = this.resolvePlayerVariableReference(
+          sourceVariable,
+          sourcePlayerReference,
+        );
         return [this.createPreviewTargetOption(sourceVariable, playerTarget, true)];
       }
-      return this.collectBasePreviewTargetOptions(sourceVariable, variables, new Set(visited));
+      return this.collectBasePreviewTargetOptions(
+        sourceVariable,
+        variables,
+        sourcePlayerReference,
+        new Set(visited),
+      );
     });
 
     return this.dedupePreviewTargetOptions(options);
+  }
+
+  private getPreferredDerivedSourceReference(
+    sourceVariable: any,
+    sourceReference: string,
+    parentPlayerReference: string,
+  ): string {
+    const sourceId = String(sourceReference || '').trim();
+    const alias = String(sourceVariable?.alias || '').trim();
+    if (!alias) return sourceId;
+
+    const referenceScore = (candidate: string): number => {
+      const normalizedCandidate = candidate.trim().toLowerCase().replace(/^_+/, '');
+      const normalizedParent = parentPlayerReference.trim().toLowerCase().replace(/^_+/, '');
+      if (!normalizedCandidate || !normalizedParent) return 0;
+      if (normalizedCandidate === normalizedParent) return 2;
+      return normalizedCandidate.startsWith(normalizedParent) ? 1 : 0;
+    };
+
+    return referenceScore(alias) > referenceScore(sourceId) ? alias : sourceId;
   }
 
   private createPreviewTargetOption(

@@ -3017,10 +3017,10 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('uses a base-variable alias when a derive source contains only its internal id', () => {
+  it('prefers a base-variable player alias when both alias and internal id exist in VOUD', () => {
     const component = createFacade({
       resolvePlayerTargetLocation: (_definition, variableId) =>
-        variableId === 'PLAYER_BASE'
+        variableId === '05a' || variableId === '04a'
           ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
           : undefined,
     });
@@ -3030,23 +3030,23 @@ describe('ItemExplorerFacade', () => {
       unitId: 'DHB023',
       unitLabel: 'DHB023',
       description: 'Derived item',
-      variableId: '09',
-      variableReadOnlyId: 'internal-total',
+      variableId: '05',
+      variableReadOnlyId: '04',
       metadata: {},
     } as any;
     component.currentCodingScheme = {
       variableCodings: [
         {
-          id: 'internal-base',
-          alias: 'PLAYER_BASE',
+          id: '04a',
+          alias: '05a',
           sourceType: 'BASE',
           deriveSources: [],
         },
         {
-          id: 'internal-total',
-          alias: '09',
+          id: '04',
+          alias: '05',
           sourceType: 'SUM_SCORE',
-          deriveSources: ['internal-base'],
+          deriveSources: ['04a'],
         },
       ],
     };
@@ -3054,8 +3054,8 @@ describe('ItemExplorerFacade', () => {
 
     (component as any).syncPreviewTargetResolution(component.selectedItem);
 
-    expect(component.selectedItemTarget).toBe('internal-total');
-    expect(component.selectedPreviewTarget).toBe('PLAYER_BASE');
+    expect(component.selectedItemTarget).toBe('04');
+    expect(component.selectedPreviewTarget).toBe('05a');
   });
 
   it('blocks alias fallback when an explicitly internal variable id is missing', () => {

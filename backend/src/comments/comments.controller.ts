@@ -15,9 +15,10 @@ import { CommentsService } from "./comments.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { CommentTargetType } from "../database/entities";
-import { IsString, IsNotEmpty, IsEnum } from "class-validator";
+import { IsString, IsNotEmpty, IsEnum, MaxLength } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
 import { UuidParam } from "../common/uuid-param";
+import { ReviewPolicyService } from "./review-policy.service";
 
 export class CreateCommentDto {
   @ApiProperty({ enum: CommentTargetType })
@@ -32,13 +33,17 @@ export class CreateCommentDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
+  @MaxLength(10_000)
   commentText!: string;
 }
 
 @ApiTags("Comments")
 @Controller("acp/:acpId/comments")
 export class CommentsController {
-  constructor(private readonly commentsService: CommentsService) {}
+  constructor(
+    private readonly commentsService: CommentsService,
+    private readonly reviewPolicy: ReviewPolicyService,
+  ) {}
 
   @Get()
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
@@ -55,7 +60,7 @@ export class CommentsController {
   @ApiOperation({ summary: "List my comments for an ACP" })
   async findMine(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (req.user.type === "credential") {
-      return this.commentsService.findByCredential(acpId, req.user.username);
+      return this.commentsService.findByCredential(acpId, req.user.sub);
     }
     return this.commentsService.findByUser(acpId, req.user.sub);
   }
@@ -69,7 +74,7 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
-    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
+    const isManager = this.reviewPolicy.isManagerRequest(req);
     if (!isManager) {
       const enabled = await this.commentsService.isCommentingEnabled(
         acpId,
@@ -85,8 +90,10 @@ export class CommentsController {
     return this.commentsService.create({
       acpId,
       userId: req.user.type === "oidc" ? req.user.sub : undefined,
+      credentialId: req.user.type === "credential" ? req.user.sub : undefined,
       credentialUsername:
         req.user.type === "credential" ? req.user.username : undefined,
+      authorLabel: req.user.username,
       targetType: dto.targetType,
       targetId: dto.targetId,
       commentText: dto.commentText,
@@ -96,11 +103,21 @@ export class CommentsController {
   @Delete()
   @UseGuards(JwtAuthGuard, AcpAccessGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Delete all comments for an ACP (Manager only)" })
-  async deleteAll(@UuidParam("acpId") acpId: string, @Request() req: any) {
+  @ApiOperation({
+    summary: "Delete unreferenced legacy comments for an ACP (Manager only)",
+  })
+  async deleteLegacyComments(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+  ) {
     this.assertManagerAccess(req);
-    const count = await this.commentsService.deleteByAcp(acpId);
-    return { message: `${count} comments deleted` };
+    const result =
+      await this.commentsService.deleteUnreferencedLegacyByAcp(acpId);
+    return {
+      message: `${result.deletedCount} legacy comments deleted; ${result.retainedCount} comments retained`,
+      ...result,
+      scope: "UNREFERENCED_LEGACY_NON_ITEM",
+    };
   }
 
   @Get("export")
@@ -108,13 +125,13 @@ export class CommentsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: "Export comments as JSON" })
   async exportComments(@UuidParam("acpId") acpId: string, @Request() req: any) {
-    if (req.user.isAppAdmin || req.acpAccessLevel === "MANAGER") {
+    if (this.reviewPolicy.isManagerRequest(req)) {
       return this.commentsService.exportComments(acpId);
     }
     if (req.user.type === "credential") {
       return this.commentsService.exportCommentsByCredential(
         acpId,
-        req.user.username,
+        req.user.sub,
       );
     }
     return this.commentsService.exportComments(acpId, req.user.sub);
@@ -132,13 +149,13 @@ export class CommentsController {
     let buffer: Buffer;
     let fileSuffix = "all";
 
-    if (req.user.isAppAdmin || req.acpAccessLevel === "MANAGER") {
+    if (this.reviewPolicy.isManagerRequest(req)) {
       buffer = await this.commentsService.exportCommentsXlsx(acpId);
     } else if (req.user.type === "credential") {
       fileSuffix = req.user.username || "mine";
       buffer = await this.commentsService.exportCommentsXlsxByCredential(
         acpId,
-        req.user.username,
+        req.user.sub,
       );
     } else {
       fileSuffix = req.user.username || "mine";
@@ -160,8 +177,7 @@ export class CommentsController {
   }
 
   private assertManagerAccess(req: any): void {
-    const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
-    if (!isManager) {
+    if (!this.reviewPolicy.isManagerRequest(req)) {
       throw new ForbiddenException("Manager access required");
     }
   }

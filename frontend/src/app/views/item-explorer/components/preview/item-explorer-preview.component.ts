@@ -15,6 +15,8 @@ import { ItemExplorerPlayerDomPort } from '../../item-explorer.dom-ports';
 export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlayerDomPort {
   private frame?: ElementRef<HTMLIFrameElement>;
   private autoResizeInterval: ReturnType<typeof setInterval> | null = null;
+  private printLabelObserver: MutationObserver | null = null;
+  private printLabelOverrides = new Map<string, string>();
   readonly vm: ItemExplorerPreviewViewModel;
   private readonly messageHandler = (event: MessageEvent) => {
     const frameWindow = this.frame?.nativeElement.contentWindow;
@@ -24,8 +26,10 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
 
   @ViewChild('playerFrame')
   set playerFrame(value: ElementRef<HTMLIFrameElement> | undefined) {
+    this.disconnectPrintLabelObserver();
     this.frame = value;
     this.feature.playerFrameChanged(Boolean(value));
+    this.observePrintLabels();
   }
 
   constructor(@Inject(ItemExplorerFacade) private readonly feature: ItemExplorerFacade) {
@@ -37,6 +41,7 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
   ngOnDestroy(): void {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
+    this.disconnectPrintLabelObserver();
     this.frame = undefined;
     this.feature.unregisterPlayerDom(this);
   }
@@ -79,6 +84,14 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     return true;
   }
 
+  setPrintLabelOverrides(overrides: Readonly<Record<string, string>>): void {
+    this.printLabelOverrides = new Map(
+      Object.entries(overrides).map(([identifier, label]) => [identifier.toLowerCase(), label]),
+    );
+    this.applyPrintLabelOverrides();
+    this.observePrintLabels();
+  }
+
   startAutoResize(onHeightChange: (height: number) => void): void {
     this.stopAutoResize();
     this.autoResizeInterval = setInterval(() => {
@@ -102,6 +115,42 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
   private getPlayerDocument(): Document | null {
     const frame = this.frame?.nativeElement;
     return frame?.contentDocument || frame?.contentWindow?.document || null;
+  }
+
+  private observePrintLabels(): void {
+    const body = this.getPlayerDocument()?.body;
+    if (!body) return;
+
+    this.disconnectPrintLabelObserver();
+    this.applyPrintLabelOverrides();
+    this.printLabelObserver = new MutationObserver(() => this.applyPrintLabelOverrides());
+    this.printLabelObserver.observe(body, { childList: true, subtree: true });
+  }
+
+  private disconnectPrintLabelObserver(): void {
+    this.printLabelObserver?.disconnect();
+    this.printLabelObserver = null;
+  }
+
+  private applyPrintLabelOverrides(): void {
+    const doc = this.getPlayerDocument();
+    if (!doc) return;
+
+    doc.querySelectorAll<HTMLElement>('.element-label').forEach((labelElement) => {
+      const storedIdentifier = labelElement.dataset['cpOriginalPrintLabel'];
+      const currentText = (labelElement.textContent || '').trim();
+      const identifier = (storedIdentifier || currentText).trim();
+      if (!identifier) return;
+
+      const replacement = this.printLabelOverrides.get(identifier.toLowerCase());
+      if (replacement) {
+        labelElement.dataset['cpOriginalPrintLabel'] = identifier;
+        if (currentText !== replacement) labelElement.textContent = replacement;
+      } else if (storedIdentifier) {
+        labelElement.textContent = storedIdentifier;
+        delete labelElement.dataset['cpOriginalPrintLabel'];
+      }
+    });
   }
 
   private findElementByText(

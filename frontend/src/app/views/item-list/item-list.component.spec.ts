@@ -3,6 +3,7 @@ import { vi } from 'vitest';
 import { ItemListPreferencesService } from './item-list-preferences.service';
 import { ItemListComponent } from './item-list.component';
 import { ItemListPreferences } from './item-list.models';
+import template from './item-list.component.html?raw';
 
 const emptyPreferences = (): ItemListPreferences => ({
   ui: {
@@ -34,6 +35,15 @@ describe('ItemListComponent', () => {
     );
     return { component, preferences };
   };
+
+  it('renders visible, source and internal variable references in separate columns', () => {
+    expect(template).toContain('<th>Player-Variable</th>');
+    expect(template).toContain('<th>Quellvariable</th>');
+    expect(template).toContain('<th>Interne Variablen-ID</th>');
+    expect(template).toContain("item.variableId || '–'");
+    expect(template).toContain("item.sourceVariable || '–'");
+    expect(template).toContain("item.variableReadOnlyId || '–'");
+  });
 
   it('filters and sorts mean task difficulty numerically with missing values last', () => {
     const { component } = createComponent();

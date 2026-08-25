@@ -108,10 +108,28 @@ describe('ItemExplorer presentational components', () => {
   });
 
   it('binds ACP coding flags to general and manual instructions', () => {
-    expect(codingTemplate).toContain('vm.shouldShowVariableManualInstruction(coding)');
-    expect(codingTemplate).toContain('vm.shouldShowAutomaticCodingRules(coding, code)');
-    expect(codingTemplate).toContain('Manuelle Kodieranweisung:');
+    expect(codingTemplate).toContain('vm.shouldShowGeneralCodingInstruction(coding)');
+    expect(codingTemplate).toContain('vm.shouldShowAutomaticCodingRules(code)');
     expect(codingTemplate).toContain('Allgemeiner Kodierungshinweis:');
+    expect(codingTemplate).toContain('<strong>Manuelle Kodieranweisung:</strong>');
+    expect(codingTemplate).not.toContain("? 'Manuelle Kodieranweisung:'");
+  });
+
+  it('uses the coding variable id as the unambiguous card heading', () => {
+    expect(codingTemplate).toContain('<h4>Kodiervariable {{ coding.id }}</h4>');
+    expect(codingTemplate).not.toContain('<h4>{{ coding.label || coding.id }}</h4>');
+  });
+
+  it('hides internal coding and player target ids for an unambiguous mapping', () => {
+    expect(codingTemplate).not.toContain('Interne Kodier-ID:');
+    expect(codingTemplate).toContain('vm.codingVariableFocus.usedLegacyFallback');
+    expect(codingTemplate).toContain('Die Zuordnung wurde eindeutig über das Player-/Anzeige-Ziel');
+  });
+
+  it('shows derived-variable source ids only when player diagnostics are enabled', () => {
+    expect(codingTemplate).toContain(
+      '@if (vm.showPlayerTargetInfo && vm.codingVariableFocus.isDerived)',
+    );
   });
 
   it('exposes read-only sharing and private-copy actions for collections', () => {

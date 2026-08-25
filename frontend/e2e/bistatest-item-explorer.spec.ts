@@ -305,9 +305,10 @@ test('applies coding configuration defaults and the alternative combinations in 
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
   await expect(codingDialog.getByTestId('coding-variable-focus')).toContainText('01');
+  await expect(codingDialog).not.toContainText('Abgeleitete/aggregierte Kodierung');
   await expect(codingDialog.locator('.coding-item')).toHaveCount(1);
-  await expect(codingDialog).toContainText('Nur Segment Bilderbücher markieren.');
-  await expect(codingDialog.locator('.rule-list')).toHaveCount(0);
+  await expect(codingDialog).not.toContainText('Nur Segment Bilderbücher markieren.');
+  await expect(codingDialog.locator('.rule-list li')).toHaveCount(1);
   for (const technicalId of ['_button01', '_intro01', '_outro01', '_source01']) {
     await expect(codingDialog).not.toContainText(technicalId);
   }
@@ -319,14 +320,14 @@ test('applies coding configuration defaults and the alternative combinations in 
   await page.getByRole('button', { name: /Schließen/ }).click();
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  const preferManualToggle = page.getByLabel(
+  const preferManualCodingInstructions = page.getByLabel(
     'Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden',
   );
-  await preferManualToggle.uncheck();
-  await expect(preferManualToggle).not.toBeChecked();
-  const generalInstructionsToggle = page.getByLabel('Allgemeine Kodierungshinweise anzeigen');
-  await generalInstructionsToggle.check();
-  await expect(generalInstructionsToggle).toBeChecked();
+  const showGeneralCodingInstructions = page.getByLabel('Allgemeine Kodierungshinweise anzeigen');
+  await expect(preferManualCodingInstructions).toBeChecked();
+  await expect(showGeneralCodingInstructions).not.toBeChecked();
+  await preferManualCodingInstructions.uncheck();
+  await showGeneralCodingInstructions.check();
   await saveFeatureConfig(page);
 
   await openExplorer(page);

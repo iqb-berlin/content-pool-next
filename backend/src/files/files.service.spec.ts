@@ -968,6 +968,8 @@ describe("FilesService", () => {
               id: "item-1",
               description: "Aufgabe 1",
               variableId: "VAR_1",
+              sourceVariable: "PLAYER_VAR_1",
+              variableReadOnlyId: "internal-var-1",
               profiles: [
                 {
                   entries: [
@@ -993,6 +995,14 @@ describe("FilesService", () => {
           structuredData: expect.objectContaining({
             type: "vomd",
             itemCount: 1,
+            items: [
+              expect.objectContaining({
+                id: "item-1",
+                variableId: "VAR_1",
+                sourceVariable: "PLAYER_VAR_1",
+                variableReadOnlyId: "internal-var-1",
+              }),
+            ],
             unitProfiles: [
               expect.objectContaining({
                 id: "difficulty",

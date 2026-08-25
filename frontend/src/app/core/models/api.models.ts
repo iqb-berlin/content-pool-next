@@ -241,6 +241,8 @@ export interface FilePreviewVomdData {
     id: string;
     description: string;
     variableId?: string;
+    sourceVariable?: string;
+    variableReadOnlyId?: string;
     metadata: Record<string, string>;
   }[];
 }
@@ -482,6 +484,8 @@ export interface SimpleItemListEntry {
   unitName: string;
   name?: string;
   sourceVariable?: string;
+  variableId?: string;
+  variableReadOnlyId?: string;
   meanTaskDifficulty?: number;
 }
 

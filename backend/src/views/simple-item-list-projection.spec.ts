@@ -17,6 +17,8 @@ describe("simple item list projection", () => {
       unitName: "Aufgabe 1",
       name: "Item 1",
       sourceVariable: "V1",
+      variableId: undefined,
+      variableReadOnlyId: undefined,
       meanTaskDifficulty: -0.25,
     });
   });
@@ -33,6 +35,8 @@ describe("simple item list projection", () => {
       unitName: "unit-1",
       name: undefined,
       sourceVariable: undefined,
+      variableId: undefined,
+      variableReadOnlyId: undefined,
     });
     expect(simpleItemListKey("unit-1", "item-1")).not.toBe(
       simpleItemListKey("unit-1-item", "1"),

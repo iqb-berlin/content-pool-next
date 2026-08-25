@@ -593,6 +593,9 @@ async function seed(): Promise<void> {
           availableTags: ["Alt", "Neu"],
           persistUserPreferences: true,
           enableItemCollections: true,
+          enableCommenting: true,
+          commentTargets: ["ITEM"],
+          commentVisibilityMode: "SHARED",
           showGeneralCodingInstructions: false,
           preferManualCodingInstructions: true,
           metadataColumns: {

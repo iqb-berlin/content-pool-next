@@ -271,6 +271,13 @@
         </button>
       }
     </div>
+
+    <app-item-comment-thread
+      [acpId]="vm.acpId"
+      [unitId]="vm.selectedItem.unitId"
+      [itemId]="vm.selectedItem.itemId"
+      [enabled]="vm.itemCommentsEnabled"
+    />
   } @else {
     <div class="empty-state preview-empty">
       <div style="font-size: 3rem; margin-bottom: 16px">👈</div>

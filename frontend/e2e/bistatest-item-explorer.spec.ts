@@ -42,6 +42,129 @@ async function publishExplorerDraft(page: Page): Promise<void> {
   ]);
 }
 
+test('shares item comments and replies directly in the selected Item Explorer preview', async ({
+  page,
+}) => {
+  await login(page, MANAGER_ID, MANAGER_USERNAME);
+  await openExplorer(page);
+  await page.locator('tbody tr').first().click();
+
+  await page.getByRole('button', { name: /Kommentare \(0\)/ }).click();
+  const panel = page.getByRole('region', { name: 'Kommentare zum ausgewählten Item' });
+  await expect(panel).toContainText('Geteilt');
+  await panel.getByPlaceholder('Kommentar zu diesem Item …').fill('E2E Hauptkommentar');
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith(`/api/acp/${ACP_ID}/review/comments`) &&
+        response.ok(),
+    ),
+    panel.getByRole('button', { name: 'Kommentieren' }).click(),
+  ]);
+  await expect(panel.getByText('E2E Hauptkommentar')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(1);
+
+  await panel.getByRole('button', { name: 'Bearbeiten' }).click();
+  await panel.locator('.edit-form textarea').fill('E2E Hauptkommentar geändert');
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'PATCH' &&
+        response.url().includes(`/api/acp/${ACP_ID}/review/comments/`) &&
+        response.ok(),
+    ),
+    panel.locator('.edit-form').getByRole('button', { name: 'Speichern' }).click(),
+  ]);
+  await expect(panel.getByText('E2E Hauptkommentar geändert')).toBeVisible();
+  await expect(panel.locator('.edited-label')).toContainText('geändert');
+
+  const firstTargetLabel = await panel.locator('.comment-panel-header strong').innerText();
+  const firstItemId = firstTargetLabel.split('·').at(-1)?.trim() || '';
+  expect(firstItemId).not.toBe('');
+  const newCommentInput = panel.getByPlaceholder('Kommentar zu diesem Item …');
+  await newCommentInput.fill('Entwurf für Item 1');
+  await page.locator('tbody tr').nth(1).click();
+  await expect(page.locator('tbody tr').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(panel.locator('.comment-panel-header strong')).not.toHaveText(firstTargetLabel);
+  await newCommentInput.fill('Entwurf für Item 2');
+  await page.locator('tbody tr').first().click();
+  await expect(panel.locator('.comment-panel-header strong')).toHaveText(firstTargetLabel);
+  await expect(newCommentInput).toHaveValue('Entwurf für Item 1');
+  await newCommentInput.fill('');
+
+  await login(page, VIEWER_ID, VIEWER_USERNAME);
+  await openExplorer(page);
+
+  let releaseDelayedThread!: () => void;
+  const delayedThread = new Promise<void>((resolve) => {
+    releaseDelayedThread = resolve;
+  });
+  let itemOneDelayed = false;
+  await page.route(`**/api/acp/${ACP_ID}/review/comments?*`, async (route) => {
+    const itemId = new URL(route.request().url()).searchParams.get('itemId') || '';
+    if (!itemOneDelayed && itemId === firstItemId) {
+      itemOneDelayed = true;
+      await delayedThread;
+    }
+    await route.continue();
+  });
+  const delayedRequest = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return (
+      url.pathname.endsWith(`/api/acp/${ACP_ID}/review/comments`) &&
+      url.searchParams.get('itemId') === firstItemId
+    );
+  });
+  await page.locator('tbody tr').first().click();
+  await delayedRequest;
+  await page.locator('tbody tr').nth(1).click();
+  await expect(page.locator('tbody tr').nth(1)).toHaveAttribute('aria-selected', 'true');
+  releaseDelayedThread();
+  await expect(page.getByRole('button', { name: /Kommentare \(0\)/ })).toBeVisible();
+
+  await page.locator('tbody tr').first().click();
+  await page.getByRole('button', { name: /Kommentare \(1\)/ }).click();
+  const viewerPanel = page.getByRole('region', {
+    name: 'Kommentare zum ausgewählten Item',
+  });
+  await expect(viewerPanel.getByText('E2E Hauptkommentar geändert')).toBeVisible();
+  await expect(viewerPanel.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(0);
+  await viewerPanel.getByRole('button', { name: 'Antworten', exact: true }).click();
+  await viewerPanel.getByPlaceholder('Antwort schreiben …').fill('E2E Antwort');
+  await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().endsWith(`/api/acp/${ACP_ID}/review/comments`) &&
+        response.ok(),
+    ),
+    viewerPanel
+      .locator('.reply-form')
+      .getByRole('button', { name: 'Antworten', exact: true })
+      .click(),
+  ]);
+  await expect(viewerPanel.getByText('E2E Antwort')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Kommentare \(2\)/ })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('tbody tr')).toHaveCount(2);
+  await page.locator('tbody tr').first().click();
+  await page.getByRole('button', { name: /Kommentare \(2\)/ }).click();
+  const reloadedPanel = page.getByRole('region', {
+    name: 'Kommentare zum ausgewählten Item',
+  });
+  const expandReplies = reloadedPanel.getByRole('button', {
+    name: '1 Antworten aufklappen',
+  });
+  await expect(expandReplies).toBeVisible();
+  await expect(reloadedPanel.getByText('E2E Antwort')).not.toBeVisible();
+  await expandReplies.click();
+  await expect(reloadedPanel.getByText('E2E Antwort')).toBeVisible();
+  await reloadedPanel.getByRole('button', { name: 'Antworten einklappen' }).click();
+  await expect(reloadedPanel.getByText('E2E Antwort')).not.toBeVisible();
+});
+
 test('offers configured columns and persists widths plus an explicitly empty selection', async ({
   page,
 }) => {

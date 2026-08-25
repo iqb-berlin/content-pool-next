@@ -8,6 +8,7 @@ import {
   SnapshotCurrentDiff,
   AcpFile,
   Comment,
+  CommentThreadSnapshot,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -415,6 +416,40 @@ export class ApiService {
   }
   createComment(acpId: string, data: any): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/comments`, data);
+  }
+  getItemCommentThread(
+    acpId: string,
+    unitId: string,
+    itemId: string,
+  ): Observable<CommentThreadSnapshot> {
+    return this.http.get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+      params: { unitId, itemId },
+    });
+  }
+  createItemComment(
+    acpId: string,
+    data: { unitId: string; itemId: string; commentText: string; parentCommentId?: string },
+  ): Observable<Comment> {
+    return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
+  }
+  updateItemComment(
+    acpId: string,
+    commentId: string,
+    data: { commentText: string; version: number },
+  ): Observable<Comment> {
+    return this.http.patch<Comment>(`${this.API}/acp/${acpId}/review/comments/${commentId}`, data);
+  }
+  deleteItemComment(
+    acpId: string,
+    commentId: string,
+    version: number,
+  ): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(
+      `${this.API}/acp/${acpId}/review/comments/${commentId}`,
+      {
+        params: { version },
+      },
+    );
   }
   exportComments(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/acp/${acpId}/comments/export`);

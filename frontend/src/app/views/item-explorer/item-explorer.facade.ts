@@ -261,6 +261,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private readonly draftPatchDebounceMs = 250;
   private draftPatchTimeout: ReturnType<typeof setTimeout> | null = null;
+  private draftPatchFlushInFlight: Promise<boolean> | null = null;
   private pendingDraftPatch: Record<string, unknown> | null = null;
   private pendingDraftChangeType = 'UI_UPDATE';
   private suppressDraftPatch = false;
@@ -6392,6 +6393,8 @@ export class ItemExplorerFacade implements OnDestroy {
           ...merged['ui'],
           ...value,
         };
+      } else if (key === 'itemPropertiesPatch' && this.isRecord(value)) {
+        merged[key] = this.mergeItemPropertiesPatches(merged[key], value);
       } else {
         merged[key] = value;
       }
@@ -6399,10 +6402,55 @@ export class ItemExplorerFacade implements OnDestroy {
     return merged;
   }
 
-  private async flushDraftPatch(): Promise<boolean> {
-    if (this.destroyed) return false;
+  private mergeItemPropertiesPatches(
+    current: unknown,
+    incoming: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const merged = this.isRecord(current) ? { ...current } : {};
+    for (const [itemKey, propertyPatch] of Object.entries(incoming)) {
+      if (propertyPatch === null) {
+        merged[itemKey] = null;
+      } else if (this.isRecord(propertyPatch)) {
+        merged[itemKey] = this.isRecord(merged[itemKey])
+          ? { ...merged[itemKey], ...propertyPatch }
+          : { ...propertyPatch };
+      } else {
+        merged[itemKey] = propertyPatch;
+      }
+    }
+    return merged;
+  }
+
+  private flushDraftPatch(): Promise<boolean> {
+    if (this.destroyed) return Promise.resolve(false);
+    if (this.draftPatchFlushInFlight) {
+      return this.draftPatchFlushInFlight;
+    }
     if (!this.canEditExplorer || !this.pendingDraftPatch) {
-      return true;
+      return Promise.resolve(true);
+    }
+
+    const drain = this.drainDraftPatches();
+    const trackedDrain = drain.finally(() => {
+      if (this.draftPatchFlushInFlight === trackedDrain) {
+        this.draftPatchFlushInFlight = null;
+      }
+    });
+    this.draftPatchFlushInFlight = trackedDrain;
+    return trackedDrain;
+  }
+
+  private async drainDraftPatches(): Promise<boolean> {
+    while (this.pendingDraftPatch) {
+      if (this.destroyed || !this.canEditExplorer) return false;
+      if (!(await this.performDraftPatch())) return false;
+    }
+    return !this.destroyed;
+  }
+
+  private async performDraftPatch(): Promise<boolean> {
+    if (this.destroyed || !this.canEditExplorer || !this.pendingDraftPatch) {
+      return !this.destroyed;
     }
 
     if (this.draftPatchTimeout) {
@@ -6425,7 +6473,17 @@ export class ItemExplorerFacade implements OnDestroy {
         }),
       );
       if (this.destroyed) return false;
-      this.applySharedExplorerEnvelope(envelope);
+      if (this.pendingDraftPatch) {
+        // A newer optimistic change is already visible locally. Only adopt the
+        // server version here so the next serialized patch does not overwrite
+        // that newer UI state with this response's older snapshot.
+        this.latestExplorerState = envelope;
+        this.explorerVersion = envelope.version;
+        this.explorerPublishedVersion = envelope.publishedVersion;
+        this.explorerUiStatus = 'DIRTY';
+      } else {
+        this.applySharedExplorerEnvelope(envelope);
+      }
       return true;
     } catch (error: any) {
       if (this.destroyed) return false;
@@ -6434,6 +6492,8 @@ export class ItemExplorerFacade implements OnDestroy {
       if (error?.status === 409) {
         this.lastDraftOperationError =
           'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
+        this.pendingDraftPatch = null;
+        this.pendingDraftChangeType = 'UI_UPDATE';
         await this.reloadSharedExplorerStateAndItems(true);
         return false;
       }

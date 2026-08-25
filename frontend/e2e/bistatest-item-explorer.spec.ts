@@ -305,6 +305,7 @@ test('applies coding configuration defaults and the alternative combinations in 
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
   await expect(codingDialog.getByTestId('coding-variable-focus')).toContainText('01');
+  await expect(codingDialog).not.toContainText('Abgeleitete/aggregierte Kodierung');
   await expect(codingDialog.locator('.coding-item')).toHaveCount(1);
   await expect(codingDialog).toContainText('Nur Segment Bilderbücher markieren.');
   await expect(codingDialog.locator('.rule-list')).toHaveCount(0);

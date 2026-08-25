@@ -265,6 +265,7 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     | 'shouldShowVariableManualInstruction'
     | 'showOverlay'
     | 'showGeneralCodingInstructions'
+    | 'showPlayerTargetInfo'
     | 'toggleCodingSort'
   >
 >;

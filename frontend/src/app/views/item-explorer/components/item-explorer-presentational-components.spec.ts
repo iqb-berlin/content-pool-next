@@ -125,6 +125,12 @@ describe('ItemExplorer presentational components', () => {
     expect(codingTemplate).toContain('Die Zuordnung wurde eindeutig über das Player-/Anzeige-Ziel');
   });
 
+  it('shows derived-variable source ids only when player diagnostics are enabled', () => {
+    expect(codingTemplate).toContain(
+      '@if (vm.showPlayerTargetInfo && vm.codingVariableFocus.isDerived)',
+    );
+  });
+
   it('exposes read-only sharing and private-copy actions for collections', () => {
     expect(collectionsTemplate).toContain('Für diesen ACP freigeben');
     expect(collectionsTemplate).toContain('Geteilt von {{ activeCollection.ownerLabel }}');

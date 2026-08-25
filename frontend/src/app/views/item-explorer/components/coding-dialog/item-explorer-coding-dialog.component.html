@@ -30,7 +30,7 @@
                   aufgelöst.
                 </div>
               }
-              @if (vm.codingVariableFocus.isDerived) {
+              @if (vm.showPlayerTargetInfo && vm.codingVariableFocus.isDerived) {
                 <div class="coding-aggregation-info">
                   <strong>Abgeleitete/aggregierte Kodierung</strong>
                   @if (vm.codingVariableFocus.sourceIds.length) {

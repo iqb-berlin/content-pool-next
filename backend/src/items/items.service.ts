@@ -198,6 +198,7 @@ export class ItemsService {
     options: {
       persist?: boolean;
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      confirmWarnings?: boolean;
     } = {},
   ) {
     return this.uploadItemParameters(acpId, fileBuffer, {
@@ -218,6 +219,7 @@ export class ItemsService {
       persist?: boolean;
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
       requireEmpiricalDifficulty?: boolean;
+      confirmWarnings?: boolean;
     } = {},
   ) {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
@@ -230,9 +232,14 @@ export class ItemsService {
       itemProperties:
         options.itemPropertiesOverride || acp.itemProperties || {},
       requireEmpiricalDifficulty: options.requireEmpiricalDifficulty,
+      confirmWarnings: options.confirmWarnings,
     });
 
-    if (result.updated > 0 && options.persist !== false) {
+    if (
+      result.updated > 0 &&
+      result.requiresConfirmation !== true &&
+      options.persist !== false
+    ) {
       acp.itemProperties = result.nextItemProperties;
       await this.acpRepository.save(acp);
     }

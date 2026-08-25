@@ -283,6 +283,65 @@ describe("ItemsController", () => {
     ).not.toHaveBeenCalled();
   });
 
+  it("requires explicit confirmation before patching a warning-gated import", async () => {
+    const file = { buffer: Buffer.from("csv-data") } as Express.Multer.File;
+    const req = { user: { sub: "u-1" } };
+    itemsService.uploadItemParameters.mockResolvedValueOnce({
+      updated: 1,
+      failed: [],
+      successes: ["item-1"],
+      warnings: [
+        {
+          code: "BOOKLET_OCCURRENCES_SKIPPED",
+          message: "Booklet-Zuordnungen werden übersprungen.",
+        },
+      ],
+      requiresConfirmation: true,
+      nextItemProperties: { "item-1": { empiricalDifficulty: 0.5 } },
+    });
+
+    const preview = await controller.uploadItemParameters(
+      "acp-1",
+      file,
+      "true",
+      "4",
+      req,
+    );
+
+    expect(preview).toEqual(
+      expect.objectContaining({ requiresConfirmation: true }),
+    );
+    expect(itemExplorerStateService.patchDraft).not.toHaveBeenCalled();
+
+    itemsService.uploadItemParameters.mockResolvedValueOnce({
+      updated: 1,
+      failed: [],
+      successes: ["item-1"],
+      warnings: [],
+      requiresConfirmation: false,
+      nextItemProperties: { "item-1": { empiricalDifficulty: 0.5 } },
+    });
+    await controller.uploadItemParameters(
+      "acp-1",
+      file,
+      "true",
+      "4",
+      req,
+      "true",
+    );
+
+    expect(itemsService.uploadItemParameters).toHaveBeenLastCalledWith(
+      "acp-1",
+      file.buffer,
+      {
+        persist: false,
+        itemPropertiesOverride: { "item-1": { id: "item-1" } },
+        confirmWarnings: true,
+      },
+    );
+    expect(itemExplorerStateService.patchDraft).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves the difficulty-only visibility behavior for wide imports", async () => {
     itemsService.uploadItemParameters.mockResolvedValueOnce({
       updated: 1,

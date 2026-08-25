@@ -44,6 +44,7 @@ interface ItemParameterImportCommand {
   kind: ItemParameterImportKind;
   target: ItemParameterImportTarget;
   baseVersion?: number;
+  confirmWarnings?: boolean;
   user?: unknown;
 }
 
@@ -157,6 +158,7 @@ export class ItemsController {
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
+    @Query("confirmWarnings") confirmWarnings?: string,
   ) {
     if (!file?.buffer) {
       throw new BadRequestException("A CSV file is required");
@@ -167,6 +169,7 @@ export class ItemsController {
       kind: "item-parameters",
       target: draft === "true" ? "draft" : "published",
       baseVersion: this.parseBaseVersion(baseVersion),
+      confirmWarnings: confirmWarnings === "true",
       user: req?.user,
     });
   }
@@ -197,6 +200,7 @@ export class ItemsController {
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
+    @Query("confirmWarnings") confirmWarnings?: string,
   ) {
     return this.runItemParameterImport({
       acpId,
@@ -204,6 +208,7 @@ export class ItemsController {
       kind: "empirical-difficulty",
       target: draft === "true" ? "draft" : "published",
       baseVersion: this.parseBaseVersion(baseVersion),
+      confirmWarnings: confirmWarnings === "true",
       user: req?.user,
     });
   }
@@ -423,13 +428,30 @@ export class ItemsController {
         ? await this.itemsService.uploadEmpiricalDifficulties(
             command.acpId,
             command.fileBuffer,
-            { persist: false, itemPropertiesOverride: itemProperties },
+            {
+              persist: false,
+              itemPropertiesOverride: itemProperties,
+              ...(command.confirmWarnings ? { confirmWarnings: true } : {}),
+            },
           )
         : await this.itemsService.uploadItemParameters(
             command.acpId,
             command.fileBuffer,
-            { persist: false, itemPropertiesOverride: itemProperties },
+            {
+              persist: false,
+              itemPropertiesOverride: itemProperties,
+              ...(command.confirmWarnings ? { confirmWarnings: true } : {}),
+            },
           );
+    if (uploadResult.requiresConfirmation) {
+      return {
+        updated: uploadResult.updated,
+        failed: uploadResult.failed,
+        successes: uploadResult.successes,
+        warnings: uploadResult.warnings,
+        requiresConfirmation: true,
+      };
+    }
     const importedEmpiricalDifficulty =
       command.kind === "empirical-difficulty"
         ? uploadResult.updated > 0
@@ -471,6 +493,8 @@ export class ItemsController {
         updated: 0,
         failed: uploadResult.failed,
         successes: uploadResult.successes,
+        warnings: uploadResult.warnings,
+        requiresConfirmation: uploadResult.requiresConfirmation,
         explorerState: currentState,
       };
     }
@@ -494,6 +518,8 @@ export class ItemsController {
       updated: uploadResult.updated,
       failed: uploadResult.failed,
       successes: uploadResult.successes,
+      warnings: uploadResult.warnings,
+      requiresConfirmation: uploadResult.requiresConfirmation,
       showOnlyItemsWithEmpiricalDifficulty,
       explorerState,
     };

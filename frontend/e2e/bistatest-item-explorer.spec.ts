@@ -42,6 +42,54 @@ async function publishExplorerDraft(page: Page): Promise<void> {
   ]);
 }
 
+test('serializes delayed draft updates while typing into the item filter', async ({ page }) => {
+  await login(page, MANAGER_ID, MANAGER_USERNAME);
+  await openExplorer(page);
+
+  const requests: Array<{ baseVersion: number; filterText: string; status: number }> = [];
+  let activeRequests = 0;
+  let maximumActiveRequests = 0;
+  const draftPatchUrl = `**/api/acp/${ACP_ID}/item-explorer/draft`;
+  await page.route(draftPatchUrl, async (route) => {
+    activeRequests += 1;
+    maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+    const payload = route.request().postDataJSON() as {
+      baseVersion: number;
+      patch?: { ui?: { filterText?: string } };
+    };
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const response = await route.fetch();
+    requests.push({
+      baseVersion: payload.baseVersion,
+      filterText: payload.patch?.ui?.filterText || '',
+      status: response.status(),
+    });
+    activeRequests -= 1;
+    await route.fulfill({ response });
+  });
+
+  const filter = page.getByPlaceholder('🔍 Items filtern...');
+  await filter.pressSequentially('DLB002', { delay: 300 });
+  await expect(filter).toHaveValue('DLB002');
+  await expect.poll(() => requests.at(-1)?.filterText).toBe('DLB002');
+  await expect.poll(() => activeRequests).toBe(0);
+
+  expect(requests.length).toBeGreaterThan(1);
+  expect(maximumActiveRequests).toBe(1);
+  expect(requests.every((request) => request.status === 200)).toBe(true);
+  expect(requests.map((request) => request.baseVersion)).toEqual(
+    [...requests.map((request) => request.baseVersion)].sort((left, right) => left - right),
+  );
+  await expect(
+    page.getByText('Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.'),
+  ).toHaveCount(0);
+
+  await filter.fill('');
+  await expect.poll(() => requests.at(-1)?.filterText).toBe('');
+  await expect.poll(() => activeRequests).toBe(0);
+  await page.unroute(draftPatchUrl);
+});
+
 test('offers configured columns and persists widths plus an explicitly empty selection', async ({
   page,
 }) => {

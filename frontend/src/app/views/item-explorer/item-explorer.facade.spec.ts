@@ -1648,6 +1648,100 @@ describe('ItemExplorerFacade', () => {
     consoleError.mockRestore();
   });
 
+  it('serializes and merges draft patches queued during a request', async () => {
+    const firstPatch$ = new Subject<any>();
+    const secondPatch$ = new Subject<any>();
+    const savedEnvelope = createExplorerEnvelope({
+      status: 'CLEAN',
+      draftFilterText: 'DLB002',
+      publishedFilterText: 'DLB002',
+    });
+    savedEnvelope.version = 6;
+    savedEnvelope.publishedVersion = 3;
+    const saveItemExplorerDraft = vi.fn(() => of(savedEnvelope));
+    const patchItemExplorerDraft = vi
+      .fn()
+      .mockReturnValueOnce(firstPatch$)
+      .mockReturnValueOnce(secondPatch$);
+    const component = createFacade({ api: { patchItemExplorerDraft, saveItemExplorerDraft } });
+    component.acpId = 'acp-1';
+    component.canEditExplorer = true;
+    component.canPublishExplorer = true;
+    component.explorerVersion = 3;
+    vi.spyOn(component, 'reloadItems').mockImplementation(() => undefined);
+
+    component.setFilterText('D');
+    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'D' } }, true);
+    expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
+    expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
+      changeType: 'UI_STATE_CHANGED',
+      patch: { ui: { filterText: 'D' } },
+      baseVersion: 3,
+    });
+    const savePromise = component.saveExplorerDraft(true);
+
+    component.setFilterText('DLB002');
+    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'DLB002' } }, true);
+    (component as any).queueDraftPatch(
+      'ITEM_EXCLUSION_CHANGED',
+      { itemPropertiesPatch: { 'row-1': { excluded: true } } },
+      true,
+    );
+    (component as any).queueDraftPatch(
+      'ITEM_EXCLUSION_CHANGED',
+      { itemPropertiesPatch: { 'row-2': { excluded: true } } },
+      true,
+    );
+    (component as any).queueDraftPatch(
+      'PREVIEW_TARGET_CHANGED',
+      { itemPropertiesPatch: { 'row-1': { previewTargetId: 'V2' } } },
+      true,
+    );
+    (component as any).queueDraftPatch(
+      'ITEM_EXCLUSION_CHANGED',
+      { itemPropertiesPatch: { 'row-2': null, 'row-3': null } },
+      true,
+    );
+    (component as any).queueDraftPatch(
+      'PREVIEW_TARGET_CHANGED',
+      { itemPropertiesPatch: { 'row-3': { previewTargetId: 'V3' } } },
+      true,
+    );
+    expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
+
+    const firstEnvelope = createExplorerEnvelope({ draftFilterText: 'D' });
+    firstEnvelope.version = 4;
+    firstPatch$.next(firstEnvelope);
+    firstPatch$.complete();
+
+    await vi.waitFor(() => expect(patchItemExplorerDraft).toHaveBeenCalledTimes(2));
+    expect(saveItemExplorerDraft).not.toHaveBeenCalled();
+    expect(component.filterText).toBe('DLB002');
+    expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
+      changeType: 'PREVIEW_TARGET_CHANGED',
+      patch: {
+        ui: { filterText: 'DLB002' },
+        itemPropertiesPatch: {
+          'row-1': { excluded: true, previewTargetId: 'V2' },
+          'row-2': null,
+          'row-3': { previewTargetId: 'V3' },
+        },
+      },
+      baseVersion: 4,
+    });
+
+    const secondEnvelope = createExplorerEnvelope({ draftFilterText: 'DLB002' });
+    secondEnvelope.version = 5;
+    secondPatch$.next(secondEnvelope);
+    secondPatch$.complete();
+
+    await vi.waitFor(() => expect(saveItemExplorerDraft).toHaveBeenCalledWith('acp-1', 5));
+    await expect(savePromise).resolves.toBe(true);
+    expect(component.explorerVersion).toBe(6);
+    expect(component.filterText).toBe('DLB002');
+    expect(component.lastDraftOperationError).toBe('');
+  });
+
   it('restores a removed tag when saving the optimistic change fails', async () => {
     const envelope = createExplorerEnvelope({ status: 'DIRTY' });
     envelope.draftState.tags = { 'row-1': ['Alt'] };

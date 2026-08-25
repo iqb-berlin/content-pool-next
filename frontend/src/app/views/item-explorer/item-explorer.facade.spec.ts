@@ -2825,6 +2825,123 @@ describe('ItemExplorerFacade', () => {
     expect(component.selectedPreviewTarget).toBe('PLAYER_04');
   });
 
+  it('shows DSB02210 player target 06 while keeping internal coding id 05', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === '06'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '10',
+      uuid: 'dsb02210',
+      unitId: 'DSB022',
+      unitLabel: 'Zoo',
+      description: 'Item 10',
+      variableId: '06',
+      variableReadOnlyId: '05',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: '05',
+          alias: '06',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [{ id: '06', label: 'Aufgabe 6', codes: [] }] as any;
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.getPlayerTarget(component.selectedItem)).toBe('06');
+    expect(component.selectedItemTarget).toBe('05');
+    expect(component.selectedPreviewTarget).toBe('06');
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: '05',
+      internalId: '05',
+      codingId: '06',
+      playerTargetId: '06',
+      usedLegacyFallback: false,
+    });
+  });
+
+  it('recovers DSB04101 through its unique legacy player alias', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === '01'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '01',
+      uuid: 'dsb04101',
+      unitId: 'DSB041',
+      unitLabel: 'DSB041',
+      description: 'Item with stale internal reference',
+      variableId: '01',
+      variableReadOnlyId: 'text-field_1765284526968_1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'text-area_1769771943595_1',
+          alias: '01',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [{ id: '01', label: 'Aufgabe 1', codes: [] }] as any;
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('text-area_1769771943595_1');
+    expect(component.selectedPreviewTarget).toBe('01');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(true);
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'text-field_1765284526968_1',
+      internalId: 'text-area_1769771943595_1',
+      codingId: '01',
+      playerTargetId: '01',
+      usedLegacyFallback: true,
+      requestedInternalId: 'text-field_1765284526968_1',
+    });
+  });
+
+  it('does not use a legacy fallback when an id and another alias share the same value', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '01',
+      uuid: 'ambiguous-legacy',
+      unitId: 'UNIT',
+      unitLabel: 'UNIT',
+      description: 'Ambiguous legacy target',
+      variableId: '01',
+      variableReadOnlyId: 'stale-internal-id',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: '01', alias: 'PLAYER_A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'internal-b', alias: '01', sourceType: 'BASE', deriveSources: [] },
+      ],
+    };
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus.status).toBe('not-found');
+    expect(component.selectedPreviewTarget).toBe('');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(false);
+  });
+
   it('keeps aggregate codes while inheriting a missing manual instruction from its source', () => {
     const component = createFacade();
     component.selectedItem = {

@@ -100,6 +100,8 @@ interface CodingVariableMatch {
   variable?: any;
   index?: number;
   matchIndices: number[];
+  usedLegacyFallback?: boolean;
+  requestedInternalId?: string;
 }
 const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'infit', label: 'Infit', kind: 'number' },
@@ -438,7 +440,11 @@ export class ItemExplorerFacade implements OnDestroy {
     ): CodingVariableFocusResolution => ({
       status,
       targetId,
+      internalId: '',
       codingId: '',
+      playerTargetId: '',
+      usedLegacyFallback: false,
+      requestedInternalId: variableMatch.requestedInternalId || '',
       matches,
       isDerived: false,
       sourceIds: [],
@@ -485,7 +491,14 @@ export class ItemExplorerFacade implements OnDestroy {
       return {
         status: 'unique',
         targetId,
+        internalId: this.getCodingVariableId(rawVariable, targetId),
         codingId: effectiveTextMatch.id,
+        playerTargetId: this.resolvePlayerVariableReference(
+          rawVariable,
+          this.getVisiblePlayerTarget(this.selectedItem),
+        ),
+        usedLegacyFallback: Boolean(variableMatch.usedLegacyFallback),
+        requestedInternalId: variableMatch.requestedInternalId || '',
         matches: [effectiveTextMatch],
         isDerived: sourceType !== 'BASE' && sourceType !== 'BASE_NO_VALUE',
         sourceIds: this.getCodingVariableSources(rawVariable),
@@ -506,7 +519,11 @@ export class ItemExplorerFacade implements OnDestroy {
     return {
       status: 'unique',
       targetId,
+      internalId: targetId,
       codingId: directMatches[0].id,
+      playerTargetId: this.getPlayerTarget(this.selectedItem),
+      usedLegacyFallback: false,
+      requestedInternalId: '',
       matches: directMatches,
       isDerived: false,
       sourceIds: [],
@@ -622,7 +639,7 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get selectedItemTarget(): string {
-    return this.previewTargetResolution.itemTarget || this.getPlayerTarget(this.selectedItem);
+    return this.previewTargetResolution.itemTarget || this.getItemCodingTarget(this.selectedItem);
   }
 
   get previewTargetOptions(): PreviewTargetOption[] {
@@ -3198,6 +3215,11 @@ export class ItemExplorerFacade implements OnDestroy {
 
   getPlayerTarget(item?: ReadonlyExplorerItem | null): string {
     if (!item) return '';
+    return this.getVisiblePlayerTarget(item) || this.getItemCodingTarget(item);
+  }
+
+  private getItemCodingTarget(item?: ReadonlyExplorerItem | null): string {
+    if (!item) return '';
     return String(item.variableReadOnlyId || item.sourceVariable || item.variableId || '').trim();
   }
 
@@ -3230,7 +3252,7 @@ export class ItemExplorerFacade implements OnDestroy {
   ): PreviewTargetResolution {
     const codingVariables = this.getCurrentCodingVariables();
     const fallbackOptions = this.getAllPreviewTargetOptions(codingVariables);
-    const itemTarget = this.getPlayerTarget(item);
+    const itemTarget = this.getItemCodingTarget(item);
     const visiblePlayerTarget = this.getVisiblePlayerTarget(item);
     if (!itemTarget) {
       return {
@@ -3356,11 +3378,63 @@ export class ItemExplorerFacade implements OnDestroy {
 
     const internalId = String(item.variableReadOnlyId || '').trim();
     if (internalId) {
-      return this.resolveCodingVariableReference(internalId, variables, false);
+      const internalMatch = this.resolveCodingVariableReference(internalId, variables, false);
+      if (internalMatch.status !== 'not-found') {
+        return internalMatch;
+      }
+
+      const legacyReference = String(item.sourceVariable || item.variableId || '').trim();
+      const legacyMatch = this.resolveUniqueCodingVariableIdentifier(legacyReference, variables);
+      if (legacyMatch.status === 'unique') {
+        return {
+          ...legacyMatch,
+          reference: internalId,
+          usedLegacyFallback: true,
+          requestedInternalId: internalId,
+        };
+      }
+
+      return internalMatch;
     }
 
     const legacyReference = String(item.sourceVariable || item.variableId || '').trim();
     return this.resolveCodingVariableReference(legacyReference, variables, true);
+  }
+
+  private resolveUniqueCodingVariableIdentifier(
+    reference: string,
+    variables: any[],
+  ): CodingVariableMatch {
+    const normalizedReference = String(reference || '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedReference) {
+      return { status: 'missing-target', reference: '', matchIndices: [] };
+    }
+
+    const matchIndices = variables.flatMap((variable, index) =>
+      this.getCodingVariableIdentifiers(variable).some(
+        (identifier) => identifier.toLowerCase() === normalizedReference,
+      )
+        ? [index]
+        : [],
+    );
+    if (matchIndices.length === 1) {
+      const index = matchIndices[0];
+      return {
+        status: 'unique',
+        reference: String(reference).trim(),
+        variable: variables[index],
+        index,
+        matchIndices,
+      };
+    }
+
+    return {
+      status: matchIndices.length ? 'ambiguous' : 'not-found',
+      reference: String(reference).trim(),
+      matchIndices,
+    };
   }
 
   private resolveCodingVariableReference(

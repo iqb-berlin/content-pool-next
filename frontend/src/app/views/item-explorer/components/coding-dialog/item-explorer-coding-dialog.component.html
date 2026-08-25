@@ -22,17 +22,26 @@
                 }
               </div>
               <div>
-                Zugeordnete Variable:
-                <code>{{ vm.codingVariableFocus.targetId }}</code>
+                Interne Kodier-ID:
+                <code>{{ vm.codingVariableFocus.internalId }}</code>
                 @if (
-                  vm.codingVariableFocus.codingId &&
-                  vm.codingVariableFocus.codingId.toLowerCase() !==
-                    vm.codingVariableFocus.targetId.toLowerCase()
+                  vm.codingVariableFocus.playerTargetId &&
+                  vm.codingVariableFocus.playerTargetId.toLowerCase() !==
+                    vm.codingVariableFocus.internalId.toLowerCase()
                 ) {
-                  · Anzeige im Kodierschema:
-                  <code>{{ vm.codingVariableFocus.codingId }}</code>
+                  · Player-/Anzeige-Ziel:
+                  <code>{{ vm.codingVariableFocus.playerTargetId }}</code>
                 }
               </div>
+              @if (vm.codingVariableFocus.usedLegacyFallback) {
+                <div class="coding-fallback-info" role="status">
+                  Der im Item gespeicherte interne Verweis
+                  <code>{{ vm.codingVariableFocus.requestedInternalId }}</code>
+                  fehlt im Kodierschema. Die Zuordnung wurde eindeutig über das Player-/Anzeige-Ziel
+                  <code>{{ vm.codingVariableFocus.playerTargetId }}</code>
+                  aufgelöst.
+                </div>
+              }
               @if (vm.codingVariableFocus.isDerived) {
                 <div class="coding-aggregation-info">
                   <strong>Abgeleitete/aggregierte Kodierung</strong>

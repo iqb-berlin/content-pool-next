@@ -137,7 +137,11 @@ export type CodingVariableFocusStatus = 'unique' | 'missing-target' | 'not-found
 export interface CodingVariableFocusResolution {
   status: CodingVariableFocusStatus;
   targetId: string;
+  internalId: string;
   codingId: string;
+  playerTargetId: string;
+  usedLegacyFallback: boolean;
+  requestedInternalId: string;
   matches: CodingAsText[];
   isDerived: boolean;
   sourceIds: string[];

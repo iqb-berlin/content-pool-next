@@ -817,6 +817,46 @@ describe('ApiService', () => {
         responseType: 'blob',
       });
     });
+
+    it('should load and mutate item comment threads', () => {
+      httpClientMock.get.mockReturnValue(
+        of({ revision: '1', visibilityMode: 'SHARED', comments: [] }),
+      );
+      httpClientMock.post.mockReturnValue(of({ id: 'c1' }));
+      httpClientMock.patch.mockReturnValue(of({ id: 'c1', version: 2 }));
+      httpClientMock.delete.mockReturnValue(of({ success: true }));
+
+      service.getItemCommentThread('acp1', 'unit1', 'item1').subscribe();
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        params: { unitId: 'unit1', itemId: 'item1' },
+      });
+
+      service
+        .createItemComment('acp1', {
+          unitId: 'unit1',
+          itemId: 'item1',
+          commentText: 'Hallo',
+          parentCommentId: 'parent1',
+        })
+        .subscribe();
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        unitId: 'unit1',
+        itemId: 'item1',
+        commentText: 'Hallo',
+        parentCommentId: 'parent1',
+      });
+
+      service.updateItemComment('acp1', 'c1', { commentText: 'Neu', version: 1 }).subscribe();
+      expect(httpClientMock.patch).toHaveBeenCalledWith('/api/acp/acp1/review/comments/c1', {
+        commentText: 'Neu',
+        version: 1,
+      });
+
+      service.deleteItemComment('acp1', 'c1', 2).subscribe();
+      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/review/comments/c1', {
+        params: { version: 2 },
+      });
+    });
   });
 
   describe('Public Views', () => {

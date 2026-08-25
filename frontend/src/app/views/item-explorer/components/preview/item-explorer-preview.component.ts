@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { ItemExplorerFacade } from '../../item-explorer.facade';
 import { ItemExplorerPreviewViewModel } from '../../item-explorer.view-models';
 import { ItemExplorerPlayerDomPort } from '../../item-explorer.dom-ports';
+import { ItemCommentThreadComponent } from '../../../comment-thread/item-comment-thread.component';
 
 @Component({
   selector: 'app-item-explorer-preview',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ItemCommentThreadComponent],
   templateUrl: './item-explorer-preview.component.html',
   styleUrl: './item-explorer-preview.component.css',
 })

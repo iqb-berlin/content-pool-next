@@ -332,4 +332,43 @@ describe('AccessConfigComponent', () => {
       }),
     );
   });
+
+  it('defaults existing comment configurations to private visibility', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { enableCommenting: true, commentTargets: ['ITEM'] },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig['commentVisibilityMode']).toBe('PRIVATE');
+  });
+
+  it('persists explicitly shared item comments', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableCommenting: true,
+      commentVisibilityMode: 'SHARED',
+    };
+    component.commentTargets = ['ITEM'];
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enableCommenting: true,
+          commentTargets: ['ITEM'],
+          commentVisibilityMode: 'SHARED',
+        }),
+      }),
+    );
+  });
 });

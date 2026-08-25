@@ -195,6 +195,8 @@ export class ItemExplorerFacade implements OnDestroy {
   itemExplorerConditionalVisibilityEnabled = false;
   playerFocusHighlightEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = false;
+  itemCommentsEnabled = false;
+  private itemCommentsConfigured = false;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -1157,6 +1159,11 @@ export class ItemExplorerFacade implements OnDestroy {
       .subscribe({
         next: (data) => {
           const fc = data?.featureConfig || {};
+          const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
+          this.itemCommentsConfigured = Boolean(
+            fc.enableCommenting && (commentTargets.length === 0 || commentTargets.includes('ITEM')),
+          );
+          this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
           this.enableTags = !!fc.enableItemListTags;
           this.availableTags = fc.availableTags || [];
           this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
@@ -4855,6 +4862,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
     this.hasExplorerEditPermission = this.isAcpManager || this.authService.isAdmin;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
+    this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
     const oidcProfileStillLoading =
       this.authService.isLoggedIn &&
       this.authService.isOidcUser &&

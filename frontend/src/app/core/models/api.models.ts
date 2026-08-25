@@ -386,6 +386,7 @@ export interface FeatureConfig {
   enableSequenceNavigation?: boolean;
   enableCommenting?: boolean;
   commentTargets?: string[];
+  commentVisibilityMode?: 'PRIVATE' | 'SHARED';
   enableItemList?: boolean;
   metadataColumns?: MetadataColumnsConfig;
   // Legacy key (read-only compatibility)
@@ -418,10 +419,26 @@ export interface Comment {
   acpId: string;
   userId?: string;
   credentialUsername?: string;
+  credentialId?: string;
   targetType: 'UNIT' | 'ITEM' | 'TASK_SEQUENCE';
   targetId: string;
+  unitId?: string | null;
+  itemId?: string | null;
+  parentCommentId?: string | null;
+  parentVisible?: boolean;
   commentText: string;
+  authorLabel?: string;
   createdAt: string;
+  updatedAt?: string;
+  version?: number;
+  isOwn?: boolean;
+  isDeleted?: boolean;
+}
+
+export interface CommentThreadSnapshot {
+  revision: string;
+  visibilityMode: 'PRIVATE' | 'SHARED';
+  comments: Comment[];
 }
 
 export interface AppSettings {

@@ -201,6 +201,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
     | 'applyCustomPreviewTarget'
+    | 'acpId'
     | 'canEditExplorer'
     | 'canPreviewSelectedItem'
     | 'customPreviewTargetDraft'
@@ -209,6 +210,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'isItemExcluded'
     | 'isPreviewLoading'
     | 'itemSubIdLabel'
+    | 'itemCommentsEnabled'
     | 'loadAllResponseStates'
     | 'navigateItem'
     | 'onPagingModeChange'

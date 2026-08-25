@@ -5,6 +5,7 @@ import { CommentTargetType } from "../database/entities";
 describe("CommentsController", () => {
   let controller: CommentsController;
   let commentsService: any;
+  let reviewPolicy: any;
 
   beforeEach(() => {
     commentsService = {
@@ -13,7 +14,9 @@ describe("CommentsController", () => {
       findByUser: jest.fn().mockResolvedValue([{ id: "c-user" }]),
       isCommentingEnabled: jest.fn().mockResolvedValue(true),
       create: jest.fn().mockResolvedValue({ id: "c-new" }),
-      deleteByAcp: jest.fn().mockResolvedValue(3),
+      deleteUnreferencedLegacyByAcp: jest
+        .fn()
+        .mockResolvedValue({ deletedCount: 3, retainedCount: 5 }),
       exportComments: jest.fn().mockResolvedValue([{ id: "c-export" }]),
       exportCommentsByCredential: jest
         .fn()
@@ -24,7 +27,15 @@ describe("CommentsController", () => {
         .mockResolvedValue(Buffer.from("xlsx-cred")),
     };
 
-    controller = new CommentsController(commentsService);
+    reviewPolicy = {
+      isManagerRequest: jest.fn(
+        (req) =>
+          Boolean(req.user?.isAppAdmin) ||
+          req.acpAccessLevel === "MANAGER" ||
+          req.acpAccessLevel === "ADMIN",
+      ),
+    };
+    controller = new CommentsController(commentsService, reviewPolicy);
   });
 
   it("returns all comments for managers", async () => {
@@ -44,13 +55,19 @@ describe("CommentsController", () => {
   });
 
   it("returns mine for credential users", async () => {
-    const req = { user: { type: "credential", username: "cred-user" } };
+    const req = {
+      user: {
+        type: "credential",
+        sub: "credential-1",
+        username: "cred-user",
+      },
+    };
     const result = await controller.findMine("acp-1", req);
 
     expect(result).toEqual([{ id: "c-cred" }]);
     expect(commentsService.findByCredential).toHaveBeenCalledWith(
       "acp-1",
-      "cred-user",
+      "credential-1",
     );
     expect(commentsService.findByUser).not.toHaveBeenCalled();
   });
@@ -81,7 +98,9 @@ describe("CommentsController", () => {
     expect(commentsService.create).toHaveBeenCalledWith({
       acpId: "acp-1",
       userId: "u-1",
+      credentialId: undefined,
       credentialUsername: undefined,
+      authorLabel: undefined,
       targetType: CommentTargetType.ITEM,
       targetId: "item-1",
       commentText: "Hallo",
@@ -91,7 +110,7 @@ describe("CommentsController", () => {
   it("rejects create for non-managers when commenting is disabled", async () => {
     commentsService.isCommentingEnabled.mockResolvedValueOnce(false);
     const req = {
-      user: { type: "credential", username: "cred" },
+      user: { type: "credential", sub: "cred-id", username: "cred" },
       acpAccessLevel: "PUBLIC",
     };
     const dto = {
@@ -108,7 +127,7 @@ describe("CommentsController", () => {
   it("creates comment for credential users when commenting is enabled", async () => {
     commentsService.isCommentingEnabled.mockResolvedValueOnce(true);
     const req = {
-      user: { type: "credential", username: "cred" },
+      user: { type: "credential", sub: "cred-id", username: "cred" },
       acpAccessLevel: "PUBLIC",
     };
     const dto = {
@@ -122,25 +141,34 @@ describe("CommentsController", () => {
     expect(commentsService.create).toHaveBeenCalledWith({
       acpId: "acp-1",
       userId: undefined,
+      credentialId: "cred-id",
       credentialUsername: "cred",
+      authorLabel: "cred",
       targetType: CommentTargetType.ITEM,
       targetId: "item-1",
       commentText: "ok",
     });
   });
 
-  it("deletes all comments for managers", async () => {
+  it("deletes only safe legacy comments for managers", async () => {
     const req = { user: { isAppAdmin: true }, acpAccessLevel: "PUBLIC" };
-    const result = await controller.deleteAll("acp-1", req);
+    const result = await controller.deleteLegacyComments("acp-1", req);
 
-    expect(result).toEqual({ message: "3 comments deleted" });
-    expect(commentsService.deleteByAcp).toHaveBeenCalledWith("acp-1");
+    expect(result).toEqual({
+      message: "3 legacy comments deleted; 5 comments retained",
+      deletedCount: 3,
+      retainedCount: 5,
+      scope: "UNREFERENCED_LEGACY_NON_ITEM",
+    });
+    expect(commentsService.deleteUnreferencedLegacyByAcp).toHaveBeenCalledWith(
+      "acp-1",
+    );
   });
 
-  it("rejects delete all for non-managers", async () => {
+  it("rejects legacy bulk deletion for non-managers", async () => {
     const req = { user: { isAppAdmin: false }, acpAccessLevel: "PUBLIC" };
 
-    await expect(controller.deleteAll("acp-1", req)).rejects.toThrow(
+    await expect(controller.deleteLegacyComments("acp-1", req)).rejects.toThrow(
       ForbiddenException,
     );
   });
@@ -158,7 +186,12 @@ describe("CommentsController", () => {
 
   it("exports comments for credential users with credential filter", async () => {
     const req = {
-      user: { isAppAdmin: false, type: "credential", username: "cred-user" },
+      user: {
+        isAppAdmin: false,
+        type: "credential",
+        sub: "credential-1",
+        username: "cred-user",
+      },
       acpAccessLevel: "PUBLIC",
     };
 
@@ -167,7 +200,7 @@ describe("CommentsController", () => {
     expect(result).toEqual([{ id: "c-export-cred" }]);
     expect(commentsService.exportCommentsByCredential).toHaveBeenCalledWith(
       "acp-1",
-      "cred-user",
+      "credential-1",
     );
   });
 
@@ -201,7 +234,12 @@ describe("CommentsController", () => {
 
   it("exports XLSX for credential users with username fallback", async () => {
     const req = {
-      user: { isAppAdmin: false, type: "credential", username: "" },
+      user: {
+        isAppAdmin: false,
+        type: "credential",
+        sub: "credential-1",
+        username: "",
+      },
       acpAccessLevel: "PUBLIC",
     };
     const res = { setHeader: jest.fn(), send: jest.fn() } as any;
@@ -210,7 +248,7 @@ describe("CommentsController", () => {
 
     expect(commentsService.exportCommentsXlsxByCredential).toHaveBeenCalledWith(
       "acp-1",
-      "",
+      "credential-1",
     );
     expect(res.setHeader).toHaveBeenCalledWith(
       "Content-Disposition",

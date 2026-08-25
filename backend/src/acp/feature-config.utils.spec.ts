@@ -266,4 +266,20 @@ describe("normalizeFeatureConfig", () => {
     expect(Object.keys(normalizedWidths)).toHaveLength(111);
     expect(normalizedWidths[longMetadataKey]).toBe(333);
   });
+
+  it("keeps existing ACP comments private unless sharing is explicitly enabled", () => {
+    expect(normalizeFeatureConfig({ enableCommenting: true })).toMatchObject({
+      enableCommenting: true,
+      commentVisibilityMode: "PRIVATE",
+    });
+    expect(
+      normalizeFeatureConfig({
+        enableCommenting: true,
+        commentVisibilityMode: "SHARED",
+      }),
+    ).toMatchObject({
+      enableCommenting: true,
+      commentVisibilityMode: "SHARED",
+    });
+  });
 });

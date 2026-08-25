@@ -62,6 +62,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
   ],
   exports: [
     FilesService,
+    FileCatalogCache,
     UnitParserService,
     FileProcessingJobsService,
     ItemRowNumberingService,

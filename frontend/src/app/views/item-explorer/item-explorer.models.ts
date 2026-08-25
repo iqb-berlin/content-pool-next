@@ -106,12 +106,19 @@ export interface ItemParameterUploadSuccess {
   bookletOccurrences?: Array<{ booklet: string; position: number }>;
 }
 
+export interface ItemParameterUploadWarning {
+  code: 'BOOKLET_OCCURRENCES_SKIPPED';
+  message: string;
+}
+
 export type ReadonlyItemParameterUploadSuccess = DeepReadonly<ItemParameterUploadSuccess>;
 
 export interface ItemParameterUploadResult {
   updated: number;
   failed: Array<{ csvRow: string; reason: string }>;
   successes: ItemParameterUploadSuccess[];
+  warnings?: ItemParameterUploadWarning[];
+  requiresConfirmation?: boolean;
   showOnlyItemsWithEmpiricalDifficulty?: boolean;
 }
 

@@ -287,11 +287,17 @@ export type ItemExplorerUploadDialogsViewModel = ReadonlyViewModelSlice<
     ItemExplorerFacade,
     | 'closeUploadErrorDialog'
     | 'closeUploadReport'
+    | 'cancelItemParameterUploadWarnings'
+    | 'confirmItemParameterUploadWarnings'
     | 'errorMessage'
     | 'getUploadSuccessBookletSummary'
     | 'getUploadSuccessFieldSummary'
     | 'showErrorDialog'
     | 'showUploadReport'
+    | 'showUploadWarningDialog'
+    | 'uploadWarningBusy'
+    | 'uploadWarningError'
+    | 'uploadWarningMessages'
     | 'uploadResult'
   >
 >;

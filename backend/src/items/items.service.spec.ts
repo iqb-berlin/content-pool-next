@@ -277,6 +277,53 @@ describe("ItemsService", () => {
     expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
+  it("does not persist warning-gated parameters before confirmation", async () => {
+    const acp = {
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      },
+    };
+    acpRepository.findOne.mockResolvedValue(acp);
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+    const csv = Buffer.from("item;est;booklet\nI1;0.5;B1");
+
+    const preview = await service.uploadItemParameters("acp-1", csv);
+    expect(preview.requiresConfirmation).toBe(true);
+    expect(acpRepository.save).not.toHaveBeenCalled();
+    expect(acp.itemProperties).toEqual({
+      "uuid-1": {
+        bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+      },
+    });
+
+    const confirmed = await service.uploadItemParameters("acp-1", csv, {
+      confirmWarnings: true,
+    });
+    expect(confirmed.requiresConfirmation).toBe(false);
+    expect(acpRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: {
+          "uuid-1": {
+            empiricalDifficulty: 0.5,
+            bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+          },
+        },
+      }),
+    );
+  });
+
   it("validates required CSV headers", async () => {
     acpRepository.findOne.mockResolvedValue({
       id: "acp-1",

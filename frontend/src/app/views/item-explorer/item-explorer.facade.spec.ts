@@ -353,8 +353,9 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade({ api: { getItemExplorerState, getFileItemList } });
     component.acpId = 'acp-1';
 
-    await (component as any).reloadSharedExplorerStateAndItems();
+    const reloaded = await (component as any).reloadSharedExplorerStateAndItems();
 
+    expect(reloaded).toBe(true);
     expect(getItemExplorerState).toHaveBeenCalledTimes(2);
     expect(getFileItemList).toHaveBeenCalledTimes(2);
     expect(component.items).toEqual([
@@ -5518,6 +5519,197 @@ describe('ItemExplorerFacade', () => {
     });
     expect(component.showOnlyItemsWithEmpiricalDifficulty).toBe(true);
     expect(input.value).toBe('');
+  });
+
+  it('requires confirmation before importing parameters with skipped booklet data', () => {
+    const uploadItemParameters = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          updated: 1,
+          failed: [],
+          successes: [{ fields: ['est'], value: 0.5 }],
+          warnings: [
+            {
+              code: 'BOOKLET_OCCURRENCES_SKIPPED',
+              message: 'Die Spalte "position" fehlt.',
+            },
+          ],
+          requiresConfirmation: true,
+        }),
+      )
+      .mockReturnValueOnce(
+        of({
+          updated: 1,
+          failed: [],
+          successes: [{ fields: ['est'], value: 0.5 }],
+          warnings: [
+            {
+              code: 'BOOKLET_OCCURRENCES_SKIPPED',
+              message: 'Die Spalte "position" fehlt.',
+            },
+          ],
+          requiresConfirmation: false,
+        }),
+      );
+    const getFileItemList = vi
+      .fn()
+      .mockReturnValue(of({ items: [], columns: [], unitMetadata: {}, codingSchemes: {} }));
+    const component = createFacade({ api: { uploadItemParameters, getFileItemList } });
+    component.acpId = 'acp-1';
+    component.explorerVersion = 7;
+    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+      type: 'text/csv',
+    });
+
+    component.onCsvFileSelected({
+      target: { files: [file], value: 'parameters.csv' },
+    } as unknown as Event);
+
+    expect(component.showUploadWarningDialog).toBe(true);
+    expect(component.showUploadReport).toBe(false);
+    expect(getFileItemList).not.toHaveBeenCalled();
+
+    component.confirmItemParameterUploadWarnings();
+
+    expect(uploadItemParameters).toHaveBeenLastCalledWith('acp-1', file, {
+      draft: true,
+      baseVersion: 7,
+      confirmWarnings: true,
+    });
+    expect(component.showUploadWarningDialog).toBe(false);
+    expect(component.showUploadReport).toBe(true);
+    expect(component.uploadResult?.warnings).toHaveLength(1);
+    expect(getFileItemList).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats the parameter warning as the topmost keyboard-controlled overlay', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showUploadWarningDialog = true;
+    const openSavePreviewDialog = vi
+      .spyOn(component, 'openSavePreviewDialog')
+      .mockImplementation(() => {});
+    const saveEvent = {
+      key: 's',
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as any;
+
+    component.handleWindowKeydown(saveEvent);
+
+    expect(saveEvent.preventDefault).toHaveBeenCalled();
+    expect(openSavePreviewDialog).not.toHaveBeenCalled();
+
+    const escapeEvent = {
+      key: 'Escape',
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+      defaultPrevented: false,
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as any;
+    component.handleWindowKeydown(escapeEvent);
+
+    expect(component.showUploadWarningDialog).toBe(false);
+    expect(escapeEvent.preventDefault).toHaveBeenCalled();
+    expect(escapeEvent.stopPropagation).toHaveBeenCalled();
+  });
+
+  it('keeps warning confirmation locked until a conflict reload finishes', async () => {
+    let finishReload!: (reloaded: boolean) => void;
+    const reload = new Promise<boolean>((resolve) => {
+      finishReload = resolve;
+    });
+    const uploadItemParameters = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          updated: 1,
+          failed: [],
+          successes: [{ fields: ['est'], value: 0.5 }],
+          warnings: [
+            {
+              code: 'BOOKLET_OCCURRENCES_SKIPPED',
+              message: 'Die Spalte "position" fehlt.',
+            },
+          ],
+          requiresConfirmation: true,
+        }),
+      )
+      .mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    const component = createFacade({ api: { uploadItemParameters } });
+    component.acpId = 'acp-1';
+    component.explorerVersion = 7;
+    vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockReturnValue(reload);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+      type: 'text/csv',
+    });
+
+    component.onCsvFileSelected({
+      target: { files: [file], value: 'parameters.csv' },
+    } as unknown as Event);
+    component.confirmItemParameterUploadWarnings();
+
+    expect(component.uploadWarningBusy).toBe(true);
+    expect(component.uploadWarningError).toContain('wird neu geladen');
+    component.confirmItemParameterUploadWarnings();
+    expect(uploadItemParameters).toHaveBeenCalledTimes(2);
+
+    finishReload(true);
+    await reload;
+    await Promise.resolve();
+
+    expect(component.uploadWarningBusy).toBe(false);
+    expect(component.uploadWarningError).toContain('Bitte bestätige den Import erneut');
+    consoleError.mockRestore();
+  });
+
+  it('abandons warning confirmation when the conflict reload fails', async () => {
+    const uploadItemParameters = vi
+      .fn()
+      .mockReturnValueOnce(
+        of({
+          updated: 1,
+          failed: [],
+          successes: [{ fields: ['est'], value: 0.5 }],
+          warnings: [
+            {
+              code: 'BOOKLET_OCCURRENCES_SKIPPED',
+              message: 'Die Spalte "position" fehlt.',
+            },
+          ],
+          requiresConfirmation: true,
+        }),
+      )
+      .mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    const component = createFacade({ api: { uploadItemParameters } });
+    component.acpId = 'acp-1';
+    component.explorerVersion = 7;
+    vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockResolvedValue(false);
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+      type: 'text/csv',
+    });
+
+    component.onCsvFileSelected({
+      target: { files: [file], value: 'parameters.csv' },
+    } as unknown as Event);
+    component.confirmItemParameterUploadWarnings();
+    await Promise.resolve();
+
+    expect(component.showUploadWarningDialog).toBe(false);
+    expect(component.showErrorDialog).toBe(true);
+    expect(component.errorMessage).toContain('Bitte lade die Seite neu');
+    component.confirmItemParameterUploadWarnings();
+    expect(uploadItemParameters).toHaveBeenCalledTimes(2);
+    consoleError.mockRestore();
   });
 
   it('keeps server collection summaries while the item list is loading', () => {

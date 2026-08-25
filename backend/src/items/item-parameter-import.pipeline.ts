@@ -45,6 +45,13 @@ export interface ItemParameterImportPlan {
   updated: number;
   failed: Array<{ csvRow: string; reason: string }>;
   successes: Array<Record<string, unknown>>;
+  warnings?: ItemParameterImportWarning[];
+  requiresConfirmation?: boolean;
+}
+
+export interface ItemParameterImportWarning {
+  code: "BOOKLET_OCCURRENCES_SKIPPED";
+  message: string;
 }
 
 export interface ItemParameterImportRequest {
@@ -52,6 +59,7 @@ export interface ItemParameterImportRequest {
   items: VomdItemData[];
   itemProperties: Record<string, Record<string, unknown>>;
   requireEmpiricalDifficulty?: boolean;
+  confirmWarnings?: boolean;
 }
 
 export interface ItemParameterImportResult {
@@ -59,6 +67,8 @@ export interface ItemParameterImportResult {
   failed: Array<{ csvRow: string; reason: string }>;
   successes: Array<Record<string, unknown>>;
   nextItemProperties: Record<string, Record<string, unknown>>;
+  warnings?: ItemParameterImportWarning[];
+  requiresConfirmation?: boolean;
 }
 
 const IMPORTED_SCALAR_COLUMNS: Array<{
@@ -97,6 +107,15 @@ const IMPORTED_TEXT_COLUMNS: Array<{
   },
 ];
 
+const RESERVED_LEGACY_SUB_ID_HEADERS = new Set([
+  "item",
+  "sub_id",
+  ...IMPORTED_SCALAR_COLUMNS.map((definition) => definition.header),
+  ...IMPORTED_TEXT_COLUMNS.map((definition) => definition.header),
+  "booklet",
+  "position",
+]);
+
 interface ImportGroup {
   match: VomdItemData;
   subId: string;
@@ -116,6 +135,10 @@ export class ItemParameterImportPipeline {
       failed: plan.failed,
       successes: plan.successes,
       nextItemProperties: this.applyPlan(request.itemProperties, plan),
+      ...(plan.warnings?.length ? { warnings: plan.warnings } : {}),
+      ...(plan.requiresConfirmation !== undefined
+        ? { requiresConfirmation: plan.requiresConfirmation }
+        : {}),
     };
   }
 
@@ -138,13 +161,13 @@ export class ItemParameterImportPipeline {
         ? canonicalSubIdIdx
         : requireEmpiricalDifficulty &&
             headers.length > 2 &&
-            ![itemIdx, estIdx].includes(1)
+            !RESERVED_LEGACY_SUB_ID_HEADERS.has(headers[1])
           ? 1
           : -1;
-    const bookletIdx = headers.indexOf("booklet");
-    const positionIdx = headers.indexOf("position");
-    const hasBookletColumn = bookletIdx >= 0;
-    const hasPositionColumn = positionIdx >= 0;
+    const declaredBookletIdx = headers.indexOf("booklet");
+    const declaredPositionIdx = headers.indexOf("position");
+    const hasBookletColumn = declaredBookletIdx >= 0;
+    const hasPositionColumn = declaredPositionIdx >= 0;
 
     if (itemIdx === -1 || (requireEmpiricalDifficulty && estIdx < 0)) {
       throw new BadRequestException(
@@ -153,12 +176,6 @@ export class ItemParameterImportPipeline {
           : 'CSV must contain an "item" column',
       );
     }
-    if (hasBookletColumn !== hasPositionColumn) {
-      throw new BadRequestException(
-        'CSV columns "booklet" and "position" must be provided together',
-      );
-    }
-
     const scalarColumns = IMPORTED_SCALAR_COLUMNS.map((definition) => ({
       ...definition,
       index: headers.indexOf(definition.header),
@@ -167,6 +184,22 @@ export class ItemParameterImportPipeline {
       ...definition,
       index: headers.indexOf(definition.header),
     })).filter((definition) => definition.index >= 0);
+
+    const occurrenceColumnState = this.resolveOccurrenceColumnState(
+      lines,
+      declaredBookletIdx,
+      declaredPositionIdx,
+      scalarColumns.length > 0 || textColumns.length > 0,
+    );
+    const bookletIdx = occurrenceColumnState.importOccurrences
+      ? declaredBookletIdx
+      : -1;
+    const positionIdx = occurrenceColumnState.importOccurrences
+      ? declaredPositionIdx
+      : -1;
+    const warnings = occurrenceColumnState.warning
+      ? [occurrenceColumnState.warning]
+      : [];
 
     if (!scalarColumns.length && !textColumns.length && bookletIdx < 0) {
       throw new BadRequestException(
@@ -224,7 +257,11 @@ export class ItemParameterImportPipeline {
         };
         groups.set(rowKey, group);
       }
-      if (bookletIdx < 0 && group.rowIndexes.length > 0) {
+      if (
+        !hasBookletColumn &&
+        !hasPositionColumn &&
+        group.rowIndexes.length > 0
+      ) {
         throw new BadRequestException(
           `Konflikt: Die Zeile für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} kommt mehrfach in der CSV vor.`,
         );
@@ -504,6 +541,68 @@ export class ItemParameterImportPipeline {
       updated: groups.size,
       failed,
       successes,
+      ...(warnings.length ? { warnings } : {}),
+      ...(warnings.length
+        ? { requiresConfirmation: request.confirmWarnings !== true }
+        : {}),
+    };
+  }
+
+  private resolveOccurrenceColumnState(
+    lines: string[],
+    bookletIdx: number,
+    positionIdx: number,
+    hasParameterColumns: boolean,
+  ): {
+    importOccurrences: boolean;
+    warning?: ItemParameterImportWarning;
+  } {
+    const hasBookletColumn = bookletIdx >= 0;
+    const hasPositionColumn = positionIdx >= 0;
+    if (!hasBookletColumn && !hasPositionColumn) {
+      return { importOccurrences: false };
+    }
+
+    if (!hasBookletColumn || !hasPositionColumn) {
+      const missingColumn = hasBookletColumn ? "position" : "booklet";
+      return {
+        importOccurrences: false,
+        warning: {
+          code: "BOOKLET_OCCURRENCES_SKIPPED",
+          message: `Die Spalte "${missingColumn}" fehlt. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.`,
+        },
+      };
+    }
+
+    let hasCompleteOccurrence = false;
+    let hasIncompleteOccurrence = false;
+    for (let index = 1; index < lines.length; index++) {
+      const line = lines[index].trim();
+      if (!line) continue;
+      const row = this.parseCsvLine(line);
+      const booklet = row[bookletIdx]?.trim() || "";
+      const position = row[positionIdx]?.trim() || "";
+      if (booklet && position) hasCompleteOccurrence = true;
+      if ((booklet && !position) || (!booklet && position)) {
+        hasIncompleteOccurrence = true;
+      }
+    }
+
+    if (
+      !hasIncompleteOccurrence &&
+      (hasCompleteOccurrence || !hasParameterColumns)
+    ) {
+      return { importOccurrences: true };
+    }
+
+    return {
+      importOccurrences: false,
+      warning: {
+        code: "BOOKLET_OCCURRENCES_SKIPPED",
+        message: hasIncompleteOccurrence
+          ? 'Mindestens eine Zeile enthält "booklet" und "position" nicht gemeinsam. Alle Booklet-Zuordnungen werden übersprungen; bereits vorhandene Zuordnungen bleiben unverändert.'
+          : 'Die Spalten "booklet" und "position" enthalten keine vollständige Zuordnung. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.',
+      },
     };
   }
 

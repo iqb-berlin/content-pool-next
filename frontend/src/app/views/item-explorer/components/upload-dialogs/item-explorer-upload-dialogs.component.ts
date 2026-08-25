@@ -1,13 +1,14 @@
 import { Component, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ConfirmDialogComponent } from '../../../../shared/components/confirm-dialog.component';
 import { ItemExplorerFacade } from '../../item-explorer.facade';
 import { ItemExplorerUploadDialogsViewModel } from '../../item-explorer.view-models';
 
 @Component({
   selector: 'app-item-explorer-upload-dialogs',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
   templateUrl: './item-explorer-upload-dialogs.component.html',
   styleUrl: './item-explorer-upload-dialogs.component.css',
 })

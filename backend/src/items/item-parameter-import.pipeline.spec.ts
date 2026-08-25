@@ -176,6 +176,124 @@ describe("ItemParameterImportPipeline", () => {
     });
   });
 
+  it("requires confirmation before ignoring a booklet column without position", () => {
+    const request: ItemParameterImportRequest = {
+      fileBuffer: Buffer.from("item;est;booklet\nI1;0.5;B1"),
+      items,
+      itemProperties: {
+        "uuid-1": {
+          empiricalDifficulty: 0.2,
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      },
+    };
+
+    const preview = pipeline.execute(request);
+    expect(preview.requiresConfirmation).toBe(true);
+    expect(preview.warnings).toEqual([
+      expect.objectContaining({ code: "BOOKLET_OCCURRENCES_SKIPPED" }),
+    ]);
+    expect(preview.nextItemProperties).toEqual({
+      "uuid-1": {
+        empiricalDifficulty: 0.5,
+        bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+      },
+    });
+
+    const confirmed = pipeline.execute({ ...request, confirmWarnings: true });
+    expect(confirmed.requiresConfirmation).toBe(false);
+    expect(confirmed.nextItemProperties).toEqual(preview.nextItemProperties);
+  });
+
+  it("preserves booklet occurrences when text_complexity has no complete occurrence pair", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from(
+        "item;text_complexity;booklet;position\nI1;hoch;;",
+      ),
+      items,
+      itemProperties: {
+        "uuid-1": {
+          textComplexity: "niedrig",
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      },
+      confirmWarnings: true,
+    });
+
+    expect(result.warnings).toEqual([
+      expect.objectContaining({ code: "BOOKLET_OCCURRENCES_SKIPPED" }),
+    ]);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": {
+        textComplexity: "hoch",
+        bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+      },
+    });
+  });
+
+  it.each([
+    ["booklet", "item;booklet;est\nI1;B1;0.5"],
+    ["position", "item;position;est\nI1;4;0.5"],
+  ])(
+    "does not infer the reserved %s column as a legacy Sub-ID",
+    (_header, csv) => {
+      const result = pipeline.execute({
+        fileBuffer: Buffer.from(csv),
+        items,
+        itemProperties: {
+          "uuid-1": {
+            empiricalDifficulty: 0.2,
+            bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+          },
+        },
+        requireEmpiricalDifficulty: true,
+        confirmWarnings: true,
+      });
+
+      expect(result.nextItemProperties).toEqual({
+        "uuid-1": {
+          empiricalDifficulty: 0.5,
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      });
+      expect(result.successes).toEqual([
+        expect.objectContaining({
+          rowKey: "uuid-1",
+          affectedRowKeys: ["uuid-1"],
+          subId: undefined,
+          value: 0.5,
+        }),
+      ]);
+    },
+  );
+
+  it("skips all booklet occurrences when complete and incomplete rows are mixed", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from(
+        "item;est;booklet;position\nI1;0.5;B1;1\nI1;0.5;B2;",
+      ),
+      items,
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      },
+      confirmWarnings: true,
+    });
+
+    expect(result.failed).toEqual([]);
+    expect(result.requiresConfirmation).toBe(false);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": {
+        empiricalDifficulty: 0.5,
+        bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+      },
+    });
+    expect(result.successes).toEqual([
+      expect.objectContaining({ fields: ["est"] }),
+    ]);
+  });
+
   it("rejects structural conflicts without mutating the source properties", () => {
     const itemProperties = { "uuid-1": { infit: 0.9 } };
 

@@ -5405,11 +5405,57 @@ describe('ItemExplorerFacade', () => {
       'infit',
       'discrimination',
       'solutionRate',
+      'textComplexity',
       'itemTimeSeconds',
       'stimulusTimeSeconds',
       'booklet',
       'bookletPosition',
     ]);
+  });
+
+  it('treats imported text complexity as a configurable text column', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([]);
+    const textComplexityColumn = columns.find(
+      (column: { id: string }) => column.id === 'textComplexity',
+    );
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        textComplexity: '3.5 – anspruchsvoll',
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        textComplexity: 'niedrig',
+      },
+    ];
+    component.allColumns = columns;
+    component.columnFilters = { textComplexity: 'ANSPRUCH' };
+
+    expect(textComplexityColumn).toEqual({
+      id: 'textComplexity',
+      label: 'Textkomplexität',
+      kind: 'text',
+    });
+    expect(component.getMetadataColumnDisplayValue(component.items[0], textComplexityColumn)).toBe(
+      '3.5 – anspruchsvoll',
+    );
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
   });
 
   it('formats wide and legacy upload successes without losing imported details', () => {
@@ -5418,7 +5464,7 @@ describe('ItemExplorerFacade', () => {
       unitId: 'unit-1',
       itemId: 'item-1',
       subId: 'A',
-      fields: ['infit', 'discrimination', 'booklet', 'position'],
+      fields: ['infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
         { booklet: 'B2', position: 5 },
@@ -5426,7 +5472,7 @@ describe('ItemExplorerFacade', () => {
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
-      'Infit, Trennschärfe, Booklet / Position',
+      'Infit, Trennschärfe, Textkomplexität, Booklet / Position',
     );
     expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
     const clearedBooklets = {

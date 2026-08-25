@@ -107,6 +107,7 @@ const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'infit', label: 'Infit', kind: 'number' },
   { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
   { id: 'solutionRate', label: 'Lösungshäufigkeit', kind: 'number' },
+  { id: 'textComplexity', label: 'Textkomplexität', kind: 'text' },
   { id: 'itemTimeSeconds', label: 'Itemzeit (s)', kind: 'number' },
   { id: 'stimulusTimeSeconds', label: 'Stimuluszeit (s)', kind: 'number' },
   { id: 'booklet', label: 'Booklet', kind: 'booklet' },
@@ -119,6 +120,8 @@ const UPLOAD_FIELD_LABELS: Record<string, string> = {
   discrimination: 'Trennschärfe',
   solution_rate: 'Lösungshäufigkeit',
   solutionRate: 'Lösungshäufigkeit',
+  text_complexity: 'Textkomplexität',
+  textComplexity: 'Textkomplexität',
   item_time_s: 'Itemzeit (s)',
   itemTimeSeconds: 'Itemzeit (s)',
   stimulus_time_s: 'Stimuluszeit (s)',
@@ -1438,6 +1441,8 @@ export class ItemExplorerFacade implements OnDestroy {
         return item.discrimination;
       case 'solutionRate':
         return item.solutionRate;
+      case 'textComplexity':
+        return item.textComplexity;
       case 'itemTimeSeconds':
         return item.itemTimeSeconds;
       case 'stimulusTimeSeconds':

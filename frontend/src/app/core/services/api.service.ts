@@ -557,11 +557,13 @@ export class ApiService {
   uploadItemParameters(
     acpId: string,
     file: File,
-    options?: { draft?: boolean; baseVersion?: number },
+    options?: { draft?: boolean; baseVersion?: number; confirmWarnings?: boolean },
   ): Observable<{
     updated: number;
-    failed: any[];
+    failed: Array<{ csvRow: string; reason: string }>;
     successes: any[];
+    warnings?: Array<{ code: 'BOOKLET_OCCURRENCES_SKIPPED'; message: string }>;
+    requiresConfirmation?: boolean;
     showOnlyItemsWithEmpiricalDifficulty?: boolean;
     explorerState?: ItemExplorerStateEnvelope;
   }> {
@@ -572,11 +574,14 @@ export class ApiService {
     if (typeof options?.baseVersion === 'number') {
       query.push(`baseVersion=${encodeURIComponent(String(options.baseVersion))}`);
     }
+    if (options?.confirmWarnings) query.push('confirmWarnings=true');
     const queryString = query.length ? `?${query.join('&')}` : '';
     return this.http.post<{
       updated: number;
-      failed: any[];
+      failed: Array<{ csvRow: string; reason: string }>;
       successes: any[];
+      warnings?: Array<{ code: 'BOOKLET_OCCURRENCES_SKIPPED'; message: string }>;
+      requiresConfirmation?: boolean;
       showOnlyItemsWithEmpiricalDifficulty?: boolean;
       explorerState?: ItemExplorerStateEnvelope;
     }>(`${this.API}/acp/${acpId}/items/upload-item-parameters${queryString}`, formData);

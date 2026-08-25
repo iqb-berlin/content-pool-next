@@ -1,3 +1,17 @@
+<app-confirm-dialog
+  [open]="vm.showUploadWarningDialog"
+  title="Booklet-Zuordnungen überspringen?"
+  message="Die Itemparameter können importiert werden, aber die Booklet-Zuordnungen der CSV sind unvollständig."
+  [details]="vm.uploadWarningMessages"
+  [error]="vm.uploadWarningError"
+  [busy]="vm.uploadWarningBusy"
+  busyLabel="Parameter werden importiert ..."
+  confirmLabel="Nur Itemparameter importieren"
+  confirmVariant="primary"
+  (confirmed)="vm.confirmItemParameterUploadWarnings()"
+  (cancelled)="vm.cancelItemParameterUploadWarnings()"
+/>
+
 <!-- OVERLAY: Upload Report -->
 @if (vm.showUploadReport) {
   <div class="overlay-backdrop" (click)="vm.closeUploadReport()">
@@ -13,6 +27,14 @@
           <strong>Zusammenfassung:</strong> {{ vm.uploadResult?.updated }} erfolgreich aktualisiert,
           {{ vm.uploadResult?.failed?.length || 0 }} fehlgeschlagen.
         </p>
+
+        @if (vm.uploadResult?.warnings?.length) {
+          <div class="alert alert-warning" role="status" style="margin-top: 12px">
+            @for (warning of vm.uploadResult!.warnings; track warning.code) {
+              <p style="margin: 0">{{ warning.message }}</p>
+            }
+          </div>
+        }
 
         @if (vm.uploadResult?.successes?.length) {
           <div style="margin-top: 16px">

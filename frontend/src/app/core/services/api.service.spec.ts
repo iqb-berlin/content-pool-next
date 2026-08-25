@@ -1119,6 +1119,26 @@ describe('ApiService', () => {
       );
     });
 
+    it('should confirm warning-gated item parameter imports explicitly', () => {
+      httpClientMock.post.mockReturnValue(of({ updated: 1, failed: [], successes: [] }));
+
+      const file = new File(['item;est;booklet\nx;0.5;B1'], 'parameters.csv', {
+        type: 'text/csv',
+      });
+      service
+        .uploadItemParameters('acp1', file, {
+          draft: true,
+          baseVersion: 7,
+          confirmWarnings: true,
+        })
+        .subscribe();
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/upload-item-parameters?draft=true&baseVersion=7&confirmWarnings=true',
+        expect.any(FormData),
+      );
+    });
+
     it('should update and export personal item collections', () => {
       httpClientMock.patch.mockReturnValue(of({ activeCollectionId: 'c1', collections: [] }));
       httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));

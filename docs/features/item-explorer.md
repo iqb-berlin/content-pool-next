@@ -369,9 +369,14 @@ the formatted `valueAsText` is retained only as display metadata and is not pars
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
 must agree, while `booklet` and `position` are collected as ordered 1:n metadata on the stable
-Explorer row. The occurrence columns must always be supplied and filled together. Columns that are
-absent leave stored values unchanged; a supplied but empty value clears that parameter in its
-defined scope:
+Explorer row. Complete occurrence data must always supply `booklet` and `position` together. If one
+column is missing, at least one row contains only one of the two values, or a parameter CSV contains
+no complete occurrence pair, the server first returns a warning without changing the Explorer
+draft. Managers can then cancel or explicitly confirm a parameter-only import. Confirming skips all
+booklet occurrences from that file and preserves the stored occurrences. A CSV containing only the
+paired occurrence columns can still clear occurrences explicitly with empty values. Other columns
+that are absent leave stored values unchanged; a supplied but empty value clears that parameter in
+its defined scope:
 
 - difficulty, Infit, discrimination, solution rate, and booklet occurrences belong to the stable
   Explorer row,

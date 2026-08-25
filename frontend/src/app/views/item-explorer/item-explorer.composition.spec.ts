@@ -94,7 +94,7 @@ class ItemExplorerMetadataDrawerTemplateHarness {
 @Component({
   selector: 'app-item-explorer-upload-dialogs',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
   template: uploadDialogsTemplate,
 })
 class ItemExplorerUploadDialogsTemplateHarness {

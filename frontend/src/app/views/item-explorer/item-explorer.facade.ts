@@ -271,6 +271,11 @@ export class ItemExplorerFacade implements OnDestroy {
   showUploadReport = false;
   uploadResult: ItemParameterUploadResult | null = null;
   isUploading = false;
+  showUploadWarningDialog = false;
+  uploadWarningMessages: string[] = [];
+  uploadWarningBusy = false;
+  uploadWarningError = '';
+  private pendingItemParameterUploadFile: File | null = null;
   showErrorDialog = false;
   errorMessage = '';
 
@@ -1075,6 +1080,19 @@ export class ItemExplorerFacade implements OnDestroy {
 
   closeUploadErrorDialog(): void {
     this.showErrorDialog = false;
+  }
+
+  cancelItemParameterUploadWarnings(): void {
+    if (this.uploadWarningBusy) return;
+    this.resetItemParameterUploadWarning();
+    this.restoreFocusAfterOverlayClose();
+  }
+
+  confirmItemParameterUploadWarnings(): void {
+    if (this.uploadWarningBusy || !this.pendingItemParameterUploadFile) return;
+    this.uploadWarningBusy = true;
+    this.uploadWarningError = '';
+    this.uploadItemParameterFile(this.pendingItemParameterUploadFile, true);
   }
 
   init(acpId: string) {
@@ -2361,16 +2379,36 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!input.files || input.files.length === 0) return;
     const file = input.files[0];
 
+    this.uploadItemParameterFile(file, false);
+    input.value = ''; // reset input
+  }
+
+  private uploadItemParameterFile(file: File, confirmWarnings: boolean): void {
     this.isUploading = true;
     this.api
       .uploadItemParameters(this.acpId, file, {
         draft: true,
         baseVersion: this.explorerVersion,
+        ...(confirmWarnings ? { confirmWarnings: true } : {}),
       })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (result) => {
           this.isUploading = false;
+          this.uploadWarningBusy = false;
+          if (result.requiresConfirmation) {
+            if (confirmWarnings) {
+              this.uploadWarningError =
+                'Die bestätigte Verarbeitung wurde vom Server nicht akzeptiert. Bitte versuche es erneut.';
+              return;
+            }
+            this.pendingItemParameterUploadFile = file;
+            this.uploadWarningMessages = (result.warnings || []).map((warning) => warning.message);
+            this.rememberFocusBeforeOverlay();
+            this.showUploadWarningDialog = true;
+            return;
+          }
+          this.resetItemParameterUploadWarning();
           this.uploadResult = result;
           this.showUploadReport = true;
           if (typeof result.showOnlyItemsWithEmpiricalDifficulty === 'boolean') {
@@ -2384,6 +2422,21 @@ export class ItemExplorerFacade implements OnDestroy {
         error: (err) => {
           console.error(err);
           this.isUploading = false;
+          if (confirmWarnings && this.showUploadWarningDialog) {
+            if (err?.status === 409) {
+              this.uploadWarningBusy = true;
+              this.uploadWarningError =
+                'Der Explorer-Entwurf wurde zwischenzeitlich geändert und wird neu geladen.';
+              void this.finishItemParameterWarningConflictReload();
+            } else {
+              this.uploadWarningBusy = false;
+              this.uploadWarningError =
+                err.error?.message ||
+                'Fehler beim bestätigten Import. Es wurden keine Itemparameter geändert.';
+            }
+            return;
+          }
+          this.uploadWarningBusy = false;
           if (err?.status === 409) {
             this.errorMessage =
               'Konflikt beim Speichern des Entwurfs. Der Explorer wurde neu geladen.';
@@ -2396,8 +2449,34 @@ export class ItemExplorerFacade implements OnDestroy {
           this.showErrorDialog = true;
         },
       });
+  }
 
-    input.value = ''; // reset input
+  private resetItemParameterUploadWarning(): void {
+    this.showUploadWarningDialog = false;
+    this.uploadWarningMessages = [];
+    this.uploadWarningBusy = false;
+    this.uploadWarningError = '';
+    this.pendingItemParameterUploadFile = null;
+  }
+
+  private async finishItemParameterWarningConflictReload(): Promise<void> {
+    let reloaded = false;
+    try {
+      reloaded = await this.reloadSharedExplorerStateAndItems();
+    } catch (error) {
+      console.error('Failed to reload after item parameter upload conflict', error);
+    }
+    if (this.destroyed || !this.showUploadWarningDialog) return;
+    if (!reloaded) {
+      this.resetItemParameterUploadWarning();
+      this.errorMessage =
+        'Der Explorer konnte nach dem Versionskonflikt nicht neu geladen werden. Bitte lade die Seite neu und starte den Import erneut.';
+      this.showErrorDialog = true;
+      return;
+    }
+    this.uploadWarningBusy = false;
+    this.uploadWarningError =
+      'Der Explorer-Entwurf wurde neu geladen. Bitte bestätige den Import erneut.';
   }
 
   openClearEmpiricalDifficultiesDialog() {
@@ -5052,12 +5131,12 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private async reloadSharedExplorerStateAndItems(
     preserveDraftOperationError = false,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const draftOperationError = preserveDraftOperationError ? this.lastDraftOperationError : '';
     const maxAttempts = 3;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       const envelope = await this.fetchSharedExplorerState();
-      if (!envelope || this.destroyed) return;
+      if (!envelope || this.destroyed) return false;
       const outcome = await new Promise<ItemListLoadOutcome>((resolve) =>
         this.reloadItems(resolve, envelope),
       );
@@ -5065,7 +5144,7 @@ export class ItemExplorerFacade implements OnDestroy {
         this.lastDraftOperationError = draftOperationError;
         this.explorerUiStatus = 'ERROR';
       }
-      if (outcome !== 'version-mismatch') return;
+      if (outcome !== 'version-mismatch') return outcome === 'loaded';
     }
 
     if (!this.destroyed) {
@@ -5073,6 +5152,7 @@ export class ItemExplorerFacade implements OnDestroy {
         'Der Item-Explorer wurde während des Ladens mehrfach geändert. Bitte erneut laden.';
       this.explorerUiStatus = 'ERROR';
     }
+    return false;
   }
 
   private itemListMatchesCurrentExplorerState(
@@ -5783,6 +5863,7 @@ export class ItemExplorerFacade implements OnDestroy {
   private hasModalOverlay(): boolean {
     return (
       this.showOverlay === 'coding' ||
+      this.showUploadWarningDialog ||
       this.showUploadReport ||
       this.showErrorDialog ||
       this.showColumnManager ||
@@ -5800,6 +5881,10 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private closeTopmostOverlay(): boolean {
+    if (this.showUploadWarningDialog) {
+      this.cancelItemParameterUploadWarnings();
+      return true;
+    }
     if (this.showLeaveWithChangesDialog) {
       this.stayOnPage();
       return true;

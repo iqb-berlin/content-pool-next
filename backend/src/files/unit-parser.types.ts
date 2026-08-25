@@ -47,6 +47,7 @@ export interface VomdItemData {
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences: Array<{ booklet: string; position: number }>;

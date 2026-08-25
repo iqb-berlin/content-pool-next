@@ -635,6 +635,7 @@ describe("UnitParserService", () => {
           infit: 1.04,
           discrimination: 0.41,
           solutionRate: 0.68,
+          textComplexity: "anspruchsvoll",
           itemTimeSeconds: 33,
           stimulusTimeSeconds: 12,
           bookletOccurrences: [
@@ -654,6 +655,7 @@ describe("UnitParserService", () => {
         infit: 1.04,
         discrimination: 0.41,
         solutionRate: 0.68,
+        textComplexity: "anspruchsvoll",
         itemTimeSeconds: 33,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [

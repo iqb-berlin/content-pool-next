@@ -28,6 +28,7 @@ describe("item export projection", () => {
       "Infit",
       "Trennschärfe",
       "Lösungshäufigkeit",
+      "Textkomplexität",
       "Itemzeit (s)",
       "Stimuluszeit (s)",
       "Booklet",
@@ -50,6 +51,7 @@ describe("item export projection", () => {
         infit: 1.05,
         discrimination: 0.4,
         solutionRate: 0.75,
+        textComplexity: "anspruchsvoll",
         itemTimeSeconds: 20,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
@@ -71,6 +73,7 @@ describe("item export projection", () => {
         rowKey: "uuid-1::A",
         category: "II",
         tags: ["Prüfen"],
+        textComplexity: "anspruchsvoll",
         booklets: "B1 | B2",
         bookletPositions: "3 | 8",
         meanTaskDifficulty: 0.5,

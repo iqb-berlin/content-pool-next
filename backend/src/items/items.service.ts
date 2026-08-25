@@ -28,6 +28,7 @@ export interface ItemData {
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences?: Array<{ booklet: string; position: number }>;
@@ -100,6 +101,7 @@ export class ItemsService {
               infit: fileRow.infit,
               discrimination: fileRow.discrimination,
               solutionRate: fileRow.solutionRate,
+              textComplexity: fileRow.textComplexity,
               itemTimeSeconds: fileRow.itemTimeSeconds,
               stimulusTimeSeconds: fileRow.stimulusTimeSeconds,
               bookletOccurrences: fileRow.bookletOccurrences,
@@ -129,6 +131,9 @@ export class ItemsService {
             : {}),
           ...(this.toFiniteNumber(props.solutionRate) !== undefined
             ? { solutionRate: this.toFiniteNumber(props.solutionRate) }
+            : {}),
+          ...(this.toNonEmptyText(props.textComplexity) !== undefined
+            ? { textComplexity: this.toNonEmptyText(props.textComplexity) }
             : {}),
           ...(this.toFiniteNumber(props.itemTimeSeconds) !== undefined
             ? { itemTimeSeconds: this.toFiniteNumber(props.itemTimeSeconds) }
@@ -254,6 +259,12 @@ export class ItemsService {
       !Number.isFinite(numberValue)
       ? undefined
       : numberValue;
+  }
+
+  private toNonEmptyText(value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    const text = String(value).trim();
+    return text || undefined;
   }
 
   private normalizeBookletOccurrences(

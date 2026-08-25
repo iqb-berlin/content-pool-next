@@ -109,7 +109,43 @@ describe("ItemParameterImportPipeline", () => {
       fileBuffer: Buffer.from("item;est\nI1;"),
       items,
       itemProperties: {
-        "uuid-1": { empiricalDifficulty: 0.4, infit: 1.05 },
+        "uuid-1": {
+          empiricalDifficulty: 0.4,
+          infit: 1.05,
+          textComplexity: "hoch",
+        },
+      },
+    });
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { infit: 1.05, textComplexity: "hoch" },
+    });
+  });
+
+  it("imports text_complexity as text, including numeric-looking content", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from("item;text_complexity\nI1;3.5"),
+      items,
+      itemProperties: {},
+    });
+
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { textComplexity: "3.5" },
+    });
+    expect(typeof result.nextItemProperties["uuid-1"].textComplexity).toBe(
+      "string",
+    );
+    expect(result.successes).toEqual([
+      expect.objectContaining({ fields: ["text_complexity"] }),
+    ]);
+  });
+
+  it("clears text_complexity only when the imported column is explicitly empty", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from("item;text_complexity\nI1;"),
+      items,
+      itemProperties: {
+        "uuid-1": { textComplexity: "hoch", infit: 1.05 },
       },
     });
 
@@ -153,6 +189,18 @@ describe("ItemParameterImportPipeline", () => {
       }),
     ).toThrow(BadRequestException);
     expect(itemProperties).toEqual({ "uuid-1": { infit: 0.9 } });
+  });
+
+  it("rejects conflicting text_complexity values for grouped rows", () => {
+    expect(() =>
+      pipeline.execute({
+        fileBuffer: Buffer.from(
+          "item;text_complexity;booklet;position\nI1;hoch;B1;1\nI1;niedrig;B2;2",
+        ),
+        items,
+        itemProperties: {},
+      }),
+    ).toThrow(BadRequestException);
   });
 
   it("fans a standard row out to existing partial-credit rows without deleting them", () => {
@@ -210,10 +258,10 @@ describe("ItemParameterImportPipeline", () => {
       (mutation) => mutation.action === "keep",
     );
 
-    expect(keepMutations).toHaveLength(6);
+    expect(keepMutations).toHaveLength(7);
     expect(keepMutations.every((mutation) => !("targetKeys" in mutation))).toBe(
       true,
     );
-    expect(plan.mutations).toHaveLength(manyItems.length + 6);
+    expect(plan.mutations).toHaveLength(manyItems.length + 7);
   });
 });

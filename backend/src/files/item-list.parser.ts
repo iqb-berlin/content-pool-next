@@ -316,6 +316,12 @@ export class ItemListParser {
               const value = Number(rawValue);
               return Number.isFinite(value) ? value : undefined;
             };
+            const optionalText = (property: string): string | undefined => {
+              const rawValue = rowProperties[property];
+              if (rawValue === undefined || rawValue === null) return undefined;
+              const value = String(rawValue).trim();
+              return value || undefined;
+            };
             const bookletOccurrences = Array.isArray(
               rowProperties.bookletOccurrences,
             )
@@ -365,6 +371,7 @@ export class ItemListParser {
               infit: optionalNumber("infit"),
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
+              textComplexity: optionalText("textComplexity"),
               itemTimeSeconds:
                 optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
               stimulusTimeSeconds:

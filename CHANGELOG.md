@@ -8,7 +8,9 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 ### Changes
 
-- None yet.
+- Add ACP-scoped item comment threads to the Item Explorer, including shared
+  visibility, replies, author labels, timestamps, author-only editing and
+  deletion, and thread-aware exports.
 
 ### Breaking changes
 
@@ -16,15 +18,25 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 ### Configuration
 
-- None.
+- ACP managers can enable item comments through `enableCommenting` and
+  `commentTargets`, and choose `PRIVATE` or `SHARED` comment visibility through
+  `commentVisibilityMode`.
 
 ### Database migrations
 
-- Classification: `none`
+- Classification: `backward-compatible`
+- Extend existing comments with stable item identity, credential ownership,
+  thread relationships, author labels, update timestamps, optimistic versions,
+  and soft deletion. Existing comments keep their content and receive safe
+  timestamp and display-label backfills without inferring credential ownership
+  from mutable usernames.
 
 ### Rollback
 
-- No special instructions.
+- Application rollback does not require reverting the additive comment
+  migration. Previous backends ignore the new columns; comments created by the
+  new thread interface remain stored but their thread metadata is unavailable
+  until the new application version is restored.
 
 ## [0.3.0] - 2026-07-31
 

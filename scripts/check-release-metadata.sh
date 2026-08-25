@@ -42,16 +42,32 @@ PY
 
 previous_tag="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -Ev -- '-rc\.' | head -n 1 || true)"
 if [[ -n "$previous_tag" ]] && ! git diff --quiet "$previous_tag" -- backend/src/database/migrations; then
-  if python3 - "$version" <<'PY'
+  migration_section="$version"
+  if [[ "$previous_tag" == "v${version}" ]]; then
+    migration_section="Unreleased"
+  fi
+
+  migration_classification="$(python3 - "$migration_section" <<'PY'
 from pathlib import Path
 import sys
 
 text = Path("CHANGELOG.md").read_text(encoding="utf-8")
-section = text.split(f"## [{sys.argv[1]}]", 1)[1].split("\n## [", 1)[0]
-raise SystemExit(0 if "Classification: `none`" in section else 1)
+section_name = sys.argv[1]
+marker = f"## [{section_name}]"
+if marker not in text:
+    raise SystemExit(f"CHANGELOG.md has no section for {section_name}")
+section = text.split(marker, 1)[1].split("\n## [", 1)[0]
+classifications = ("none", "backward-compatible", "manual")
+matches = [item for item in classifications if f"Classification: `{item}`" in section]
+if len(matches) != 1:
+    raise SystemExit(
+        f"CHANGELOG.md {section_name} section must have exactly one migration classification"
+    )
+print(matches[0])
 PY
-  then
-    printf 'Migration files changed since %s but release %s is classified as none\n' "$previous_tag" "$version" >&2
+  )"
+  if [[ "$migration_classification" == "none" ]]; then
+    printf 'Migration files changed since %s but changelog section %s is classified as none\n' "$previous_tag" "$migration_section" >&2
     exit 1
   fi
 fi

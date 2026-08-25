@@ -267,6 +267,40 @@ Publishing the explorer draft updates:
 This means column choices are not just temporary UI preferences. They become part of the
 ACP's published shared configuration.
 
+## Item Comment Threads
+
+Authenticated ACP users can comment directly below the selected Item Explorer preview when
+commenting is enabled for the `ITEM` target. The thread is identified by `unitId` and `itemId`;
+partial-credit rows with different Sub-IDs therefore use the same thread.
+
+Managers choose the visibility explicitly in the ACP feature configuration:
+
+- `PRIVATE` keeps the existing behavior and shows users only their own comments,
+- `SHARED` makes item comments and replies visible to all authenticated users of the ACP.
+
+Existing ACPs default to `PRIVATE`. Every comment shows an author label and creation time. Users
+may edit or delete only their own comments; concurrent edits are rejected through a version check.
+Replies have one level and are grouped below their root comment. Deleting a root with replies keeps
+a neutral placeholder so the remaining conversation is understandable.
+
+The UI loads only the selected item's thread and protects quick item changes from stale responses.
+Unsaved main-comment and reply drafts remain assigned to their item while navigating. JSON and
+XLSX comment exports include `unitId`, `itemId`, `threadId`, `parentCommentId`, and the updated
+timestamp. The original `/api/acp/:acpId/comments` endpoints remain available; the threaded Item
+Explorer UI uses `/api/acp/:acpId/review/comments`.
+
+The legacy ACP-wide `DELETE /api/acp/:acpId/comments` endpoint removes only unreferenced,
+non-item legacy rows. Its response reports both `deletedCount` and `retainedCount` plus the
+restricted deletion scope, so callers cannot mistake it for deleting every comment in the ACP.
+
+Ownership and personal exports use stable user or credential IDs, never display names. A central
+review policy contains the temporary ACP permission mapping so future review capabilities can
+replace it without changing the thread API. Snapshot revisions are calculated only from the
+comments visible to the requester and can later be used for polling or ETags. Legacy comments with
+an unambiguous unit-qualified target remain available in their item thread; ambiguous raw target
+IDs stay readable through the legacy list and export endpoints instead of appearing under multiple
+items.
+
 ## Item Tags
 
 Tags can come from two places:

@@ -172,6 +172,10 @@ Commenting is controlled by ACP feature flags. Managers can export comments as:
 
 Non-manager users can export only the subset they are allowed to see.
 
+For item comments, managers also choose a visibility mode. Existing ACPs default to `PRIVATE`;
+`SHARED` must be selected explicitly before authenticated ACP users can see and reply to each
+other's comments in the Item Explorer. Users can edit or delete only comments they authored.
+
 ## 11. Export or Integrate
 
 When an ACP is ready for handoff or synchronization, there are several export paths:

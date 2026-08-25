@@ -255,15 +255,17 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     | 'codingVariableFocusMessage'
     | 'currentCodingSchemeAsText'
     | 'filteredCodingSchemeAsText'
+    | 'getCodingVariableDisplayLabel'
     | 'getCodingSortIndicator'
     | 'itemSubIdLabel'
     | 'preferManualCodingInstructions'
     | 'selectedItem'
     | 'setCodingSearchText'
     | 'shouldShowAutomaticCodingRules'
-    | 'shouldShowVariableManualInstruction'
+    | 'shouldShowGeneralCodingInstruction'
     | 'showOverlay'
     | 'showGeneralCodingInstructions'
+    | 'showPlayerTargetInfo'
     | 'toggleCodingSort'
   >
 >;

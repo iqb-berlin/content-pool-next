@@ -109,6 +109,7 @@ function registerPlayerDom(component: ItemExplorerFacade, postMessage = vi.fn())
     hasFrame: vi.fn(() => true),
     postMessage,
     focus: vi.fn(() => true),
+    setPrintLabelOverrides: vi.fn(),
     startAutoResize: vi.fn(),
     stopAutoResize: vi.fn(),
   };
@@ -273,6 +274,7 @@ describe('ItemExplorerFacade', () => {
     currentUser$.next(null);
 
     expect(component.enableTags).toBe(true);
+    expect(component.itemExplorerPlayerTargetInfoEnabled).toBe(false);
     expect(component.items).toEqual([]);
     expect((component as any).personalDataSessionIdentity).toBeNull();
     expect((component as any).collectionSessionIdentity).toBeNull();
@@ -2705,53 +2707,447 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('separates general coding hints from selected-variable manual instructions', () => {
+  it('uses the internal MDB007 variable id for the player and its coded source for instructions', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '01',
+      uuid: '596680ba-fccd-40d7-9886-d174873e43ef',
+      unitId: 'MDB007',
+      unitLabel: 'Lieblingsbücher_2',
+      description: 'GeoGebra item',
+      variableId: '01',
+      variableReadOnlyId: '01_1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: '01',
+          alias: '_01',
+          sourceType: 'BASE',
+          deriveSources: [],
+          manualInstruction: '<p>Nur Segment Bilderbücher markieren.</p>',
+          codes: [
+            {
+              id: 1,
+              score: 1,
+              label: 'richtig',
+              ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['true'] }] }],
+            },
+          ],
+        },
+        {
+          id: '01_1',
+          alias: '01',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['01', '01_ggb_bilderbuecherAngeklickt'],
+        },
+        {
+          id: '01_ggb_bilderbuecherAngeklickt',
+          alias: 'ggb-source',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      {
+        id: '_01',
+        label: 'Variable 01',
+        generalInstructionText: '<p>Nur Segment Bilderbücher markieren.</p>',
+        codes: [{ id: '1', label: 'richtig', ruleSetDescriptions: ['MATCH true'] }],
+      },
+      { id: '01', label: 'Aggregat', codes: [] },
+      { id: 'ggb-source', label: 'GeoGebra-Quelle', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: '01_1',
+      codingId: '01',
+      isDerived: true,
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Aggregat',
+    ]);
+    expect(
+      component.shouldShowGeneralCodingInstruction(component.filteredCodingSchemeAsText[0]),
+    ).toBe(false);
+    expect(
+      component.shouldShowAutomaticCodingRules(component.filteredCodingSchemeAsText[0].codes[0]),
+    ).toBe(true);
+    component.showGeneralCodingInstructions = true;
+    expect(
+      component.shouldShowGeneralCodingInstruction(component.filteredCodingSchemeAsText[0]),
+    ).toBe(true);
+    expect(
+      component.shouldShowAutomaticCodingRules(component.filteredCodingSchemeAsText[0].codes[0]),
+    ).toBe(true);
+    expect(component.selectedItemTarget).toBe('01_1');
+    expect(component.selectedPreviewTarget).toBe('01');
+  });
+
+  it('uses the visible player alias after identifying a base variable by its internal id', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === 'PLAYER_04'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '03',
+      uuid: 'uuid-03',
+      unitId: 'DLB013',
+      unitLabel: 'DLB013',
+      description: 'Base item',
+      variableId: 'PLAYER_04',
+      variableReadOnlyId: 'internal-04',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'internal-04',
+          alias: 'PLAYER_04',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('internal-04');
+    expect(component.selectedPreviewTarget).toBe('PLAYER_04');
+  });
+
+  it('shows DSB02210 player target 06 while keeping internal coding id 05', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === '06'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '10',
+      uuid: 'dsb02210',
+      unitId: 'DSB022',
+      unitLabel: 'Zoo',
+      description: 'Item 10',
+      variableId: '06',
+      variableReadOnlyId: '05',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: '05',
+          alias: '06',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [{ id: '06', label: 'Aufgabe 6', codes: [] }] as any;
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.getPlayerTarget(component.selectedItem)).toBe('06');
+    expect(component.selectedItemTarget).toBe('05');
+    expect(component.selectedPreviewTarget).toBe('06');
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: '05',
+      internalId: '05',
+      codingId: '06',
+      playerTargetId: '06',
+      usedLegacyFallback: false,
+    });
+  });
+
+  it('does not present numeric coding labels as item or variable identities', () => {
+    const component = createFacade();
+
+    expect(
+      component.getCodingVariableDisplayLabel({ id: '02', label: '1', codes: [] } as any),
+    ).toBe('');
+    expect(
+      component.getCodingVariableDisplayLabel({
+        id: 'internal-02',
+        label: 'Aufgabe 2',
+        codes: [],
+      } as any),
+    ).toBe('Aufgabe 2');
+  });
+
+  it('recovers DSB04101 through its unique legacy player alias', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === '01'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '01',
+      uuid: 'dsb04101',
+      unitId: 'DSB041',
+      unitLabel: 'DSB041',
+      description: 'Item with stale internal reference',
+      variableId: '01',
+      variableReadOnlyId: 'text-field_1765284526968_1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'text-area_1769771943595_1',
+          alias: '01',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [{ id: '01', label: 'Aufgabe 1', codes: [] }] as any;
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('text-area_1769771943595_1');
+    expect(component.selectedPreviewTarget).toBe('01');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(true);
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'text-field_1765284526968_1',
+      internalId: 'text-area_1769771943595_1',
+      codingId: '01',
+      playerTargetId: '01',
+      usedLegacyFallback: true,
+      requestedInternalId: 'text-field_1765284526968_1',
+    });
+  });
+
+  it('does not use a legacy fallback when an id and another alias share the same value', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '01',
+      uuid: 'ambiguous-legacy',
+      unitId: 'UNIT',
+      unitLabel: 'UNIT',
+      description: 'Ambiguous legacy target',
+      variableId: '01',
+      variableReadOnlyId: 'stale-internal-id',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: '01', alias: 'PLAYER_A', sourceType: 'BASE', deriveSources: [] },
+        { id: 'internal-b', alias: '01', sourceType: 'BASE', deriveSources: [] },
+      ],
+    };
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus.status).toBe('not-found');
+    expect(component.selectedPreviewTarget).toBe('');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(false);
+  });
+
+  it('keeps aggregate codes while inheriting a missing manual instruction from its source', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: '15',
+      uuid: 'uuid-15',
+      unitId: 'DHB023',
+      unitLabel: 'DHB023',
+      description: 'Partial-credit aggregate',
+      variableId: 'BASE_A',
+      variableReadOnlyId: 'TOTAL',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'BASE_A',
+          sourceType: 'BASE',
+          manualInstruction: '<p>Source instruction</p>',
+          codes: [{ id: 1 }],
+        },
+        {
+          id: 'TOTAL',
+          alias: 'BASE_A',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['BASE_A'],
+          codes: [{ id: 'PARTIAL_CREDIT' }],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      {
+        id: 'BASE_A',
+        label: 'Source',
+        generalInstructionText: '<p>Source instruction</p>',
+        codes: [{ id: '1', ruleSetDescriptions: [] }],
+      },
+      {
+        id: 'BASE_A',
+        label: 'Partial-Credit-Aggregat',
+        codes: [{ id: 'PARTIAL_CREDIT', ruleSetDescriptions: [] }],
+      },
+    ] as any;
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'unique',
+      targetId: 'TOTAL',
+      codingId: 'BASE_A',
+      isDerived: true,
+    });
+    expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
+      'Partial-Credit-Aggregat',
+    ]);
+    expect((component.filteredCodingSchemeAsText[0] as any).generalInstructionText).toBe(
+      '<p>Source instruction</p>',
+    );
+    expect(component.filteredCodingSchemeAsText[0].codes.map((code) => code.id)).toEqual([
+      'PARTIAL_CREDIT',
+    ]);
+  });
+
+  it('prefers a base-variable player alias when both alias and internal id exist in VOUD', () => {
+    const component = createFacade({
+      resolvePlayerTargetLocation: (_definition, variableId) =>
+        variableId === '05a' || variableId === '04a'
+          ? { absolutePageIndex: 0, scrollPageIndex: 0, isAlwaysVisiblePage: false }
+          : undefined,
+    });
+    component.selectedItem = {
+      itemId: '15',
+      uuid: 'uuid-15',
+      unitId: 'DHB023',
+      unitLabel: 'DHB023',
+      description: 'Derived item',
+      variableId: '05',
+      variableReadOnlyId: '04',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: '04a',
+          alias: '05a',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+        {
+          id: '04',
+          alias: '05',
+          sourceType: 'SUM_SCORE',
+          deriveSources: ['04a'],
+        },
+      ],
+    };
+    (component as any).definitionContent = '{"pages":[]}';
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedItemTarget).toBe('04');
+    expect(component.selectedPreviewTarget).toBe('05a');
+  });
+
+  it('blocks alias fallback when an explicitly internal variable id is missing', () => {
+    const component = createFacade();
+    component.selectedItem = {
+      itemId: 'ITEM_404',
+      uuid: 'uuid-404',
+      unitId: 'UNIT_404',
+      unitLabel: 'UNIT_404',
+      description: 'Item with stale internal variable id',
+      variableId: 'VISIBLE_TARGET',
+      variableReadOnlyId: 'missing-internal-id',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'different-internal-id',
+          alias: 'missing-internal-id',
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: 'missing-internal-id', label: 'Wrong alias match', codes: [] },
+    ] as any;
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.codingVariableFocus).toMatchObject({
+      status: 'not-found',
+      targetId: 'missing-internal-id',
+      matches: [],
+    });
+    expect(component.selectedPreviewTarget).toBe('');
+    expect(component.canPreviewItem(component.selectedItem)).toBe(false);
+  });
+
+  it('shows DLB01313 automatic coding independently from its general hint', () => {
     const component = createFacade();
     const coding = {
-      id: 'V1',
-      label: 'Variable 1',
-      manualInstructionText: '<p>Manuell prüfen</p>',
+      id: '01',
+      label: 'Variable 01',
+      generalInstructionText: '<p>Spinne</p>',
       codes: [
         {
           id: '1',
           score: 1,
-          label: 'Richtig',
+          label: 'richtig',
           manualInstructionText: null,
-          ruleSetDescriptions: ['Automatische Regel'],
+          ruleSetDescriptions: ["Übereinstimmung (numerisch) mit '3'"],
         },
       ],
     } as any;
     component.currentCodingScheme = {
-      variableCodings: [{ id: 'V1', sourceType: 'BASE' }],
+      variableCodings: [{ id: '01', sourceType: 'BASE' }],
     };
     component.currentCodingSchemeAsText = [coding];
     component.selectedItem = {
-      itemId: 'i1',
-      uuid: 'uuid-1',
-      unitId: 'u1',
-      unitLabel: 'Unit 1',
-      variableId: 'V1',
+      itemId: '13',
+      uuid: 'DLB01313',
+      unitId: 'DLB013',
+      unitLabel: 'Frida',
+      variableId: '01',
       metadata: {},
     } as any;
 
     component.showGeneralCodingInstructions = false;
     component.preferManualCodingInstructions = true;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
+    expect(component.shouldShowGeneralCodingInstruction(coding)).toBe(false);
+    expect(component.shouldShowAutomaticCodingRules(coding.codes[0])).toBe(true);
+
+    component.showGeneralCodingInstructions = true;
+    expect(component.shouldShowGeneralCodingInstruction(coding)).toBe(true);
+    expect(component.shouldShowAutomaticCodingRules(coding.codes[0])).toBe(true);
+  });
+
+  it('replaces only a code automatic rule with that code manual instruction', () => {
+    const component = createFacade();
+    const code = {
+      id: '1',
+      score: 1,
+      label: 'richtig',
+      manualInstructionText: '<p>Antwort fachlich prüfen.</p>',
+      ruleSetDescriptions: ["Übereinstimmung (numerisch) mit '3'"],
+    } as any;
+
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowAutomaticCodingRules(code)).toBe(false);
 
     component.preferManualCodingInstructions = false;
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
-
-    component.selectedItem = {
-      ...component.selectedItem,
-      variableId: '',
-    } as any;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(false);
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
-    component.showGeneralCodingInstructions = true;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
-    component.preferManualCodingInstructions = true;
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
+    expect(component.shouldShowAutomaticCodingRules(code)).toBe(true);
   });
 
   it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {
@@ -2793,7 +3189,7 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('keeps manual variable and code instructions when the coding uses an alias', () => {
+  it('keeps general variable hints and manual code instructions when the coding uses an alias', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -2815,11 +3211,11 @@ describe('ItemExplorerFacade', () => {
     ]);
 
     expect(codings[0].id).toBe('VISIBLE_ALIAS');
-    expect(codings[0].manualInstructionText).toContain('<img');
+    expect(codings[0].generalInstructionText).toContain('<img');
     expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
   });
 
-  it('sanitizes manual variable and code instructions while preserving graphics', () => {
+  it('sanitizes general variable hints and manual code instructions while preserving graphics', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -2841,15 +3237,15 @@ describe('ItemExplorerFacade', () => {
       },
     ]);
 
-    expect(codings[0].manualInstructionText).toContain('<img src="figure.png">');
-    expect(codings[0].manualInstructionText).not.toContain('onerror');
-    expect(codings[0].manualInstructionText).not.toContain('<script');
+    expect(codings[0].generalInstructionText).toContain('<img src="figure.png">');
+    expect(codings[0].generalInstructionText).not.toContain('onerror');
+    expect(codings[0].generalInstructionText).not.toContain('<script');
     expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
     expect(codings[0].codes[0].manualInstructionText).not.toContain('javascript:');
     expect(codings[0].codes[0].manualInstructionText).not.toContain('onclick');
   });
 
-  it('keeps manual instructions paired by position for a valid alias shadow', () => {
+  it('keeps general instructions paired by position for a valid alias shadow', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -2868,10 +3264,34 @@ describe('ItemExplorerFacade', () => {
       },
     ]);
 
-    expect(codings.map((coding: any) => coding.manualInstructionText)).toEqual([
+    expect(codings.map((coding: any) => coding.generalInstructionText)).toEqual([
       '<p>Base instruction</p>',
       '<p>Aggregate instruction</p>',
     ]);
+  });
+
+  it('treats semantically empty instruction HTML as absent', () => {
+    const component = createFacade();
+    const codings = (component as any).createCodingSchemeAsText([
+      {
+        id: '01',
+        sourceType: 'BASE',
+        manualInstruction: '<p>&nbsp;</p>',
+        codes: [
+          {
+            id: 1,
+            score: 1,
+            manualInstruction: '<div><br></div>',
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['3'] }] }],
+          },
+        ],
+      },
+    ]);
+
+    expect(codings[0].generalInstructionText).toBeNull();
+    expect(codings[0].codes[0].manualInstructionText).toBeNull();
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowAutomaticCodingRules(codings[0].codes[0])).toBe(true);
   });
 
   it('clears a previous coding search when the overlay is opened', () => {
@@ -3570,6 +3990,145 @@ describe('ItemExplorerFacade', () => {
       'TOTAL',
     ]);
     expect(component.selectedPreviewTarget).toBe('BASE_A');
+  });
+
+  it.each([
+    {
+      unitId: 'DHB023',
+      itemId: '15',
+      visibleAlias: '09',
+      internalId: 'd_1755788097974',
+      wrongBaseAlias: '10',
+      sources: ['08a', '08b', '08c', '08d', '08e'],
+    },
+    {
+      unitId: 'DHB002',
+      itemId: '09',
+      visibleAlias: '02',
+      internalId: 'd_1755785953558',
+      wrongBaseAlias: '03',
+      sources: ['01a', '01b', '01c', '01d', '01e'],
+    },
+  ])(
+    'resolves $unitId$itemId by internal id despite the $visibleAlias id/alias collision',
+    ({ unitId, itemId, visibleAlias, internalId, wrongBaseAlias, sources }) => {
+      const component = createFacade();
+      component.selectedItem = {
+        itemId,
+        uuid: `${unitId}-${itemId}`,
+        unitId,
+        unitLabel: unitId,
+        description: 'Summenitem',
+        variableId: visibleAlias,
+        variableReadOnlyId: internalId,
+        metadata: {},
+      } as any;
+      component.currentCodingScheme = {
+        variableCodings: [
+          {
+            id: visibleAlias,
+            alias: wrongBaseAlias,
+            sourceType: 'BASE',
+            deriveSources: [],
+          },
+          ...sources.map((source) => ({
+            id: source,
+            alias: source,
+            sourceType: 'BASE',
+            deriveSources: [],
+          })),
+          {
+            id: internalId,
+            alias: visibleAlias,
+            sourceType: 'SUM_SCORE',
+            deriveSources: sources,
+          },
+        ],
+      };
+      component.currentCodingSchemeAsText = [
+        { id: wrongBaseAlias, label: 'Falsche Basisvariable', codes: [] },
+        ...sources.map((source) => ({ id: source, label: source, codes: [] })),
+        { id: visibleAlias, label: 'Summenvariable', codes: [] },
+      ] as any;
+
+      (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+      expect(component.selectedItemTarget).toBe(internalId);
+      expect(component.selectedPreviewTarget).toBe(sources[0]);
+      expect(component.codingVariableFocus).toMatchObject({
+        status: 'unique',
+        targetId: internalId,
+        codingId: visibleAlias,
+        isDerived: true,
+        sourceIds: sources,
+      });
+    },
+  );
+
+  it('maps Aspect print aliases to the fachliche DLB013 item ids', () => {
+    const component = createFacade();
+    component.unit = { id: 'DLB013' };
+    component.items = [
+      {
+        itemId: '03',
+        uuid: 'uuid-03',
+        rowKey: 'uuid-03',
+        unitId: 'DLB013',
+        unitLabel: 'DLB013',
+        description: 'Item 03',
+        variableId: '04',
+        variableReadOnlyId: 'internal-04',
+        metadata: {},
+      },
+      {
+        itemId: '04',
+        uuid: 'uuid-04',
+        rowKey: 'uuid-04',
+        unitId: 'DLB013',
+        unitLabel: 'DLB013',
+        description: 'Item 04',
+        variableId: '05',
+        variableReadOnlyId: 'internal-05',
+        metadata: {},
+      },
+    ] as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        { id: 'internal-04', alias: '04', sourceType: 'BASE', deriveSources: [] },
+        { id: 'internal-05', alias: '05', sourceType: 'BASE', deriveSources: [] },
+      ],
+    };
+
+    expect((component as any).buildPrintLabelOverrides()).toEqual({
+      '04': 'DLB01303',
+      '05': 'DLB01304',
+    });
+  });
+
+  it('keeps unprefixed item ids unchanged in Aspect print labels', () => {
+    const component = createFacade();
+    component.unit = { id: 'MDB007', dependencies: [] } as any;
+    component.items = [
+      {
+        itemId: '01',
+        uuid: 'uuid-01',
+        rowKey: 'uuid-01',
+        unitId: 'MDB007',
+        unitLabel: 'MDB007',
+        description: 'GeoGebra item',
+        variableId: '01',
+        variableReadOnlyId: '01_1',
+        useUnitAliasAsPrefix: false,
+        metadata: {},
+      },
+    ] as any;
+    component.currentCodingScheme = {
+      variableCodings: [{ id: '01_1', alias: '01', sourceType: 'BASE', deriveSources: [] }],
+    };
+
+    expect((component as any).buildPrintLabelOverrides()).toEqual({
+      '01': '01',
+    });
   });
 
   it('offers known coding variables even when no standard preview target exists', () => {
@@ -4847,11 +5406,57 @@ describe('ItemExplorerFacade', () => {
       'infit',
       'discrimination',
       'solutionRate',
+      'textComplexity',
       'itemTimeSeconds',
       'stimulusTimeSeconds',
       'booklet',
       'bookletPosition',
     ]);
+  });
+
+  it('treats imported text complexity as a configurable text column', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([]);
+    const textComplexityColumn = columns.find(
+      (column: { id: string }) => column.id === 'textComplexity',
+    );
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        textComplexity: '3.5 – anspruchsvoll',
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        textComplexity: 'niedrig',
+      },
+    ];
+    component.allColumns = columns;
+    component.columnFilters = { textComplexity: 'ANSPRUCH' };
+
+    expect(textComplexityColumn).toEqual({
+      id: 'textComplexity',
+      label: 'Textkomplexität',
+      kind: 'text',
+    });
+    expect(component.getMetadataColumnDisplayValue(component.items[0], textComplexityColumn)).toBe(
+      '3.5 – anspruchsvoll',
+    );
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
   });
 
   it('formats wide and legacy upload successes without losing imported details', () => {
@@ -4860,7 +5465,7 @@ describe('ItemExplorerFacade', () => {
       unitId: 'unit-1',
       itemId: 'item-1',
       subId: 'A',
-      fields: ['infit', 'discrimination', 'booklet', 'position'],
+      fields: ['infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
         { booklet: 'B2', position: 5 },
@@ -4868,7 +5473,7 @@ describe('ItemExplorerFacade', () => {
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
-      'Infit, Trennschärfe, Booklet / Position',
+      'Infit, Trennschärfe, Textkomplexität, Booklet / Position',
     );
     expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
     const clearedBooklets = {

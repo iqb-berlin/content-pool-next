@@ -358,8 +358,10 @@ The same distinction exists when clearing empirical difficulty values.
 
 Managers can also upload a semicolon-separated wide CSV through the Item Explorer. Its canonical
 headers are `item`, `sub_id`, `est`, `infit`, `discrimination`, `solution_rate`, `item_time_s`,
-`stimulus_time_s`, `booklet`, and `position`. Only `item` and at least one parameter column are
-required. Time values are non-negative seconds; decimal point and decimal comma are accepted.
+`stimulus_time_s`, `text_complexity`, `booklet`, and `position`. Only `item` and at least one
+parameter column are required. `text_complexity` is imported and filtered as free text, including
+content that looks numeric. Time values are non-negative seconds; decimal point and decimal comma
+are accepted.
 
 Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
 item profile and `iqb_time_stimulus` from the VOMD unit profile. The unit value is shared by every

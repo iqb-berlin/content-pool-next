@@ -17,8 +17,11 @@ type ImportedScalarProperty =
   | "itemTimeSeconds"
   | "stimulusTimeSeconds";
 
+type ImportedTextProperty = "textComplexity";
+
 type ImportedProperty =
   | ImportedScalarProperty
+  | ImportedTextProperty
   | "bookletOccurrences"
   | "itemUuid"
   | "subId";
@@ -92,10 +95,23 @@ const IMPORTED_SCALAR_COLUMNS: Array<{
   },
 ];
 
+const IMPORTED_TEXT_COLUMNS: Array<{
+  header: string;
+  property: ImportedTextProperty;
+  scope: "row";
+}> = [
+  {
+    header: "text_complexity",
+    property: "textComplexity",
+    scope: "row",
+  },
+];
+
 const RESERVED_LEGACY_SUB_ID_HEADERS = new Set([
   "item",
   "sub_id",
   ...IMPORTED_SCALAR_COLUMNS.map((definition) => definition.header),
+  ...IMPORTED_TEXT_COLUMNS.map((definition) => definition.header),
   "booklet",
   "position",
 ]);
@@ -105,6 +121,7 @@ interface ImportGroup {
   subId: string;
   rowIndexes: number[];
   scalars: Map<ImportedScalarProperty, Set<number>>;
+  texts: Map<ImportedTextProperty, Set<string>>;
   occurrences: Map<string, { booklet: string; position: number }>;
   emptyOccurrenceRows: number[];
 }
@@ -163,12 +180,16 @@ export class ItemParameterImportPipeline {
       ...definition,
       index: headers.indexOf(definition.header),
     })).filter((definition) => definition.index >= 0);
+    const textColumns = IMPORTED_TEXT_COLUMNS.map((definition) => ({
+      ...definition,
+      index: headers.indexOf(definition.header),
+    })).filter((definition) => definition.index >= 0);
 
     const occurrenceColumnState = this.resolveOccurrenceColumnState(
       lines,
       declaredBookletIdx,
       declaredPositionIdx,
-      scalarColumns.length > 0,
+      scalarColumns.length > 0 || textColumns.length > 0,
     );
     const bookletIdx = occurrenceColumnState.importOccurrences
       ? declaredBookletIdx
@@ -180,9 +201,9 @@ export class ItemParameterImportPipeline {
       ? [occurrenceColumnState.warning]
       : [];
 
-    if (!scalarColumns.length && bookletIdx < 0) {
+    if (!scalarColumns.length && !textColumns.length && bookletIdx < 0) {
       throw new BadRequestException(
-        'CSV must contain at least one supported item parameter column: "est", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", or the pair "booklet" and "position"',
+        'CSV must contain at least one supported item parameter column: "est", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or the pair "booklet" and "position"',
       );
     }
 
@@ -230,6 +251,7 @@ export class ItemParameterImportPipeline {
           subId,
           rowIndexes: [],
           scalars: new Map(),
+          texts: new Map(),
           occurrences: new Map(),
           emptyOccurrenceRows: [],
         };
@@ -246,6 +268,7 @@ export class ItemParameterImportPipeline {
       }
 
       const rowScalars = new Map<ImportedScalarProperty, number>();
+      const rowTexts = new Map<ImportedTextProperty, string>();
       let invalidReason = "";
       for (const definition of scalarColumns) {
         const rawValue = row[definition.index]?.trim() || "";
@@ -265,6 +288,10 @@ export class ItemParameterImportPipeline {
         failed.push({ csvRow: itemValRaw, reason: invalidReason });
         if (!group.rowIndexes.length) groups.delete(rowKey);
         continue;
+      }
+      for (const definition of textColumns) {
+        const value = row[definition.index]?.trim() || "";
+        if (value) rowTexts.set(definition.property, value);
       }
 
       const occurrence = this.parseOccurrence(
@@ -293,6 +320,11 @@ export class ItemParameterImportPipeline {
         const values = group.scalars.get(property) || new Set<number>();
         values.add(value);
         group.scalars.set(property, values);
+      });
+      rowTexts.forEach((value, property) => {
+        const values = group.texts.get(property) || new Set<string>();
+        values.add(value);
+        group.texts.set(property, values);
       });
       if (occurrence && "value" in occurrence) {
         group.occurrences.set(occurrence.key, occurrence.value);
@@ -330,6 +362,17 @@ export class ItemParameterImportPipeline {
         property: definition.property,
       });
     }
+    const importedTextProperties = new Set(
+      textColumns.map((definition) => definition.property),
+    );
+    for (const definition of IMPORTED_TEXT_COLUMNS) {
+      if (importedTextProperties.has(definition.property)) continue;
+      mutations.push({
+        action: "keep",
+        scope: definition.scope,
+        property: definition.property,
+      });
+    }
     if (bookletIdx < 0) {
       mutations.push({
         action: "keep",
@@ -337,16 +380,19 @@ export class ItemParameterImportPipeline {
         property: "bookletOccurrences",
       });
     }
-    const importedRowProperties = scalarColumns.filter(
+    const importedRowScalarProperties = scalarColumns.filter(
       (definition) => definition.scope === "row",
     );
+    const importedRowTextProperties = textColumns;
     const importedRowMutationDefinitions: Array<{
       property: ImportedProperty;
       scope: ImportScope;
-    }> = importedRowProperties.map((definition) => ({
-      property: definition.property,
-      scope: definition.scope,
-    }));
+    }> = [...importedRowScalarProperties, ...importedRowTextProperties].map(
+      (definition) => ({
+        property: definition.property,
+        scope: definition.scope,
+      }),
+    );
     if (bookletIdx >= 0) {
       importedRowMutationDefinitions.push({
         property: "bookletOccurrences",
@@ -392,8 +438,27 @@ export class ItemParameterImportPipeline {
         );
       }
 
-      for (const definition of importedRowProperties) {
+      for (const definition of importedRowScalarProperties) {
         const values = group.scalars.get(definition.property);
+        if (values?.size) {
+          mutations.push({
+            action: "set",
+            scope: "row",
+            property: definition.property,
+            targetKeys: affectedRowKeys,
+            value: Array.from(values)[0],
+          });
+        } else {
+          mutations.push({
+            action: "clear",
+            scope: "row",
+            property: definition.property,
+            targetKeys: affectedRowKeys,
+          });
+        }
+      }
+      for (const definition of importedRowTextProperties) {
+        const values = group.texts.get(definition.property);
         if (values?.size) {
           mutations.push({
             action: "set",
@@ -441,6 +506,7 @@ export class ItemParameterImportPipeline {
           ? {
               fields: [
                 ...scalarColumns.map((definition) => definition.header),
+                ...textColumns.map((definition) => definition.header),
                 ...(bookletIdx >= 0 ? ["booklet", "position"] : []),
               ],
             }
@@ -486,7 +552,7 @@ export class ItemParameterImportPipeline {
     lines: string[],
     bookletIdx: number,
     positionIdx: number,
-    hasScalarColumns: boolean,
+    hasParameterColumns: boolean,
   ): {
     importOccurrences: boolean;
     warning?: ItemParameterImportWarning;
@@ -524,7 +590,7 @@ export class ItemParameterImportPipeline {
 
     if (
       !hasIncompleteOccurrence &&
-      (hasCompleteOccurrence || !hasScalarColumns)
+      (hasCompleteOccurrence || !hasParameterColumns)
     ) {
       return { importOccurrences: true };
     }
@@ -636,6 +702,13 @@ export class ItemParameterImportPipeline {
   private validateGroupConflicts(groups: Map<string, ImportGroup>): void {
     for (const group of groups.values()) {
       for (const [property, values] of group.scalars.entries()) {
+        if (values.size > 1) {
+          throw new BadRequestException(
+            `Konflikt: Für Item "${group.match.itemId}"${group.subId ? ` und Sub-ID "${group.subId}"` : ""} wurden unterschiedliche Werte für ${property} geliefert.`,
+          );
+        }
+      }
+      for (const [property, values] of group.texts.entries()) {
         if (values.size > 1) {
           throw new BadRequestException(
             `Konflikt: Für Item "${group.match.itemId}"${group.subId ? ` und Sub-ID "${group.subId}"` : ""} wurden unterschiedliche Werte für ${property} geliefert.`,

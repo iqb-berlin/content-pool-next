@@ -33,9 +33,17 @@ import { DomSanitizer } from '@angular/platform-browser';
             @for (item of unit.items; track item.id) {
               <div class="item-row" [class.highlighted]="item.id === highlightItemId">
                 <span class="item-name">{{ item.name || item.id }}</span>
-                @if (item.sourceVariable) {
-                  <code class="source-var">{{ item.sourceVariable }}</code>
-                }
+                <span class="variable-refs">
+                  @if (item.variableId) {
+                    <code title="Player-Variable">Player: {{ item.variableId }}</code>
+                  }
+                  @if (item.sourceVariable) {
+                    <code title="Quellvariable">Quelle: {{ item.sourceVariable }}</code>
+                  }
+                  @if (item.variableReadOnlyId) {
+                    <code title="Interne Variablen-ID">Intern: {{ item.variableReadOnlyId }}</code>
+                  }
+                </span>
               </div>
             }
           </div>
@@ -145,7 +153,13 @@ import { DomSanitizer } from '@angular/platform-browser';
         background: rgba(41, 128, 185, 0.12);
         border-left: 3px solid var(--color-primary-light);
       }
-      .source-var {
+      .variable-refs {
+        display: inline-flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 0.35rem;
+      }
+      .variable-refs code {
         font-size: 0.8rem;
         color: var(--color-text-secondary);
       }

@@ -303,14 +303,19 @@ test('renders the preview without document overflow on desktop and narrow screen
 test('keeps coding, draft, published and read-only perspectives functional', async ({ page }) => {
   await loginAsManager(page);
   await openExplorer(page);
+  await expect(page.locator('.table-panel .player-target-badge')).toHaveCount(0);
   await selectAndReadResponseState(page, rowIds.direct, 'i1');
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 
   await page.getByRole('button', { name: /Kodierung/ }).click();
   const codingDialog = page.getByRole('heading', { name: /Kodierung – Regression Aufgabe 1/ });
   await expect(codingDialog).toBeVisible();
-  await expect(page.getByTestId('coding-variable-focus')).toContainText('V1');
-  await expect(page.getByRole('heading', { name: 'Direkte Antwort' })).toBeVisible();
+  const codingFocus = page.getByTestId('coding-variable-focus');
+  await expect(codingFocus).toContainText('Kodierung für Item');
+  await expect(codingFocus).not.toContainText('Interne Kodier-ID');
+  await expect(codingFocus).not.toContainText('Player-/Anzeige-Ziel');
+  await expect(page.getByRole('heading', { name: 'Kodiervariable V1' })).toBeVisible();
+  await expect(page.getByText('Bezeichnung: Direkte Antwort', { exact: true })).toBeVisible();
   await expect(page.getByText('Richtig')).toBeVisible();
   await page.getByRole('button', { name: /Schließen/ }).click();
 

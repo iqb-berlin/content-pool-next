@@ -783,7 +783,10 @@ export class ViewsService {
       MEAN_DIFFICULTY_EXPORT_COLUMN,
     ];
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = { from: "A1", to: "S1" };
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: sheet.columnCount },
+    };
 
     const headerRow = sheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };

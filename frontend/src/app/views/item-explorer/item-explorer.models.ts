@@ -46,12 +46,15 @@ export interface ExplorerItem {
   description: string;
   variableId: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
+  useUnitAliasAsPrefix?: boolean;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
   meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences?: Array<{ booklet: string; position: number }>;
@@ -131,6 +134,8 @@ export interface PreviewTargetOption {
 export interface PreviewTargetResolution {
   itemTarget: string;
   isDerived: boolean;
+  isAmbiguous?: boolean;
+  blocksAutomaticTarget?: boolean;
   options: PreviewTargetOption[];
   defaultTargetId: string;
 }
@@ -140,7 +145,11 @@ export type CodingVariableFocusStatus = 'unique' | 'missing-target' | 'not-found
 export interface CodingVariableFocusResolution {
   status: CodingVariableFocusStatus;
   targetId: string;
+  internalId: string;
   codingId: string;
+  playerTargetId: string;
+  usedLegacyFallback: boolean;
+  requestedInternalId: string;
   matches: CodingAsText[];
   isDerived: boolean;
   sourceIds: string[];

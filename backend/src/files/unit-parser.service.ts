@@ -386,6 +386,16 @@ export class UnitParserService {
           changed = true;
         }
 
+        if (!nextItem.variableId && parsedItem.variableId) {
+          nextItem.variableId = parsedItem.variableId;
+          changed = true;
+        }
+
+        if (!nextItem.variableReadOnlyId && parsedItem.variableReadOnlyId) {
+          nextItem.variableReadOnlyId = parsedItem.variableReadOnlyId;
+          changed = true;
+        }
+
         if (
           nextItem.useUnitAliasAsPrefix === undefined &&
           parsedItem.useUnitAliasAsPrefix !== undefined
@@ -1242,6 +1252,8 @@ export class UnitParserService {
       id: string;
       name: string;
       sourceVariable?: string;
+      variableId?: string;
+      variableReadOnlyId?: string;
       metadata: Record<string, string>;
       useUnitAliasAsPrefix?: boolean;
     }>
@@ -1282,6 +1294,8 @@ export class UnitParserService {
       id: string;
       name: string;
       sourceVariable?: string;
+      variableId?: string;
+      variableReadOnlyId?: string;
       metadata: Record<string, string>;
       useUnitAliasAsPrefix?: boolean;
     }> = [];
@@ -1314,11 +1328,9 @@ export class UnitParserService {
       parsedItems.push({
         id: item.id,
         name: item.description || item.id,
-        sourceVariable:
-          item.sourceVariable ||
-          item.variableId ||
-          item.variableReadOnlyId ||
-          undefined,
+        sourceVariable: item.sourceVariable || undefined,
+        variableId: item.variableId || undefined,
+        variableReadOnlyId: item.variableReadOnlyId || undefined,
         metadata,
         useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
       });

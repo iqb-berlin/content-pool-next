@@ -70,13 +70,13 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(false);
   });
 
-  it('defaults showItemExplorerPlayerTargetInfo to true when flag is missing', () => {
+  it('defaults showItemExplorerPlayerTargetInfo to false when flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
 
     component.loadConfig();
 
-    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
+    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(false);
   });
 
   it('defaults player focus highlight to false when the flag is missing', () => {

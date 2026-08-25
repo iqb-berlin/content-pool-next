@@ -116,6 +116,9 @@ export class ItemListParser {
     const items: VomdItemData[] = [];
     const unitMetadata: Record<string, any[]> = {};
     const codingSchemes: Record<string, any> = {};
+    const variableIdentityCollisions: ItemListResult["variableIdentityConsistency"]["collisions"] =
+      [];
+    let checkedVariableIdentityItemCount = 0;
     let cacheable = true;
 
     const xmlFiles = allFiles.filter(
@@ -229,11 +232,55 @@ export class ItemListParser {
             item.useUnitAliasAsPrefix === false
               ? item.id
               : `${parsed.unitId}_${item.id}`;
-          const sourceVariable =
-            item.sourceVariable ||
-            item.variableId ||
-            item.variableReadOnlyId ||
-            "";
+          const variableId = String(item.variableId || "").trim();
+          const sourceVariable = String(item.sourceVariable || "").trim();
+          const variableReadOnlyId = String(
+            item.variableReadOnlyId || "",
+          ).trim();
+          if (variableReadOnlyId) {
+            const codingVariables = Array.isArray(
+              codingSchemes[parsed.unitId]?.variableCodings,
+            )
+              ? codingSchemes[parsed.unitId].variableCodings
+              : Array.isArray(codingSchemes[parsed.unitId])
+                ? codingSchemes[parsed.unitId]
+                : [];
+            const exactVariables = codingVariables.filter(
+              (variable: any) =>
+                String(variable?.id || "")
+                  .trim()
+                  .toLowerCase() === variableReadOnlyId.toLowerCase(),
+            );
+            const exactVariable =
+              exactVariables.length === 1 ? exactVariables[0] : undefined;
+            if (exactVariable) checkedVariableIdentityItemCount += 1;
+            const legacyReference = sourceVariable || variableId;
+            const legacyVariable = codingVariables.find((variable: any) =>
+              [variable?.id, variable?.alias].some(
+                (identifier) =>
+                  String(identifier || "")
+                    .trim()
+                    .toLowerCase() === legacyReference.toLowerCase(),
+              ),
+            );
+            if (
+              legacyReference &&
+              exactVariable &&
+              legacyVariable &&
+              exactVariable !== legacyVariable
+            ) {
+              variableIdentityCollisions.push({
+                unitId: parsed.unitId,
+                itemId: item.id,
+                variableId,
+                variableReadOnlyId,
+                resolvedVariableId: String(exactVariable.id || "").trim(),
+                legacyResolvedVariableId: String(
+                  legacyVariable.id || "",
+                ).trim(),
+              });
+            }
+          }
           const itemUuid = item.uuid || `${parsed.unitId}_${item.id}`;
           const baseProperties = this.resolveItemProperties(itemProps, [
             itemUuid,
@@ -268,6 +315,12 @@ export class ItemListParser {
               if (rawValue === undefined || rawValue === null) return undefined;
               const value = Number(rawValue);
               return Number.isFinite(value) ? value : undefined;
+            };
+            const optionalText = (property: string): string | undefined => {
+              const rawValue = rowProperties[property];
+              if (rawValue === undefined || rawValue === null) return undefined;
+              const value = String(rawValue).trim();
+              return value || undefined;
             };
             const bookletOccurrences = Array.isArray(
               rowProperties.bookletOccurrences,
@@ -309,13 +362,16 @@ export class ItemListParser {
               unitId: parsed.unitId,
               unitLabel: parsed.unitLabel,
               description: item.description || "",
-              variableId: sourceVariable,
+              variableId,
               sourceVariable: sourceVariable || undefined,
+              variableReadOnlyId: variableReadOnlyId || undefined,
+              useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
               metadata: { ...metadata },
               empiricalDifficulty,
               infit: optionalNumber("infit"),
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
+              textComplexity: optionalText("textComplexity"),
               itemTimeSeconds:
                 optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
               stimulusTimeSeconds:
@@ -356,6 +412,11 @@ export class ItemListParser {
         subIdLabels,
         unitMetadata,
         codingSchemes,
+        variableIdentityConsistency: {
+          checkedItemCount: checkedVariableIdentityItemCount,
+          collisionCount: variableIdentityCollisions.length,
+          collisions: variableIdentityCollisions,
+        },
       },
       sourceFileSignature,
       parseMs: performance.now() - parseStartedAt,

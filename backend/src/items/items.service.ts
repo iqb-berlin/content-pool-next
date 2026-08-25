@@ -20,12 +20,15 @@ export interface ItemData {
   unitId: string;
   unitName: string;
   name: string;
+  variableId?: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences?: Array<{ booklet: string; position: number }>;
@@ -86,7 +89,10 @@ export class ItemsService {
               unitId: unit.id,
               unitName: unit.name,
               name: item.name || fileRow.description || item.id,
+              variableId: fileRow.variableId || item.variableId,
               sourceVariable: fileRow.sourceVariable || item.sourceVariable,
+              variableReadOnlyId:
+                fileRow.variableReadOnlyId || item.variableReadOnlyId,
               metadata: {
                 ...(item.metadata || {}),
                 ...(fileRow.metadata || {}),
@@ -95,6 +101,7 @@ export class ItemsService {
               infit: fileRow.infit,
               discrimination: fileRow.discrimination,
               solutionRate: fileRow.solutionRate,
+              textComplexity: fileRow.textComplexity,
               itemTimeSeconds: fileRow.itemTimeSeconds,
               stimulusTimeSeconds: fileRow.stimulusTimeSeconds,
               bookletOccurrences: fileRow.bookletOccurrences,
@@ -111,7 +118,9 @@ export class ItemsService {
           unitId: unit.id,
           unitName: unit.name,
           name: item.name || item.id,
+          variableId: item.variableId,
           sourceVariable: item.sourceVariable,
+          variableReadOnlyId: item.variableReadOnlyId,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
           ...(this.toFiniteNumber(props.infit) !== undefined
@@ -122,6 +131,9 @@ export class ItemsService {
             : {}),
           ...(this.toFiniteNumber(props.solutionRate) !== undefined
             ? { solutionRate: this.toFiniteNumber(props.solutionRate) }
+            : {}),
+          ...(this.toNonEmptyText(props.textComplexity) !== undefined
+            ? { textComplexity: this.toNonEmptyText(props.textComplexity) }
             : {}),
           ...(this.toFiniteNumber(props.itemTimeSeconds) !== undefined
             ? { itemTimeSeconds: this.toFiniteNumber(props.itemTimeSeconds) }
@@ -254,6 +266,12 @@ export class ItemsService {
       !Number.isFinite(numberValue)
       ? undefined
       : numberValue;
+  }
+
+  private toNonEmptyText(value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    const text = String(value).trim();
+    return text || undefined;
   }
 
   private normalizeBookletOccurrences(

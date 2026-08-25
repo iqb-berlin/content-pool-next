@@ -73,4 +73,27 @@ describe('ItemExplorerPreviewComponent', () => {
     component.ngOnDestroy();
     iframe.remove();
   });
+
+  it('replaces Aspect print aliases without changing the underlying player model', () => {
+    const { component } = createPreview();
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    const label = iframe.contentDocument!.createElement('div');
+    label.className = 'element-label';
+    label.textContent = '04';
+    iframe.contentDocument!.body.appendChild(label);
+    component.playerFrame = new ElementRef(iframe);
+
+    component.setPrintLabelOverrides({ '04': 'DLB01303' });
+
+    expect(label.textContent).toBe('DLB01303');
+    expect(label.dataset['cpOriginalPrintLabel']).toBe('04');
+
+    component.setPrintLabelOverrides({});
+    expect(label.textContent).toBe('04');
+    expect(label.dataset['cpOriginalPrintLabel']).toBeUndefined();
+
+    component.ngOnDestroy();
+    iframe.remove();
+  });
 });

@@ -571,10 +571,12 @@ Das ist vor allem fuer Test- und Analysezwecke hilfreich.
 
 ## Kommentare und Exporte
 
-Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare anlegen.
-Auf der ACP-Startseite stehen dann typischerweise zur Verfuegung:
+Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare im
+jeweiligen fachlichen Kontext anlegen. Item-Kommentare werden beim ausgewaehlten Item im
+Item-Explorer erfasst; Unit-Kommentare in der Ansicht der jeweiligen Unit. Auf der
+ACP-Startseite stehen dann typischerweise zur Verfuegung:
 
-- `Kommentar hinzufuegen`
+- ein Link zu den Item-Kommentaren im Item-Explorer, falls diese aktiviert sind
 - `Kommentare exportieren (XLSX)`
 
 Pruefen Sie vor der Freigabe:

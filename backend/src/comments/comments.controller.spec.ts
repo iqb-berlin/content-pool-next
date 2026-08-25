@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { CommentsController } from "./comments.controller";
 import { CommentTargetType } from "../database/entities";
 
@@ -105,6 +105,65 @@ describe("CommentsController", () => {
       targetId: "item-1",
       commentText: "Hallo",
     });
+  });
+
+  it.each([
+    [
+      "ACP manager",
+      {
+        user: { type: "oidc", sub: "manager-1", isAppAdmin: false },
+        acpAccessLevel: "MANAGER",
+      },
+    ],
+    [
+      "app admin",
+      {
+        user: { type: "oidc", sub: "admin-1", isAppAdmin: true },
+        acpAccessLevel: "PUBLIC",
+      },
+    ],
+  ])(
+    "rejects the ACP ID as a legacy comment target for %s",
+    async (_label, req) => {
+      const dto = {
+        targetType: CommentTargetType.UNIT,
+        targetId: "acp-1",
+        commentText: "Invalid ACP-level comment",
+      };
+
+      await expect(controller.create("acp-1", dto, req)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(reviewPolicy.isManagerRequest).not.toHaveBeenCalled();
+      expect(commentsService.isCommentingEnabled).not.toHaveBeenCalled();
+      expect(commentsService.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    [CommentTargetType.UNIT, "unit-1"],
+    [CommentTargetType.ITEM, "item-1"],
+    [CommentTargetType.TASK_SEQUENCE, "sequence-1"],
+  ])("keeps valid %s targets available", async (targetType, targetId) => {
+    const req = {
+      user: { type: "oidc", sub: "manager-1", isAppAdmin: false },
+      acpAccessLevel: "MANAGER",
+    };
+
+    await expect(
+      controller.create(
+        "acp-1",
+        { targetType, targetId, commentText: "Valid content comment" },
+        req,
+      ),
+    ).resolves.toEqual({ id: "c-new" });
+    expect(commentsService.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acpId: "acp-1",
+        targetType,
+        targetId,
+      }),
+    );
   });
 
   it("rejects create for non-managers when commenting is disabled", async () => {

@@ -7,6 +7,7 @@ import {
   UseGuards,
   Request,
   Res,
+  BadRequestException,
   ForbiddenException,
 } from "@nestjs/common";
 import { Response } from "express";
@@ -74,6 +75,10 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
+    if (dto.targetId === acpId) {
+      throw new BadRequestException("Comment target ID must not be the ACP ID");
+    }
+
     const isManager = this.reviewPolicy.isManagerRequest(req);
     if (!isManager) {
       const enabled = await this.commentsService.isCommentingEnabled(

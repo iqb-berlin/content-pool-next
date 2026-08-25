@@ -307,8 +307,8 @@ test('applies coding configuration defaults and the alternative combinations in 
   await expect(codingDialog.getByTestId('coding-variable-focus')).toContainText('01');
   await expect(codingDialog).not.toContainText('Abgeleitete/aggregierte Kodierung');
   await expect(codingDialog.locator('.coding-item')).toHaveCount(1);
-  await expect(codingDialog).toContainText('Nur Segment Bilderbücher markieren.');
-  await expect(codingDialog.locator('.rule-list')).toHaveCount(0);
+  await expect(codingDialog).not.toContainText('Nur Segment Bilderbücher markieren.');
+  await expect(codingDialog.locator('.rule-list li')).toHaveCount(1);
   for (const technicalId of ['_button01', '_intro01', '_outro01', '_source01']) {
     await expect(codingDialog).not.toContainText(technicalId);
   }

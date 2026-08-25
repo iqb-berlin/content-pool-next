@@ -274,6 +274,7 @@ describe('ItemExplorerFacade', () => {
     currentUser$.next(null);
 
     expect(component.enableTags).toBe(true);
+    expect(component.itemExplorerPlayerTargetInfoEnabled).toBe(false);
     expect(component.items).toEqual([]);
     expect((component as any).personalDataSessionIdentity).toBeNull();
     expect((component as any).collectionSessionIdentity).toBeNull();

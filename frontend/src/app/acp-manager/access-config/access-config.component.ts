@@ -1223,7 +1223,7 @@ export class AccessConfigComponent implements OnInit {
     const showItemExplorerPlayerTargetInfo =
       this.featureConfig[this.showItemExplorerPlayerTargetInfoKey];
     this.featureConfig[this.showItemExplorerPlayerTargetInfoKey] =
-      showItemExplorerPlayerTargetInfo !== false;
+      showItemExplorerPlayerTargetInfo === true;
   }
 
   toggleCommentTarget(target: string) {

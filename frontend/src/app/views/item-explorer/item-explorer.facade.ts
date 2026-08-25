@@ -191,7 +191,7 @@ export class ItemExplorerFacade implements OnDestroy {
   preferManualCodingInstructions = true;
   itemExplorerConditionalVisibilityEnabled = false;
   playerFocusHighlightEnabled = false;
-  itemExplorerPlayerTargetInfoEnabled = true;
+  itemExplorerPlayerTargetInfoEnabled = false;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -1151,7 +1151,7 @@ export class ItemExplorerFacade implements OnDestroy {
           this.itemExplorerConditionalVisibilityEnabled =
             fc.enableItemExplorerConditionalVisibility === true;
           this.playerFocusHighlightEnabled = fc.enablePlayerFocusHighlight === true;
-          this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo !== false;
+          this.itemExplorerPlayerTargetInfoEnabled = fc.showItemExplorerPlayerTargetInfo === true;
           this.showOnlyItemsWithEmpiricalDifficulty =
             fc.showOnlyItemsWithEmpiricalDifficulty === true;
           this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';

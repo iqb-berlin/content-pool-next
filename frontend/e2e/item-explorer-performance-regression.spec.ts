@@ -303,6 +303,7 @@ test('renders the preview without document overflow on desktop and narrow screen
 test('keeps coding, draft, published and read-only perspectives functional', async ({ page }) => {
   await loginAsManager(page);
   await openExplorer(page);
+  await expect(page.locator('.table-panel .player-target-badge')).toHaveCount(0);
   await selectAndReadResponseState(page, rowIds.direct, 'i1');
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 

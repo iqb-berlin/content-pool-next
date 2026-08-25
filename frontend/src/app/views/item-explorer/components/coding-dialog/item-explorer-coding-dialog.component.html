@@ -21,18 +21,6 @@
                   </span>
                 }
               </div>
-              <div>
-                Interne Kodier-ID:
-                <code>{{ vm.codingVariableFocus.internalId }}</code>
-                @if (
-                  vm.codingVariableFocus.playerTargetId &&
-                  vm.codingVariableFocus.playerTargetId.toLowerCase() !==
-                    vm.codingVariableFocus.internalId.toLowerCase()
-                ) {
-                  · Player-/Anzeige-Ziel:
-                  <code>{{ vm.codingVariableFocus.playerTargetId }}</code>
-                }
-              </div>
               @if (vm.codingVariableFocus.usedLegacyFallback) {
                 <div class="coding-fallback-info" role="status">
                   Der im Item gespeicherte interne Verweis

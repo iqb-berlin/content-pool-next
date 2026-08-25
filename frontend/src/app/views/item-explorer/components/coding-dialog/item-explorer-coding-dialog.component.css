@@ -53,9 +53,10 @@
 }
 .coding-item h4 {
   margin: 0;
-  color: var(--color-primary);
+  color: var(--color-text);
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1.35;
 }
 .variable-label {
   font-size: 0.8rem;

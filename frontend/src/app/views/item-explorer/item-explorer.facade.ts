@@ -412,11 +412,8 @@ export class ItemExplorerFacade implements OnDestroy {
     });
   }
 
-  shouldShowVariableManualInstruction(coding: DeepReadonly<CodingAsText>): boolean {
-    return Boolean(
-      (coding as any).manualInstructionText &&
-      (this.codingVariableFocus.status === 'unique' || this.showGeneralCodingInstructions),
-    );
+  shouldShowGeneralCodingInstruction(coding: DeepReadonly<CodingAsText>): boolean {
+    return Boolean(this.showGeneralCodingInstructions && (coding as any).generalInstructionText);
   }
 
   getCodingVariableDisplayLabel(coding: DeepReadonly<CodingAsText>): string {
@@ -431,15 +428,10 @@ export class ItemExplorerFacade implements OnDestroy {
     return label;
   }
 
-  shouldShowAutomaticCodingRules(
-    coding: DeepReadonly<CodingAsText>,
-    code: DeepReadonly<CodingAsText['codes'][number]>,
-  ): boolean {
+  shouldShowAutomaticCodingRules(code: DeepReadonly<CodingAsText['codes'][number]>): boolean {
     if (!code.ruleSetDescriptions.length) return false;
     if (!this.preferManualCodingInstructions) return true;
-    return !(
-      this.shouldShowVariableManualInstruction(coding) || (code as any).manualInstructionText
-    );
+    return !(code as any).manualInstructionText;
   }
 
   get codingVariableFocus(): CodingVariableFocusResolution {
@@ -3352,7 +3344,7 @@ export class ItemExplorerFacade implements OnDestroy {
         return;
       }
 
-      (coding as any).manualInstructionText = this.sanitizeManualInstruction(
+      (coding as any).generalInstructionText = this.sanitizeManualInstruction(
         rawVariable.manualInstruction,
       );
       coding.codes.forEach((code) => {
@@ -3378,7 +3370,17 @@ export class ItemExplorerFacade implements OnDestroy {
     const sanitizedHtml = DOMPurify.sanitize(value, {
       USE_PROFILES: { html: true },
     }).trim();
-    return sanitizedHtml || null;
+    if (!sanitizedHtml) {
+      return null;
+    }
+
+    const content = document.createElement('div');
+    content.innerHTML = sanitizedHtml;
+    const textContent = (content.textContent || '').replace(/\u00a0/g, ' ').trim();
+    const hasMeaningfulMedia = Boolean(
+      content.querySelector('img, audio, video, svg, math, table'),
+    );
+    return textContent || hasMeaningfulMedia ? sanitizedHtml : null;
   }
 
   private resolveItemCodingVariable(
@@ -3557,18 +3559,17 @@ export class ItemExplorerFacade implements OnDestroy {
       const sourceCoding = codings[sourceMatch.index];
       if (!sourceCoding) return identityCoding;
 
-      const identityManualInstruction = (identityCoding as any).manualInstructionText;
-      const sourceManualInstruction = (sourceCoding as any).manualInstructionText;
-      const inheritManualInstruction = !identityManualInstruction && sourceManualInstruction;
+      const identityGeneralInstruction = (identityCoding as any).generalInstructionText;
+      const sourceGeneralInstruction = (sourceCoding as any).generalInstructionText;
+      const inheritGeneralInstruction = !identityGeneralInstruction && sourceGeneralInstruction;
       const inheritCodes = !identityCoding.codes.length && sourceCoding.codes.length;
-      if (!inheritManualInstruction && !inheritCodes) return identityCoding;
+      if (!inheritGeneralInstruction && !inheritCodes) return identityCoding;
 
       return {
         ...identityCoding,
-        ...(inheritManualInstruction
+        ...(inheritGeneralInstruction
           ? {
-              hasManualInstruction: true,
-              manualInstructionText: sourceManualInstruction,
+              generalInstructionText: sourceGeneralInstruction,
             }
           : {}),
         ...(inheritCodes ? { codes: sourceCoding.codes } : {}),

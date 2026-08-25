@@ -108,10 +108,11 @@ describe('ItemExplorer presentational components', () => {
   });
 
   it('binds ACP coding flags to general and manual instructions', () => {
-    expect(codingTemplate).toContain('vm.shouldShowVariableManualInstruction(coding)');
-    expect(codingTemplate).toContain('vm.shouldShowAutomaticCodingRules(coding, code)');
-    expect(codingTemplate).toContain('Manuelle Kodieranweisung:');
+    expect(codingTemplate).toContain('vm.shouldShowGeneralCodingInstruction(coding)');
+    expect(codingTemplate).toContain('vm.shouldShowAutomaticCodingRules(code)');
     expect(codingTemplate).toContain('Allgemeiner Kodierungshinweis:');
+    expect(codingTemplate).toContain('<strong>Manuelle Kodieranweisung:</strong>');
+    expect(codingTemplate).not.toContain("? 'Manuelle Kodieranweisung:'");
   });
 
   it('uses the coding variable id as the unambiguous card heading', () => {

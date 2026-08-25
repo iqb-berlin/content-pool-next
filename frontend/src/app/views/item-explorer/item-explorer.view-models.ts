@@ -262,7 +262,7 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     | 'selectedItem'
     | 'setCodingSearchText'
     | 'shouldShowAutomaticCodingRules'
-    | 'shouldShowVariableManualInstruction'
+    | 'shouldShowGeneralCodingInstruction'
     | 'showOverlay'
     | 'showGeneralCodingInstructions'
     | 'showPlayerTargetInfo'

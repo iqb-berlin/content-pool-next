@@ -2753,7 +2753,7 @@ describe('ItemExplorerFacade', () => {
       {
         id: '_01',
         label: 'Variable 01',
-        manualInstructionText: '<p>Nur Segment Bilderbücher markieren.</p>',
+        generalInstructionText: '<p>Nur Segment Bilderbücher markieren.</p>',
         codes: [{ id: '1', label: 'richtig', ruleSetDescriptions: ['MATCH true'] }],
       },
       { id: '01', label: 'Aggregat', codes: [] },
@@ -2772,20 +2772,17 @@ describe('ItemExplorerFacade', () => {
       'Aggregat',
     ]);
     expect(
-      component.shouldShowVariableManualInstruction(component.filteredCodingSchemeAsText[0]),
+      component.shouldShowGeneralCodingInstruction(component.filteredCodingSchemeAsText[0]),
+    ).toBe(false);
+    expect(
+      component.shouldShowAutomaticCodingRules(component.filteredCodingSchemeAsText[0].codes[0]),
+    ).toBe(true);
+    component.showGeneralCodingInstructions = true;
+    expect(
+      component.shouldShowGeneralCodingInstruction(component.filteredCodingSchemeAsText[0]),
     ).toBe(true);
     expect(
-      component.shouldShowAutomaticCodingRules(
-        component.filteredCodingSchemeAsText[0],
-        component.filteredCodingSchemeAsText[0].codes[0],
-      ),
-    ).toBe(false);
-    component.preferManualCodingInstructions = false;
-    expect(
-      component.shouldShowAutomaticCodingRules(
-        component.filteredCodingSchemeAsText[0],
-        component.filteredCodingSchemeAsText[0].codes[0],
-      ),
+      component.shouldShowAutomaticCodingRules(component.filteredCodingSchemeAsText[0].codes[0]),
     ).toBe(true);
     expect(component.selectedItemTarget).toBe('01_1');
     expect(component.selectedPreviewTarget).toBe('01');
@@ -2991,7 +2988,7 @@ describe('ItemExplorerFacade', () => {
       {
         id: 'BASE_A',
         label: 'Source',
-        manualInstructionText: '<p>Source instruction</p>',
+        generalInstructionText: '<p>Source instruction</p>',
         codes: [{ id: '1', ruleSetDescriptions: [] }],
       },
       {
@@ -3010,7 +3007,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.filteredCodingSchemeAsText.map((coding) => coding.label)).toEqual([
       'Partial-Credit-Aggregat',
     ]);
-    expect((component.filteredCodingSchemeAsText[0] as any).manualInstructionText).toBe(
+    expect((component.filteredCodingSchemeAsText[0] as any).generalInstructionText).toBe(
       '<p>Source instruction</p>',
     );
     expect(component.filteredCodingSchemeAsText[0].codes.map((code) => code.id)).toEqual([
@@ -3096,53 +3093,60 @@ describe('ItemExplorerFacade', () => {
     expect(component.canPreviewItem(component.selectedItem)).toBe(false);
   });
 
-  it('separates general coding hints from selected-variable manual instructions', () => {
+  it('shows DLB01313 automatic coding independently from its general hint', () => {
     const component = createFacade();
     const coding = {
-      id: 'V1',
-      label: 'Variable 1',
-      manualInstructionText: '<p>Manuell prüfen</p>',
+      id: '01',
+      label: 'Variable 01',
+      generalInstructionText: '<p>Spinne</p>',
       codes: [
         {
           id: '1',
           score: 1,
-          label: 'Richtig',
+          label: 'richtig',
           manualInstructionText: null,
-          ruleSetDescriptions: ['Automatische Regel'],
+          ruleSetDescriptions: ["Übereinstimmung (numerisch) mit '3'"],
         },
       ],
     } as any;
     component.currentCodingScheme = {
-      variableCodings: [{ id: 'V1', sourceType: 'BASE' }],
+      variableCodings: [{ id: '01', sourceType: 'BASE' }],
     };
     component.currentCodingSchemeAsText = [coding];
     component.selectedItem = {
-      itemId: 'i1',
-      uuid: 'uuid-1',
-      unitId: 'u1',
-      unitLabel: 'Unit 1',
-      variableId: 'V1',
+      itemId: '13',
+      uuid: 'DLB01313',
+      unitId: 'DLB013',
+      unitLabel: 'Frida',
+      variableId: '01',
       metadata: {},
     } as any;
 
     component.showGeneralCodingInstructions = false;
     component.preferManualCodingInstructions = true;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
+    expect(component.shouldShowGeneralCodingInstruction(coding)).toBe(false);
+    expect(component.shouldShowAutomaticCodingRules(coding.codes[0])).toBe(true);
+
+    component.showGeneralCodingInstructions = true;
+    expect(component.shouldShowGeneralCodingInstruction(coding)).toBe(true);
+    expect(component.shouldShowAutomaticCodingRules(coding.codes[0])).toBe(true);
+  });
+
+  it('replaces only a code automatic rule with that code manual instruction', () => {
+    const component = createFacade();
+    const code = {
+      id: '1',
+      score: 1,
+      label: 'richtig',
+      manualInstructionText: '<p>Antwort fachlich prüfen.</p>',
+      ruleSetDescriptions: ["Übereinstimmung (numerisch) mit '3'"],
+    } as any;
+
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowAutomaticCodingRules(code)).toBe(false);
 
     component.preferManualCodingInstructions = false;
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
-
-    component.selectedItem = {
-      ...component.selectedItem,
-      variableId: '',
-    } as any;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(false);
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(true);
-    component.showGeneralCodingInstructions = true;
-    expect(component.shouldShowVariableManualInstruction(coding)).toBe(true);
-    component.preferManualCodingInstructions = true;
-    expect(component.shouldShowAutomaticCodingRules(coding, coding.codes[0])).toBe(false);
+    expect(component.shouldShowAutomaticCodingRules(code)).toBe(true);
   });
 
   it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {
@@ -3184,7 +3188,7 @@ describe('ItemExplorerFacade', () => {
     ]);
   });
 
-  it('keeps manual variable and code instructions when the coding uses an alias', () => {
+  it('keeps general variable hints and manual code instructions when the coding uses an alias', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -3206,11 +3210,11 @@ describe('ItemExplorerFacade', () => {
     ]);
 
     expect(codings[0].id).toBe('VISIBLE_ALIAS');
-    expect(codings[0].manualInstructionText).toContain('<img');
+    expect(codings[0].generalInstructionText).toContain('<img');
     expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
   });
 
-  it('sanitizes manual variable and code instructions while preserving graphics', () => {
+  it('sanitizes general variable hints and manual code instructions while preserving graphics', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -3232,15 +3236,15 @@ describe('ItemExplorerFacade', () => {
       },
     ]);
 
-    expect(codings[0].manualInstructionText).toContain('<img src="figure.png">');
-    expect(codings[0].manualInstructionText).not.toContain('onerror');
-    expect(codings[0].manualInstructionText).not.toContain('<script');
+    expect(codings[0].generalInstructionText).toContain('<img src="figure.png">');
+    expect(codings[0].generalInstructionText).not.toContain('onerror');
+    expect(codings[0].generalInstructionText).not.toContain('<script');
     expect(codings[0].codes[0].manualInstructionText).toContain('Inspect figure');
     expect(codings[0].codes[0].manualInstructionText).not.toContain('javascript:');
     expect(codings[0].codes[0].manualInstructionText).not.toContain('onclick');
   });
 
-  it('keeps manual instructions paired by position for a valid alias shadow', () => {
+  it('keeps general instructions paired by position for a valid alias shadow', () => {
     const component = createFacade();
     const codings = (component as any).createCodingSchemeAsText([
       {
@@ -3259,10 +3263,34 @@ describe('ItemExplorerFacade', () => {
       },
     ]);
 
-    expect(codings.map((coding: any) => coding.manualInstructionText)).toEqual([
+    expect(codings.map((coding: any) => coding.generalInstructionText)).toEqual([
       '<p>Base instruction</p>',
       '<p>Aggregate instruction</p>',
     ]);
+  });
+
+  it('treats semantically empty instruction HTML as absent', () => {
+    const component = createFacade();
+    const codings = (component as any).createCodingSchemeAsText([
+      {
+        id: '01',
+        sourceType: 'BASE',
+        manualInstruction: '<p>&nbsp;</p>',
+        codes: [
+          {
+            id: 1,
+            score: 1,
+            manualInstruction: '<div><br></div>',
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['3'] }] }],
+          },
+        ],
+      },
+    ]);
+
+    expect(codings[0].generalInstructionText).toBeNull();
+    expect(codings[0].codes[0].manualInstructionText).toBeNull();
+    component.preferManualCodingInstructions = true;
+    expect(component.shouldShowAutomaticCodingRules(codings[0].codes[0])).toBe(true);
   });
 
   it('clears a previous coding search when the overlay is opened', () => {

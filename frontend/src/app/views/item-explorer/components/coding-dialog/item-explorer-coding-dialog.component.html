@@ -88,19 +88,12 @@
                     }
                   </div>
                 </div>
-                @if (vm.shouldShowVariableManualInstruction(coding)) {
+                @if (vm.shouldShowGeneralCodingInstruction(coding)) {
                   <div class="global-manual-instruction">
-                    <strong>
-                      📖
-                      {{
-                        vm.codingVariableFocus.status === 'unique'
-                          ? 'Manuelle Kodieranweisung:'
-                          : 'Allgemeiner Kodierungshinweis:'
-                      }}
-                    </strong>
+                    <strong>📖 Allgemeiner Kodierungshinweis:</strong>
                     <div
                       class="html-content"
-                      [innerHTML]="$any(coding).manualInstructionText"
+                      [innerHTML]="$any(coding).generalInstructionText"
                     ></div>
                   </div>
                 }
@@ -111,20 +104,20 @@
                         <span class="code-id">{{ code.id }}</span>
                         <span class="code-score">({{ code.score }})</span>
                         <span class="code-label">{{ code.label }}</span>
-                        @if (code.hasManualInstruction) {
+                        @if ($any(code).manualInstructionText) {
                           <span class="manual-icon" title="Manuelle Prüfung erforderlich">📝</span>
                         }
                       </div>
                       @if ($any(code).manualInstructionText) {
                         <div class="code-manual-instruction">
-                          <strong>Instruktion:</strong>
+                          <strong>Manuelle Kodieranweisung:</strong>
                           <div
                             class="html-content"
                             [innerHTML]="$any(code).manualInstructionText"
                           ></div>
                         </div>
                       }
-                      @if (vm.shouldShowAutomaticCodingRules(coding, code)) {
+                      @if (vm.shouldShowAutomaticCodingRules(code)) {
                         <ul class="rule-list">
                           @for (rule of code.ruleSetDescriptions; track rule) {
                             <li>{{ rule }}</li>

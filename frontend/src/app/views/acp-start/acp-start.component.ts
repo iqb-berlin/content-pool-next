@@ -1,14 +1,13 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, Inject, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
 
 @Component({
   selector: 'app-acp-start',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, CommentDialogComponent],
+  imports: [RouterLink, BreadcrumbComponent],
   template: `
     @if (data) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -95,11 +94,19 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           <div class="card section-card">
             <div class="section-icon">💬</div>
             <h3>Kommentare</h3>
+            @if (itemCommentsEnabled) {
+              <p class="comment-context-hint">
+                Item-Kommentare werden direkt beim ausgewählten Item im Item-Explorer erfasst.
+              </p>
+              <a
+                [routerLink]="['/view', acpId, 'item-explorer']"
+                class="btn btn-outline btn-sm item-comment-link"
+              >
+                Item-Kommentare im Item-Explorer
+              </a>
+            }
             @if (isLoggedIn) {
               <div class="comment-actions">
-                <button class="btn btn-outline btn-sm" (click)="commentOpen = true">
-                  💬 Kommentar hinzufügen
-                </button>
                 <button class="btn btn-outline btn-sm" (click)="exportComments()">
                   📄 Kommentare exportieren (XLSX)
                 </button>
@@ -126,15 +133,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <h3>Lade ACP-Daten...</h3>
       </div>
     }
-
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'UNIT'"
-      [targetId]="acpId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -231,6 +229,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         gap: 8px;
         margin-top: 12px;
       }
+      .comment-context-hint {
+        margin-bottom: 10px;
+      }
+      .item-comment-link {
+        align-self: flex-start;
+      }
       .my-comments {
         margin-top: 16px;
         border-top: 1px solid var(--color-border);
@@ -263,16 +267,21 @@ export class AcpStartComponent implements OnInit {
   breadcrumbs: BreadcrumbItem[] = [];
   canManageAcp = false;
   myComments: any[] = [];
-  commentOpen = false;
 
   constructor(
-    private route: ActivatedRoute,
-    private api: ApiService,
-    private auth: AuthService,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) private api: ApiService,
+    @Inject(AuthService) private auth: AuthService,
   ) {}
 
   get isLoggedIn(): boolean {
     return this.auth.isLoggedIn;
+  }
+
+  get itemCommentsEnabled(): boolean {
+    if (!this.fc.enableCommenting) return false;
+    const targets = Array.isArray(this.fc.commentTargets) ? this.fc.commentTargets : [];
+    return targets.length === 0 || targets.includes('ITEM');
   }
 
   ngOnInit() {
@@ -301,15 +310,6 @@ export class AcpStartComponent implements OnInit {
   loadMyComments() {
     this.api.getMyComments(this.acpId).subscribe((comments) => {
       this.myComments = comments;
-    });
-  }
-
-  onCommentSubmitted(event: any) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-        this.loadMyComments();
-      },
     });
   }
 

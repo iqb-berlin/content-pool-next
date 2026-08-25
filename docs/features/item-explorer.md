@@ -289,6 +289,22 @@ XLSX comment exports include `unitId`, `itemId`, `threadId`, `parentCommentId`, 
 timestamp. The original `/api/acp/:acpId/comments` endpoints remain available; the threaded Item
 Explorer UI uses `/api/acp/:acpId/review/comments`.
 
+The ACP start page does not offer a context-free comment action. It links to the Item Explorer
+when item comments are enabled and keeps the XLSX export and recent-comment summary available.
+The legacy create endpoint rejects `target_id = acp_id` with `400 Bad Request`, including for
+managers and app admins. Before releasing this safeguard, the affected existing rows can be counted
+read-only with:
+
+```sql
+SELECT COUNT(*) AS invalid_acp_target_comments
+FROM comments
+WHERE target_type = 'UNIT'
+  AND target_id = acp_id::text;
+```
+
+This audit query does not update or delete comments. Any cleanup requires a separate, explicitly
+approved procedure.
+
 The legacy ACP-wide `DELETE /api/acp/:acpId/comments` endpoint removes only unreferenced,
 non-item legacy rows. Its response reports both `deletedCount` and `retainedCount` plus the
 restricted deletion scope, so callers cannot mistake it for deleting every comment in the ACP.

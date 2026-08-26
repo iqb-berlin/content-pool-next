@@ -8,9 +8,47 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 ### Changes
 
+- None.
+
+### Breaking changes
+
+- None.
+
+### Configuration
+
+- None.
+
+### Database migrations
+
+- Classification: `none`
+
+### Rollback
+
+- No special instructions.
+
+## [0.4.0] - 2026-08-26
+
+### Changes
+
+- Preserve the fachliche Item-ID, visible variable alias, source variable, and
+  internal variable ID separately, resolve derived variables through their
+  source targets, and show the correct Item-ID in print views.
+- Apply manual, variable-specific, code-specific, and general coding
+  instructions at their intended levels without suppressing automatic rules
+  when no matching manual instruction exists.
+- Sort Item Explorer rows by their complete Item-ID and use VOMD item and
+  stimulus times when no explicit Explorer or CSV value overrides them.
+- Make all visible Item Explorer columns configurable by visibility, order,
+  and width while retaining compatible saved layouts.
+- Add text complexity imports and display, and allow item parameters to be
+  imported without complete booklet-position data after explicit confirmation.
+- Serialize Item Explorer draft updates so rapid search and filter changes no
+  longer create self-inflicted version conflicts.
 - Add ACP-scoped item comment threads to the Item Explorer, including shared
   visibility, replies, author labels, timestamps, author-only editing and
   deletion, and thread-aware exports.
+- Remove an invalid start-page comment entry that could be shown without an
+  associated item.
 
 ### Breaking changes
 
@@ -132,6 +170,7 @@ All notable changes to ContentPool are documented in this file. Releases use
 - After an application rollback, users created by 0.2.0 continue to sign in
   through Keycloak; no local password is synthesized for them.
 
-[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.1.3...v0.2.0

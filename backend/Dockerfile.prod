@@ -1,11 +1,20 @@
 # Build stage
-FROM node:22.23.1-alpine3.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
+# The backend output and its production dependencies are architecture-neutral
+# JavaScript. Keep npm and the TypeScript compiler on the native build platform
+# so a multi-architecture image build does not execute Node through QEMU.
+FROM --platform=$BUILDPLATFORM node:22.23.1-alpine3.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
 RUN npm prune --omit=dev --legacy-peer-deps
+# Copying build-platform node_modules into target-platform images is safe only
+# while production dependencies contain no native addons. Fail closed if that
+# contract changes instead of publishing an image for the wrong architecture.
+RUN native_addon="$(find node_modules -type f -name '*.node' -print -quit)" && \
+    test -z "$native_addon" || \
+    { echo "Native addon prevents architecture-neutral backend build: $native_addon" >&2; exit 1; }
 
 # Production stage
 FROM node:22.23.1-alpine3.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2

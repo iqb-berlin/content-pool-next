@@ -26,6 +26,32 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 - No special instructions.
 
+## [0.4.1] - 2026-08-27
+
+### Changes
+
+- Resolve Item Explorer and item-detail preview targets by their VOUD alias
+  before falling back to generated element IDs, preventing cross-namespace
+  collisions from opening the wrong player page.
+- Recognize stored legacy element IDs as equivalent alias options and use the
+  coding-scheme labels to make preview targets identifiable.
+
+### Breaking changes
+
+- None.
+
+### Configuration
+
+- None.
+
+### Database migrations
+
+- Classification: `none`
+
+### Rollback
+
+- No special instructions.
+
 ## [0.4.0] - 2026-08-26
 
 ### Changes
@@ -170,7 +196,8 @@ All notable changes to ContentPool are documented in this file. Releases use
 - After an application rollback, users created by 0.2.0 continue to sign in
   through Keycloak; no local password is synthesized for them.
 
-[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.1.3...v0.2.0

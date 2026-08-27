@@ -35,6 +35,8 @@ All notable changes to ContentPool are documented in this file. Releases use
   collisions from opening the wrong player page.
 - Recognize stored legacy element IDs as equivalent alias options and use the
   coding-scheme labels to make preview targets identifiable.
+- Update the backend and frontend runtime OpenSSL packages to the Alpine
+  security release that fixes CVE-2026-14456.
 
 ### Breaking changes
 

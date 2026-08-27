@@ -2963,6 +2963,67 @@ describe('ItemExplorerFacade', () => {
     });
   });
 
+  it('starts DHB00311 at alias 07 instead of the earlier element id 07', () => {
+    vi.useFakeTimers();
+    const realVoudService = new VoudService();
+    const component = createFacade({
+      resolvePlayerTargetLocation:
+        realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
+      getFocusIdentifiers: realVoudService.getFocusIdentifiers.bind(realVoudService),
+    });
+    const postMessage = vi.fn();
+
+    try {
+      component.selectedItem = {
+        itemId: '11',
+        uuid: 'dhb00311',
+        rowKey: 'dhb00311',
+        unitId: 'DHB003',
+        unitLabel: 'Ressel',
+        description: 'Item 11',
+        variableId: '07',
+        variableReadOnlyId: '11',
+        metadata: {},
+      } as any;
+      component.currentCodingScheme = {
+        variableCodings: [
+          { id: '07', alias: '04', sourceType: 'BASE', deriveSources: [] },
+          { id: '11', alias: '07', sourceType: 'BASE', deriveSources: [] },
+        ],
+      };
+      component.currentCodingSchemeAsText = [
+        { id: '04', label: 'Item 4', codes: [] },
+        { id: '07', label: 'Item 11', codes: [] },
+      ] as any;
+      component.unit = { id: 'DHB003', dependencies: [] } as any;
+      (component as any).definitionContent = JSON.stringify({
+        pages: [
+          { sections: [{ elements: [{ id: '07', alias: '04' }] }] },
+          { sections: [{ elements: [{ id: '11', alias: '07' }] }] },
+        ],
+      });
+      (component as any).syncPreviewTargetResolution(component.selectedItem);
+      registerPlayerDom(component, postMessage);
+      (component as any).playerFrameReady = true;
+      setPreviewStatus(component, 'ready');
+
+      (component as any).startPlayerIfReady();
+
+      expect(component.selectedPreviewTarget).toBe('07');
+      expect(postMessage.mock.calls[0][0]).toMatchObject({
+        type: 'vopStartCommand',
+        playerConfig: expect.objectContaining({ startPage: '1' }),
+      });
+      expect((component as any).getResolvedVariableRefs(component.selectedItem)).toEqual([
+        '07',
+        '11',
+      ]);
+    } finally {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not present numeric coding labels as item or variable identities', () => {
     const component = createFacade();
 
@@ -4253,6 +4314,75 @@ describe('ItemExplorerFacade', () => {
     expect(component.previewTargetOptions.map((option) => option.id)).toEqual(['BASE_A', 'BASE_B']);
     expect(component.selectedPreviewTarget).toBe('');
     expect(component.previewTargetDefaultOptionLabel).toBe('Kein Standardziel hinterlegt');
+  });
+
+  it('recognizes a legacy text element id as the labeled alias option for DOB04402', () => {
+    const realVoudService = new VoudService();
+    const component = createFacade({
+      resolvePlayerTargetLocation:
+        realVoudService.resolvePlayerTargetLocation.bind(realVoudService),
+      getFocusIdentifiers: realVoudService.getFocusIdentifiers.bind(realVoudService),
+    });
+    const textVariableId = 'text_1764855140992_1';
+    const markingVariableId = 'marking-panel_1764067601517_1';
+
+    component.selectedItem = {
+      itemId: '02',
+      uuid: 'dob04402',
+      rowKey: 'dob04402',
+      unitId: 'DOB044',
+      unitLabel: 'Satzkorrektur',
+      description: 'Satz 2',
+      variableId: '02',
+      variableReadOnlyId: 'd_1765987036018',
+      previewTargetId: textVariableId,
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: markingVariableId,
+          alias: markingVariableId,
+          sourceType: 'BASE',
+          deriveSources: [],
+        },
+        { id: textVariableId, alias: '02a', sourceType: 'BASE', deriveSources: [] },
+        {
+          id: 'd_1765987036018',
+          alias: '02',
+          sourceType: 'CONCAT_CODE',
+          deriveSources: [markingVariableId, textVariableId],
+        },
+      ],
+    };
+    component.currentCodingSchemeAsText = [
+      { id: markingVariableId, label: 'Markierungsbereich', codes: [] },
+      { id: '02a', label: 'Satz 2', codes: [] },
+      { id: '02', label: 'Satzkorrektur 2', codes: [] },
+    ] as any;
+    (component as any).definitionContent = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              elements: [
+                { id: markingVariableId, alias: markingVariableId },
+                { id: textVariableId, alias: '02a' },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    (component as any).syncPreviewTargetResolution(component.selectedItem);
+
+    expect(component.selectedPreviewTarget).toBe(textVariableId);
+    expect(component.selectedPreviewTargetId).toBe('02a');
+    expect(component.customPreviewTargetDraft).toBe('');
+    expect(component.previewTargetOptions.find((option) => option.id === '02a')?.label).toBe(
+      'Satz 2 (02a)',
+    );
   });
 
   it('stores the selected base variable as shared item state', () => {

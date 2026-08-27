@@ -675,7 +675,11 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get previewTargetDefaultOptionLabel(): string {
     if (this.previewTargetResolution.defaultTargetId) {
-      return `Standardziel verwenden (${this.previewTargetResolution.defaultTargetId})`;
+      const option = this.findPreviewTargetOption(
+        this.previewTargetResolution.defaultTargetId,
+        this.previewTargetResolution.options,
+      );
+      return `Standardziel verwenden (${option?.label || this.previewTargetResolution.defaultTargetId})`;
     }
     return 'Kein Standardziel hinterlegt';
   }
@@ -3338,9 +3342,29 @@ export class ItemExplorerFacade implements OnDestroy {
     const resolution = this.buildPreviewTargetResolution(item);
     const selectedId = this.getStoredPreviewTargetId(item);
     this.previewTargetResolution = resolution;
-    const matchesKnownOption = resolution.options.some((option) => option.id === selectedId);
-    this.selectedPreviewTargetId = matchesKnownOption ? selectedId : '';
-    this.customPreviewTargetDraft = selectedId && !matchesKnownOption ? selectedId : '';
+    const selectedOption = this.findPreviewTargetOption(selectedId, resolution.options);
+    this.selectedPreviewTargetId = selectedOption?.id || '';
+    this.customPreviewTargetDraft = selectedId && !selectedOption ? selectedId : '';
+  }
+
+  private findPreviewTargetOption(
+    targetId: string,
+    options: PreviewTargetOption[],
+  ): PreviewTargetOption | undefined {
+    const normalizedTarget = String(targetId || '')
+      .trim()
+      .toLowerCase();
+    if (!normalizedTarget) return undefined;
+
+    const exactOption = options.find((option) => option.id.toLowerCase() === normalizedTarget);
+    if (exactOption || !this.definitionContent) return exactOption;
+
+    const equivalentIdentifiers = new Set(
+      this.voudService
+        .getFocusIdentifiers(this.definitionContent, targetId)
+        .map((identifier) => identifier.toLowerCase()),
+    );
+    return options.find((option) => equivalentIdentifiers.has(option.id.toLowerCase()));
   }
 
   private buildPreviewTargetResolution(
@@ -3911,6 +3935,14 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private getCodingVariableLabel(variable: any, fallbackId: string): string {
     const variableId = this.getCodingVariableId(variable, fallbackId);
+    const variableIndex = this.getCurrentCodingVariables().indexOf(variable);
+    const indexedCoding =
+      variableIndex >= 0 ? this.currentCodingSchemeAsText?.[variableIndex] : undefined;
+    const indexedTextLabel = indexedCoding ? this.getCodingVariableDisplayLabel(indexedCoding) : '';
+    if (indexedTextLabel) {
+      return indexedTextLabel;
+    }
+
     const textLabel = String(
       this.currentCodingSchemeAsText?.find((coding) => coding.id === variableId)?.label || '',
     ).trim();

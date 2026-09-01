@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { ReviewCommentsController } from "./review-comments.controller";
 
 describe("ReviewCommentsController", () => {
@@ -12,6 +12,11 @@ describe("ReviewCommentsController", () => {
       createItemComment: jest.fn().mockResolvedValue({ id: "c-1" }),
       updateOwnComment: jest.fn().mockResolvedValue({ id: "c-1", version: 2 }),
       deleteOwnComment: jest.fn().mockResolvedValue(undefined),
+      getItemCommentCounts: jest.fn().mockResolvedValue({ counts: [] }),
+      exportReviewCommentsCsv: jest.fn().mockResolvedValue(Buffer.from("csv")),
+      exportReviewCommentsXlsx: jest
+        .fn()
+        .mockResolvedValue(Buffer.from("xlsx")),
     };
     reviewPolicy = {
       resolveActor: jest.fn((req) => {
@@ -28,6 +33,9 @@ describe("ReviewCommentsController", () => {
           ),
         };
       }),
+      isManagerRequest: jest.fn(
+        (req) => req.acpAccessLevel === "MANAGER" || req.user?.isAppAdmin,
+      ),
     };
     controller = new ReviewCommentsController(commentsService, reviewPolicy);
   });
@@ -130,5 +138,35 @@ describe("ReviewCommentsController", () => {
       }),
     ).rejects.toThrow(BadRequestException);
     expect(commentsService.getItemThread).not.toHaveBeenCalled();
+  });
+
+  it("keeps manager personal exports separate from the protected all export", async () => {
+    const managerRequest = {
+      user: { type: "oidc", sub: "manager-1", username: "manager" },
+      acpAccessLevel: "MANAGER",
+    };
+    const response = () => ({
+      setHeader: jest.fn(),
+      send: jest.fn(),
+    });
+
+    await controller.exportMineXlsx("acp-1", managerRequest, response() as any);
+    expect(commentsService.exportReviewCommentsXlsx).toHaveBeenCalledWith(
+      "acp-1",
+      { userId: "manager-1", credentialId: undefined },
+    );
+
+    await controller.exportAllXlsx("acp-1", managerRequest, response() as any);
+    expect(commentsService.exportReviewCommentsXlsx).toHaveBeenLastCalledWith(
+      "acp-1",
+    );
+
+    await expect(
+      controller.exportAllXlsx(
+        "acp-1",
+        { ...managerRequest, acpAccessLevel: "READ_ONLY" },
+        response() as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

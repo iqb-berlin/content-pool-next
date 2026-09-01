@@ -426,6 +426,7 @@ describe("ItemExplorerStateService", () => {
             order: ["metadata:custom", "system:unitLabel"],
             configured: true,
             widths: { "system:unitLabel": 310, "personal:category": 900 },
+            schemaVersion: 2,
           },
         },
       },
@@ -437,6 +438,7 @@ describe("ItemExplorerStateService", () => {
       order: ["metadata:custom", "system:unitLabel"],
       configured: true,
       widths: { "system:unitLabel": 310, "personal:category": 600 },
+      schemaVersion: 2,
     });
   });
 

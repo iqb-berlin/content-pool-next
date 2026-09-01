@@ -32,6 +32,7 @@ export interface TableColumnLayoutSettings {
   order: string[];
   configured: boolean;
   widths: Record<string, number>;
+  schemaVersion?: number;
 }
 
 export interface ExplorerItem {

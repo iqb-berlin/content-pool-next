@@ -1,5 +1,6 @@
-import { Component, Inject, OnInit } from '@angular/core';
+import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { Observable, Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -107,17 +108,47 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             }
             @if (isLoggedIn) {
               <div class="comment-actions">
-                <button class="btn btn-outline btn-sm" (click)="exportComments()">
-                  📄 Kommentare exportieren (XLSX)
+                <button
+                  class="btn btn-outline btn-sm"
+                  (click)="loadMyComments()"
+                  [disabled]="commentsLoading"
+                >
+                  {{ commentsLoading ? 'Aktualisierung läuft …' : '↻ Aktualisieren' }}
                 </button>
+                <button class="btn btn-outline btn-sm" (click)="exportMyCommentsCsv()">
+                  Meine Kommentare (CSV)
+                </button>
+                <button class="btn btn-outline btn-sm" (click)="exportMyCommentsXlsx()">
+                  Meine Kommentare (XLSX)
+                </button>
+                @if (canExportAllComments) {
+                  <button class="btn btn-outline btn-sm" (click)="exportAllCommentsXlsx()">
+                    Alle Kommentare (XLSX)
+                  </button>
+                }
               </div>
+              @if (commentsError) {
+                <p class="comment-error" role="alert">{{ commentsError }}</p>
+              }
               @if (myComments.length > 0) {
                 <div class="my-comments">
-                  <h4>Meine letzten Kommentare:</h4>
+                  <h4>
+                    {{ Math.min(3, myComments.length) }} von {{ myComments.length }} eigenen
+                    Kommentaren
+                  </h4>
                   @for (c of myComments.slice(0, 3); track c.id) {
                     <div class="comment-summary">
                       <span class="badge badge-info">{{ c.targetType }}</span>
                       <span class="comment-text">{{ c.commentText }}</span>
+                      @if (c.targetType === 'ITEM' && c.unitId && c.itemId) {
+                        <a
+                          [routerLink]="['/view', acpId, 'item-explorer']"
+                          [queryParams]="{ unitId: c.unitId, itemId: c.itemId, comments: 'open' }"
+                          class="comment-deep-link"
+                        >
+                          Öffnen
+                        </a>
+                      }
                     </div>
                   }
                 </div>
@@ -257,16 +288,28 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .comment-error {
+        color: var(--color-danger-text);
+        font-size: 0.85rem;
+      }
+      .comment-deep-link {
+        margin-left: auto;
+        white-space: nowrap;
+      }
     `,
   ],
 })
-export class AcpStartComponent implements OnInit {
+export class AcpStartComponent implements OnInit, OnDestroy {
   acpId = '';
   data: any = null;
   fc: any = {}; // feature config
   breadcrumbs: BreadcrumbItem[] = [];
   canManageAcp = false;
   myComments: any[] = [];
+  commentsLoading = false;
+  commentsError = '';
+  readonly Math = Math;
+  private readonly destroy$ = new Subject<void>();
 
   constructor(
     @Inject(ActivatedRoute) private route: ActivatedRoute,
@@ -284,45 +327,74 @@ export class AcpStartComponent implements OnInit {
     return targets.length === 0 || targets.includes('ITEM');
   }
 
+  get canExportAllComments(): boolean {
+    return this.canManageAcp || this.auth.isAdmin;
+  }
+
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
-    this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
-
-    this.api.getAcpStartPage(this.acpId).subscribe((d) => {
-      this.data = d;
-      this.fc = d?.featureConfig || {};
-
-      const managerCrumb: BreadcrumbItem[] = this.canManageAcp
-        ? [{ label: 'Verwaltung', route: ['/manage', this.acpId] }]
-        : [];
-      this.breadcrumbs = [
-        { label: 'Assessment Content Pool', route: ['/'] },
-        ...managerCrumb,
-        { label: d?.name || 'ACP' },
-      ];
-
-      if (this.fc.enableCommenting && this.isLoggedIn) {
-        this.loadMyComments();
-      }
+    this.updateManagerState();
+    this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.updateManagerState();
     });
+
+    this.api
+      .getAcpStartPage(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((d) => {
+        this.data = d;
+        this.fc = d?.featureConfig || {};
+        this.updateBreadcrumbs();
+
+        if (this.fc.enableCommenting && this.isLoggedIn) {
+          this.loadMyComments();
+        }
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   loadMyComments() {
-    this.api.getMyComments(this.acpId).subscribe((comments) => {
-      this.myComments = comments;
-    });
+    this.commentsLoading = true;
+    this.commentsError = '';
+    this.api
+      .getMyComments(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (comments) => {
+          this.myComments = comments;
+          this.commentsLoading = false;
+        },
+        error: () => {
+          this.commentsLoading = false;
+          this.commentsError = 'Kommentare konnten nicht aktualisiert werden.';
+        },
+      });
   }
 
-  exportComments() {
-    this.api.exportCommentsXlsx(this.acpId).subscribe((blob) => {
-      if (!blob || blob.size === 0) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `comments-${this.acpId}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+  exportMyCommentsCsv() {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsCsv(this.acpId),
+      `comments-${this.acpId}-mine.csv`,
+    );
+  }
+
+  exportMyCommentsXlsx() {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-mine.xlsx`,
+    );
+  }
+
+  exportAllCommentsXlsx() {
+    if (!this.canExportAllComments) return;
+    this.downloadCommentExport(
+      this.api.exportAllReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-all.xlsx`,
+    );
   }
 
   downloadIndex() {
@@ -353,5 +425,39 @@ export class AcpStartComponent implements OnInit {
       if (typeof value.value === 'string') return value.value;
     }
     return '';
+  }
+
+  private downloadCommentExport(request: Observable<Blob>, fileName: string): void {
+    request.pipe(takeUntil(this.destroy$)).subscribe({
+      next: (blob: Blob) => {
+        if (!blob?.size) return;
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = fileName;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.commentsError = 'Kommentare konnten nicht exportiert werden.';
+      },
+    });
+  }
+
+  private updateManagerState(): void {
+    this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
+    this.updateBreadcrumbs();
+  }
+
+  private updateBreadcrumbs(): void {
+    if (!this.data) return;
+    const managerCrumb: BreadcrumbItem[] = this.canManageAcp
+      ? [{ label: 'Verwaltung', route: ['/manage', this.acpId] }]
+      : [];
+    this.breadcrumbs = [
+      { label: 'Assessment Content Pool', route: ['/'] },
+      ...managerCrumb,
+      { label: this.data?.name || 'ACP' },
+    ];
   }
 }

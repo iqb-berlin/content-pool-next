@@ -441,6 +441,11 @@ export interface CommentThreadSnapshot {
   comments: Comment[];
 }
 
+export interface ItemCommentCountsSnapshot {
+  revision: string;
+  counts: Array<{ unitId: string; itemId: string; count: number }>;
+}
+
 export interface AppSettings {
   id: string;
   theme: Record<string, any>;

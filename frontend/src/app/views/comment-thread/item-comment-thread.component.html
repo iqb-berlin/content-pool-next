@@ -22,7 +22,15 @@
             <strong>Kommentare zu {{ unitId }} · {{ itemId }}</strong>
             <span class="visibility-badge">{{ visibilityLabel }}</span>
           </div>
-          <button type="button" class="btn btn-outline btn-sm" (click)="loadThread()">↻</button>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            (click)="loadThread()"
+            aria-label="Kommentare aktualisieren"
+            title="Kommentare aktualisieren"
+          >
+            ↻
+          </button>
         </div>
 
         <div class="new-comment-form">

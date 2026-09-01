@@ -8,6 +8,20 @@
       placeholder="🔍 Items filtern..."
       (input)="vm.applyFilter()"
     />
+    @if (vm.itemCommentsEnabled) {
+      <button
+        class="btn btn-outline btn-sm"
+        type="button"
+        (click)="vm.refreshItemComments()"
+        [disabled]="vm.itemCommentCountsLoading"
+        title="Kommentar-Threads und Anzahlen neu laden"
+      >
+        {{ vm.itemCommentCountsLoading ? 'Kommentare werden aktualisiert …' : '↻ Kommentare' }}
+      </button>
+      @if (vm.itemCommentCountsError) {
+        <span class="personal-data-error" role="alert">{{ vm.itemCommentCountsError }}</span>
+      }
+    }
     @if (vm.excludedItemsCount > 0 || vm.showExcludedItems) {
       <div class="table-toolbar-actions">
         <button
@@ -200,6 +214,20 @@
                     (input)="vm.applyFilter()"
                   />
                 }
+                @case ('system:comments') {
+                  <select
+                    class="col-filter-input"
+                    [ngModel]="vm.columnFilters['comments']"
+                    (ngModelChange)="vm.setColumnFilter('comments', $event)"
+                    (change)="vm.applyFilter()"
+                    [disabled]="!vm.itemCommentCountsAvailable"
+                    aria-label="Nach Kommentarstatus filtern"
+                  >
+                    <option value="">Alle</option>
+                    <option value="with">Mit Kommentaren</option>
+                    <option value="without">Ohne Kommentare</option>
+                  </select>
+                }
                 @case ('system:tags') {
                   <input
                     class="col-filter-input"
@@ -342,6 +370,29 @@
                   }
                   @case ('system:meanTaskDifficulty') {
                     {{ item.meanTaskDifficulty ?? '' }}
+                  }
+                  @case ('system:comments') {
+                    @if (!vm.itemCommentCountsAvailable) {
+                      <span
+                        class="comment-count-unknown"
+                        [attr.aria-label]="
+                          vm.itemCommentCountsLoading
+                            ? 'Kommentaranzahl wird geladen'
+                            : 'Kommentaranzahl unbekannt'
+                        "
+                      >
+                        {{ vm.itemCommentCountsLoading ? '…' : '?' }}
+                      </span>
+                    } @else if (vm.getItemCommentCount(item); as count) {
+                      <span
+                        class="comment-count-badge"
+                        [attr.aria-label]="count === 1 ? '1 Kommentar' : count + ' Kommentare'"
+                      >
+                        💬 {{ count }}
+                      </span>
+                    } @else {
+                      <span class="comment-count-empty" aria-label="Keine Kommentare">–</span>
+                    }
                   }
                   @case ('system:tags') {
                     <div class="tags-cell-content">

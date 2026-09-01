@@ -65,6 +65,20 @@ describe('ItemCommentThreadComponent', () => {
     expect(api.getItemCommentThread).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the deep-link open flag only for the initial target', () => {
+    const { component } = createComponent();
+    component.initiallyOpen = true;
+
+    component.ngOnChanges({ itemId: {} as any });
+    expect(component.open).toBe(true);
+
+    component.open = false;
+    component.itemId = 'item-2';
+    component.ngOnChanges({ itemId: {} as any });
+
+    expect(component.open).toBe(false);
+  });
+
   it('groups replies below roots and keeps orphaned own replies visible', () => {
     const { component } = createComponent();
     component.snapshot = {
@@ -89,6 +103,28 @@ describe('ItemCommentThreadComponent', () => {
         replies: [expect.objectContaining({ id: 'reply' })],
       }),
     ]);
+  });
+
+  it('emits the visible non-deleted count after refreshing a thread', () => {
+    const { component, api } = createComponent();
+    const countChanged = vi.fn();
+    component.countChanged.subscribe(countChanged);
+    api.getItemCommentThread.mockReturnValue(
+      of({
+        revision: '2',
+        visibilityMode: 'SHARED',
+        comments: [{ id: 'visible' }, { id: 'deleted', isDeleted: true }],
+      }),
+    );
+
+    component.loadThread();
+
+    expect(countChanged).toHaveBeenCalledWith({
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      count: 1,
+      refreshToken: 0,
+    });
   });
 
   it('keeps drafts per item and creates a reply for the selected target', () => {

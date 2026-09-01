@@ -11,7 +11,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import { finalize, firstValueFrom, ReplaySubject, Subscription, takeUntil } from 'rxjs';
+import { finalize, firstValueFrom, Observable, ReplaySubject, Subscription, takeUntil } from 'rxjs';
 import {
   ItemCollection,
   ItemCollectionSummary,
@@ -73,6 +73,7 @@ const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 const COLLECTION_SELECTION_COLUMN_WIDTH = 38;
 const POSITION_COLUMN_WIDTH = 72;
+const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
 const TABLE_COLUMN_KEYS = {
   referenceNumber: 'system:referenceNumber',
   itemId: 'system:itemId',
@@ -80,6 +81,7 @@ const TABLE_COLUMN_KEYS = {
   subId: 'system:subId',
   empiricalDifficulty: 'system:empiricalDifficulty',
   meanTaskDifficulty: 'system:meanTaskDifficulty',
+  comments: 'system:comments',
   tags: 'system:tags',
   personalCategory: 'personal:category',
   personalTags: 'personal:tags',
@@ -92,6 +94,7 @@ const TABLE_COLUMN_SORT_FIELDS: Readonly<Record<string, string>> = {
   [TABLE_COLUMN_KEYS.subId]: 'subIdDisplay',
   [TABLE_COLUMN_KEYS.empiricalDifficulty]: 'empiricalDifficulty',
   [TABLE_COLUMN_KEYS.meanTaskDifficulty]: 'meanTaskDifficulty',
+  [TABLE_COLUMN_KEYS.comments]: 'commentCount',
 };
 const METADATA_COLUMN_KEY_PREFIX = 'metadata:';
 type ItemListLoadOutcome = 'loaded' | 'version-mismatch' | 'superseded' | 'error';
@@ -207,6 +210,20 @@ export class ItemExplorerFacade implements OnDestroy {
   itemExplorerPlayerTargetInfoEnabled = false;
   itemCommentsEnabled = false;
   private itemCommentsConfigured = false;
+  itemCommentCounts: Record<string, number> = {};
+  itemCommentCountsLoading = false;
+  itemCommentCountsAvailable = false;
+  itemCommentCountsError = '';
+  itemCommentRefreshToken = 0;
+  commentThreadInitiallyOpen = false;
+  commentExportInProgress = false;
+  commentExportError = '';
+  private itemCommentCountsRequestToken = 0;
+  private itemCommentCountStateVersion = 0;
+  private readonly itemCommentCountChangeVersions = new Map<string, number>();
+  private itemCommentCountSessionIdentity: string | null = null;
+  private initialCommentTarget: { unitId: string; itemId: string } | null = null;
+  private selectingInitialCommentTarget = false;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -240,6 +257,7 @@ export class ItemExplorerFacade implements OnDestroy {
   private authSessionSubscription: Subscription | null = null;
   private readonly authStorageListener = (event: StorageEvent) => {
     if (!event.key || event.key === 'cp_token') {
+      this.syncItemCommentCountSession();
       this.syncPersonalItemDataSession();
       this.syncItemCollectionSession();
     }
@@ -327,6 +345,7 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [],
       configured: false,
       widths: {},
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     },
   };
   private columnManagerOriginalSettings: MetadataSettings | null = null;
@@ -575,6 +594,115 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get totalItemsCount(): number {
     return this.items.length;
+  }
+
+  get canExportAllComments(): boolean {
+    return this.itemCommentsEnabled && this.hasExplorerEditPermission;
+  }
+
+  getItemCommentCount(item?: ReadonlyExplorerItem | null): number {
+    if (!item) return 0;
+    const exact = this.itemCommentCounts[this.itemCommentTargetKey(item.unitId, item.itemId)];
+    if (exact !== undefined) return exact;
+    const prefix = `${item.unitId}_`;
+    const alternateItemId = item.itemId.startsWith(prefix)
+      ? item.itemId.slice(prefix.length)
+      : `${prefix}${item.itemId}`;
+    return this.itemCommentCounts[this.itemCommentTargetKey(item.unitId, alternateItemId)] || 0;
+  }
+
+  updateItemCommentCount(event: {
+    unitId: string;
+    itemId: string;
+    count: number;
+    refreshToken?: number;
+  }): void {
+    if (event.refreshToken !== undefined && event.refreshToken !== this.itemCommentRefreshToken) {
+      return;
+    }
+    const exactKey = this.itemCommentTargetKey(event.unitId, event.itemId);
+    const prefix = `${event.unitId}_`;
+    const alternateItemId = event.itemId.startsWith(prefix)
+      ? event.itemId.slice(prefix.length)
+      : `${prefix}${event.itemId}`;
+    const alternateKey = this.itemCommentTargetKey(event.unitId, alternateItemId);
+    const key = Object.prototype.hasOwnProperty.call(this.itemCommentCounts, exactKey)
+      ? exactKey
+      : Object.prototype.hasOwnProperty.call(this.itemCommentCounts, alternateKey)
+        ? alternateKey
+        : exactKey;
+    const count = Math.max(0, Number(event.count) || 0);
+    if ((this.itemCommentCounts[key] || 0) === count) return;
+    this.itemCommentCountStateVersion += 1;
+    this.itemCommentCountChangeVersions.set(key, this.itemCommentCountStateVersion);
+    const next = { ...this.itemCommentCounts };
+    if (count > 0) next[key] = count;
+    else delete next[key];
+    this.itemCommentCounts = next;
+    this.applyFilter(false);
+  }
+
+  refreshItemComments(refreshSelectedThread = true): void {
+    if (!this.itemCommentsEnabled || !this.acpId) return;
+    const token = ++this.itemCommentCountsRequestToken;
+    const stateVersion = this.itemCommentCountStateVersion;
+    if (refreshSelectedThread) this.itemCommentRefreshToken += 1;
+    this.itemCommentCountsLoading = true;
+    this.itemCommentCountsError = '';
+    this.api
+      .getItemCommentCounts(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (snapshot) => {
+          if (token !== this.itemCommentCountsRequestToken) return;
+          const nextCounts = Object.fromEntries(
+            (snapshot.counts || [])
+              .filter((entry) => entry.count > 0)
+              .map((entry) => [this.itemCommentTargetKey(entry.unitId, entry.itemId), entry.count]),
+          );
+          for (const [key, changeVersion] of this.itemCommentCountChangeVersions) {
+            if (changeVersion > stateVersion) {
+              const currentCount = this.itemCommentCounts[key] || 0;
+              if (currentCount > 0) nextCounts[key] = currentCount;
+              else delete nextCounts[key];
+            } else {
+              this.itemCommentCountChangeVersions.delete(key);
+            }
+          }
+          this.itemCommentCounts = nextCounts;
+          this.itemCommentCountsAvailable = true;
+          this.itemCommentCountsLoading = false;
+          this.applyFilter(false);
+        },
+        error: () => {
+          if (token !== this.itemCommentCountsRequestToken) return;
+          this.itemCommentCountsLoading = false;
+          this.itemCommentCountsError = 'Kommentaranzahlen konnten nicht geladen werden.';
+          this.applyFilter(false);
+        },
+      });
+  }
+
+  exportMyCommentsCsv(): void {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsCsv(this.acpId),
+      `comments-${this.acpId}-mine.csv`,
+    );
+  }
+
+  exportMyCommentsXlsx(): void {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-mine.xlsx`,
+    );
+  }
+
+  exportAllCommentsXlsx(): void {
+    if (!this.canExportAllComments) return;
+    this.downloadCommentExport(
+      this.api.exportAllReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-all.xlsx`,
+    );
   }
 
   get visibleItemsCount(): number {
@@ -837,6 +965,15 @@ export class ItemExplorerFacade implements OnDestroy {
         label: 'Mittlere Aufgabenschwierigkeit',
         source: 'system',
         defaultWidth: 230,
+      });
+    }
+    if (this.itemCommentsEnabled) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.comments,
+        id: 'comments',
+        label: 'Kommentare',
+        source: 'system',
+        defaultWidth: 150,
       });
     }
     columns.push(
@@ -1147,10 +1284,17 @@ export class ItemExplorerFacade implements OnDestroy {
     this.uploadItemParameterFile(this.pendingItemParameterUploadFile, true);
   }
 
-  init(acpId: string) {
+  init(acpId: string, initialCommentTarget?: { unitId: string; itemId: string; open?: boolean }) {
     if (this.initialized || this.destroyed) return;
     this.initialized = true;
     this.acpId = acpId;
+    if (initialCommentTarget?.unitId && initialCommentTarget.itemId) {
+      this.initialCommentTarget = {
+        unitId: initialCommentTarget.unitId,
+        itemId: initialCommentTarget.itemId,
+      };
+      this.commentThreadInitiallyOpen = initialCommentTarget.open === true;
+    }
     this.breadcrumbs = [
       { label: 'Assessment Content Pool', route: ['/'] },
       { label: 'ACP', route: ['/view', this.acpId] },
@@ -1162,6 +1306,7 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.checkUserRole();
+        this.syncItemCommentCountSession();
         this.syncPersonalItemDataSession();
         this.syncItemCollectionSession();
       });
@@ -1207,8 +1352,10 @@ export class ItemExplorerFacade implements OnDestroy {
 
           // Load metadata column settings
           this.metadataSettings = this.resolveMetadataSettings(fc);
+          this.ensureCommentColumnDefault();
           this.configuredMetadataColumns = this.resolveConfiguredMetadataColumns(fc);
           void this.reloadSharedExplorerStateAndItems();
+          this.syncItemCommentCountSession();
           this.syncPersonalItemDataSession();
           this.syncItemCollectionSession();
           this.startPlayerIfReady();
@@ -1292,6 +1439,7 @@ export class ItemExplorerFacade implements OnDestroy {
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
           this.applyFilter(false); // re-apply current filters and sort
+          this.selectInitialCommentTarget();
           if (this.enableItemCollections && this.collectionLoadState === 'loaded') {
             this.recalculateCollectionSummaries();
           }
@@ -2124,6 +2272,11 @@ export class ItemExplorerFacade implements OnDestroy {
       } else if (colId === 'meanTaskDifficulty') {
         if (item.meanTaskDifficulty === undefined || item.meanTaskDifficulty === null) return false;
         if (!matchesNumericFilter(item.meanTaskDifficulty, filterValue)) return false;
+      } else if (colId === 'comments') {
+        if (!this.itemCommentsEnabled || !this.itemCommentCountsAvailable) continue;
+        const count = this.getItemCommentCount(item);
+        if (filterValue === 'with' && count === 0) return false;
+        if (filterValue === 'without' && count > 0) return false;
       } else if (colId === 'booklet' || colId === 'bookletPosition') {
         continue;
       } else {
@@ -2288,12 +2441,18 @@ export class ItemExplorerFacade implements OnDestroy {
         bVal = column ? this.getMetadataColumnRawValue(b, column) : b.metadata[this.sortField];
       } else if (
         this.sortField === 'empiricalDifficulty' ||
-        this.sortField === 'meanTaskDifficulty'
+        this.sortField === 'meanTaskDifficulty' ||
+        this.sortField === 'commentCount'
       ) {
-        aVal =
-          this.sortField === 'empiricalDifficulty' ? a.empiricalDifficulty : a.meanTaskDifficulty;
-        bVal =
-          this.sortField === 'empiricalDifficulty' ? b.empiricalDifficulty : b.meanTaskDifficulty;
+        if (this.sortField === 'commentCount') {
+          aVal = this.getItemCommentCount(a);
+          bVal = this.getItemCommentCount(b);
+        } else {
+          aVal =
+            this.sortField === 'empiricalDifficulty' ? a.empiricalDifficulty : a.meanTaskDifficulty;
+          bVal =
+            this.sortField === 'empiricalDifficulty' ? b.empiricalDifficulty : b.meanTaskDifficulty;
+        }
       } else {
         aVal = (a as any)[this.sortField] || '';
         bVal = (b as any)[this.sortField] || '';
@@ -2753,6 +2912,9 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Item Selection ---
   selectItem(readonlyItem: ReadonlyExplorerItem, index: number) {
     const item = readonlyItem as ExplorerItem;
+    if (!this.selectingInitialCommentTarget) {
+      this.commentThreadInitiallyOpen = false;
+    }
     item.rowKey = this.getStableRowKey(item);
     if (
       this.selectedItem &&
@@ -5090,7 +5252,24 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [...visible, ...hidden],
       configured: true,
       widths: { ...(this.metadataSettings.layout?.widths || {}) },
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     };
+  }
+
+  private ensureCommentColumnDefault(): void {
+    if (!this.itemCommentsEnabled) return;
+    const layout = this.metadataSettings.layout;
+    if (!layout?.configured || (layout.schemaVersion || 0) >= TABLE_COLUMN_LAYOUT_SCHEMA_VERSION) {
+      return;
+    }
+    if (
+      (layout.order.length > 0 || layout.visible.length > 0) &&
+      !layout.order.includes(TABLE_COLUMN_KEYS.comments)
+    ) {
+      layout.order.push(TABLE_COLUMN_KEYS.comments);
+      layout.visible.push(TABLE_COLUMN_KEYS.comments);
+    }
+    layout.schemaVersion = TABLE_COLUMN_LAYOUT_SCHEMA_VERSION;
   }
 
   private syncLegacyMetadataSettingsFromLayout() {
@@ -5367,6 +5546,7 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [],
       configured: false,
       widths: {},
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     };
     this.columns = this.filterVisibleColumns(this.allColumns);
     this.clearHiddenTableColumnFilters();
@@ -5390,6 +5570,7 @@ export class ItemExplorerFacade implements OnDestroy {
             order: [...layout.order],
             configured: layout.configured,
             widths: { ...layout.widths },
+            schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
           },
         },
       },
@@ -5409,6 +5590,7 @@ export class ItemExplorerFacade implements OnDestroy {
         order: [],
         configured: false,
         widths: {},
+        schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
       },
     };
     this.columns = this.filterVisibleColumns(this.allColumns);
@@ -5473,6 +5655,9 @@ export class ItemExplorerFacade implements OnDestroy {
       order: order.length ? order : visible,
       configured: layout['configured'] === true || visible.length > 0 || order.length > 0,
       widths: this.normalizeMetadataColumnWidths(layout['widths']),
+      ...(Number.isInteger(Number(layout['schemaVersion']))
+        ? { schemaVersion: Number(layout['schemaVersion']) }
+        : {}),
     };
   }
 
@@ -5701,6 +5886,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.metadataSettings = this.resolveMetadataSettings({
         metadataColumns: (activeState as ItemExplorerSharedState).metadataColumns,
       });
+      this.ensureCommentColumnDefault();
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.itemOrder = Array.isArray((activeState as ItemExplorerSharedState).itemOrder)
         ? (activeState as ItemExplorerSharedState).itemOrder!.filter(
@@ -6111,6 +6297,9 @@ export class ItemExplorerFacade implements OnDestroy {
               order: [...this.metadataSettings.layout.order],
               configured: this.metadataSettings.layout.configured,
               widths: { ...this.metadataSettings.layout.widths },
+              ...(this.metadataSettings.layout.schemaVersion
+                ? { schemaVersion: this.metadataSettings.layout.schemaVersion }
+                : {}),
             },
           }
         : {}),
@@ -6681,6 +6870,94 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     return tags;
+  }
+
+  private itemCommentTargetKey(unitId: string, itemId: string): string {
+    return `${unitId}\u0000${itemId}`;
+  }
+
+  private syncItemCommentCountSession(): void {
+    const nextIdentity = this.itemCommentsEnabled
+      ? this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken())
+      : null;
+    if (nextIdentity === this.itemCommentCountSessionIdentity) return;
+
+    this.itemCommentCountSessionIdentity = nextIdentity;
+    this.itemCommentCountsRequestToken += 1;
+    this.itemCommentRefreshToken += 1;
+    this.itemCommentCountsLoading = false;
+    this.itemCommentCountsAvailable = false;
+    this.itemCommentCounts = {};
+    this.itemCommentCountsError = '';
+    this.itemCommentCountStateVersion += 1;
+    this.itemCommentCountChangeVersions.clear();
+    this.applyFilter(false);
+
+    if (nextIdentity) {
+      this.ensureCommentColumnDefault();
+      this.refreshItemComments(false);
+    }
+  }
+
+  private selectInitialCommentTarget(): void {
+    const target = this.initialCommentTarget;
+    if (!target) return;
+    const matchesTarget = (item: ReadonlyExplorerItem) => {
+      if (item.unitId !== target.unitId) return false;
+      if (item.itemId === target.itemId) return true;
+      const prefix = `${target.unitId}_`;
+      return (
+        item.itemId === `${prefix}${target.itemId}` || target.itemId === `${prefix}${item.itemId}`
+      );
+    };
+    const item = this.items.find(matchesTarget);
+    if (!item) return;
+    this.initialCommentTarget = null;
+    let index = this.filteredItems.findIndex(
+      (entry) => this.getStableRowKey(entry) === this.getStableRowKey(item),
+    );
+    if (index < 0) {
+      this.filterText = '';
+      this.columnFilters = {};
+      this.personalColumnFilters = {};
+      this.collectionViewMode = 'all';
+      if (this.isItemExcluded(item)) this.showExcludedItems = true;
+      this.applyFilter(false);
+      index = this.filteredItems.findIndex(
+        (entry) => this.getStableRowKey(entry) === this.getStableRowKey(item),
+      );
+    }
+    this.selectingInitialCommentTarget = true;
+    try {
+      this.selectItem(item, index);
+    } finally {
+      this.selectingInitialCommentTarget = false;
+    }
+  }
+
+  private downloadCommentExport(request: Observable<Blob>, fileName: string): void {
+    if (this.commentExportInProgress) return;
+    this.commentExportInProgress = true;
+    this.commentExportError = '';
+    request.pipe(takeUntil(this.destroy$)).subscribe({
+      next: (blob) => {
+        this.commentExportInProgress = false;
+        if (!blob?.size) {
+          this.commentExportError = 'Der Kommentar-Export war leer.';
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = fileName;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.commentExportInProgress = false;
+        this.commentExportError = 'Kommentare konnten nicht exportiert werden.';
+      },
+    });
   }
 
   private isRecord(value: unknown): value is Record<string, any> {

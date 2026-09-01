@@ -9,6 +9,7 @@ import {
   AcpFile,
   Comment,
   CommentThreadSnapshot,
+  ItemCommentCountsSnapshot,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -426,6 +427,11 @@ export class ApiService {
       params: { unitId, itemId },
     });
   }
+  getItemCommentCounts(acpId: string): Observable<ItemCommentCountsSnapshot> {
+    return this.http.get<ItemCommentCountsSnapshot>(
+      `${this.API}/acp/${acpId}/review/comments/counts`,
+    );
+  }
   createItemComment(
     acpId: string,
     data: { unitId: string; itemId: string; commentText: string; parentCommentId?: string },
@@ -456,6 +462,21 @@ export class ApiService {
   }
   exportCommentsXlsx(acpId: string): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/comments/export.xlsx`, { responseType: 'blob' });
+  }
+  exportMyReviewCommentsCsv(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.csv`, {
+      responseType: 'blob',
+    });
+  }
+  exportMyReviewCommentsXlsx(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.xlsx`, {
+      responseType: 'blob',
+    });
+  }
+  exportAllReviewCommentsXlsx(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/all.xlsx`, {
+      responseType: 'blob',
+    });
   }
 
   // Public Views

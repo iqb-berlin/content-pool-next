@@ -8,6 +8,27 @@
   height: 100%;
   overflow: hidden;
 }
+
+.comment-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--color-primary-dark, #154360);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.comment-count-empty {
+  color: var(--color-text-secondary);
+}
+
+.comment-count-unknown {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
 .table-toolbar {
   display: flex;
   flex-direction: column;

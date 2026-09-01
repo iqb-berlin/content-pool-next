@@ -59,6 +59,8 @@ For ACP managers who need a task-oriented user guide, see:
 
 ### Operations
 
+- [Compliance Reports](compliance.md)
+  Generated SBOMs, license scans, similarity summaries, retention, and release evidence.
 - [Releases and Promotion](operations/releases.md)
   SemVer, release candidates, staging evidence, digest promotion, rollback, and restore.
 - [Deployment](operations/deployment.md)

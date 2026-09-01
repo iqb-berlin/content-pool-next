@@ -2,6 +2,7 @@
   "name": "iqb-content-pool-backend",
   "version": "0.4.1",
   "description": "IQB ContentPool - Backend API",
+  "license": "Apache-2.0",
   "private": true,
   "scripts": {
     "build": "nest build",

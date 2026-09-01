@@ -139,8 +139,13 @@ jobs:
             --release "$STABLE" \
             --output dist/release-manifest.stable.json
           mv dist/release-manifest.stable.json dist/release-manifest.json
-          archive="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field runtime.archive)"
-          (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+          checksums="$(mktemp)"
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+              | sort -z | xargs -0 sha256sum
+          ) > "$checksums"
+          mv "$checksums" dist/SHA256SUMS
       - name: Publish stable tag and release
         env:
           GH_TOKEN: ${{ github.token }}

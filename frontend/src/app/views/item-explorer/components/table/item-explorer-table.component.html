@@ -110,7 +110,7 @@
     (keydown)="onTableKeydown($event)"
   >
     @let tableColumns = vm.tableColumns;
-    <table class="table explorer-table">
+    <table class="table explorer-table" [class.has-collection-selection]="vm.enableItemCollections">
       <thead>
         <tr>
           @if (vm.enableItemCollections) {

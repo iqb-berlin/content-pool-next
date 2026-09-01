@@ -71,6 +71,8 @@ import {
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
+const COLLECTION_SELECTION_COLUMN_WIDTH = 38;
+const POSITION_COLUMN_WIDTH = 72;
 const TABLE_COLUMN_KEYS = {
   referenceNumber: 'system:referenceNumber',
   itemId: 'system:itemId',
@@ -881,10 +883,12 @@ export class ItemExplorerFacade implements OnDestroy {
     const layout = this.metadataSettings.layout;
     if (!layout?.configured) {
       const visibleMetadata = new Set(this.columns.map((column) => column.id));
-      return available.filter((column) => {
-        if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return this.referenceNumberVisible;
-        return column.source !== 'metadata' || visibleMetadata.has(column.id);
-      });
+      return this.orderPinnedTableColumns(
+        available.filter((column) => {
+          if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return this.referenceNumberVisible;
+          return column.source !== 'metadata' || visibleMetadata.has(column.id);
+        }),
+      );
     }
     const availableByKey = new Map(available.map((column) => [column.key, column]));
     const visible = new Set(layout.visible);
@@ -899,7 +903,7 @@ export class ItemExplorerFacade implements OnDestroy {
         orderedKeys.add(column.key);
       }
     }
-    return ordered;
+    return this.orderPinnedTableColumns(ordered);
   }
 
   get filteredAllColumns(): ItemExplorerTableColumn[] {
@@ -920,7 +924,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     // Sort columns: selected/ordered ones first, then alphabetical
-    return list.sort((a, b) => {
+    const ordered = list.sort((a, b) => {
       const indexA = layout.order.indexOf(a.key);
       const indexB = layout.order.indexOf(b.key);
 
@@ -933,6 +937,7 @@ export class ItemExplorerFacade implements OnDestroy {
       // Neither is in the order: alphabetical
       return a.label.localeCompare(b.label);
     });
+    return this.orderPinnedTableColumns(ordered);
   }
 
   get explorerStatusLabel(): string {
@@ -5143,10 +5148,12 @@ export class ItemExplorerFacade implements OnDestroy {
     columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
   ): number | null {
     if (!this.isStickyTableColumn(column, columns)) return null;
-    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return 72;
+    const leadingColumnsWidth =
+      POSITION_COLUMN_WIDTH + (this.enableItemCollections ? COLLECTION_SELECTION_COLUMN_WIDTH : 0);
+    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return leadingColumnsWidth;
     const referenceColumn =
       columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber ? columns[0] : undefined;
-    return 72 + (referenceColumn ? this.getColumnWidth(referenceColumn) : 0);
+    return leadingColumnsWidth + (referenceColumn ? this.getColumnWidth(referenceColumn) : 0);
   }
 
   private clearHiddenTableColumnFilters() {
@@ -5239,7 +5246,16 @@ export class ItemExplorerFacade implements OnDestroy {
     this.moveTableColumn(column, 1);
   }
 
+  canMoveTableColumn(column: DeepReadonly<ItemExplorerTableColumn>, delta: -1 | 1): boolean {
+    if (this.isPinnedTableColumnKey(column.key)) return false;
+    const visibleOrder = this.tableColumns;
+    const visibleIndex = visibleOrder.findIndex((entry) => entry.key === column.key);
+    const neighbor = visibleOrder[visibleIndex + delta];
+    return visibleIndex >= 0 && Boolean(neighbor) && !this.isPinnedTableColumnKey(neighbor.key);
+  }
+
   private moveTableColumn(column: ItemExplorerTableColumn, delta: -1 | 1) {
+    if (!this.canMoveTableColumn(column, delta)) return;
     this.ensureExplicitTableLayout();
     const layout = this.metadataSettings.layout!;
     const visibleOrder = this.tableColumns.map((entry) => entry.key);
@@ -5257,6 +5273,18 @@ export class ItemExplorerFacade implements OnDestroy {
       layout.order[index],
     ];
     this.syncLegacyMetadataSettingsFromLayout();
+  }
+
+  private orderPinnedTableColumns(columns: ItemExplorerTableColumn[]): ItemExplorerTableColumn[] {
+    const byKey = new Map(columns.map((column) => [column.key, column]));
+    const pinned = [TABLE_COLUMN_KEYS.referenceNumber, TABLE_COLUMN_KEYS.itemId]
+      .map((key) => byKey.get(key))
+      .filter((column): column is ItemExplorerTableColumn => Boolean(column));
+    return [...pinned, ...columns.filter((column) => !this.isPinnedTableColumnKey(column.key))];
+  }
+
+  private isPinnedTableColumnKey(key: string): boolean {
+    return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
   }
 
   enableManualOrderMode() {

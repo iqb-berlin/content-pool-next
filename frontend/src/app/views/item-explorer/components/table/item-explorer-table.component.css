@@ -94,16 +94,8 @@
     var(--color-primary-light) 10%,
     var(--color-surface)
   );
-  --no-preview-row-background: color-mix(
-    in srgb,
-    var(--color-warning) 5%,
-    var(--color-surface)
-  );
-  --excluded-row-background: color-mix(
-    in srgb,
-    var(--color-danger) 4%,
-    var(--color-surface)
-  );
+  --no-preview-row-background: color-mix(in srgb, var(--color-warning) 5%, var(--color-surface));
+  --excluded-row-background: color-mix(in srgb, var(--color-danger) 4%, var(--color-surface));
   font-size: 0.85rem;
   margin-bottom: 0;
   width: 100%;
@@ -137,7 +129,6 @@
 }
 .sticky-col {
   position: sticky;
-  left: 72px;
   background-color: var(--color-surface) !important;
   z-index: 30;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
@@ -157,17 +148,33 @@
   z-index: 31;
   font-variant-numeric: tabular-nums;
 }
-.reference-number-col.sticky-col {
-  left: 72px;
+.explorer-table.has-collection-selection .number-col {
+  left: 38px;
 }
-.reference-number-col.sticky-col + .sticky-col {
-  left: 144px;
+.explorer-table .collection-select-col {
+  position: sticky;
+  left: 0;
+  width: 38px;
+  min-width: 38px !important;
+  max-width: 38px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+  background-color: var(--color-surface) !important;
+  z-index: 32;
+}
+.explorer-table th.collection-select-col {
+  background-color: var(--color-bg) !important;
+  z-index: 42;
 }
 .explorer-table th.number-col {
   background-color: var(--color-bg) !important;
   z-index: 41;
 }
 tr.active .number-col {
+  background: var(--selected-row-background) !important;
+}
+tr.active .collection-select-col {
   background: var(--selected-row-background) !important;
 }
 tr.active .sticky-col {

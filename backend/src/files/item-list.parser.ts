@@ -368,6 +368,7 @@ export class ItemListParser {
               useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
               metadata: { ...metadata },
               empiricalDifficulty,
+              bista: optionalNumber("bista"),
               infit: optionalNumber("infit"),
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),

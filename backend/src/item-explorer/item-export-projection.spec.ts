@@ -25,6 +25,7 @@ describe("item export projection", () => {
       ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
     ).toEqual([
       "Empirische Itemschwierigkeit",
+      "BiSta-Wert",
       "Infit",
       "Trennschärfe",
       "Lösungshäufigkeit",
@@ -47,6 +48,7 @@ describe("item export projection", () => {
         unitId: "unit-1",
         unitLabel: "Aufgabe 1",
         empiricalDifficulty: -0.25,
+        bista: 503.25,
         meanTaskDifficulty: 0.5,
         infit: 1.05,
         discrimination: 0.4,
@@ -73,6 +75,7 @@ describe("item export projection", () => {
         rowKey: "uuid-1::A",
         category: "II",
         tags: ["Prüfen"],
+        bista: 503.25,
         textComplexity: "anspruchsvoll",
         booklets: "B1 | B2",
         bookletPositions: "3 | 8",

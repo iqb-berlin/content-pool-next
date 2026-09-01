@@ -5678,8 +5678,10 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade();
 
     const columns = (component as any).getAvailableMetadataColumns([]);
+    const bistaColumn = columns.find((column: { id: string }) => column.id === 'bista');
 
     expect(columns.map((column: { id: string }) => column.id)).toEqual([
+      'bista',
       'infit',
       'discrimination',
       'solutionRate',
@@ -5689,6 +5691,69 @@ describe('ItemExplorerFacade', () => {
       'booklet',
       'bookletPosition',
     ]);
+    expect(bistaColumn).toEqual({
+      id: 'bista',
+      label: 'BiSta-Wert',
+      kind: 'number',
+      visible: false,
+    });
+    expect(component.filterVisibleColumns(columns)).not.toContain(bistaColumn);
+    expect(component.isColumnVisible(bistaColumn)).toBe(false);
+
+    component.metadataSettings = {
+      visible: ['bista'],
+      order: ['bista'],
+      configured: true,
+      widths: {},
+    };
+    expect(component.filterVisibleColumns(columns)).toEqual([{ ...bistaColumn, visible: true }]);
+    expect(component.isColumnVisible(bistaColumn)).toBe(true);
+  });
+
+  it('filters and sorts BiSta values numerically', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([]);
+    const bistaColumn = columns.find((column: { id: string }) => column.id === 'bista');
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        bista: 503.25,
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        bista: 499,
+      },
+    ];
+    component.allColumns = columns;
+    component.columnFilters = { bista: '500..504' };
+
+    expect(bistaColumn).toEqual({
+      id: 'bista',
+      label: 'BiSta-Wert',
+      kind: 'number',
+      visible: false,
+    });
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+
+    component.columnFilters = {};
+    component.applyFilter(false);
+    component.sortBy('bista');
+    expect(component.filteredItems.map((item) => item.bista)).toEqual([499, 503.25]);
   });
 
   it('treats imported text complexity as a configurable text column', () => {
@@ -5742,7 +5807,7 @@ describe('ItemExplorerFacade', () => {
       unitId: 'unit-1',
       itemId: 'item-1',
       subId: 'A',
-      fields: ['infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
+      fields: ['bista', 'infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
         { booklet: 'B2', position: 5 },
@@ -5750,7 +5815,7 @@ describe('ItemExplorerFacade', () => {
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
-      'Infit, Trennschärfe, Textkomplexität, Booklet / Position',
+      'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Booklet / Position',
     );
     expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
     const clearedBooklets = {

@@ -308,6 +308,7 @@ export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
     | 'allTableColumns'
+    | 'canMoveTableColumn'
     | 'canResetMetadataSettings'
     | 'closeColumnManager'
     | 'columnFilterText'

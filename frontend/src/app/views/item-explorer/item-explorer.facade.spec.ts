@@ -1210,6 +1210,49 @@ describe('ItemExplorerFacade', () => {
     expect(tableColumnsSpy).not.toHaveBeenCalled();
   });
 
+  it('offsets sticky table columns by the collection selection column when enabled', () => {
+    const component = createFacade();
+    component.enableItemCollections = true;
+
+    const itemIdColumn = component.tableColumns[0];
+    expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(110);
+
+    component.toggleReferenceNumberVisibility();
+
+    const tableColumns = component.tableColumns;
+
+    expect(component.getStickyTableColumnLeft(tableColumns[0], tableColumns)).toBe(110);
+    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(250);
+  });
+
+  it('normalizes persisted layouts to keep reference number and Item-ID pinned first', () => {
+    const component = createFacade();
+    component.metadataSettings = {
+      visible: [],
+      order: [],
+      configured: true,
+      widths: {},
+      layout: {
+        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber'],
+        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber'],
+        configured: true,
+        widths: {},
+      },
+    };
+
+    const tableColumns = component.tableColumns;
+
+    expect(tableColumns.map((column) => column.id)).toEqual([
+      'referenceNumber',
+      'itemId',
+      'unitLabel',
+    ]);
+    expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
+    expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
+    expect(component.canMoveTableColumn(tableColumns[0], 1)).toBe(false);
+    expect(component.canMoveTableColumn(tableColumns[1], 1)).toBe(false);
+  });
+
   it('restores column settings when the column manager is cancelled', () => {
     const component = createFacade();
     component.metadataSettings = {
@@ -1352,17 +1395,18 @@ describe('ItemExplorerFacade', () => {
     });
   });
 
-  it('skips unavailable dynamic columns when moving visible table columns', () => {
+  it('keeps Item-ID pinned while moving other visible columns', () => {
     const component = createFacade();
     component.hasPartialCredit = false;
+    component.enableTags = true;
     component.metadataSettings = {
       visible: [],
       order: [],
       configured: true,
       widths: {},
       layout: {
-        visible: ['system:itemId', 'system:subId', 'system:unitLabel'],
-        order: ['system:itemId', 'system:subId', 'system:unitLabel'],
+        visible: ['system:itemId', 'system:subId', 'system:unitLabel', 'system:tags'],
+        order: ['system:itemId', 'system:subId', 'system:unitLabel', 'system:tags'],
         configured: true,
         widths: {},
       },
@@ -1371,16 +1415,25 @@ describe('ItemExplorerFacade', () => {
 
     component.moveColumnUp(taskColumn);
 
-    expect(component.tableColumns.map((column) => column.id)).toEqual(['unitLabel', 'itemId']);
+    expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'itemId',
+      'unitLabel',
+      'tags',
+    ]);
     expect(component.metadataSettings.layout?.order).toEqual([
-      'system:unitLabel',
-      'system:subId',
       'system:itemId',
+      'system:subId',
+      'system:unitLabel',
+      'system:tags',
     ]);
 
     component.moveColumnDown(taskColumn);
 
-    expect(component.tableColumns.map((column) => column.id)).toEqual(['itemId', 'unitLabel']);
+    expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'itemId',
+      'tags',
+      'unitLabel',
+    ]);
   });
 
   it('clears hidden column filters and switches to a visible sort when settings are saved', () => {

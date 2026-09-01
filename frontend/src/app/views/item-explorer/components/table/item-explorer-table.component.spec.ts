@@ -16,6 +16,7 @@ describe('ItemExplorerTableComponent', () => {
     expect(template).toContain('@let tableColumns = vm.tableColumns;');
     expect(template).toContain('@for (col of tableColumns; track col.key)');
     expect(template).toContain('vm.isStickyTableColumn(col, tableColumns)');
+    expect(template).toContain('[class.has-collection-selection]="vm.enableItemCollections"');
     expect(template).toContain("@case ('system:referenceNumber')");
     expect(template).toContain('{{ item.rowNumber }}');
     expect(template).toContain('[style.width.px]="vm.getColumnWidth(col)"');

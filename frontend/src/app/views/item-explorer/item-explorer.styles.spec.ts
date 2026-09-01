@@ -35,12 +35,17 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(tableStyles).toMatch(/\.explorer-table th\.sticky-col\s*\{[^}]*z-index:\s*40/s);
   });
 
-  it('applies the horizontal reference-number offset only while that column is sticky', () => {
-    expect(tableStyles).toMatch(/\.reference-number-col\.sticky-col\s*\{[^}]*left:\s*72px/s);
+  it('keeps selection and position columns in a non-overlapping sticky chain', () => {
     expect(tableStyles).toMatch(
-      /\.reference-number-col\.sticky-col \+ \.sticky-col\s*\{[^}]*left:\s*144px/s,
+      /\.explorer-table \.collection-select-col\s*\{[^}]*position:\s*sticky[^}]*left:\s*0[^}]*width:\s*38px/s,
     );
-    expect(tableStyles).not.toMatch(/(?:^|\n)\.reference-number-col\s*\{/);
+    expect(tableStyles).toMatch(
+      /\.explorer-table\.has-collection-selection \.number-col\s*\{[^}]*left:\s*38px/s,
+    );
+    expect(tableStyles).toMatch(/\.number-col\s*\{[^}]*width:\s*72px/s);
+    expect(tableStyles).toMatch(
+      /\.explorer-table th\.collection-select-col\s*\{[^}]*z-index:\s*42/s,
+    );
   });
 
   it('uses one opaque selection surface for sticky and scrolling cells', () => {

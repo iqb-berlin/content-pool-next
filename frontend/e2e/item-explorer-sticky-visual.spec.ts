@@ -41,35 +41,49 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   const visualEvidence = await firstRow.evaluate((row) => {
     const cells = Array.from(row.querySelectorAll('td'));
     const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
+    const selection = row.querySelector<HTMLElement>('td.collection-select-col');
+    const position = row.querySelector<HTMLElement>('td.number-col');
     const sticky = row.querySelector<HTMLElement>('td.sticky-col');
-    if (!sticky) throw new Error('Sticky item column is missing');
+    if (!selection || !position || !sticky) throw new Error('Sticky leading columns are missing');
+    const scroller = row.closest<HTMLElement>('.table-scroll');
+    const selectionBounds = selection.getBoundingClientRect();
+    const positionBounds = position.getBoundingClientRect();
     const bounds = sticky.getBoundingClientRect();
-    const hit = Array.from(
-      { length: Math.max(0, Math.floor(bounds.height)) },
-      (_, offset) => document.elementFromPoint(
-        bounds.left + bounds.width / 2,
-        bounds.bottom - offset - 1,
-      ),
+    const hit = Array.from({ length: Math.max(0, Math.floor(bounds.height)) }, (_, offset) =>
+      document.elementFromPoint(bounds.left + bounds.width / 2, bounds.bottom - offset - 1),
     ).find((candidate) => candidate?.closest('td.sticky-col') === sticky);
     return {
       backgrounds,
       stickyBackground: getComputedStyle(sticky).backgroundColor,
       stickyHit: Boolean(hit?.closest('td.sticky-col')),
-      scrollLeft: row.closest('.table-scroll')?.scrollLeft || 0,
+      selectionPosition: getComputedStyle(selection).position,
+      selectionLeft: selectionBounds.left,
+      selectionRight: selectionBounds.right,
+      positionLeft: positionBounds.left,
+      positionRight: positionBounds.right,
+      itemIdLeft: bounds.left,
+      scrollerLeft: scroller?.getBoundingClientRect().left || 0,
+      scrollLeft: scroller?.scrollLeft || 0,
     };
   });
 
   expect(visualEvidence.scrollLeft).toBeGreaterThan(0);
   expect(visualEvidence.stickyHit).toBe(true);
+  expect(visualEvidence.selectionPosition).toBe('sticky');
+  expect(Math.abs(visualEvidence.selectionLeft - visualEvidence.scrollerLeft)).toBeLessThanOrEqual(
+    1,
+  );
+  expect(visualEvidence.selectionRight).toBeLessThanOrEqual(visualEvidence.positionLeft + 1);
+  expect(visualEvidence.positionRight).toBeLessThanOrEqual(visualEvidence.itemIdLeft + 1);
   expect(new Set(visualEvidence.backgrounds).size).toBe(1);
   expect(visualEvidence.stickyBackground).not.toBe('rgba(0, 0, 0, 0)');
   await expect(firstRow.locator('td.tags-cell')).toHaveCSS('display', 'table-cell');
 
-  const noPreviewBackgrounds = await page.locator('tbody tr.no-preview').evaluate((row) =>
-    Array.from(row.querySelectorAll('td')).map(
-      (cell) => getComputedStyle(cell).backgroundColor,
-    ),
-  );
+  const noPreviewBackgrounds = await page
+    .locator('tbody tr.no-preview')
+    .evaluate((row) =>
+      Array.from(row.querySelectorAll('td')).map((cell) => getComputedStyle(cell).backgroundColor),
+    );
   expect(new Set(noPreviewBackgrounds).size).toBe(1);
   expect(noPreviewBackgrounds[0]).not.toBe('rgba(0, 0, 0, 0)');
 
@@ -79,7 +93,9 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   });
 });
 
-test('keeps a reordered reference-number header aligned while scrolling', async ({ page }) => {
+test('keeps the reference-number column pinned before Item-ID while scrolling', async ({
+  page,
+}) => {
   await openExplorer(page);
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
@@ -90,15 +106,15 @@ test('keeps a reordered reference-number header aligned while scrolling', async 
   if (await resetButton.isEnabled()) await resetButton.click();
   await columnDialog.getByRole('checkbox', { name: 'Referenz-Nr.' }).check();
   const referenceTile = columnDialog.locator('.column-tile', { hasText: 'ID: referenceNumber' });
-  await referenceTile.getByTitle('Nach unten').click();
+  await expect(referenceTile.getByTitle('Nach unten')).toBeDisabled();
   await columnDialog.getByRole('button', { name: /Speichern/ }).click();
   await expect(columnDialog).toHaveCount(0);
 
   const itemHeader = page.getByRole('columnheader', { name: /^Item-ID(?:\s|$)/ });
   const referenceHeader = page.getByRole('columnheader', { name: /^Referenz-Nr\.(?:\s|$)/ });
-  expect(await itemHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex)).toBeLessThan(
+  expect(
     await referenceHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex),
-  );
+  ).toBeLessThan(await itemHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex));
   const scroller = page.locator('.table-scroll');
   await scroller.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
@@ -111,9 +127,9 @@ test('keeps a reordered reference-number header aligned while scrolling', async 
     return {
       headerX: header.getBoundingClientRect().x,
       cellX: cell.getBoundingClientRect().x,
-      headerLeft: getComputedStyle(header).left,
+      headerPosition: getComputedStyle(header).position,
     };
   });
-  expect(alignment.headerLeft).toBe('auto');
+  expect(alignment.headerPosition).toBe('sticky');
   expect(Math.abs(alignment.headerX - alignment.cellX)).toBeLessThanOrEqual(1);
 });

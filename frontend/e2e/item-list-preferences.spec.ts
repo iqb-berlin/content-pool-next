@@ -425,14 +425,17 @@ test('keeps positions gapless and persists the personal selection view across pe
   await tableScroll.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
-  const [positionBox, referenceBox, itemIdBox] = await Promise.all([
+  const [selectionBox, positionBox, referenceBox, itemIdBox] = await Promise.all([
+    page.getByTitle('Zur aktiven Auswahlliste hinzufügen').boundingBox(),
     page.getByRole('columnheader', { name: 'Pos.' }).boundingBox(),
     page.getByRole('columnheader', { name: /Referenz-Nr/ }).boundingBox(),
     page.getByRole('columnheader', { name: /Item-ID/ }).boundingBox(),
   ]);
+  expect(selectionBox).not.toBeNull();
   expect(positionBox).not.toBeNull();
   expect(referenceBox).not.toBeNull();
   expect(itemIdBox).not.toBeNull();
+  expect(selectionBox!.x + selectionBox!.width).toBeLessThanOrEqual(positionBox!.x + 1);
   expect(positionBox!.x + positionBox!.width).toBeLessThanOrEqual(referenceBox!.x + 1);
   expect(referenceBox!.x + referenceBox!.width).toBeLessThanOrEqual(itemIdBox!.x + 1);
 
@@ -447,6 +450,10 @@ test('keeps positions gapless and persists the personal selection view across pe
   ]);
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeEnabled();
 
+  const itemSelection = page.getByRole('checkbox', { name: /in Auswahlliste auswählen/ }).first();
+  await expect(itemSelection).toBeVisible();
+  await expect(itemSelection).toBeEnabled();
+  const scrollLeftBeforeSelection = await tableScroll.evaluate((element) => element.scrollLeft);
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -454,11 +461,11 @@ test('keeps positions gapless and persists the personal selection view across pe
         response.url().includes('/items/collections/') &&
         response.ok(),
     ),
-    page
-      .getByRole('checkbox', { name: /in Auswahlliste auswählen/ })
-      .first()
-      .check(),
+    itemSelection.check(),
   ]);
+  expect(await tableScroll.evaluate((element) => element.scrollLeft)).toBe(
+    scrollLeftBeforeSelection,
+  );
   const activeOnlyButton = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
 
   await page.getByRole('button', { name: 'Details', exact: true }).click();

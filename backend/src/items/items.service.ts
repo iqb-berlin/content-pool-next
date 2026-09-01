@@ -25,6 +25,7 @@ export interface ItemData {
   variableReadOnlyId?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
+  bista?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
@@ -98,6 +99,7 @@ export class ItemsService {
                 ...(fileRow.metadata || {}),
               },
               empiricalDifficulty: fileRow.empiricalDifficulty,
+              bista: fileRow.bista,
               infit: fileRow.infit,
               discrimination: fileRow.discrimination,
               solutionRate: fileRow.solutionRate,
@@ -123,6 +125,9 @@ export class ItemsService {
           variableReadOnlyId: item.variableReadOnlyId,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
+          ...(this.toFiniteNumber(props.bista) !== undefined
+            ? { bista: this.toFiniteNumber(props.bista) }
+            : {}),
           ...(this.toFiniteNumber(props.infit) !== undefined
             ? { infit: this.toFiniteNumber(props.infit) }
             : {}),

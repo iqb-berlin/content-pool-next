@@ -308,6 +308,7 @@ describe("ViewsService", () => {
           variableId: "var-1",
           metadata: {},
           empiricalDifficulty: 0.25,
+          bista: 503.25,
           textComplexity: "anspruchsvoll",
           meanTaskDifficulty: 0.6,
         },
@@ -360,7 +361,7 @@ describe("ViewsService", () => {
     await workbook.xlsx.load(buffer as any);
     const sheet = workbook.getWorksheet("Persönliche Itemdaten");
     expect(sheet).toBeDefined();
-    expect(sheet!.autoFilter).toBe("A1:T1");
+    expect(sheet!.autoFilter).toBe("A1:U1");
     expect(sheet!.getRow(1).values).toEqual([
       undefined,
       "Laufende Nummer",
@@ -374,6 +375,7 @@ describe("ViewsService", () => {
       "Notiz",
       "Kompetenzstufe",
       "Empirische Itemschwierigkeit",
+      "BiSta-Wert",
       "Infit",
       "Trennschärfe",
       "Lösungshäufigkeit",
@@ -389,8 +391,9 @@ describe("ViewsService", () => {
     expect(sheet!.getCell("F2").value).toBe("1");
     expect(sheet!.getCell("G2").value).toBe("uuid-2::1");
     expect(sheet!.getCell("H2").value).toBeNull();
-    expect(sheet!.getCell("O3").value).toBe("anspruchsvoll");
-    expect(sheet!.getCell("T2").value).toBe(0.6);
+    expect(sheet!.getCell("P3").value).toBe("anspruchsvoll");
+    expect(sheet!.getCell("L3").value).toBe(503.25);
+    expect(sheet!.getCell("U2").value).toBe(0.6);
     expect(sheet!.getCell("A3").value).toBe(2);
     expect(sheet!.getCell("E3").value).toBe("uuid-1");
     expect(sheet!.getCell("F3").value).toBe("1");
@@ -485,10 +488,10 @@ describe("ViewsService", () => {
       '"Teilnehmerkennung";"Unit-ID";"Unit-Label";"Item-ID";"Sub-ID";"Zeilenschlüssel"',
     );
     expect(csv).toContain(
-      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"";"-0.125"',
+      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).toContain(
-      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"";"-0.125"',
+      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).not.toContain("ohne-eintrag");
   });

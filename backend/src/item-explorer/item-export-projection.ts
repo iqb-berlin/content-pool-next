@@ -11,6 +11,7 @@ export interface ItemExportProjection {
   tags: string[];
   note: string | null;
   empiricalDifficulty: number | null;
+  bista: number | null;
   infit: number | null;
   discrimination: number | null;
   solutionRate: number | null;
@@ -61,6 +62,7 @@ export const ITEM_EXPORT_PARAMETER_COLUMNS: readonly ItemExportColumnDefinition[
       width: 30,
       numeric: true,
     },
+    { header: "BiSta-Wert", key: "bista", width: 16, numeric: true },
     { header: "Infit", key: "infit", width: 16, numeric: true },
     {
       header: "Trennschärfe",
@@ -128,6 +130,7 @@ export function projectItemExportRow(input: {
       : [],
     note: typeof personalRow.note === "string" ? personalRow.note : null,
     empiricalDifficulty: item?.empiricalDifficulty ?? null,
+    bista: item?.bista ?? null,
     infit: item?.infit ?? null,
     discrimination: item?.discrimination ?? null,
     solutionRate: item?.solutionRate ?? null,

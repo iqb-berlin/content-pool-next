@@ -11,6 +11,7 @@ export type ImportScope = "row" | "item" | "unit";
 
 type ImportedScalarProperty =
   | "empiricalDifficulty"
+  | "bista"
   | "infit"
   | "discrimination"
   | "solutionRate"
@@ -76,8 +77,15 @@ const IMPORTED_SCALAR_COLUMNS: Array<{
   property: ImportedScalarProperty;
   scope: ImportScope;
   nonNegative?: boolean;
+  maxDecimalPlaces?: number;
 }> = [
   { header: "est", property: "empiricalDifficulty", scope: "row" },
+  {
+    header: "bista",
+    property: "bista",
+    scope: "row",
+    maxDecimalPlaces: 2,
+  },
   { header: "infit", property: "infit", scope: "row" },
   { header: "discrimination", property: "discrimination", scope: "row" },
   { header: "solution_rate", property: "solutionRate", scope: "row" },
@@ -203,7 +211,7 @@ export class ItemParameterImportPipeline {
 
     if (!scalarColumns.length && !textColumns.length && bookletIdx < 0) {
       throw new BadRequestException(
-        'CSV must contain at least one supported item parameter column: "est", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or the pair "booklet" and "position"',
+        'CSV must contain at least one supported item parameter column: "est", "bista", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or the pair "booklet" and "position"',
       );
     }
 
@@ -276,6 +284,13 @@ export class ItemParameterImportPipeline {
         const value = Number(rawValue.replace(",", "."));
         if (!Number.isFinite(value)) {
           invalidReason = `Ungültiger Zahlenwert in ${definition.header}`;
+          break;
+        }
+        if (
+          definition.maxDecimalPlaces !== undefined &&
+          !this.hasAtMostDecimalPlaces(rawValue, definition.maxDecimalPlaces)
+        ) {
+          invalidReason = `${definition.header} darf höchstens ${definition.maxDecimalPlaces} Nachkommastellen haben`;
           break;
         }
         if (definition.nonNegative && value < 0) {
@@ -648,6 +663,16 @@ export class ItemParameterImportPipeline {
 
   private normalizeItemReference(value: string): string {
     return (value || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  }
+
+  private hasAtMostDecimalPlaces(
+    rawValue: string,
+    maxDecimalPlaces: number,
+  ): boolean {
+    const decimalPattern = new RegExp(
+      `^[+-]?\\d+(?:[.,]\\d{1,${maxDecimalPlaces}})?$`,
+    );
+    return decimalPattern.test(rawValue);
   }
 
   private parseOccurrence(

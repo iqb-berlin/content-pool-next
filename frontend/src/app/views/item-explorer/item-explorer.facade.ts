@@ -106,6 +106,7 @@ interface CodingVariableMatch {
   requestedInternalId?: string;
 }
 const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
+  { id: 'bista', label: 'BiSta-Wert', kind: 'number', visible: false },
   { id: 'infit', label: 'Infit', kind: 'number' },
   { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
   { id: 'solutionRate', label: 'Lösungshäufigkeit', kind: 'number' },
@@ -118,6 +119,7 @@ const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
 const UPLOAD_FIELD_LABELS: Record<string, string> = {
   est: 'Empirische Itemschwierigkeit',
   empiricalDifficulty: 'Empirische Itemschwierigkeit',
+  bista: 'BiSta-Wert',
   infit: 'Infit',
   discrimination: 'Trennschärfe',
   solution_rate: 'Lösungshäufigkeit',
@@ -1470,6 +1472,8 @@ export class ItemExplorerFacade implements OnDestroy {
     column: MetadataColumn,
   ): string | number | undefined {
     switch (column.id) {
+      case 'bista':
+        return item.bista;
       case 'infit':
         return item.infit;
       case 'discrimination':
@@ -4980,7 +4984,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
     if (!this.metadataSettings.configured) {
-      return allColumns; // Show all if no settings
+      return allColumns.filter((column) => column.visible !== false);
     }
 
     // Filter visible columns and maintain order
@@ -5007,7 +5011,9 @@ export class ItemExplorerFacade implements OnDestroy {
 
   isColumnVisible(column: ItemExplorerTableColumn | MetadataColumn): boolean {
     if (!('key' in column)) {
-      return !this.metadataSettings.configured || this.metadataSettings.visible.includes(column.id);
+      return this.metadataSettings.configured
+        ? this.metadataSettings.visible.includes(column.id)
+        : column.visible !== false;
     }
     const layout = this.metadataSettings.layout;
     if (layout?.configured) return layout.visible.includes(column.key);

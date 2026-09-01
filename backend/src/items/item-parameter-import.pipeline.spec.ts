@@ -122,6 +122,49 @@ describe("ItemParameterImportPipeline", () => {
     });
   });
 
+  it("imports bista independently per row with at most two decimal places", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from("item;sub_id;bista\nI1;A;503,25\nI1;B;504.5"),
+      items,
+      itemProperties: {},
+    });
+
+    expect(result.failed).toEqual([]);
+    expect(result.successes).toEqual([
+      expect.objectContaining({ subId: "A", fields: ["bista"] }),
+      expect.objectContaining({ subId: "B", fields: ["bista"] }),
+    ]);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1::A": {
+        itemUuid: "uuid-1",
+        subId: "A",
+        bista: 503.25,
+      },
+      "uuid-1::B": {
+        itemUuid: "uuid-1",
+        subId: "B",
+        bista: 504.5,
+      },
+    });
+  });
+
+  it("rejects bista values with more than two decimal places", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from("item;bista\nI1;503,251"),
+      items,
+      itemProperties: { "uuid-1": { bista: 500 } },
+    });
+
+    expect(result.updated).toBe(0);
+    expect(result.failed).toEqual([
+      {
+        csvRow: "I1",
+        reason: "bista darf höchstens 2 Nachkommastellen haben",
+      },
+    ]);
+    expect(result.nextItemProperties).toEqual({ "uuid-1": { bista: 500 } });
+  });
+
   it("imports text_complexity as text, including numeric-looking content", () => {
     const result = pipeline.execute({
       fileBuffer: Buffer.from("item;text_complexity\nI1;3.5"),
@@ -376,10 +419,10 @@ describe("ItemParameterImportPipeline", () => {
       (mutation) => mutation.action === "keep",
     );
 
-    expect(keepMutations).toHaveLength(7);
+    expect(keepMutations).toHaveLength(8);
     expect(keepMutations.every((mutation) => !("targetKeys" in mutation))).toBe(
       true,
     );
-    expect(plan.mutations).toHaveLength(manyItems.length + 7);
+    expect(plan.mutations).toHaveLength(manyItems.length + 8);
   });
 });

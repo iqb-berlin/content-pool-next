@@ -709,6 +709,7 @@ describe("ItemCollectionsService", () => {
           subId: "A",
           unitId: "unit-1",
           unitLabel: "Aufgabe 1",
+          bista: 503.25,
           itemTimeSeconds: 20,
           stimulusTimeSeconds: 12,
           bookletOccurrences: [{ booklet: "B1", position: 3 }],
@@ -726,6 +727,8 @@ describe("ItemCollectionsService", () => {
     ).toString("utf8");
 
     expect(csv).toContain('"Auswahl A";"1";"unit-1";"Aufgabe 1"');
+    expect(csv).toContain('"BiSta-Wert"');
+    expect(csv).toContain('"503.25"');
     expect(csv).toContain('"II";"Prüfen";"Erste Zeile\\nZweite Zeile"');
     expect(csv).not.toContain("not exported");
     expect(csv).not.toContain("removed-row");

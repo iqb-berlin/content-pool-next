@@ -43,6 +43,7 @@ export interface VomdItemData {
   useUnitAliasAsPrefix?: boolean;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  bista?: number;
   meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;

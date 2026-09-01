@@ -34,38 +34,48 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
   await scroller.focus();
   await scroller.press('ArrowDown');
   await expect(firstRow).toHaveAttribute('aria-selected', 'true');
+  await firstRow.scrollIntoViewIfNeeded();
 
   await scroller.evaluate((element) => {
     element.scrollLeft = element.scrollWidth;
   });
-  const visualEvidence = await firstRow.evaluate((row) => {
-    const cells = Array.from(row.querySelectorAll('td'));
-    const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
-    const selection = row.querySelector<HTMLElement>('td.collection-select-col');
-    const position = row.querySelector<HTMLElement>('td.number-col');
-    const sticky = row.querySelector<HTMLElement>('td.sticky-col');
-    if (!selection || !position || !sticky) throw new Error('Sticky leading columns are missing');
-    const scroller = row.closest<HTMLElement>('.table-scroll');
-    const selectionBounds = selection.getBoundingClientRect();
-    const positionBounds = position.getBoundingClientRect();
-    const bounds = sticky.getBoundingClientRect();
-    const hit = Array.from({ length: Math.max(0, Math.floor(bounds.height)) }, (_, offset) =>
-      document.elementFromPoint(bounds.left + bounds.width / 2, bounds.bottom - offset - 1),
-    ).find((candidate) => candidate?.closest('td.sticky-col') === sticky);
-    return {
-      backgrounds,
-      stickyBackground: getComputedStyle(sticky).backgroundColor,
-      stickyHit: Boolean(hit?.closest('td.sticky-col')),
-      selectionPosition: getComputedStyle(selection).position,
-      selectionLeft: selectionBounds.left,
-      selectionRight: selectionBounds.right,
-      positionLeft: positionBounds.left,
-      positionRight: positionBounds.right,
-      itemIdLeft: bounds.left,
-      scrollerLeft: scroller?.getBoundingClientRect().left || 0,
-      scrollLeft: scroller?.scrollLeft || 0,
-    };
-  });
+  const readVisualEvidence = () =>
+    firstRow.evaluate((row) => {
+      const cells = Array.from(row.querySelectorAll('td'));
+      const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
+      const selection = row.querySelector<HTMLElement>('td.collection-select-col');
+      const position = row.querySelector<HTMLElement>('td.number-col');
+      const sticky = row.querySelector<HTMLElement>('td.sticky-col');
+      if (!selection || !position || !sticky) throw new Error('Sticky leading columns are missing');
+      const scroller = row.closest<HTMLElement>('.table-scroll');
+      const selectionBounds = selection.getBoundingClientRect();
+      const positionBounds = position.getBoundingClientRect();
+      const bounds = sticky.getBoundingClientRect();
+      const hit = Array.from({ length: Math.max(0, Math.floor(bounds.height)) }, (_, offset) =>
+        document.elementFromPoint(bounds.left + bounds.width / 2, bounds.bottom - offset - 1),
+      ).find((candidate) => candidate?.closest('td.sticky-col') === sticky);
+      return {
+        backgrounds,
+        stickyBackground: getComputedStyle(sticky).backgroundColor,
+        stickyHit: Boolean(hit?.closest('td.sticky-col')),
+        selectionPosition: getComputedStyle(selection).position,
+        selectionLeft: selectionBounds.left,
+        selectionRight: selectionBounds.right,
+        positionLeft: positionBounds.left,
+        positionRight: positionBounds.right,
+        itemIdLeft: bounds.left,
+        scrollerLeft: scroller?.getBoundingClientRect().left || 0,
+        scrollLeft: scroller?.scrollLeft || 0,
+      };
+    });
+
+  let visualEvidence = await readVisualEvidence();
+  await expect
+    .poll(async () => {
+      visualEvidence = await readVisualEvidence();
+      return visualEvidence.stickyHit;
+    })
+    .toBe(true);
 
   expect(visualEvidence.scrollLeft).toBeGreaterThan(0);
   expect(visualEvidence.stickyHit).toBe(true);

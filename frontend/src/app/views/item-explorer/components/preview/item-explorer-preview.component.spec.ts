@@ -16,6 +16,14 @@ function createPreview() {
 }
 
 describe('ItemExplorerPreviewComponent', () => {
+  it('exposes metadata and exclusion state with the matching semantics', () => {
+    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
+    expect(template).toContain('[attr.aria-expanded]="vm.showMetadataDrawer"');
+    expect(template).toContain('aria-controls="item-explorer-metadata-drawer"');
+    expect(template).toContain('[attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"');
+    expect(template).not.toContain('btn-state-indicator');
+  });
+
   it('names the scroll region, player frame and paging selector', () => {
     expect(template).toContain('aria-label="Item-Vorschau"');
     expect(template).toContain('[title]="\'Player-Vorschau für Item \' + vm.selectedItem.itemId"');

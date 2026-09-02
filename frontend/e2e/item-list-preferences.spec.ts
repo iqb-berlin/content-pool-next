@@ -576,10 +576,12 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (1)' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  const activeCollectionFilter = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
+  const allItemsFilter = page.getByRole('button', { name: 'Alle Items' });
+  await expect(activeCollectionFilter).toHaveAttribute('aria-pressed', 'true');
+  await expect(activeCollectionFilter).toHaveCSS('font-weight', '700');
+  await expect(allItemsFilter).toHaveAttribute('aria-pressed', 'false');
+  await expect(allItemsFilter).not.toHaveCSS('font-weight', '700');
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
   const editingViewButton = page.getByRole('button', { name: 'Bearbeitungsansicht' });
@@ -596,7 +598,9 @@ test('keeps positions gapless and persists the personal selection view across pe
   );
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
-  await page.getByRole('button', { name: 'Alle Items' }).click();
+  await allItemsFilter.click();
+  await expect(allItemsFilter).toHaveCSS('font-weight', '700');
+  await expect(activeCollectionFilter).not.toHaveCSS('font-weight', '700');
   await expect(page.locator('tbody tr')).toHaveCount(2);
 
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();

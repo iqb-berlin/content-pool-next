@@ -99,6 +99,24 @@ describe('ItemExplorer presentational components', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
   });
 
+  it('marks header and collection modes as semantic state buttons', () => {
+    expect(headerTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
+    expect(headerTemplate).toContain('[attr.aria-pressed]="vm.sortField === \'__manual__\'"');
+    expect(headerTemplate).not.toContain('btn-state-indicator');
+    expect(collectionsTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'all\'"',
+    );
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'active\'"',
+    );
+    expect(collectionsTemplate).not.toContain('btn-state-indicator');
+  });
+
+  it('links the metadata disclosure to its controlled drawer', () => {
+    expect(metadataTemplate).toContain('id="item-explorer-metadata-drawer"');
+  });
+
   it('renders collection details as an accessible paginated modal', () => {
     expect(collectionsTemplate).toContain('role="dialog"');
     expect(collectionsTemplate).toContain('aria-modal="true"');

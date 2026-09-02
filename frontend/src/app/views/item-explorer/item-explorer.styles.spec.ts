@@ -7,6 +7,7 @@ import featureStyles from './item-explorer.component.css?raw';
 import previewStyles from './components/preview/item-explorer-preview.component.css?raw';
 import tableStyles from './components/table/item-explorer-table.component.css?raw';
 import headerStyles from './components/header/item-explorer-header.component.css?raw';
+import globalStyles from '../../../styles.scss?raw';
 
 describe('ItemExplorer shared dialog styles', () => {
   it.each([
@@ -84,5 +85,22 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(headerStyles).toMatch(/\.status-clean\s*\{[^}]*color:\s*#176b3a/s);
     expect(headerStyles).toMatch(/\.btn-clear-difficulties\s*\{[^}]*color:\s*#c0392b/s);
     expect(featureStyles).toMatch(/\.player-target-badge\.unmapped\s*\{[^}]*color:\s*#7a4a00/s);
+  });
+
+  it('styles semantic button states after the outline variant with bold non-color emphasis', () => {
+    expect(globalStyles.indexOf(".btn-state[aria-pressed='true']")).toBeGreaterThan(
+      globalStyles.indexOf('.btn-outline:hover'),
+    );
+    expect(globalStyles).toMatch(
+      /\.btn-state\[aria-pressed='true'\],[\s\S]*?background:\s*var\(--color-primary\)[\s\S]*?border-color:\s*var\(--color-primary\)[\s\S]*?color:\s*var\(--color-on-primary\)/,
+    );
+    expect(globalStyles).toMatch(
+      /\.btn-state\[aria-expanded='true'\]\s*\{[^}]*font-weight:\s*700/s,
+    );
+    expect(globalStyles).not.toMatch(
+      /\.btn-state\[aria-expanded='true'\]\s*\{[^}]*outline:/s,
+    );
+    expect(globalStyles).not.toContain('box-shadow: inset 0 -3px 0 currentColor');
+    expect(globalStyles).not.toContain('.btn-state-indicator');
   });
 });

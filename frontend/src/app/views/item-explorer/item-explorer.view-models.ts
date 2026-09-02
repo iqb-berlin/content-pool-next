@@ -49,6 +49,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'leaveWithChangesDialogError'
     | 'leaveWithChangesDialogState'
     | 'moveSelectedItem'
+    | 'canMoveSelectedItem'
     | 'numberingSuccessMessage'
     | 'onCsvFileSelected'
     | 'openClearEmpiricalDifficultiesDialog'

@@ -1036,6 +1036,58 @@ describe('ItemExplorerFacade', () => {
       expect(component.itemOrder).toBe(order);
       expect(order).toEqual(component.items.map((item) => item.rowKey));
     });
+
+    it('disables movement without a selection, edit permission or manual mode', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.selectedItem = component.items[0];
+      expect(component.canMoveSelectedItem(-1)).toBe(true);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.canEditExplorer = false;
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.canEditExplorer = true;
+      component.toggleManualOrderMode();
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+    });
+
+    it('disables movement at the manual order boundaries and prevents changes', () => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.toggleManualOrderMode();
+      queueDraftPatch.mockClear();
+      component.selectedItem = component.items[1];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.moveSelectedItem(-1);
+
+      component.selectedItem = component.items[2];
+      expect(component.canMoveSelectedItem(-1)).toBe(true);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+      component.moveSelectedItem(1);
+      expect(component.itemOrder).toEqual(['uuid-2', 'uuid-1', 'uuid-3']);
+      expect(queueDraftPatch).not.toHaveBeenCalled();
+    });
+
+    it('handles missing and single-item orders without enabling impossible movement', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.selectedItem = component.items[0];
+      component.itemOrder = ['uuid-2'];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.itemOrder = [];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.items = [component.selectedItem];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+    });
   });
 
   it('keeps the task default when shared ui state is empty', () => {

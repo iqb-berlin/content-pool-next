@@ -119,6 +119,17 @@ describe('ItemExplorer presentational components', () => {
     expect(metadataTemplate).toContain('id="item-explorer-metadata-drawer"');
   });
 
+  it('only shows movement controls in manual mode and binds their availability', () => {
+    const manualControls = headerTemplate.match(
+      /@if \(vm.sortField === '__manual__'\) \{([\s\S]*?)\n {6}\}/,
+    )?.[1];
+    expect(manualControls).toBeDefined();
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(-1)"');
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(1)"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach oben verschieben"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach unten verschieben"');
+  });
+
   it('renders collection details as an accessible paginated modal', () => {
     expect(collectionsTemplate).toContain('role="dialog"');
     expect(collectionsTemplate).toContain('aria-modal="true"');

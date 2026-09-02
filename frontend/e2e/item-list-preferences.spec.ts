@@ -87,11 +87,13 @@ test('toggles manual sorting without discarding the edited item order', async ({
     await page.goto(`/view/${ACP_ID}/item-explorer`);
     const toggle = page.getByRole('button', { name: 'Manuell sortieren' });
     const idHeader = page.getByRole('columnheader', { name: /^Item-ID/ });
-    const down = page.locator('.explorer-header').getByRole('button', { name: '↓', exact: true });
+    const up = page.getByRole('button', { name: 'Ausgewähltes Item nach oben verschieben' });
+    const down = page.getByRole('button', { name: 'Ausgewähltes Item nach unten verschieben' });
     const rows = page.locator('.explorer-table tbody tr');
     const rowIds = () => rows.evaluateAll((elements) => elements.map((element) => element.id));
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await expect(down).toBeDisabled();
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
 
     await change(() => idHeader.click());
     await change(() => idHeader.click());
@@ -101,14 +103,18 @@ test('toggles manual sorting without discarding the edited item order', async ({
     await change(() => toggle.click());
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await expect(toggle).toHaveCSS('font-weight', '700');
+    await expect(up).toBeVisible();
+    await expect(down).toBeVisible();
     await rows.first().click();
+    await expect(up).toBeDisabled();
     await expect(down).toBeEnabled();
     const moved = await change(() => down.click());
     const manualIds = await rowIds();
 
     const restored = await change(() => toggle.click());
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await expect(down).toBeDisabled();
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
     await expect(idHeader).toContainText('↓');
     expect(await rowIds()).toEqual(descendingIds);
     expect(restored.draftState.itemOrder).toEqual(moved.draftState.itemOrder);
@@ -120,10 +126,15 @@ test('toggles manual sorting without discarding the edited item order', async ({
 
     await change(() => toggle.click());
     expect(await rowIds()).toEqual(manualIds);
+    await rows.last().click();
+    await expect(up).toBeEnabled();
+    await expect(down).toBeDisabled();
     await page.reload();
     await expect(toggle).toHaveAttribute('aria-pressed', 'true');
     const fallback = await change(() => toggle.click());
     await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
     expect(fallback.draftState.ui).toMatchObject({
       sortField: 'unitLabel',
       sortDir: 'asc',

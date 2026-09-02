@@ -5335,21 +5335,23 @@ export class ItemExplorerFacade implements OnDestroy {
     this.applySort();
   }
 
-  moveSelectedItem(delta: number) {
+  canMoveSelectedItem(delta: number): boolean {
     if (!this.canEditExplorer || !this.selectedItem || this.sortField !== '__manual__') {
-      return;
+      return false;
     }
+    const order = this.itemOrder.length ? this.itemOrder : this.items.map((item) => item.rowKey);
+    const currentIndex = order.indexOf(this.selectedItem.rowKey);
+    const targetIndex = currentIndex + delta;
+    return currentIndex >= 0 && targetIndex >= 0 && targetIndex < order.length;
+  }
+
+  moveSelectedItem(delta: number) {
+    if (!this.selectedItem || !this.canMoveSelectedItem(delta)) return;
     if (!this.itemOrder.length) {
       this.itemOrder = this.items.map((item) => item.rowKey);
     }
     const currentIndex = this.itemOrder.indexOf(this.selectedItem.rowKey);
-    if (currentIndex === -1) {
-      return;
-    }
     const targetIndex = currentIndex + delta;
-    if (targetIndex < 0 || targetIndex >= this.itemOrder.length) {
-      return;
-    }
     [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [
       this.itemOrder[targetIndex],
       this.itemOrder[currentIndex],

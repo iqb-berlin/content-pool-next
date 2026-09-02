@@ -102,20 +102,28 @@
       >
         ↕️ Manuell sortieren
       </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(-1)"
-      >
-        ↑
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(1)"
-      >
-        ↓
-      </button>
+      @if (vm.sortField === '__manual__') {
+        <button
+          class="btn btn-outline btn-sm"
+          type="button"
+          aria-label="Ausgewähltes Item nach oben verschieben"
+          title="Ausgewähltes Item nach oben verschieben"
+          [disabled]="!vm.canMoveSelectedItem(-1)"
+          (click)="vm.moveSelectedItem(-1)"
+        >
+          ↑
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          type="button"
+          aria-label="Ausgewähltes Item nach unten verschieben"
+          title="Ausgewähltes Item nach unten verschieben"
+          [disabled]="!vm.canMoveSelectedItem(1)"
+          (click)="vm.moveSelectedItem(1)"
+        >
+          ↓
+        </button>
+      }
       <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">🕒 Änderungsverlauf</button>
     }
   </div>

@@ -7,10 +7,9 @@
       >{{ vm.filteredItems.length }} von {{ vm.totalItemsCount }} Zeilen</span
     >
     <button
-      class="btn btn-outline btn-sm"
+      class="btn btn-outline btn-sm btn-state"
       type="button"
       (click)="vm.toggleFullscreen()"
-      [class.btn-primary]="vm.isFullscreen"
       [attr.aria-pressed]="vm.isFullscreen"
       [title]="
         vm.isFullscreen ? 'Vollbild verlassen (auch mit Esc)' : 'Item-Explorer im Vollbild anzeigen'
@@ -20,10 +19,9 @@
     </button>
     @if (vm.canToggleReadOnlyPreview) {
       <button
-        class="btn btn-outline btn-sm"
+        class="btn btn-outline btn-sm btn-state"
         type="button"
         (click)="vm.toggleReadOnlyPreview()"
-        [class.btn-primary]="vm.isReadOnlyPreview"
         [attr.aria-pressed]="vm.isReadOnlyPreview"
         [disabled]="vm.perspectiveSwitchBusy || !vm.latestExplorerState"
         [title]="
@@ -92,9 +90,9 @@
         🔢 Referenznummern neu vergeben
       </button>
       <button
-        class="btn btn-outline btn-sm"
+        class="btn btn-outline btn-sm btn-state"
         (click)="vm.enableManualOrderMode()"
-        [class.btn-primary]="vm.sortField === '__manual__'"
+        [attr.aria-pressed]="vm.sortField === '__manual__'"
       >
         ↕️ Reihenfolge
       </button>

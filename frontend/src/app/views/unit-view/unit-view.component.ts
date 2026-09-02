@@ -24,7 +24,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <h1>{{ unit.name }}</h1>
         <div class="unit-actions">
           @if (showMetadataToggle) {
-            <button class="btn btn-outline btn-sm" (click)="togglePanel()">
+            <button
+              class="btn btn-outline btn-sm btn-state"
+              (click)="togglePanel()"
+              [attr.aria-expanded]="panelVisible"
+              aria-controls="unit-additional-data"
+            >
               {{ panelVisible ? 'Zusatzdaten ausblenden' : 'Zusatzdaten anzeigen' }}
             </button>
           }
@@ -101,7 +106,11 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 
           @if (panelVisible && resolvedPanelMode === 'overlay') {
             <div class="panel-overlay-backdrop" (click)="closeOverlayPanel()">
-              <div class="meta-panel card overlay" (click)="$event.stopPropagation()">
+              <div
+                id="unit-additional-data"
+                class="meta-panel card overlay"
+                (click)="$event.stopPropagation()"
+              >
                 <div class="overlay-header">
                   <strong>Zusatzdaten</strong>
                   <button class="btn btn-outline btn-sm" (click)="togglePanel()">✕</button>
@@ -113,18 +122,21 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         </div>
 
         @if (panelVisible && resolvedPanelMode === 'split') {
-          <div class="meta-panel card split">
+          <div id="unit-additional-data" class="meta-panel card split">
             <ng-container [ngTemplateOutlet]="panelContent"></ng-container>
           </div>
         }
       </div>
 
       <ng-template #panelContent>
-        <div class="panel-tabs">
+        <div class="panel-tabs" role="tablist" aria-label="Zusatzdaten">
           @if (featureConfig.showMetadata) {
             <button
               class="tab"
+              type="button"
+              role="tab"
               [class.active]="activeTab === 'metadata'"
+              [attr.aria-selected]="activeTab === 'metadata'"
               (click)="activeTab = 'metadata'"
             >
               Metadaten
@@ -133,7 +145,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           @if (featureConfig.showCodingScheme) {
             <button
               class="tab"
+              type="button"
+              role="tab"
               [class.active]="activeTab === 'coding'"
+              [attr.aria-selected]="activeTab === 'coding'"
               (click)="activeTab = 'coding'"
             >
               Kodierschema
@@ -142,7 +157,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           @if (featureConfig.showRichText) {
             <button
               class="tab"
+              type="button"
+              role="tab"
               [class.active]="activeTab === 'richtext'"
+              [attr.aria-selected]="activeTab === 'richtext'"
               (click)="activeTab = 'richtext'"
             >
               RichText
@@ -359,6 +377,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       .tab.active {
         color: var(--color-primary);
         border-bottom-color: var(--color-primary);
+        font-weight: 700;
       }
 
       .meta-dl {

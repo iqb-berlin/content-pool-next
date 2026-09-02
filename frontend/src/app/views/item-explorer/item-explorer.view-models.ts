@@ -253,6 +253,7 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     ItemExplorerFacade,
     | 'closeCodingOverlay'
     | 'codingSearchText'
+    | 'codingSortField'
     | 'codingVariableFocus'
     | 'codingVariableFocusMessage'
     | 'currentCodingSchemeAsText'

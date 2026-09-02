@@ -56,9 +56,8 @@
       }
       <div class="collection-view-toggle" role="group" aria-label="Angezeigte Items">
         <button
-          class="btn btn-outline btn-sm"
+          class="btn btn-outline btn-sm btn-state"
           type="button"
-          [class.btn-primary]="vm.collectionViewMode === 'all'"
           [attr.aria-pressed]="vm.collectionViewMode === 'all'"
           [disabled]="vm.collectionBusy"
           (click)="vm.setCollectionViewMode('all')"
@@ -66,9 +65,8 @@
           Alle Items
         </button>
         <button
-          class="btn btn-outline btn-sm"
+          class="btn btn-outline btn-sm btn-state"
           type="button"
-          [class.btn-primary]="vm.collectionViewMode === 'active'"
           [attr.aria-pressed]="vm.collectionViewMode === 'active'"
           [disabled]="!vm.activeItemCollection || vm.collectionBusy"
           (click)="vm.setCollectionViewMode('active')"

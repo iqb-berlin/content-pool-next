@@ -225,17 +225,18 @@
       </select>
       <button class="btn btn-outline btn-sm" (click)="vm.openCodingOverlay()">📋 Kodierung</button>
       <button
-        class="btn btn-outline btn-sm"
+        class="btn btn-outline btn-sm btn-state"
         (click)="vm.setMetadataDrawerOpen(!vm.showMetadataDrawer)"
-        [class.btn-primary]="vm.showMetadataDrawer"
+        [attr.aria-expanded]="vm.showMetadataDrawer"
+        aria-controls="item-explorer-metadata-drawer"
       >
         📄 Metadaten
       </button>
       @if (vm.canEditExplorer) {
         <button
-          class="btn btn-outline btn-sm"
+          class="btn btn-outline btn-sm btn-state"
           (click)="vm.toggleSelectedItemExclusion()"
-          [class.btn-primary]="vm.isItemExcluded(vm.selectedItem)"
+          [attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"
           [title]="
             vm.isItemExcluded(vm.selectedItem)
               ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'

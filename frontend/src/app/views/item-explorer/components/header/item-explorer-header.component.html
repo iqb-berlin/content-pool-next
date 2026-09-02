@@ -91,10 +91,16 @@
       </button>
       <button
         class="btn btn-outline btn-sm btn-state"
-        (click)="vm.enableManualOrderMode()"
+        type="button"
+        (click)="vm.toggleManualOrderMode()"
         [attr.aria-pressed]="vm.sortField === '__manual__'"
+        [title]="
+          vm.sortField === '__manual__'
+            ? 'Zur vorherigen Sortierung zurückkehren. Die manuelle Reihenfolge bleibt erhalten.'
+            : 'Manuelle Reihenfolge anzeigen und Items mit den Schaltflächen ↑/↓ verschieben.'
+        "
       >
-        ↕️ Reihenfolge
+        ↕️ Manuell sortieren
       </button>
       <button
         class="btn btn-outline btn-sm"

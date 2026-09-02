@@ -28,7 +28,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'discardAndLeave'
     | 'discardDraftDialogBusy'
     | 'discardDraftDialogError'
-    | 'enableManualOrderMode'
+    | 'toggleManualOrderMode'
     | 'explorerPublishedVersion'
     | 'explorerStatusLabel'
     | 'explorerUiStatus'

@@ -894,6 +894,150 @@ describe('ItemExplorerFacade', () => {
     expect(component.sortIsMeta).toBe(false);
   });
 
+  describe('manual sorting toggle', () => {
+    function createSortingFacade() {
+      const component = createFacade();
+      component.canEditExplorer = true;
+      component.allColumns = [{ id: 'level', label: 'Level', kind: 'number' }];
+      component.columns = [...component.allColumns];
+      component.items = [1, 2, 3].map((index) => ({
+        itemId: `ITEM_${index}`,
+        uuid: `uuid-${index}`,
+        rowKey: `uuid-${index}`,
+        unitId: `UNIT_${index}`,
+        unitLabel: `Aufgabe ${index}`,
+        description: '',
+        variableId: '',
+        metadata: { level: index },
+      }));
+      component.filteredItems = [...component.items];
+      component.itemOrder = ['uuid-2', 'uuid-1', 'uuid-3'];
+      vi.spyOn(component as any, 'syncSelectionAfterListMutation').mockImplementation(() => {});
+      const queueDraftPatch = vi
+        .spyOn(component as any, 'queueDraftPatch')
+        .mockImplementation(() => {});
+      return { component, queueDraftPatch };
+    }
+
+    it.each(['asc', 'desc'] as const)('restores a system column sorted %s', (direction) => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.sortBy('itemId');
+      if (direction === 'desc') component.sortBy('itemId');
+      const previousRows = component.filteredItems.map((item) => item.rowKey);
+      queueDraftPatch.mockClear();
+
+      component.toggleManualOrderMode();
+      expect(component.sortField).toBe('__manual__');
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(component.itemOrder);
+
+      component.toggleManualOrderMode();
+      expect(component.sortField).toBe('itemId');
+      expect(component.sortDir).toBe(direction);
+      expect(component.sortIsMeta).toBe(false);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(previousRows);
+      expect(queueDraftPatch.mock.calls.map(([type]) => type)).toEqual([
+        'UI_STATE_CHANGED',
+        'UI_STATE_CHANGED',
+      ]);
+      expect(queueDraftPatch).toHaveBeenLastCalledWith('UI_STATE_CHANGED', {
+        ui: expect.objectContaining({ sortField: 'itemId', sortDir: direction, sortIsMeta: false }),
+      });
+    });
+
+    it('restores the metadata sort column and direction', () => {
+      const { component } = createSortingFacade();
+      component.sortByMeta('level');
+      component.sortByMeta('level');
+      const previousRows = component.filteredItems.map((item) => item.rowKey);
+
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('level');
+      expect(component.sortDir).toBe('desc');
+      expect(component.sortIsMeta).toBe(true);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(previousRows);
+    });
+
+    it('retains edited manual order when leaving and re-entering the mode', () => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.selectedItem = component.items[1];
+      component.moveSelectedItem(1);
+      const editedOrder = [...component.itemOrder];
+      expect(editedOrder).toEqual(['uuid-1', 'uuid-2', 'uuid-3']);
+      expect(queueDraftPatch).toHaveBeenLastCalledWith(
+        'ITEM_ORDER_CHANGED',
+        { itemOrder: editedOrder },
+        true,
+      );
+      queueDraftPatch.mockClear();
+
+      component.toggleManualOrderMode();
+      component.moveSelectedItem(1);
+      expect(component.itemOrder).toEqual(editedOrder);
+      component.toggleManualOrderMode();
+
+      expect(component.itemOrder).toEqual(editedOrder);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(editedOrder);
+      expect(queueDraftPatch.mock.calls.every(([type]) => type === 'UI_STATE_CHANGED')).toBe(true);
+    });
+
+    it('remembers a newly selected column on the next toggle cycle', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.sortBy('itemId');
+      component.sortBy('itemId');
+
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('itemId');
+      expect(component.sortDir).toBe('desc');
+    });
+
+    it('falls back to task ascending after reloading a saved manual mode', () => {
+      const { component } = createSortingFacade();
+      (component as any).applyUiPreferences({
+        sortField: '__manual__',
+        sortDir: 'asc',
+        sortIsMeta: false,
+      });
+      const savedOrder = [...component.itemOrder];
+
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('unitLabel');
+      expect(component.sortDir).toBe('asc');
+      expect(component.sortIsMeta).toBe(false);
+      expect(component.itemOrder).toEqual(savedOrder);
+    });
+
+    it('uses a visible fallback if the previous column was hidden meanwhile', () => {
+      const { component } = createSortingFacade();
+      component.metadataSettings.referenceNumberVisible = true;
+      component.sortBy('rowNumber');
+      component.toggleManualOrderMode();
+      component.metadataSettings.referenceNumberVisible = false;
+
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('unitLabel');
+      expect(component.sortDir).toBe('asc');
+    });
+
+    it('initializes an absent manual order only once', () => {
+      const { component } = createSortingFacade();
+      component.itemOrder = [];
+      component.toggleManualOrderMode();
+      const order = component.itemOrder;
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+      expect(component.itemOrder).toBe(order);
+      expect(order).toEqual(component.items.map((item) => item.rowKey));
+    });
+  });
+
   it('keeps the task default when shared ui state is empty', () => {
     const component = createFacade();
 

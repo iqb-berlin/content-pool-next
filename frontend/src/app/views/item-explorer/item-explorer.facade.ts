@@ -158,6 +158,12 @@ export class ItemExplorerFacade implements OnDestroy {
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
+  // Session-only return target; a reloaded manual mode falls back to the default sort.
+  private sortBeforeManualOrder: {
+    field: string;
+    isMeta: boolean;
+    direction: 'asc' | 'desc';
+  } | null = null;
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
   showExcludedItems = false;
@@ -5305,7 +5311,21 @@ export class ItemExplorerFacade implements OnDestroy {
     return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
   }
 
-  enableManualOrderMode() {
+  toggleManualOrderMode() {
+    if (this.sortField === '__manual__') {
+      this.sortField = this.sortBeforeManualOrder?.field ?? DEFAULT_EXPLORER_SORT_FIELD;
+      this.sortIsMeta = this.sortBeforeManualOrder?.isMeta ?? false;
+      this.sortDir = this.sortBeforeManualOrder?.direction ?? DEFAULT_EXPLORER_SORT_DIR;
+      this.sortBeforeManualOrder = null;
+      this.applySort();
+      return;
+    }
+
+    this.sortBeforeManualOrder = {
+      field: this.sortField,
+      isMeta: this.sortIsMeta,
+      direction: this.sortDir,
+    };
     this.sortField = '__manual__';
     this.sortIsMeta = false;
     this.sortDir = 'asc';

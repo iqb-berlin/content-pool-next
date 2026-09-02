@@ -102,6 +102,8 @@ describe('ItemExplorer presentational components', () => {
   it('marks header and collection modes as semantic state buttons', () => {
     expect(headerTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
     expect(headerTemplate).toContain('[attr.aria-pressed]="vm.sortField === \'__manual__\'"');
+    expect(headerTemplate).toContain('(click)="vm.toggleManualOrderMode()"');
+    expect(headerTemplate).toContain('Manuell sortieren');
     expect(headerTemplate).not.toContain('btn-state-indicator');
     expect(collectionsTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
     expect(collectionsTemplate).toContain(

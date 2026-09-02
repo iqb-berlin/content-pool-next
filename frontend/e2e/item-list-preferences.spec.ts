@@ -41,6 +41,111 @@ async function loginWithCredential(page: Page): Promise<void> {
   await expect(page).toHaveURL(new RegExp(`/view/${ACP_ID}`));
 }
 
+test('toggles manual sorting without discarding the edited item order', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  const headers = {
+    Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, MANAGER_USERNAME)}`,
+  };
+  const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+  const draftUrl = `/api/acp/${ACP_ID}/item-explorer/draft`;
+  const originalResponse = await request.get(stateUrl, { headers });
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+
+  const change = async (action: () => Promise<unknown>) => {
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (response) => response.request().method() === 'PATCH' && response.url().endsWith(draftUrl),
+      ),
+      action(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+    return response.json();
+  };
+
+  try {
+    const setup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: original.version,
+        changeType: 'UI_STATE_CHANGED',
+        patch: {
+          ui: {
+            filterText: '',
+            columnFilters: {},
+            sortField: 'unitLabel',
+            sortDir: 'asc',
+            sortIsMeta: false,
+          },
+        },
+      },
+    });
+    expect(setup.ok()).toBeTruthy();
+    await page.goto(`/view/${ACP_ID}/item-explorer`);
+    const toggle = page.getByRole('button', { name: 'Manuell sortieren' });
+    const idHeader = page.getByRole('columnheader', { name: /^Item-ID/ });
+    const down = page.locator('.explorer-header').getByRole('button', { name: '↓', exact: true });
+    const rows = page.locator('.explorer-table tbody tr');
+    const rowIds = () => rows.evaluateAll((elements) => elements.map((element) => element.id));
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(down).toBeDisabled();
+
+    await change(() => idHeader.click());
+    await change(() => idHeader.click());
+    await expect(idHeader).toContainText('↓');
+    const descendingIds = await rowIds();
+
+    await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveCSS('font-weight', '700');
+    await rows.first().click();
+    await expect(down).toBeEnabled();
+    const moved = await change(() => down.click());
+    const manualIds = await rowIds();
+
+    const restored = await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(down).toBeDisabled();
+    await expect(idHeader).toContainText('↓');
+    expect(await rowIds()).toEqual(descendingIds);
+    expect(restored.draftState.itemOrder).toEqual(moved.draftState.itemOrder);
+    expect(restored.draftState.ui).toMatchObject({
+      sortField: 'itemId',
+      sortDir: 'desc',
+      sortIsMeta: false,
+    });
+
+    await change(() => toggle.click());
+    expect(await rowIds()).toEqual(manualIds);
+    await page.reload();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    const fallback = await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(fallback.draftState.ui).toMatchObject({
+      sortField: 'unitLabel',
+      sortDir: 'asc',
+      sortIsMeta: false,
+    });
+    expect(fallback.draftState.itemOrder).toEqual(moved.draftState.itemOrder);
+  } finally {
+    await page.close();
+    const current = await request.get(stateUrl, { headers });
+    expect(current.ok()).toBeTruthy();
+    const cleanup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: (await current.json()).version,
+        changeType: 'UI_STATE_CHANGED',
+        patch: { ui: original.draftState.ui, itemOrder: original.draftState.itemOrder },
+      },
+    });
+    expect(cleanup.ok()).toBeTruthy();
+  }
+});
+
 test('shows a slow-connection hint while the Explorer item list is delayed', async ({ page }) => {
   await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
   await page.route('**/api/acp/*/files/item-list*', async (route) => {

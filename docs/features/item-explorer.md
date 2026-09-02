@@ -107,6 +107,9 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 
 ### Editing shortcuts
 
+- **Manuell sortieren** toggles manual ordering. Switching it off restores the previous
+  sort column and direction without discarding the manual item order. After reloading in
+  manual mode, it falls back to task-label sorting in ascending order.
 - `Ctrl+S` / `Cmd+S` opens the existing draft save preview instead of triggering the browser's
   page-save dialog.
 - In manual ordering mode, `Ctrl+ArrowUp` / `Cmd+ArrowUp` and

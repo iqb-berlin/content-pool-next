@@ -50,14 +50,13 @@ type PreviewTab = 'render' | 'structured' | 'raw';
         </div>
       } @else {
         @if (showTabs) {
-          <div class="preview-tabs" role="tablist" aria-label="Vorschauformat">
+          <div class="preview-tabs" role="group" aria-label="Vorschauformat">
             @if (hasRenderTab) {
               <button
                 class="tab"
                 type="button"
-                role="tab"
                 [class.active]="activeTab === 'render'"
-                [attr.aria-selected]="activeTab === 'render'"
+                [attr.aria-pressed]="activeTab === 'render'"
                 (click)="activeTab = 'render'"
               >
                 Medien
@@ -67,9 +66,8 @@ type PreviewTab = 'render' | 'structured' | 'raw';
               <button
                 class="tab"
                 type="button"
-                role="tab"
                 [class.active]="activeTab === 'structured'"
-                [attr.aria-selected]="activeTab === 'structured'"
+                [attr.aria-pressed]="activeTab === 'structured'"
                 (click)="activeTab = 'structured'"
               >
                 Struktur
@@ -79,9 +77,8 @@ type PreviewTab = 'render' | 'structured' | 'raw';
               <button
                 class="tab"
                 type="button"
-                role="tab"
                 [class.active]="activeTab === 'raw'"
-                [attr.aria-selected]="activeTab === 'raw'"
+                [attr.aria-pressed]="activeTab === 'raw'"
                 (click)="activeTab = 'raw'"
               >
                 Rohdaten

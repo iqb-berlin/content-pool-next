@@ -65,14 +65,32 @@ describe('stateful button audit', () => {
     expect(invalid.map(location)).toEqual([]);
   });
 
-  it('gives custom active selections tab or current-item semantics', () => {
+  it('gives custom active selections pressed, selected or current-item semantics', () => {
     const activeSelections = buttons.filter(({ block }) => /\[class\.active\]=/.test(block));
     const invalid = activeSelections.filter(
-      ({ block }) =>
-        !/\[attr\.aria-selected\]=/.test(block) && !/\[attr\.aria-current\]=/.test(block),
+      ({ block }) => !/\[attr\.aria-(pressed|selected|current)\]=/.test(block),
     );
 
     expect(activeSelections.length).toBeGreaterThanOrEqual(7);
     expect(invalid.map(location)).toEqual([]);
+  });
+
+  it.each([
+    ['../acp-manager/files/file-preview-panel.component.ts', 'Vorschauformat'],
+    ['../views/unit-view/unit-view.component.ts', 'Zusatzdaten'],
+  ])('keeps %s as a native button group with exclusive pressed state', (file, label) => {
+    const source = productionSources[file];
+    expect(source).toContain(`role="group" aria-label="${label}"`);
+    expect(source).not.toMatch(/role="tab(list)?"/);
+    const selections = buttons.filter(
+      (button) => button.file === file && /\[class\.active\]=/.test(button.block),
+    );
+    expect(selections).toHaveLength(3);
+    for (const { block } of selections) {
+      expect(block).toContain('type="button"');
+      expect(block).toMatch(/\[attr\.aria-pressed\]="activeTab === '/);
+      expect(block).not.toContain('aria-selected');
+      expect(block).not.toContain('tabindex');
+    }
   });
 });

@@ -129,14 +129,13 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       </div>
 
       <ng-template #panelContent>
-        <div class="panel-tabs" role="tablist" aria-label="Zusatzdaten">
+        <div class="panel-tabs" role="group" aria-label="Zusatzdaten">
           @if (featureConfig.showMetadata) {
             <button
               class="tab"
               type="button"
-              role="tab"
               [class.active]="activeTab === 'metadata'"
-              [attr.aria-selected]="activeTab === 'metadata'"
+              [attr.aria-pressed]="activeTab === 'metadata'"
               (click)="activeTab = 'metadata'"
             >
               Metadaten
@@ -146,9 +145,8 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <button
               class="tab"
               type="button"
-              role="tab"
               [class.active]="activeTab === 'coding'"
-              [attr.aria-selected]="activeTab === 'coding'"
+              [attr.aria-pressed]="activeTab === 'coding'"
               (click)="activeTab = 'coding'"
             >
               Kodierschema
@@ -158,9 +156,8 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <button
               class="tab"
               type="button"
-              role="tab"
               [class.active]="activeTab === 'richtext'"
-              [attr.aria-selected]="activeTab === 'richtext'"
+              [attr.aria-pressed]="activeTab === 'richtext'"
               (click)="activeTab = 'richtext'"
             >
               RichText

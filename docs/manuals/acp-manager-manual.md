@@ -548,9 +548,10 @@ Ueber `Item-Schwierigkeiten (CSV) hochladen` importieren Sie Schwierigkeitswerte
 Nutzen Sie diese Funktion, wenn empirische Daten in die fachliche Sichtung einfliessen sollen.
 Nach dem Import erhalten Sie einen Bericht ueber erfolgreiche und fehlgeschlagene Zuordnungen.
 
-Enthaelt eine Parameterdatei unvollstaendige `booklet`-/`position`-Angaben, werden zunaechst keine
-Daten geaendert. Nach einer Warnung koennen Sie den Import abbrechen oder nur die unabhaengigen
-Itemparameter importieren. In diesem Fall bleiben vorhandene Booklet-Zuordnungen unveraendert.
+Die Spalte `booklet` kann auch ohne `position` importiert werden. Neue Zuordnungen haben dann keine
+bekannte Position. Ist dasselbe Booklet bereits mit einer Position gespeichert, bleibt diese beim
+Import ohne Positionsangabe erhalten. Eine Position ohne Booklet wird nicht importiert; nach einer
+Warnung koennen Sie den Import abbrechen oder nur die unabhaengigen Itemparameter uebernehmen.
 
 ### Player- und Antwortzustaende testen
 

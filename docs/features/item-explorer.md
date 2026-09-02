@@ -380,7 +380,7 @@ toolbar. The endpoint rejects read-only users, credential logins, and public acc
 stored personal row across participants, using a stable participant identifier and including unit,
 item, Sub-ID, stable row key, category, tags, note, empirical difficulty, and mean unit difficulty.
 When present, both personal and manager exports also contain Infit, discrimination, solution rate,
-item/stimulus times, and paired booklet positions.
+item/stimulus times, booklet assignments, and their optional positions.
 Participants without stored rows are skipped without failing the export. Note line breaks are
 written as literal `\\n` sequences so every personal entry remains on one CSV row.
 
@@ -420,15 +420,16 @@ the higher-priority override. Empty, negative, and non-numeric VOMD values are t
 the formatted `valueAsText` is retained only as display metadata and is not parsed as seconds.
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
-must agree, while `booklet` and `position` are collected as ordered 1:n metadata on the stable
-Explorer row. Complete occurrence data must always supply `booklet` and `position` together. If one
-column is missing, at least one row contains only one of the two values, or a parameter CSV contains
-no complete occurrence pair, the server first returns a warning without changing the Explorer
-draft. Managers can then cancel or explicitly confirm a parameter-only import. Confirming skips all
-booklet occurrences from that file and preserves the stored occurrences. A CSV containing only the
-paired occurrence columns can still clear occurrences explicitly with empty values. Other columns
-that are absent leave stored values unchanged; a supplied but empty value clears that parameter in
-its defined scope:
+must agree, while `booklet` and the optional `position` are collected as ordered 1:n metadata on the
+stable Explorer row. A `booklet` column can be imported without `position`; new assignments then
+store a `null` position. If the same booklet already has a known position on the affected Explorer
+row, an import without a position retains that known value. An explicitly supplied position still
+replaces it. A position without a booklet is invalid: the server returns a warning without changing
+the Explorer draft, and managers can cancel or explicitly confirm a parameter-only import that
+preserves stored booklet occurrences. The same safeguard applies when a parameter CSV declares
+booklet columns but supplies no booklet values. A CSV containing only `booklet` (and optionally
+`position`) can still clear occurrences explicitly with empty values. Other columns that are absent
+leave stored values unchanged; a supplied but empty value clears that parameter in its defined scope:
 
 - difficulty, Infit, discrimination, solution rate, and booklet occurrences belong to the stable
   Explorer row,
@@ -442,9 +443,9 @@ conflict before any item property is changed. A standard row fans row-scoped val
 partial-credit rows; importing explicit Sub-IDs does not delete other partial-credit rows.
 
 Infit, discrimination, solution rate, item time, stimulus time, booklet, and position are built-in
-configurable Explorer columns. Numeric columns use numeric filtering and sorting. Booklet and
-position filters are paired, so a row only matches two simultaneous filters when one occurrence
-satisfies both.
+configurable Explorer columns. Numeric columns use numeric filtering and sorting. Missing booklet
+positions are displayed and exported as empty values. Booklet and position filters are paired, so a
+row only matches two simultaneous filters when one occurrence with a known position satisfies both.
 
 ### Partial-credit rows
 

@@ -1460,7 +1460,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     if (column.kind === 'position') {
       return (item.bookletOccurrences || [])
-        .map((occurrence) => String(occurrence.position))
+        .map((occurrence) => (occurrence.position === null ? '' : String(occurrence.position)))
         .join(' | ');
     }
     const value = this.getMetadataColumnRawValue(item, column);
@@ -1488,10 +1488,12 @@ export class ItemExplorerFacade implements OnDestroy {
         return item.stimulusTimeSeconds;
       case 'booklet':
         return item.bookletOccurrences?.[0]?.booklet;
-      case 'bookletPosition':
-        return item.bookletOccurrences?.length
-          ? Math.min(...item.bookletOccurrences.map((occurrence) => occurrence.position))
-          : undefined;
+      case 'bookletPosition': {
+        const positions = (item.bookletOccurrences || []).flatMap((occurrence) =>
+          occurrence.position === null ? [] : [occurrence.position],
+        );
+        return positions.length ? Math.min(...positions) : undefined;
+      }
       default:
         return item.metadata[column.id];
     }
@@ -2085,7 +2087,9 @@ export class ItemExplorerFacade implements OnDestroy {
         const matchesBooklet =
           !bookletFilter || occurrence.booklet.toLowerCase().includes(bookletFilter);
         const matchesPosition =
-          !positionFilter || matchesNumericFilter(occurrence.position, positionFilter);
+          !positionFilter ||
+          (occurrence.position !== null &&
+            matchesNumericFilter(occurrence.position, positionFilter));
         return matchesBooklet && matchesPosition;
       });
       if (!matchesOccurrence) return false;
@@ -2410,7 +2414,11 @@ export class ItemExplorerFacade implements OnDestroy {
         (label) => label !== 'Booklet' && label !== 'Position im Booklet',
       );
       withoutSeparateBookletFields.push(
-        success.bookletOccurrences?.length ? 'Booklet / Position' : 'Booklet / Position gelöscht',
+        success.bookletOccurrences?.length
+          ? success.bookletOccurrences.some((occurrence) => occurrence.position !== null)
+            ? 'Booklet / Position'
+            : 'Booklet'
+          : 'Booklet / Position gelöscht',
       );
       return [...new Set(withoutSeparateBookletFields)].join(', ') || '–';
     }
@@ -2425,7 +2433,11 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!success.bookletOccurrences.length) return 'Gelöscht';
 
     return success.bookletOccurrences
-      .map((occurrence) => `${occurrence.booklet} / ${occurrence.position}`)
+      .map((occurrence) =>
+        occurrence.position === null
+          ? occurrence.booklet
+          : `${occurrence.booklet} / ${occurrence.position}`,
+      )
       .join(' | ');
   }
 

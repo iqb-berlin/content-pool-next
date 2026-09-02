@@ -642,6 +642,7 @@ describe("UnitParserService", () => {
           bookletOccurrences: [
             { booklet: "B2", position: 8 },
             { booklet: "B1", position: 3 },
+            { booklet: "B3", position: null },
           ],
         },
       },
@@ -663,6 +664,7 @@ describe("UnitParserService", () => {
         bookletOccurrences: [
           { booklet: "B1", position: 3 },
           { booklet: "B2", position: 8 },
+          { booklet: "B3", position: null },
         ],
         tags: ["resolved"],
       }),

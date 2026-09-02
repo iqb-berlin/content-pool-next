@@ -277,7 +277,7 @@ describe("ItemsService", () => {
     expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
-  it("does not persist warning-gated parameters before confirmation", async () => {
+  it("does not persist a position-only import before warning confirmation", async () => {
     const acp = {
       id: "acp-1",
       itemProperties: {
@@ -297,7 +297,7 @@ describe("ItemsService", () => {
         },
       ],
     });
-    const csv = Buffer.from("item;est;booklet\nI1;0.5;B1");
+    const csv = Buffer.from("item;est;position\nI1;0.5;4");
 
     const preview = await service.uploadItemParameters("acp-1", csv);
     expect(preview.requiresConfirmation).toBe(true);
@@ -523,6 +523,49 @@ describe("ItemsService", () => {
         bookletOccurrences: [],
       }),
     ]);
+  });
+
+  it("persists a booklet without a position and retains a known matching position", async () => {
+    const acp = {
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [
+            { booklet: "B1", position: 3 },
+            { booklet: "OLD", position: 9 },
+          ],
+        },
+      },
+    };
+    acpRepository.findOne.mockResolvedValue(acp);
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;booklet\nI1;B1\nI1;B2"),
+    );
+
+    expect(result.requiresConfirmation).toBeUndefined();
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": {
+        bookletOccurrences: [
+          { booklet: "B1", position: 3 },
+          { booklet: "B2", position: null },
+        ],
+      },
+    });
+    expect(acpRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ itemProperties: result.nextItemProperties }),
+    );
   });
 
   it("rejects conflicting scalar values and duplicate booklet occurrences", async () => {

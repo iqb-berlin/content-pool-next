@@ -128,6 +128,57 @@ test('reuses preview assets and requests only response state within one unit', a
   expect(sameUnitReuseRequests).toEqual(['responseState', 'responseState']);
 });
 
+test('imports booklet assignments without positions and retains known positions', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
+
+  const upload = async (content: string): Promise<void> => {
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/upload-item-parameters') &&
+          response.ok(),
+      ),
+      page.locator('input[type="file"][accept=".csv"]').setInputFiles({
+        name: 'booklets.csv',
+        mimeType: 'text/csv',
+        buffer: Buffer.from(content),
+      }),
+    ]);
+    await expect(page.getByRole('heading', { name: 'Upload Bericht' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Booklet-Zuordnungen überspringen?' }),
+    ).toBeHidden();
+    await page.getByRole('button', { name: /Schließen/ }).click();
+    await publishExplorerDraft(page);
+  };
+
+  await upload('item;booklet;position\ni1;B1;3\ni2;B2;4');
+  await upload('item;booklet\ni1;B1\ni2;B3');
+
+  const managerToken = await page.evaluate(() => localStorage.getItem('cp_token'));
+  expect(managerToken).toBeTruthy();
+  const itemListResponse = await request.get(`/api/acp/${ACP_ID}/files/item-list`, {
+    headers: { Authorization: `Bearer ${managerToken}` },
+  });
+  expect(itemListResponse.ok()).toBeTruthy();
+  const itemList = (await itemListResponse.json()) as {
+    items: Array<{
+      itemId: string;
+      bookletOccurrences: Array<{ booklet: string; position: number | null }>;
+    }>;
+  };
+  const item1 = itemList.items.find((item) => item.itemId === 'i1');
+  const item2 = itemList.items.find((item) => item.itemId === 'i2');
+  expect(item1?.bookletOccurrences).toEqual([{ booklet: 'B1', position: 3 }]);
+  expect(item2?.bookletOccurrences).toEqual([{ booklet: 'B3', position: null }]);
+});
+
 test('reconciles mean filters across clear, reimport, reload and credential relogin', async ({
   browser,
   page,

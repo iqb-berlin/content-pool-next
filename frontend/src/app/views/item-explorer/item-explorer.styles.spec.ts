@@ -97,9 +97,7 @@ describe('ItemExplorer shared dialog styles', () => {
     expect(globalStyles).toMatch(
       /\.btn-state\[aria-expanded='true'\]\s*\{[^}]*font-weight:\s*700/s,
     );
-    expect(globalStyles).not.toMatch(
-      /\.btn-state\[aria-expanded='true'\]\s*\{[^}]*outline:/s,
-    );
+    expect(globalStyles).not.toMatch(/\.btn-state\[aria-expanded='true'\]\s*\{[^}]*outline:/s);
     expect(globalStyles).not.toContain('box-shadow: inset 0 -3px 0 currentColor');
     expect(globalStyles).not.toContain('.btn-state-indicator');
   });

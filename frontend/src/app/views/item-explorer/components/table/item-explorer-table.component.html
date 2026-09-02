@@ -11,10 +11,10 @@
     @if (vm.excludedItemsCount > 0 || vm.showExcludedItems) {
       <div class="table-toolbar-actions">
         <button
-          class="btn btn-outline btn-sm"
+          class="btn btn-outline btn-sm btn-state"
           type="button"
           (click)="vm.toggleShowExcludedItems()"
-          [class.btn-primary]="vm.showExcludedItems"
+          [attr.aria-pressed]="vm.showExcludedItems"
         >
           {{
             vm.showExcludedItems

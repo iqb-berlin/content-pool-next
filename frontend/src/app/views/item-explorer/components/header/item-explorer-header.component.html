@@ -7,10 +7,9 @@
       >{{ vm.filteredItems.length }} von {{ vm.totalItemsCount }} Zeilen</span
     >
     <button
-      class="btn btn-outline btn-sm"
+      class="btn btn-outline btn-sm btn-state"
       type="button"
       (click)="vm.toggleFullscreen()"
-      [class.btn-primary]="vm.isFullscreen"
       [attr.aria-pressed]="vm.isFullscreen"
       [title]="
         vm.isFullscreen ? 'Vollbild verlassen (auch mit Esc)' : 'Item-Explorer im Vollbild anzeigen'
@@ -20,10 +19,9 @@
     </button>
     @if (vm.canToggleReadOnlyPreview) {
       <button
-        class="btn btn-outline btn-sm"
+        class="btn btn-outline btn-sm btn-state"
         type="button"
         (click)="vm.toggleReadOnlyPreview()"
-        [class.btn-primary]="vm.isReadOnlyPreview"
         [attr.aria-pressed]="vm.isReadOnlyPreview"
         [disabled]="vm.perspectiveSwitchBusy || !vm.latestExplorerState"
         [title]="
@@ -92,26 +90,40 @@
         🔢 Referenznummern neu vergeben
       </button>
       <button
-        class="btn btn-outline btn-sm"
-        (click)="vm.enableManualOrderMode()"
-        [class.btn-primary]="vm.sortField === '__manual__'"
+        class="btn btn-outline btn-sm btn-state"
+        type="button"
+        (click)="vm.toggleManualOrderMode()"
+        [attr.aria-pressed]="vm.sortField === '__manual__'"
+        [title]="
+          vm.sortField === '__manual__'
+            ? 'Zur vorherigen Sortierung zurückkehren. Die manuelle Reihenfolge bleibt erhalten.'
+            : 'Manuelle Reihenfolge anzeigen und Items mit den Schaltflächen ↑/↓ verschieben.'
+        "
       >
-        ↕️ Reihenfolge
+        ↕️ Manuell sortieren
       </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(-1)"
-      >
-        ↑
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(1)"
-      >
-        ↓
-      </button>
+      @if (vm.sortField === '__manual__') {
+        <button
+          class="btn btn-outline btn-sm"
+          type="button"
+          aria-label="Ausgewähltes Item nach oben verschieben"
+          title="Ausgewähltes Item nach oben verschieben"
+          [disabled]="!vm.canMoveSelectedItem(-1)"
+          (click)="vm.moveSelectedItem(-1)"
+        >
+          ↑
+        </button>
+        <button
+          class="btn btn-outline btn-sm"
+          type="button"
+          aria-label="Ausgewähltes Item nach unten verschieben"
+          title="Ausgewähltes Item nach unten verschieben"
+          [disabled]="!vm.canMoveSelectedItem(1)"
+          (click)="vm.moveSelectedItem(1)"
+        >
+          ↓
+        </button>
+      }
       <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">🕒 Änderungsverlauf</button>
     }
   </div>

@@ -17,7 +17,12 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <h1>{{ sequence.name || sequence.id }}</h1>
         <div class="seq-actions">
           @if (showUnitListBtn) {
-            <button class="btn btn-outline btn-sm" (click)="toggleUnitList()">
+            <button
+              class="btn btn-outline btn-sm btn-state"
+              (click)="toggleUnitList()"
+              [attr.aria-expanded]="unitListOpen"
+              aria-controls="task-sequence-unit-list"
+            >
               📋 Aufgabenliste
             </button>
           }
@@ -87,7 +92,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       <!-- Unit list popup -->
       @if (unitListOpen && hasUnits) {
         <div class="popup-overlay" (click)="unitListOpen = false">
-          <div class="popup card" (click)="$event.stopPropagation()">
+          <div id="task-sequence-unit-list" class="popup card" (click)="$event.stopPropagation()">
             <div class="popup-header">
               <h3>Aufgaben in dieser Folge</h3>
               <button class="btn btn-outline btn-sm" (click)="unitListOpen = false">✕</button>
@@ -96,6 +101,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               <button
                 class="unit-list-item"
                 [class.active]="i === currentIndex"
+                [attr.aria-current]="i === currentIndex ? 'step' : null"
                 (click)="jumpTo(i)"
               >
                 <span class="unit-num">{{ i + 1 }}</span>

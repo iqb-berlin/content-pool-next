@@ -4,6 +4,12 @@ import { ItemExplorerTableComponent } from './item-explorer-table.component';
 import template from './item-explorer-table.component.html?raw';
 
 describe('ItemExplorerTableComponent', () => {
+  it('exposes the excluded-item filter as a semantic state button', () => {
+    expect(template).toContain('class="btn btn-outline btn-sm btn-state"');
+    expect(template).toContain('[attr.aria-pressed]="vm.showExcludedItems"');
+    expect(template).not.toContain('btn-state-indicator');
+  });
+
   it('names shared tag and personal category selectors per item', () => {
     expect(template).toContain("[attr.aria-label]=\"'Tag für ' + item.itemId + ' hinzufügen'\"");
     expect(template).toContain(

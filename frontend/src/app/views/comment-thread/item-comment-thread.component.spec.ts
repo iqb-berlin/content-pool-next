@@ -1,6 +1,7 @@
 import { Subject, of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 import { ItemCommentThreadComponent } from './item-comment-thread.component';
+import template from './item-comment-thread.component.html?raw';
 
 function createComponent() {
   const api = {
@@ -20,6 +21,14 @@ function createComponent() {
 }
 
 describe('ItemCommentThreadComponent', () => {
+  it('exposes the comment panel as a stateful disclosure', () => {
+    expect(template).toContain('class="btn btn-outline btn-sm btn-state comment-toggle"');
+    expect(template).toContain('[attr.aria-expanded]="open"');
+    expect(template).toContain('aria-controls="item-comment-panel"');
+    expect(template).toContain('id="item-comment-panel"');
+    expect(template).not.toContain('btn-state-indicator');
+  });
+
   it('loads only the selected item and ignores a superseded response', () => {
     const { component, api } = createComponent();
     const first = new Subject<any>();

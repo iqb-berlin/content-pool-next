@@ -71,7 +71,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       <div class="card">
         <h3>ACP-Index</h3>
         <div class="toolbar">
-          <button class="btn btn-outline" (click)="showIndex = !showIndex">
+          <button
+            class="btn btn-outline btn-state"
+            (click)="showIndex = !showIndex"
+            [attr.aria-expanded]="showIndex"
+            aria-controls="acp-index-content"
+          >
             {{ showIndex ? 'Verbergen' : 'Anzeigen' }}
           </button>
           <a [href]="api.getIndexExportUrl(acp.id)" class="btn btn-outline" target="_blank"
@@ -84,7 +89,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
           <button class="btn btn-danger" (click)="openDeleteIndexDialog()">Index löschen</button>
         </div>
         @if (showIndex) {
-          <pre class="json-view">{{ acp.acpIndex | json }}</pre>
+          <pre id="acp-index-content" class="json-view">{{ acp.acpIndex | json }}</pre>
         }
       </div>
 

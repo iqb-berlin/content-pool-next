@@ -13,12 +13,19 @@ import { Acp } from '../../core/models/api.models';
     <div class="page-header">
       <h1>{{ auth.isAdmin ? 'Assessment Content Packages' : 'Meine ACP-Pakete' }}</h1>
       @if (auth.isAdmin) {
-        <button class="btn btn-primary" (click)="showCreate = !showCreate">+ ACP anlegen</button>
+        <button
+          class="btn btn-outline btn-state"
+          (click)="showCreate = !showCreate"
+          [attr.aria-expanded]="showCreate"
+          aria-controls="acp-create-form"
+        >
+          + ACP anlegen
+        </button>
       }
     </div>
 
     @if (showCreate && auth.isAdmin) {
-      <div class="card">
+      <div id="acp-create-form" class="card">
         <h3>Neues ACP anlegen</h3>
         <form (ngSubmit)="createAcp()">
           <div class="form-group">

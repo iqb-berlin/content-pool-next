@@ -16,7 +16,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 
     <div class="page-header">
       <h1>Snapshots</h1>
-      <button class="btn btn-primary" (click)="showCreate = !showCreate">
+      <button
+        class="btn btn-outline btn-state"
+        (click)="showCreate = !showCreate"
+        [attr.aria-expanded]="showCreate"
+        aria-controls="snapshot-create-form"
+      >
         + Snapshot erstellen
       </button>
     </div>
@@ -26,7 +31,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     }
 
     @if (showCreate) {
-      <div class="card">
+      <div id="snapshot-create-form" class="card">
         <div class="form-group">
           <label>Changelog</label>
           <textarea

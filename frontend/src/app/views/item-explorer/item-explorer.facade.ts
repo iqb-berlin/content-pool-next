@@ -158,6 +158,12 @@ export class ItemExplorerFacade implements OnDestroy {
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
+  // Session-only return target; a reloaded manual mode falls back to the default sort.
+  private sortBeforeManualOrder: {
+    field: string;
+    isMeta: boolean;
+    direction: 'asc' | 'desc';
+  } | null = null;
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
   showExcludedItems = false;
@@ -5305,7 +5311,21 @@ export class ItemExplorerFacade implements OnDestroy {
     return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
   }
 
-  enableManualOrderMode() {
+  toggleManualOrderMode() {
+    if (this.sortField === '__manual__') {
+      this.sortField = this.sortBeforeManualOrder?.field ?? DEFAULT_EXPLORER_SORT_FIELD;
+      this.sortIsMeta = this.sortBeforeManualOrder?.isMeta ?? false;
+      this.sortDir = this.sortBeforeManualOrder?.direction ?? DEFAULT_EXPLORER_SORT_DIR;
+      this.sortBeforeManualOrder = null;
+      this.applySort();
+      return;
+    }
+
+    this.sortBeforeManualOrder = {
+      field: this.sortField,
+      isMeta: this.sortIsMeta,
+      direction: this.sortDir,
+    };
     this.sortField = '__manual__';
     this.sortIsMeta = false;
     this.sortDir = 'asc';
@@ -5315,21 +5335,23 @@ export class ItemExplorerFacade implements OnDestroy {
     this.applySort();
   }
 
-  moveSelectedItem(delta: number) {
+  canMoveSelectedItem(delta: number): boolean {
     if (!this.canEditExplorer || !this.selectedItem || this.sortField !== '__manual__') {
-      return;
+      return false;
     }
+    const order = this.itemOrder.length ? this.itemOrder : this.items.map((item) => item.rowKey);
+    const currentIndex = order.indexOf(this.selectedItem.rowKey);
+    const targetIndex = currentIndex + delta;
+    return currentIndex >= 0 && targetIndex >= 0 && targetIndex < order.length;
+  }
+
+  moveSelectedItem(delta: number) {
+    if (!this.selectedItem || !this.canMoveSelectedItem(delta)) return;
     if (!this.itemOrder.length) {
       this.itemOrder = this.items.map((item) => item.rowKey);
     }
     const currentIndex = this.itemOrder.indexOf(this.selectedItem.rowKey);
-    if (currentIndex === -1) {
-      return;
-    }
     const targetIndex = currentIndex + delta;
-    if (targetIndex < 0 || targetIndex >= this.itemOrder.length) {
-      return;
-    }
     [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [
       this.itemOrder[targetIndex],
       this.itemOrder[currentIndex],

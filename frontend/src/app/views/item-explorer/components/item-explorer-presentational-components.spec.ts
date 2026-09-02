@@ -99,6 +99,37 @@ describe('ItemExplorer presentational components', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
   });
 
+  it('marks header and collection modes as semantic state buttons', () => {
+    expect(headerTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
+    expect(headerTemplate).toContain('[attr.aria-pressed]="vm.sortField === \'__manual__\'"');
+    expect(headerTemplate).toContain('(click)="vm.toggleManualOrderMode()"');
+    expect(headerTemplate).toContain('Manuell sortieren');
+    expect(headerTemplate).not.toContain('btn-state-indicator');
+    expect(collectionsTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'all\'"',
+    );
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'active\'"',
+    );
+    expect(collectionsTemplate).not.toContain('btn-state-indicator');
+  });
+
+  it('links the metadata disclosure to its controlled drawer', () => {
+    expect(metadataTemplate).toContain('id="item-explorer-metadata-drawer"');
+  });
+
+  it('only shows movement controls in manual mode and binds their availability', () => {
+    const manualControls = headerTemplate.match(
+      /@if \(vm.sortField === '__manual__'\) \{([\s\S]*?)\n {6}\}/,
+    )?.[1];
+    expect(manualControls).toBeDefined();
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(-1)"');
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(1)"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach oben verschieben"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach unten verschieben"');
+  });
+
   it('renders collection details as an accessible paginated modal', () => {
     expect(collectionsTemplate).toContain('role="dialog"');
     expect(collectionsTemplate).toContain('aria-modal="true"');

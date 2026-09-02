@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
@@ -31,16 +31,23 @@ function createApiStub() {
   };
 }
 
+function createAuthStub(overrides: Record<string, unknown> = {}) {
+  return {
+    isLoggedIn: false,
+    isAdmin: false,
+    currentUser$: of(null),
+    hasAcpRole: vi.fn().mockReturnValue(false),
+    ...overrides,
+  };
+}
+
 describe('AcpStartComponent', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('shows manager return breadcrumb and action for ACP managers', () => {
     const route = createRouteStub();
     const api = createApiStub();
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(true),
-    };
+    const auth = createAuthStub({ hasAcpRole: vi.fn().mockReturnValue(true) });
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -56,10 +63,7 @@ describe('AcpStartComponent', () => {
   it('keeps public breadcrumbs for non-managers', () => {
     const route = createRouteStub();
     const api = createApiStub();
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub();
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -84,10 +88,7 @@ describe('AcpStartComponent', () => {
         }),
       ),
     };
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub();
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -108,10 +109,7 @@ describe('AcpStartComponent', () => {
         }),
       ),
     };
-    const auth = {
-      isLoggedIn: true,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub({ isLoggedIn: true });
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -131,12 +129,22 @@ describe('AcpStartComponent', () => {
           sequences: [],
         }),
       ),
-      exportCommentsXlsx: vi.fn(),
+      exportMyReviewCommentsCsv: vi.fn(),
+      exportMyReviewCommentsXlsx: vi.fn(),
+      exportAllReviewCommentsXlsx: vi.fn(),
+      getMyComments: vi.fn().mockReturnValue(
+        of([
+          {
+            id: 'comment-1',
+            targetType: 'ITEM',
+            unitId: 'unit-1',
+            itemId: 'item-1',
+            commentText: 'Prüfen',
+          },
+        ]),
+      ),
     };
-    const auth = {
-      isLoggedIn: true,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub({ isLoggedIn: true });
 
     await TestBed.configureTestingModule({
       imports: [AcpStartComponent],
@@ -155,16 +163,49 @@ describe('AcpStartComponent', () => {
     const itemCommentLink = Array.from(element.querySelectorAll('a')).find((link) =>
       link.textContent?.includes('Item-Kommentare im Item-Explorer'),
     );
-    const exportButton = Array.from(element.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Kommentare exportieren (XLSX)'),
+    const exportButtons = Array.from(element.querySelectorAll('button')).filter((button) =>
+      button.textContent?.includes('Meine Kommentare'),
     );
 
     expect(element.textContent).toContain(
       'Item-Kommentare werden direkt beim ausgewählten Item im Item-Explorer erfasst.',
     );
     expect(itemCommentLink?.getAttribute('href')).toBe('/view/acp-1/item-explorer');
-    expect(exportButton).toBeDefined();
+    expect(exportButtons).toHaveLength(2);
+    expect(element.textContent).toContain('1 von 1 eigenen Kommentaren');
+    const deepLink = Array.from(element.querySelectorAll('a')).find((link) =>
+      link.textContent?.includes('Öffnen'),
+    );
+    expect(deepLink?.getAttribute('href')).toBe(
+      '/view/acp-1/item-explorer?unitId=unit-1&itemId=item-1&comments=open',
+    );
     expect(element.textContent).not.toContain('Kommentar hinzufügen');
     expect(element.querySelector('app-comment-dialog')).toBeNull();
+  });
+
+  it('reveals the manager export after a delayed profile load', () => {
+    const route = createRouteStub();
+    const api = createApiStub();
+    const currentUser$ = new BehaviorSubject<any>(null);
+    let managerProfileLoaded = false;
+    const auth = createAuthStub({
+      isLoggedIn: true,
+      currentUser$,
+      hasAcpRole: vi.fn(() => managerProfileLoaded),
+    });
+    const component = new AcpStartComponent(route as any, api as any, auth as any);
+
+    component.ngOnInit();
+    expect(component.canExportAllComments).toBe(false);
+
+    managerProfileLoaded = true;
+    currentUser$.next({ acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }] });
+
+    expect(component.canExportAllComments).toBe(true);
+    expect(component.breadcrumbs).toContainEqual({
+      label: 'Verwaltung',
+      route: ['/manage', 'acp-1'],
+    });
+    component.ngOnDestroy();
   });
 });

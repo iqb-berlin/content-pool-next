@@ -178,6 +178,224 @@ describe('ItemExplorerFacade role initialization', () => {
   });
 });
 
+describe('ItemExplorerFacade comment counts', () => {
+  const item = (rowKey: string, itemId: string, subId = '') =>
+    ({
+      rowKey,
+      uuid: rowKey,
+      unitId: 'unit-1',
+      itemId,
+      subId,
+      unitLabel: 'Unit 1',
+      description: '',
+      variableId: itemId,
+      metadata: {},
+    }) as any;
+
+  it('shares one item count across partial-credit rows and filters by status', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    component.items = [
+      item('row-a', 'item-1', '0'),
+      item('row-b', 'item-1', '1'),
+      item('row-c', 'item-2'),
+    ];
+    component.filteredItems = [...component.items];
+    component.itemCommentCountsAvailable = true;
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 3 });
+
+    expect(component.getItemCommentCount(component.items[0])).toBe(3);
+    expect(component.getItemCommentCount(component.items[1])).toBe(3);
+    expect(component.getItemCommentCount(item('row-prefixed', 'unit-1_item-1'))).toBe(3);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-a', 'row-b']);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-c']);
+  });
+
+  it('replaces counts from the batch endpoint and refreshes the selected thread', () => {
+    const getItemCommentCounts = vi.fn().mockReturnValue(
+      of({
+        revision: '1',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }],
+      }),
+    );
+    const component = createFacade({ api: { getItemCommentCounts } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    component.refreshItemComments();
+
+    expect(getItemCommentCounts).toHaveBeenCalledWith('acp-1');
+    expect(component.itemCommentRefreshToken).toBe(1);
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 2 });
+  });
+
+  it('does not apply a persisted comment filter when comments are unavailable', () => {
+    const component = createFacade();
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+    component.itemCommentsEnabled = false;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('does not let an older batch response overwrite a newer thread count', () => {
+    const response = new Subject<any>();
+    const component = createFacade({
+      api: { getItemCommentCounts: vi.fn().mockReturnValue(response) },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.refreshItemComments(false);
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 1 });
+  });
+
+  it('keeps comment filters inactive when the initial count request fails', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+
+    component.refreshItemComments(false);
+
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(component.itemCommentCountsError).toContain('nicht geladen');
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('invalidates private counts and old responses when the token identity changes', () => {
+    const firstResponse = new Subject<any>();
+    const secondResponse = new Subject<any>();
+    const getItemCommentCounts = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse)
+      .mockReturnValueOnce(secondResponse);
+    let token = createJwt('user-a');
+    const component = createFacade({
+      api: { getItemCommentCounts },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    (component as any).syncItemCommentCountSession();
+    token = createJwt('user-b');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.itemCommentCounts).toEqual({});
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(getItemCommentCounts).toHaveBeenCalledTimes(2);
+
+    firstResponse.next({
+      revision: 'old-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 4 }],
+    });
+    expect(component.itemCommentCounts).toEqual({});
+
+    secondResponse.next({
+      revision: 'new-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-2', count: 1 }],
+    });
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-2': 1 });
+  });
+
+  it('ignores a thread count emitted for an earlier comment refresh session', () => {
+    const component = createFacade();
+    component.itemCommentRefreshToken = 2;
+
+    component.updateItemCommentCount({
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      count: 3,
+      refreshToken: 1,
+    });
+
+    expect(component.itemCommentCounts).toEqual({});
+  });
+
+  it('adds the comment column after hydrating a configured shared layout', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: ['system:itemId'],
+        order: ['system:itemId'],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toContain('system:comments');
+    expect(component.metadataSettings.layout?.order).toContain('system:comments');
+  });
+
+  it('preserves an explicitly empty shared column selection during layout migration', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: [],
+        order: [],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toEqual([]);
+    expect(component.metadataSettings.layout?.order).toEqual([]);
+    expect(component.metadataSettings.layout?.schemaVersion).toBe(2);
+  });
+
+  it('resolves a filtered deep link and consumes its automatic-open state on navigation', () => {
+    const component = createFacade();
+    (component as any).previewCoordinator.select = vi.fn();
+    const target = item('row-target', 'item-1');
+    const other = item('row-other', 'item-2');
+    component.items = [target, other];
+    component.filterText = 'does-not-match';
+    component.applyFilter(false);
+    component.commentThreadInitiallyOpen = true;
+    (component as any).initialCommentTarget = {
+      unitId: 'unit-1',
+      itemId: 'item-1',
+    };
+
+    (component as any).selectInitialCommentTarget();
+
+    expect(component.filterText).toBe('');
+    expect(component.selectedItem?.rowKey).toBe('row-target');
+    expect(component.commentThreadInitiallyOpen).toBe(true);
+
+    component.selectItem(other, 1);
+
+    expect(component.commentThreadInitiallyOpen).toBe(false);
+  });
+});
+
 function createExplorerEnvelope(
   overrides?: Partial<{
     canEdit: boolean;

@@ -68,6 +68,7 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(panel.getByText('E2E Hauptkommentar')).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(1);
+  await expect(page.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
 
   await panel.getByRole('button', { name: 'Bearbeiten' }).click();
   await panel.locator('.edit-form textarea').fill('E2E Hauptkommentar geändert');
@@ -150,6 +151,7 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(viewerPanel.getByText('E2E Antwort')).toBeVisible();
   await expect(page.getByRole('button', { name: /Kommentare \(2\)/ })).toBeVisible();
+  await expect(page.locator('tbody tr').first().getByLabel('2 Kommentare')).toBeVisible();
 
   await page.reload();
   await expect(page.locator('tbody tr')).toHaveCount(2);
@@ -167,6 +169,14 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(reloadedPanel.getByText('E2E Antwort')).toBeVisible();
   await reloadedPanel.getByRole('button', { name: 'Antworten einklappen' }).click();
   await expect(reloadedPanel.getByText('E2E Antwort')).not.toBeVisible();
+
+  const commentStatusFilter = page.getByLabel('Nach Kommentarstatus filtern');
+  await commentStatusFilter.selectOption('with');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await commentStatusFilter.selectOption('without');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await commentStatusFilter.selectOption('');
+  await expect(page.locator('tbody tr')).toHaveCount(2);
 });
 
 test('serializes delayed draft updates while typing into the item filter', async ({ page }) => {

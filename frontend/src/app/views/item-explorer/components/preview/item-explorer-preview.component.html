@@ -278,6 +278,9 @@
       [unitId]="vm.selectedItem.unitId"
       [itemId]="vm.selectedItem.itemId"
       [enabled]="vm.itemCommentsEnabled"
+      [refreshToken]="vm.itemCommentRefreshToken"
+      [initiallyOpen]="vm.commentThreadInitiallyOpen"
+      (countChanged)="vm.updateItemCommentCount($event)"
     />
   } @else {
     <div class="empty-state preview-empty">

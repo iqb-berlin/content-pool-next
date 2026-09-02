@@ -1,4 +1,12 @@
-import { Component, Input, OnChanges, OnDestroy, SimpleChanges } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil } from 'rxjs';
@@ -23,6 +31,14 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() unitId = '';
   @Input() itemId = '';
   @Input() enabled = false;
+  @Input() refreshToken = 0;
+  @Input() initiallyOpen = false;
+  @Output() countChanged = new EventEmitter<{
+    unitId: string;
+    itemId: string;
+    count: number;
+    refreshToken: number;
+  }>();
 
   open = false;
   loading = false;
@@ -34,6 +50,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   editText = '';
 
   private requestToken = 0;
+  private initialOpenConsumed = false;
   private threadRequest: Subscription | null = null;
   private readonly destroy$ = new Subject<void>();
   private readonly newDrafts = new Map<string, string>();
@@ -43,7 +60,9 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   constructor(private readonly api: ApiService) {}
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['acpId'] || changes['unitId'] || changes['itemId'] || changes['enabled']) {
+    const targetChanged =
+      changes['acpId'] || changes['unitId'] || changes['itemId'] || changes['enabled'];
+    if (targetChanged) {
       this.requestToken += 1;
       this.threadRequest?.unsubscribe();
       this.threadRequest = null;
@@ -52,7 +71,13 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       this.replyingTo = null;
       this.editingCommentId = null;
       this.error = '';
+      if (this.initiallyOpen && !this.initialOpenConsumed) {
+        this.open = true;
+        this.initialOpenConsumed = true;
+      }
       if (this.hasTarget) this.loadThread();
+    } else if (changes['refreshToken'] && !changes['refreshToken'].firstChange && this.hasTarget) {
+      this.loadThread();
     }
   }
 
@@ -119,6 +144,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     if (!this.hasTarget) return;
     this.threadRequest?.unsubscribe();
     const token = ++this.requestToken;
+    const refreshToken = this.refreshToken;
     this.loading = true;
     this.threadRequest = this.api
       .getItemCommentThread(this.acpId, this.unitId, this.itemId)
@@ -127,6 +153,12 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
         next: (snapshot) => {
           if (token !== this.requestToken) return;
           this.snapshot = snapshot;
+          this.countChanged.emit({
+            unitId: this.unitId,
+            itemId: this.itemId,
+            count: this.commentCount,
+            refreshToken,
+          });
           this.loading = false;
           this.threadRequest = null;
           if (!preserveError) this.error = '';

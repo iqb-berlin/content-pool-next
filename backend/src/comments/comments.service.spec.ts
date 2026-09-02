@@ -375,6 +375,248 @@ describe("CommentsService", () => {
     ]);
   });
 
+  it("loads visible item comment counts in one repository query and shares them across rows", async () => {
+    const createdAt = new Date("2026-01-01T10:00:00.000Z");
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        { unitId: "unit-1", itemId: "item-1" },
+        { unitId: "unit-1", itemId: "item-2" },
+      ],
+    });
+    commentRepository.find.mockResolvedValue([
+      {
+        id: "own",
+        acpId: "acp-1",
+        userId: "me",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+        createdAt,
+      },
+      {
+        id: "hidden",
+        acpId: "acp-1",
+        userId: "other",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+        createdAt,
+      },
+      {
+        id: "legacy",
+        acpId: "acp-1",
+        userId: "me",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-2",
+        unitId: null,
+        itemId: null,
+        createdAt,
+      },
+    ]);
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableCommenting: true,
+        commentTargets: [CommentTargetType.ITEM],
+        commentVisibilityMode: "PRIVATE",
+      },
+    });
+
+    const snapshot = await service.getItemCommentCounts("acp-1", {
+      userId: "me",
+      authorLabel: "ME",
+      isManager: false,
+    });
+
+    expect(snapshot.counts).toEqual([
+      { unitId: "unit-1", itemId: "item-1", count: 1 },
+      { unitId: "unit-1", itemId: "item-2", count: 1 },
+    ]);
+    expect(commentRepository.find).toHaveBeenCalledTimes(1);
+    expect(commentRepository.find).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        acpId: "acp-1",
+        targetType: CommentTargetType.ITEM,
+      }),
+    });
+  });
+
+  it("keeps personal review exports personal for manager identities", async () => {
+    const date = new Date("2026-01-01T10:00:00.000Z");
+    commentRepository.find.mockResolvedValue([
+      {
+        id: "mine",
+        acpId: "acp-1",
+        userId: "manager",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+        parentCommentId: null,
+        commentText: "=2+2",
+        authorLabel: "MA",
+        createdAt: date,
+        updatedAt: date,
+      },
+    ]);
+
+    const csv = await service.exportReviewCommentsCsv("acp-1", {
+      userId: "manager",
+    });
+
+    expect(commentRepository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: "manager" }),
+      }),
+    );
+    expect(csv.toString("utf8")).toContain('"\'=2+2"');
+    expect(csv.toString("utf8").startsWith("\uFEFF")).toBe(true);
+    await expect(service.exportReviewCommentsXlsx("acp-1", {})).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it("uses ACP labels and content order for the shared CSV and XLSX projection", async () => {
+    const date = new Date("2026-01-01T10:00:00.000Z");
+    acpRepository.findOne.mockResolvedValue({
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      acpIndex: {
+        assessmentParts: [
+          {
+            bookletModules: [
+              {
+                id: "booklet-2",
+                name: [{ lang: "de", value: "Booklet Zwei" }],
+              },
+            ],
+            units: [
+              {
+                id: "unit-2",
+                name: "Unit Zwei",
+                items: [
+                  { id: "item-2", name: "Item Zwei" },
+                  { id: "item-1", name: "Item Eins" },
+                ],
+              },
+              {
+                id: "unit-1",
+                name: "Unit Eins",
+                items: [{ id: "item-9", name: "Item Neun" }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
+    const comment = (
+      id: string,
+      targetType: CommentTargetType,
+      targetId: string,
+      commentText: string,
+      unitId?: string,
+      itemId?: string,
+    ) => ({
+      id,
+      acpId: "acp-1",
+      userId: "manager",
+      targetType,
+      targetId,
+      unitId: unitId || null,
+      itemId: itemId || null,
+      parentCommentId: null,
+      commentText,
+      createdAt: date,
+      updatedAt: date,
+    });
+    commentRepository.find.mockResolvedValue([
+      comment(
+        "unit-1-item",
+        CommentTargetType.ITEM,
+        "unit-1_item-9",
+        "Kommentar Unit 1",
+        "unit-1",
+        "item-9",
+      ),
+      comment(
+        "unit-2-item-1",
+        CommentTargetType.ITEM,
+        "unit-2_item-1",
+        "Kommentar Item 1",
+        "unit-2",
+        "item-1",
+      ),
+      comment(
+        "booklet",
+        CommentTargetType.TASK_SEQUENCE,
+        "booklet-2",
+        "Kommentar Booklet",
+      ),
+      comment(
+        "unit-2-item-2",
+        CommentTargetType.ITEM,
+        "unit-2_item-2",
+        "Kommentar Item 2",
+        "unit-2",
+        "item-2",
+      ),
+      comment("unit-2", CommentTargetType.UNIT, "unit-2", "Kommentar Unit 2"),
+    ]);
+
+    const csv = await service.exportReviewCommentsCsv("acp-1", {
+      userId: "manager",
+    });
+    const csvText = csv.toString("utf8");
+    expect(csvText).toContain('"Booklet-Bezeichnung"');
+    expect(csvText).toContain('"Unit-Bezeichnung"');
+    expect(csvText).toContain('"Item-Bezeichnung"');
+    expect(csvText).toContain('"Booklet Zwei"');
+    expect(csvText).toContain('"Unit Zwei"');
+    expect(csvText).toContain('"Item Zwei"');
+    expect(csvText.indexOf("Kommentar Booklet")).toBeLessThan(
+      csvText.indexOf("Kommentar Unit 2"),
+    );
+    expect(csvText.indexOf("Kommentar Unit 2")).toBeLessThan(
+      csvText.indexOf("Kommentar Item 2"),
+    );
+    expect(csvText.indexOf("Kommentar Item 2")).toBeLessThan(
+      csvText.indexOf("Kommentar Item 1"),
+    );
+    expect(csvText.indexOf("Kommentar Item 1")).toBeLessThan(
+      csvText.indexOf("Kommentar Unit 1"),
+    );
+
+    const xlsx = await service.exportReviewCommentsXlsx("acp-1", {
+      userId: "manager",
+    });
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(xlsx as any);
+    const sheet = workbook.getWorksheet("Kommentare")!;
+    expect(sheet.getRow(1).values).toEqual(
+      expect.arrayContaining([
+        "Booklet-Bezeichnung",
+        "Unit-Bezeichnung",
+        "Item-Bezeichnung",
+      ]),
+    );
+    const commentColumnIndex = (sheet.getRow(1).values as unknown[]).indexOf(
+      "Kommentar",
+    );
+    const xlsxComments = sheet
+      .getColumn(commentColumnIndex)
+      .values.slice(2)
+      .map(String);
+    expect(xlsxComments).toEqual([
+      "Kommentar Booklet",
+      "Kommentar Unit 2",
+      "Kommentar Item 2",
+      "Kommentar Item 1",
+      "Kommentar Unit 1",
+    ]);
+  });
+
   it("does not transfer comment ownership to a recreated credential with the same username", async () => {
     const date = new Date("2026-01-01T10:00:00.000Z");
     commentRepository.find.mockResolvedValue([

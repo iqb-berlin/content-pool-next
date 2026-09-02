@@ -5113,6 +5113,7 @@ describe('ItemExplorerFacade', () => {
         bookletOccurrences: [
           { booklet: 'B1', position: 5 },
           { booklet: 'B2', position: 2 },
+          { booklet: 'B3', position: null },
         ],
       },
     ];
@@ -5133,6 +5134,17 @@ describe('ItemExplorerFacade', () => {
     component.columnFilters['booklet'] = 'B2';
     component.applyFilter(false);
     expect(component.filteredItems).toHaveLength(1);
+
+    component.columnFilters = { booklet: 'B3' };
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+    expect(
+      component.getMetadataColumnDisplayValue(component.items[0], component.allColumns[2]),
+    ).toBe('5 | 2 | ');
+
+    component.columnFilters = { booklet: 'B3', bookletPosition: '1..10' };
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
   });
 
   it('calculates combined collection time once per item and unit', () => {
@@ -5810,14 +5822,14 @@ describe('ItemExplorerFacade', () => {
       fields: ['bista', 'infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
-        { booklet: 'B2', position: 5 },
+        { booklet: 'B2', position: null },
       ],
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
       'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Booklet / Position',
     );
-    expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
+    expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2');
     const clearedBooklets = {
       fields: ['booklet', 'position'],
       bookletOccurrences: [],
@@ -5874,7 +5886,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -5888,7 +5900,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: false,
@@ -5900,7 +5912,7 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade({ api: { uploadItemParameters, getFileItemList } });
     component.acpId = 'acp-1';
     component.explorerVersion = 7;
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 
@@ -5978,7 +5990,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -5990,7 +6002,7 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 7;
     vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockReturnValue(reload);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 
@@ -6024,7 +6036,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -6036,7 +6048,7 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 7;
     vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockResolvedValue(false);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 

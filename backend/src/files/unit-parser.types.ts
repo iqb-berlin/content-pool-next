@@ -51,7 +51,7 @@ export interface VomdItemData {
   textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences: Array<{ booklet: string; position: number }>;
+  bookletOccurrences: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
   rowNumber: number;
 }

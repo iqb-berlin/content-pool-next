@@ -32,7 +32,7 @@ export interface ItemData {
   textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
 }
 
@@ -281,7 +281,7 @@ export class ItemsService {
 
   private normalizeBookletOccurrences(
     value: unknown,
-  ): Array<{ booklet: string; position: number }> {
+  ): Array<{ booklet: string; position: number | null }> {
     if (!Array.isArray(value)) return [];
     return value
       .map((entry) => {
@@ -289,23 +289,36 @@ export class ItemsService {
           entry && typeof entry === "object" && "booklet" in entry
             ? String((entry as { booklet?: unknown }).booklet || "").trim()
             : "";
-        const position =
+        const rawPosition =
           entry && typeof entry === "object" && "position" in entry
-            ? Number((entry as { position?: unknown }).position)
-            : Number.NaN;
+            ? (entry as { position?: unknown }).position
+            : null;
+        const position =
+          rawPosition === null ||
+          rawPosition === undefined ||
+          rawPosition === ""
+            ? null
+            : Number(rawPosition);
         return { booklet, position };
       })
       .filter(
         (entry) =>
           entry.booklet.length > 0 &&
-          Number.isInteger(entry.position) &&
-          entry.position > 0,
+          (entry.position === null ||
+            (Number.isInteger(entry.position) && entry.position > 0)),
       )
-      .sort(
-        (left, right) =>
-          left.booklet.localeCompare(right.booklet, "de", { numeric: true }) ||
-          left.position - right.position,
-      );
+      .sort((left, right) => {
+        const bookletComparison = left.booklet.localeCompare(
+          right.booklet,
+          "de",
+          { numeric: true },
+        );
+        if (bookletComparison) return bookletComparison;
+        if (left.position === right.position) return 0;
+        if (left.position === null) return 1;
+        if (right.position === null) return -1;
+        return left.position - right.position;
+      });
   }
 
   /**

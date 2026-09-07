@@ -12,7 +12,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
   template: `
     <app-acp-manager-context />
 
-    <div class="page-header"><h1>Zugriffskonfiguration</h1></div>
+    <div class="page-header"><h1>Zugriff &amp; Funktionen</h1></div>
 
     <!-- Access Model -->
     <div class="card">

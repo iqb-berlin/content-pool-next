@@ -42,16 +42,19 @@ function createAuthStub(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AcpStartComponent', () => {
+  const router = { navigate: vi.fn().mockResolvedValue(true) };
+  beforeEach(() => router.navigate.mockClear());
   afterEach(() => TestBed.resetTestingModule());
 
-  it('shows manager return breadcrumb and action for ACP managers', () => {
+  it('redirects managers directly to the ACP overview', () => {
     const route = createRouteStub();
     const api = createApiStub();
     const auth = createAuthStub({ hasAcpRole: vi.fn().mockReturnValue(true) });
 
-    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    const component = new AcpStartComponent(router as any, route as any, api as any, auth as any);
     component.ngOnInit();
 
+    expect(router.navigate).toHaveBeenCalledWith(['/manage', 'acp-1'], { replaceUrl: true });
     expect(component.canManageAcp).toBe(true);
     expect(component.breadcrumbs).toEqual([
       { label: 'Assessment Content Pool', route: ['/'] },
@@ -65,9 +68,10 @@ describe('AcpStartComponent', () => {
     const api = createApiStub();
     const auth = createAuthStub();
 
-    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    const component = new AcpStartComponent(router as any, route as any, api as any, auth as any);
     component.ngOnInit();
 
+    expect(router.navigate).not.toHaveBeenCalled();
     expect(component.canManageAcp).toBe(false);
     expect(component.breadcrumbs).toEqual([
       { label: 'Assessment Content Pool', route: ['/'] },
@@ -90,7 +94,7 @@ describe('AcpStartComponent', () => {
     };
     const auth = createAuthStub();
 
-    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    const component = new AcpStartComponent(router as any, route as any, api as any, auth as any);
     component.ngOnInit();
 
     expect(api.getMyComments).not.toHaveBeenCalled();
@@ -111,7 +115,7 @@ describe('AcpStartComponent', () => {
     };
     const auth = createAuthStub({ isLoggedIn: true });
 
-    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    const component = new AcpStartComponent(router as any, route as any, api as any, auth as any);
     component.ngOnInit();
 
     expect(api.getMyComments).not.toHaveBeenCalled();
@@ -182,14 +186,16 @@ describe('AcpStartComponent', () => {
       currentUser$,
       hasAcpRole: vi.fn(() => managerProfileLoaded),
     });
-    const component = new AcpStartComponent(route as any, api as any, auth as any);
+    const component = new AcpStartComponent(router as any, route as any, api as any, auth as any);
 
     component.ngOnInit();
+    expect(router.navigate).not.toHaveBeenCalled();
     expect(component.canManageAcp).toBe(false);
 
     managerProfileLoaded = true;
     currentUser$.next({ acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }] });
 
+    expect(router.navigate).toHaveBeenCalledWith(['/manage', 'acp-1'], { replaceUrl: true });
     expect(component.canManageAcp).toBe(true);
     expect(component.breadcrumbs).toContainEqual({
       label: 'Verwaltung',

@@ -35,7 +35,7 @@ test('aligns roles and supports inline changes, errors, adding and removing peop
   );
   await page.route(`**/api/acp/${acpId}/roles/third`, (route) => route.fulfill({ status: 204 }));
   await page.goto(`/manage/${acpId}`);
-  const section = page.getByRole('region', { name: 'Rollenzuweisungen' });
+  const section = page.getByRole('region', { name: 'Personen & Rollen' });
   const rows = section.locator('tbody tr');
   await expect(rows).toHaveCount(2);
   const bounds = await section

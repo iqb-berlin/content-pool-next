@@ -96,7 +96,7 @@ describe('AcpStartComponent', () => {
     expect(api.getMyComments).not.toHaveBeenCalled();
   });
 
-  it('loads my comments for logged-in users when commenting is enabled', () => {
+  it('does not load comments on the start page for logged-in users', () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
@@ -114,10 +114,10 @@ describe('AcpStartComponent', () => {
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
 
-    expect(api.getMyComments).toHaveBeenCalledWith('acp-1');
+    expect(api.getMyComments).not.toHaveBeenCalled();
   });
 
-  it('links item comments to the Item Explorer without rendering the generic dialog', async () => {
+  it('offers the Item Explorer without a duplicate comment card or exports', async () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
@@ -160,30 +160,18 @@ describe('AcpStartComponent', () => {
     const fixture = TestBed.createComponent(AcpStartComponent);
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
-    const itemCommentLink = Array.from(element.querySelectorAll('a')).find((link) =>
-      link.textContent?.includes('Item-Kommentare im Item-Explorer'),
-    );
-    const exportButtons = Array.from(element.querySelectorAll('button')).filter((button) =>
-      button.textContent?.includes('Meine Kommentare'),
-    );
-
-    expect(element.textContent).toContain(
-      'Item-Kommentare werden direkt beim ausgewählten Item im Item-Explorer erfasst.',
-    );
-    expect(itemCommentLink?.getAttribute('href')).toBe('/view/acp-1/item-explorer');
-    expect(exportButtons).toHaveLength(2);
-    expect(element.textContent).toContain('1 von 1 eigenen Kommentaren');
-    const deepLink = Array.from(element.querySelectorAll('a')).find((link) =>
-      link.textContent?.includes('Öffnen'),
-    );
-    expect(deepLink?.getAttribute('href')).toBe(
-      '/view/acp-1/item-explorer?unitId=unit-1&itemId=item-1&comments=open',
-    );
-    expect(element.textContent).not.toContain('Kommentar hinzufügen');
+    const explorerLink = element.querySelector('a[href="/view/acp-1/item-explorer"]');
+    expect(explorerLink).not.toBeNull();
+    expect(element.textContent).not.toContain('Meine Kommentare');
+    expect(element.textContent).not.toContain('Prüfen');
+    expect(
+      Array.from(element.querySelectorAll('h3')).map((heading) => heading.textContent),
+    ).not.toContain('Kommentare');
+    expect(api.getMyComments).not.toHaveBeenCalled();
     expect(element.querySelector('app-comment-dialog')).toBeNull();
   });
 
-  it('reveals the manager export after a delayed profile load', () => {
+  it('reveals manager navigation after a delayed profile load', () => {
     const route = createRouteStub();
     const api = createApiStub();
     const currentUser$ = new BehaviorSubject<any>(null);
@@ -196,12 +184,12 @@ describe('AcpStartComponent', () => {
     const component = new AcpStartComponent(route as any, api as any, auth as any);
 
     component.ngOnInit();
-    expect(component.canExportAllComments).toBe(false);
+    expect(component.canManageAcp).toBe(false);
 
     managerProfileLoaded = true;
     currentUser$.next({ acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }] });
 
-    expect(component.canExportAllComments).toBe(true);
+    expect(component.canManageAcp).toBe(true);
     expect(component.breadcrumbs).toContainEqual({
       label: 'Verwaltung',
       route: ['/manage', 'acp-1'],

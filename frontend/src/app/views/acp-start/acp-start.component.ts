@@ -1,6 +1,6 @@
 import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { Observable, Subject, takeUntil } from 'rxjs';
+import { Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -87,75 +87,6 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
                 <span class="download-info">Unit-Download verfügbar in Aufgabenansicht</span>
               }
             </div>
-          </div>
-        }
-
-        <!-- Commenting info -->
-        @if (fc.enableCommenting) {
-          <div class="card section-card">
-            <div class="section-icon">💬</div>
-            <h3>Kommentare</h3>
-            @if (itemCommentsEnabled) {
-              <p class="comment-context-hint">
-                Item-Kommentare werden direkt beim ausgewählten Item im Item-Explorer erfasst.
-              </p>
-              <a
-                [routerLink]="['/view', acpId, 'item-explorer']"
-                class="btn btn-outline btn-sm item-comment-link"
-              >
-                Item-Kommentare im Item-Explorer
-              </a>
-            }
-            @if (isLoggedIn) {
-              <div class="comment-actions">
-                <button
-                  class="btn btn-outline btn-sm"
-                  (click)="loadMyComments()"
-                  [disabled]="commentsLoading"
-                >
-                  {{ commentsLoading ? 'Aktualisierung läuft …' : '↻ Aktualisieren' }}
-                </button>
-                <button class="btn btn-outline btn-sm" (click)="exportMyCommentsCsv()">
-                  Meine Kommentare (CSV)
-                </button>
-                <button class="btn btn-outline btn-sm" (click)="exportMyCommentsXlsx()">
-                  Meine Kommentare (XLSX)
-                </button>
-                @if (canExportAllComments) {
-                  <button class="btn btn-outline btn-sm" (click)="exportAllCommentsXlsx()">
-                    Alle Kommentare (XLSX)
-                  </button>
-                }
-              </div>
-              @if (commentsError) {
-                <p class="comment-error" role="alert">{{ commentsError }}</p>
-              }
-              @if (myComments.length > 0) {
-                <div class="my-comments">
-                  <h4>
-                    {{ Math.min(3, myComments.length) }} von {{ myComments.length }} eigenen
-                    Kommentaren
-                  </h4>
-                  @for (c of myComments.slice(0, 3); track c.id) {
-                    <div class="comment-summary">
-                      <span class="badge badge-info">{{ c.targetType }}</span>
-                      <span class="comment-text">{{ c.commentText }}</span>
-                      @if (c.targetType === 'ITEM' && c.unitId && c.itemId) {
-                        <a
-                          [routerLink]="['/view', acpId, 'item-explorer']"
-                          [queryParams]="{ unitId: c.unitId, itemId: c.itemId, comments: 'open' }"
-                          class="comment-deep-link"
-                        >
-                          Öffnen
-                        </a>
-                      }
-                    </div>
-                  }
-                </div>
-              }
-            } @else {
-              <p class="download-info">Für Kommentare bitte anmelden.</p>
-            }
           </div>
         }
       </div>
@@ -253,49 +184,6 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         font-size: 0.8rem;
         color: var(--color-text-secondary);
       }
-
-      .comment-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-top: 12px;
-      }
-      .comment-context-hint {
-        margin-bottom: 10px;
-      }
-      .item-comment-link {
-        align-self: flex-start;
-      }
-      .my-comments {
-        margin-top: 16px;
-        border-top: 1px solid var(--color-border);
-        padding-top: 12px;
-      }
-      .my-comments h4 {
-        font-size: 0.85rem;
-        margin-bottom: 8px;
-        color: var(--color-text-secondary);
-      }
-      .comment-summary {
-        font-size: 0.8rem;
-        padding: 4px 0;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .comment-text {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .comment-error {
-        color: var(--color-danger-text);
-        font-size: 0.85rem;
-      }
-      .comment-deep-link {
-        margin-left: auto;
-        white-space: nowrap;
-      }
     `,
   ],
 })
@@ -305,10 +193,6 @@ export class AcpStartComponent implements OnInit, OnDestroy {
   fc: any = {}; // feature config
   breadcrumbs: BreadcrumbItem[] = [];
   canManageAcp = false;
-  myComments: any[] = [];
-  commentsLoading = false;
-  commentsError = '';
-  readonly Math = Math;
   private readonly destroy$ = new Subject<void>();
 
   constructor(
@@ -316,20 +200,6 @@ export class AcpStartComponent implements OnInit, OnDestroy {
     @Inject(ApiService) private api: ApiService,
     @Inject(AuthService) private auth: AuthService,
   ) {}
-
-  get isLoggedIn(): boolean {
-    return this.auth.isLoggedIn;
-  }
-
-  get itemCommentsEnabled(): boolean {
-    if (!this.fc.enableCommenting) return false;
-    const targets = Array.isArray(this.fc.commentTargets) ? this.fc.commentTargets : [];
-    return targets.length === 0 || targets.includes('ITEM');
-  }
-
-  get canExportAllComments(): boolean {
-    return this.canManageAcp || this.auth.isAdmin;
-  }
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
@@ -345,56 +215,12 @@ export class AcpStartComponent implements OnInit, OnDestroy {
         this.data = d;
         this.fc = d?.featureConfig || {};
         this.updateBreadcrumbs();
-
-        if (this.fc.enableCommenting && this.isLoggedIn) {
-          this.loadMyComments();
-        }
       });
   }
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
-  }
-
-  loadMyComments() {
-    this.commentsLoading = true;
-    this.commentsError = '';
-    this.api
-      .getMyComments(this.acpId)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (comments) => {
-          this.myComments = comments;
-          this.commentsLoading = false;
-        },
-        error: () => {
-          this.commentsLoading = false;
-          this.commentsError = 'Kommentare konnten nicht aktualisiert werden.';
-        },
-      });
-  }
-
-  exportMyCommentsCsv() {
-    this.downloadCommentExport(
-      this.api.exportMyReviewCommentsCsv(this.acpId),
-      `comments-${this.acpId}-mine.csv`,
-    );
-  }
-
-  exportMyCommentsXlsx() {
-    this.downloadCommentExport(
-      this.api.exportMyReviewCommentsXlsx(this.acpId),
-      `comments-${this.acpId}-mine.xlsx`,
-    );
-  }
-
-  exportAllCommentsXlsx() {
-    if (!this.canExportAllComments) return;
-    this.downloadCommentExport(
-      this.api.exportAllReviewCommentsXlsx(this.acpId),
-      `comments-${this.acpId}-all.xlsx`,
-    );
   }
 
   downloadIndex() {
@@ -425,23 +251,6 @@ export class AcpStartComponent implements OnInit, OnDestroy {
       if (typeof value.value === 'string') return value.value;
     }
     return '';
-  }
-
-  private downloadCommentExport(request: Observable<Blob>, fileName: string): void {
-    request.pipe(takeUntil(this.destroy$)).subscribe({
-      next: (blob: Blob) => {
-        if (!blob?.size) return;
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = fileName;
-        anchor.click();
-        URL.revokeObjectURL(url);
-      },
-      error: () => {
-        this.commentsError = 'Kommentare konnten nicht exportiert werden.';
-      },
-    });
   }
 
   private updateManagerState(): void {

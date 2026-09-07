@@ -602,13 +602,8 @@ export class ItemExplorerFacade implements OnDestroy {
 
   getItemCommentCount(item?: ReadonlyExplorerItem | null): number {
     if (!item) return 0;
-    const exact = this.itemCommentCounts[this.itemCommentTargetKey(item.unitId, item.itemId)];
-    if (exact !== undefined) return exact;
-    const prefix = `${item.unitId}_`;
-    const alternateItemId = item.itemId.startsWith(prefix)
-      ? item.itemId.slice(prefix.length)
-      : `${prefix}${item.itemId}`;
-    return this.itemCommentCounts[this.itemCommentTargetKey(item.unitId, alternateItemId)] || 0;
+    const key = this.resolveItemCommentCountKey(item.unitId, item.itemId, this.itemCommentCounts);
+    return this.itemCommentCounts[key] || 0;
   }
 
   updateItemCommentCount(event: {
@@ -620,25 +615,13 @@ export class ItemExplorerFacade implements OnDestroy {
     if (event.refreshToken !== undefined && event.refreshToken !== this.itemCommentRefreshToken) {
       return;
     }
-    const exactKey = this.itemCommentTargetKey(event.unitId, event.itemId);
-    const prefix = `${event.unitId}_`;
-    const alternateItemId = event.itemId.startsWith(prefix)
-      ? event.itemId.slice(prefix.length)
-      : `${prefix}${event.itemId}`;
-    const alternateKey = this.itemCommentTargetKey(event.unitId, alternateItemId);
-    const key = Object.prototype.hasOwnProperty.call(this.itemCommentCounts, exactKey)
-      ? exactKey
-      : Object.prototype.hasOwnProperty.call(this.itemCommentCounts, alternateKey)
-        ? alternateKey
-        : exactKey;
+    const key = this.itemCommentTargetKey(event.unitId, event.itemId);
     const count = Math.max(0, Number(event.count) || 0);
-    if ((this.itemCommentCounts[key] || 0) === count) return;
+    // Even an unchanged count is a newer observation than an in-flight batch.
     this.itemCommentCountStateVersion += 1;
     this.itemCommentCountChangeVersions.set(key, this.itemCommentCountStateVersion);
-    const next = { ...this.itemCommentCounts };
-    if (count > 0) next[key] = count;
-    else delete next[key];
-    this.itemCommentCounts = next;
+    if (this.itemCommentCounts[key] === count) return;
+    this.itemCommentCounts = { ...this.itemCommentCounts, [key]: count };
     this.applyFilter(false);
   }
 
@@ -656,15 +639,14 @@ export class ItemExplorerFacade implements OnDestroy {
         next: (snapshot) => {
           if (token !== this.itemCommentCountsRequestToken) return;
           const nextCounts = Object.fromEntries(
-            (snapshot.counts || [])
-              .filter((entry) => entry.count > 0)
-              .map((entry) => [this.itemCommentTargetKey(entry.unitId, entry.itemId), entry.count]),
+            (snapshot.counts || []).map((entry) => [
+              this.itemCommentTargetKey(entry.unitId, entry.itemId),
+              entry.count,
+            ]),
           );
           for (const [key, changeVersion] of this.itemCommentCountChangeVersions) {
             if (changeVersion > stateVersion) {
-              const currentCount = this.itemCommentCounts[key] || 0;
-              if (currentCount > 0) nextCounts[key] = currentCount;
-              else delete nextCounts[key];
+              nextCounts[key] = this.itemCommentCounts[key] || 0;
             } else {
               this.itemCommentCountChangeVersions.delete(key);
             }
@@ -6870,6 +6852,20 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     return tags;
+  }
+
+  private resolveItemCommentCountKey(
+    unitId: string,
+    itemId: string,
+    counts: Record<string, number>,
+  ): string {
+    const exactKey = this.itemCommentTargetKey(unitId, itemId);
+    if (Object.prototype.hasOwnProperty.call(counts, exactKey)) return exactKey;
+    const prefix = `${unitId}_`;
+    // Match the backend: exact canonical ID first, then a unit-prefixed request alias.
+    if (!itemId.startsWith(prefix)) return exactKey;
+    const alternateKey = this.itemCommentTargetKey(unitId, itemId.slice(prefix.length));
+    return Object.prototype.hasOwnProperty.call(counts, alternateKey) ? alternateKey : exactKey;
   }
 
   private itemCommentTargetKey(unitId: string, itemId: string): string {

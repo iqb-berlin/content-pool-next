@@ -436,6 +436,7 @@ export interface Comment {
 }
 
 export interface CommentThreadSnapshot {
+  target: { unitId: string; itemId: string };
   revision: string;
   visibilityMode: 'PRIVATE' | 'SHARED';
   comments: Comment[];

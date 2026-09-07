@@ -40,6 +40,7 @@ export interface CommentView {
 }
 
 export interface CommentThreadSnapshot {
+  target: { unitId: string; itemId: string };
   revision: string;
   visibilityMode: CommentVisibilityMode;
   comments: CommentView[];
@@ -221,6 +222,7 @@ export class CommentsService {
     const responseIds = new Set(responseComments.map((comment) => comment.id));
 
     return {
+      target: { unitId: target.unitId, itemId: target.itemId },
       revision: this.buildRevision(responseComments, visibilityMode),
       visibilityMode,
       comments: responseComments.map((comment) =>
@@ -259,18 +261,7 @@ export class CommentsService {
         entry,
       ]),
     );
-    const legacyOwners = new Map<string, Set<string>>();
-    for (const entry of catalog) {
-      const key = this.itemCatalogKey(entry.unitId, entry.itemId);
-      for (const alias of [
-        entry.itemId,
-        this.legacyItemTargetId(entry.unitId, entry.itemId),
-      ]) {
-        const owners = legacyOwners.get(alias) || new Set<string>();
-        owners.add(key);
-        legacyOwners.set(alias, owners);
-      }
-    }
+    const legacyTargets = this.buildLegacyItemTargets(catalog);
 
     const counts = new Map<string, number>();
     for (const comment of comments) {
@@ -281,19 +272,21 @@ export class CommentsService {
         comment.unitId && comment.itemId
           ? this.itemCatalogKey(comment.unitId, comment.itemId)
           : "";
-      if (!key) {
-        const owners = legacyOwners.get(comment.targetId);
-        key = owners?.size === 1 ? [...owners][0] : "";
+      if (!key && comment.unitId == null) {
+        const target = legacyTargets.get(comment.targetId);
+        key = target ? this.itemCatalogKey(target.unitId, target.itemId) : "";
       }
       if (!key || !catalogByKey.has(key)) continue;
       counts.set(key, (counts.get(key) || 0) + 1);
     }
 
-    const result = [...counts]
-      .map(([key, count]) => {
-        const entry = catalogByKey.get(key)!;
-        return { unitId: entry.unitId, itemId: entry.itemId, count };
-      })
+    // Zero counts retain the complete canonical catalog for client-side alias resolution.
+    const result = catalog
+      .map((entry) => ({
+        unitId: entry.unitId,
+        itemId: entry.itemId,
+        count: counts.get(this.itemCatalogKey(entry.unitId, entry.itemId)) || 0,
+      }))
       .sort(
         (left, right) =>
           left.unitId.localeCompare(right.unitId, undefined, {
@@ -723,17 +716,35 @@ export class CommentsService {
       target.unitId,
       target.itemId,
     );
-    const legacyTargetOwners = catalog.filter(
-      (item) =>
-        item.itemId === legacyTargetId ||
-        this.legacyItemTargetId(item.unitId, item.itemId) === legacyTargetId,
-    );
-    const legacyTargetIsUnique = legacyTargetOwners.length === 1;
+    const legacyTargetIsUnique =
+      this.buildLegacyItemTargets(catalog).get(legacyTargetId) === target;
 
     return {
       ...target,
       legacyTargetIds: legacyTargetIsUnique ? [legacyTargetId] : [],
     };
+  }
+
+  private buildLegacyItemTargets(
+    catalog: ItemCatalogEntry[],
+  ): Map<string, ItemCatalogEntry> {
+    const owners = new Map<string, Set<ItemCatalogEntry>>();
+    for (const entry of catalog) {
+      for (const alias of [
+        entry.itemId,
+        this.legacyItemTargetId(entry.unitId, entry.itemId),
+      ]) {
+        const entries = owners.get(alias) || new Set<ItemCatalogEntry>();
+        entries.add(entry);
+        owners.set(alias, entries);
+      }
+    }
+    const targets = new Map<string, ItemCatalogEntry>();
+    for (const entry of catalog) {
+      const legacyId = this.legacyItemTargetId(entry.unitId, entry.itemId);
+      if (owners.get(legacyId)?.size === 1) targets.set(legacyId, entry);
+    }
+    return targets;
   }
 
   private async getItemCatalog(acpId: string): Promise<ItemCatalogEntry[]> {

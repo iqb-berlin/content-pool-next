@@ -7,7 +7,14 @@ function createComponent() {
   const api = {
     getItemCommentThread: vi
       .fn()
-      .mockReturnValue(of({ revision: '1', visibilityMode: 'SHARED', comments: [] })),
+      .mockReturnValue(
+        of({
+          revision: '1',
+          target: { unitId: 'unit-1', itemId: 'item-1' },
+          visibilityMode: 'SHARED',
+          comments: [],
+        }),
+      ),
     createItemComment: vi.fn().mockReturnValue(of({ id: 'created' })),
     updateItemComment: vi.fn().mockReturnValue(of({ id: 'updated' })),
     deleteItemComment: vi.fn().mockReturnValue(of({ success: true })),
@@ -39,8 +46,18 @@ describe('ItemCommentThreadComponent', () => {
     component.itemId = 'item-2';
     component.loadThread();
     expect(first.observed).toBe(false);
-    first.next({ revision: 'old', visibilityMode: 'SHARED', comments: [{ id: 'old' }] });
-    second.next({ revision: 'new', visibilityMode: 'SHARED', comments: [{ id: 'new' }] });
+    first.next({
+      revision: 'old',
+      target: { unitId: 'unit-1', itemId: 'item-1' },
+      visibilityMode: 'SHARED',
+      comments: [{ id: 'old' }],
+    });
+    second.next({
+      revision: 'new',
+      target: { unitId: 'unit-1', itemId: 'item-1' },
+      visibilityMode: 'SHARED',
+      comments: [{ id: 'new' }],
+    });
 
     expect(component.snapshot?.revision).toBe('new');
     expect(api.getItemCommentThread).toHaveBeenNthCalledWith(1, 'acp-1', 'unit-1', 'item-1');
@@ -51,14 +68,24 @@ describe('ItemCommentThreadComponent', () => {
   it('replaces the previous snapshot on target changes without reloading on open', () => {
     const { component, api } = createComponent();
     const response = new Subject<any>();
-    component.snapshot = { revision: 'old', visibilityMode: 'SHARED', comments: [] };
+    component.snapshot = {
+      revision: 'old',
+      target: { unitId: 'unit-1', itemId: 'item-1' },
+      visibilityMode: 'SHARED',
+      comments: [],
+    };
     api.getItemCommentThread.mockReturnValue(response);
     component.itemId = 'item-2';
 
     component.ngOnChanges({ itemId: {} as any });
 
     expect(component.snapshot).toBeNull();
-    response.next({ revision: 'new', visibilityMode: 'SHARED', comments: [] });
+    response.next({
+      revision: 'new',
+      target: { unitId: 'unit-1', itemId: 'item-1' },
+      visibilityMode: 'SHARED',
+      comments: [],
+    });
     expect(component.snapshot?.revision).toBe('new');
     expect(api.getItemCommentThread).toHaveBeenCalledTimes(1);
     component.toggleOpen();
@@ -83,6 +110,7 @@ describe('ItemCommentThreadComponent', () => {
     const { component } = createComponent();
     component.snapshot = {
       revision: '1',
+      target: { unitId: 'unit-1', itemId: 'item-1' },
       visibilityMode: 'PRIVATE',
       comments: [
         { id: 'root', parentCommentId: null, createdAt: '2026-01-01T10:00:00Z' },
@@ -105,6 +133,34 @@ describe('ItemCommentThreadComponent', () => {
     ]);
   });
 
+  it.each([
+    { requested: 'unit-1_item-1', canonical: 'item-1' },
+    { requested: 'unit-1_item-1', canonical: 'unit-1_item-1' },
+  ])(
+    'emits the canonical target $canonical for request $requested, even for an empty thread',
+    ({ requested, canonical }) => {
+      const { component, api } = createComponent();
+      component.itemId = requested;
+      const countChanged = vi.fn();
+      component.countChanged.subscribe(countChanged);
+      api.getItemCommentThread.mockReturnValue(
+        of({
+          target: { unitId: 'unit-1', itemId: canonical },
+          revision: 'empty',
+          visibilityMode: 'SHARED',
+          comments: [],
+        }),
+      );
+      component.loadThread();
+      expect(countChanged).toHaveBeenCalledWith({
+        unitId: 'unit-1',
+        itemId: canonical,
+        count: 0,
+        refreshToken: 0,
+      });
+    },
+  );
+
   it('emits the visible non-deleted count after refreshing a thread', () => {
     const { component, api } = createComponent();
     const countChanged = vi.fn();
@@ -112,6 +168,7 @@ describe('ItemCommentThreadComponent', () => {
     api.getItemCommentThread.mockReturnValue(
       of({
         revision: '2',
+        target: { unitId: 'unit-1', itemId: 'item-1' },
         visibilityMode: 'SHARED',
         comments: [{ id: 'visible' }, { id: 'deleted', isDeleted: true }],
       }),

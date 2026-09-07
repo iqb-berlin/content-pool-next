@@ -154,8 +154,8 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
           if (token !== this.requestToken) return;
           this.snapshot = snapshot;
           this.countChanged.emit({
-            unitId: this.unitId,
-            itemId: this.itemId,
+            unitId: snapshot.target.unitId,
+            itemId: snapshot.target.itemId,
             count: this.commentCount,
             refreshToken,
           });

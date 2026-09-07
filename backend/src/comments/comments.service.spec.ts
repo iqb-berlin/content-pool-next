@@ -375,6 +375,64 @@ describe("CommentsService", () => {
     ]);
   });
 
+  it.each([
+    { targetId: "item-1", collidingItem: false, expectedCount: 0 },
+    { targetId: "unit-1_item-1", collidingItem: false, expectedCount: 1 },
+    { targetId: "unit-1_item-1", collidingItem: true, expectedCount: 0 },
+  ])(
+    "matches thread and batch counts for legacy target $targetId (collision: $collidingItem)",
+    async ({ targetId, collidingItem, expectedCount }) => {
+      unitParserService.getItemListFromFiles.mockResolvedValue({
+        items: [
+          { unitId: "unit-1", itemId: "item-1" },
+          ...(collidingItem
+            ? [{ unitId: "unit-1", itemId: "unit-1_item-1" }]
+            : []),
+        ],
+      });
+      accessConfigRepository.findOne.mockResolvedValue({
+        featureConfig: {
+          enableCommenting: true,
+          commentVisibilityMode: "SHARED",
+        },
+      });
+      const comment = {
+        id: "legacy",
+        acpId: "acp-1",
+        userId: "me",
+        targetType: CommentTargetType.ITEM,
+        targetId,
+        unitId: null,
+        itemId: null,
+        deletedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+        version: 1,
+      };
+      commentRepository.find.mockImplementation(async ({ where }) => {
+        const alternatives = Array.isArray(where) ? where : [where];
+        return alternatives.some((clause: any) =>
+          Object.entries(clause).every(([key, value]: any) =>
+            value && typeof value === "object" && value._type === "isNull"
+              ? (comment as any)[key] == null
+              : (comment as any)[key] === value,
+          ),
+        )
+          ? [comment]
+          : [];
+      });
+      const actor = { userId: "me", authorLabel: "ME", isManager: false };
+      const counts = await service.getItemCommentCounts("acp-1", actor);
+      const thread = await service.getItemThread(
+        "acp-1",
+        "unit-1",
+        "item-1",
+        actor,
+      );
+      expect(thread.comments).toHaveLength(expectedCount);
+      expect(counts.counts[0]?.count || 0).toBe(thread.comments.length);
+    },
+  );
+
   it("loads visible item comment counts in one repository query and shares them across rows", async () => {
     const createdAt = new Date("2026-01-01T10:00:00.000Z");
     unitParserService.getItemListFromFiles.mockResolvedValue({
@@ -851,10 +909,19 @@ describe("CommentsService", () => {
       authorLabel: "ME",
       isManager: false,
     });
-    await service.getItemThread("acp-1", "unit-1", "unit-1_item-1", {
-      userId: "me",
-      authorLabel: "ME",
-      isManager: false,
+    const aliasedThread = await service.getItemThread(
+      "acp-1",
+      "unit-1",
+      "unit-1_item-1",
+      {
+        userId: "me",
+        authorLabel: "ME",
+        isManager: false,
+      },
+    );
+    expect(aliasedThread.target).toEqual({
+      unitId: "unit-1",
+      itemId: "item-1",
     });
 
     for (const call of commentRepository.find.mock.calls) {
@@ -940,6 +1007,63 @@ describe("CommentsService", () => {
     expect(commentRepository.find.mock.calls[1][0].where).toEqual([
       expect.objectContaining({ unitId: "a", itemId: "b_c" }),
     ]);
+  });
+
+  it("keeps canonical targets distinct even when only one has a parsed row", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableCommenting: true,
+        commentVisibilityMode: "SHARED",
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [{ unitId: "unit-1", itemId: "unit-1_item-1" }],
+    });
+    acpRepository.findOne.mockResolvedValue({
+      acpIndex: {
+        assessmentParts: [
+          {
+            units: [
+              {
+                id: "unit-1",
+                items: [{ id: "item-1" }, { id: "unit-1_item-1" }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    commentRepository.find.mockResolvedValue([
+      {
+        id: "c",
+        targetType: CommentTargetType.ITEM,
+        unitId: "unit-1",
+        itemId: "item-1",
+      },
+    ]);
+    const actor = { userId: "me", authorLabel: "ME", isManager: false };
+    expect((await service.getItemCommentCounts("acp-1", actor)).counts).toEqual(
+      [
+        { unitId: "unit-1", itemId: "item-1", count: 1 },
+        { unitId: "unit-1", itemId: "unit-1_item-1", count: 0 },
+      ],
+    );
+    commentRepository.find.mockResolvedValue([]);
+    const thread = await service.getItemThread(
+      "acp-1",
+      "unit-1",
+      "unit-1_item-1",
+      actor,
+    );
+    expect(thread.comments).toEqual([]);
+    expect(thread.target).toEqual({
+      unitId: "unit-1",
+      itemId: "unit-1_item-1",
+    });
+    expect(commentRepository.find.mock.calls[1][0].where[0]).toMatchObject({
+      unitId: "unit-1",
+      itemId: "unit-1_item-1",
+    });
   });
 
   it("accepts an item from the canonical ACP index when no parsed file row exists", async () => {

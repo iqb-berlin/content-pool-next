@@ -192,6 +192,110 @@ describe('ItemExplorerFacade comment counts', () => {
       metadata: {},
     }) as any;
 
+  it('uses the full backend catalog even when a canonical item has no table row', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: () =>
+          of({
+            revision: 'catalog',
+            counts: [
+              { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+              { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 },
+            ],
+          }),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('keeps canonical thread updates separate before the catalog arrives', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({
+      revision: 'old',
+      counts: [
+        { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+        { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 1 },
+      ],
+    });
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+  });
+
+  it('keeps distinct raw and prefixed item IDs separate', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
+  it('loading an empty colliding item does not erase another item count', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+  });
+
+  it.each(['item-1', 'unit-1_item-1'])(
+    'preserves a canonical zero count for requested item %s against an initial stale batch',
+    (threadItemId) => {
+      const response = new Subject<any>();
+      const component = createFacade({ api: { getItemCommentCounts: () => response } });
+      component.acpId = 'acp-1';
+      component.itemCommentsEnabled = true;
+      component.refreshItemComments(false);
+      component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 0 });
+      response.next({
+        revision: 'before-deletion',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 1 }],
+      });
+      expect(component.getItemCommentCount(item('row', threadItemId))).toBe(0);
+    },
+  );
+
+  it('preserves an unchanged positive thread count against an older batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 1 };
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+    expect(component.getItemCommentCount(item('row', 'item-1'))).toBe(1);
+  });
+
+  it('keeps colliding item counts separate when merging a delayed batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({ revision: 'old', counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }] });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
   it('shares one item count across partial-credit rows and filters by status', () => {
     const component = createFacade();
     component.itemCommentsEnabled = true;

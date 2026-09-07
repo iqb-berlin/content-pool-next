@@ -230,6 +230,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'itemSubIdLabel'
     | 'itemCommentsEnabled'
     | 'itemCommentRefreshToken'
+    | 'itemCommentSessionToken'
     | 'commentThreadInitiallyOpen'
     | 'loadAllResponseStates'
     | 'navigateItem'

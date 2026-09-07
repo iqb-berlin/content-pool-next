@@ -11,7 +11,15 @@ import { AuthService } from '../../core/services/auth.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import { finalize, firstValueFrom, Observable, ReplaySubject, Subscription, takeUntil } from 'rxjs';
+import {
+  finalize,
+  firstValueFrom,
+  Observable,
+  ReplaySubject,
+  Subscription,
+  takeUntil,
+  timeout,
+} from 'rxjs';
 import {
   ItemCollection,
   ItemCollectionSummary,
@@ -215,10 +223,13 @@ export class ItemExplorerFacade implements OnDestroy {
   itemCommentCountsAvailable = false;
   itemCommentCountsError = '';
   itemCommentRefreshToken = 0;
+  itemCommentSessionToken = 0;
   commentThreadInitiallyOpen = false;
   commentExportInProgress = false;
   commentExportError = '';
   private itemCommentCountsRequestToken = 0;
+  private commentRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly commentVisibilityListener = () => this.refreshVisibleItemComments();
   private itemCommentCountStateVersion = 0;
   private readonly itemCommentCountChangeVersions = new Map<string, number>();
   private itemCommentCountSessionIdentity: string | null = null;
@@ -634,7 +645,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.itemCommentCountsError = '';
     this.api
       .getItemCommentCounts(this.acpId)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(timeout(10_000), takeUntil(this.destroy$))
       .subscribe({
         next: (snapshot) => {
           if (token !== this.itemCommentCountsRequestToken) return;
@@ -1469,6 +1480,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
     window.removeEventListener('storage', this.authStorageListener);
+    this.stopCommentAutoRefresh();
     this.authSessionSubscription?.unsubscribe();
     this.authSessionSubscription = null;
     this.playerDom?.stopAutoResize();
@@ -6878,7 +6890,9 @@ export class ItemExplorerFacade implements OnDestroy {
       : null;
     if (nextIdentity === this.itemCommentCountSessionIdentity) return;
 
+    this.stopCommentAutoRefresh();
     this.itemCommentCountSessionIdentity = nextIdentity;
+    this.itemCommentSessionToken += 1;
     this.itemCommentCountsRequestToken += 1;
     this.itemCommentRefreshToken += 1;
     this.itemCommentCountsLoading = false;
@@ -6892,7 +6906,30 @@ export class ItemExplorerFacade implements OnDestroy {
     if (nextIdentity) {
       this.ensureCommentColumnDefault();
       this.refreshItemComments(false);
+      document.addEventListener('visibilitychange', this.commentVisibilityListener);
+      window.addEventListener('focus', this.commentVisibilityListener);
+      this.commentRefreshTimer = setInterval(() => this.refreshVisibleItemComments(), 5_000);
     }
+  }
+
+  private refreshVisibleItemComments(): void {
+    if (
+      this.destroyed ||
+      document.visibilityState !== 'visible' ||
+      !this.itemCommentsEnabled ||
+      !this.authService.isLoggedIn ||
+      !this.itemCommentCountSessionIdentity ||
+      this.itemCommentCountsLoading
+    )
+      return;
+    this.refreshItemComments();
+  }
+
+  private stopCommentAutoRefresh(): void {
+    document.removeEventListener('visibilitychange', this.commentVisibilityListener);
+    window.removeEventListener('focus', this.commentVisibilityListener);
+    if (this.commentRefreshTimer !== null) clearInterval(this.commentRefreshTimer);
+    this.commentRefreshTimer = null;
   }
 
   private selectInitialCommentTarget(): void {

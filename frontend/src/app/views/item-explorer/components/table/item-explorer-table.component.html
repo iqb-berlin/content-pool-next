@@ -8,19 +8,16 @@
       placeholder="🔍 Items filtern..."
       (input)="vm.applyFilter()"
     />
-    @if (vm.itemCommentsEnabled) {
+    @if (vm.itemCommentsEnabled && vm.itemCommentCountsError) {
+      <span class="personal-data-error" role="alert">{{ vm.itemCommentCountsError }}</span>
       <button
         class="btn btn-outline btn-sm"
         type="button"
         (click)="vm.refreshItemComments()"
         [disabled]="vm.itemCommentCountsLoading"
-        title="Kommentar-Threads und Anzahlen neu laden"
       >
-        {{ vm.itemCommentCountsLoading ? 'Kommentare werden aktualisiert …' : '↻ Kommentare' }}
+        Erneut versuchen
       </button>
-      @if (vm.itemCommentCountsError) {
-        <span class="personal-data-error" role="alert">{{ vm.itemCommentCountsError }}</span>
-      }
     }
     @if (vm.excludedItemsCount > 0 || vm.showExcludedItems) {
       <div class="table-toolbar-actions">

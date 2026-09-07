@@ -289,6 +289,16 @@ Replies have one level and are grouped below their root comment. Deleting a root
 a neutral placeholder so the remaining conversation is understandable.
 
 The UI loads only the selected item's thread and protects quick item changes from stale responses.
+While the Item Explorer tab is visible, it refreshes visible comment counts and the selected thread
+every five seconds in both visibility modes. Returning to the tab or focusing the window triggers
+an immediate refresh. Background tabs pause polling; pending requests are not duplicated and
+requests time out after ten seconds so a later poll can recover. Leaving the explorer or ending
+the comment session removes the timer and listeners.
+
+The regular refresh buttons are replaced by automatic updates. A retry action remains available
+when loading fails. Background updates preserve new-comment and reply drafts, open reply forms,
+and active edits. An active edit keeps the original comment version so a concurrent change still
+produces a version conflict instead of silently overwriting newer text.
 Unsaved main-comment and reply drafts remain assigned to their item while navigating. JSON and
 XLSX comment exports include `unitId`, `itemId`, `threadId`, `parentCommentId`, and the updated
 timestamp. The original `/api/acp/:acpId/comments` endpoints remain available; the threaded Item

@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { ItemExplorerFacade } from './item-explorer.facade';
 import { VoudService } from '../../core/services/voud.service';
@@ -175,6 +175,81 @@ describe('ItemExplorerFacade role initialization', () => {
     component.checkUserRole();
 
     expect(component.viewPerspective).toBe('read-only');
+  });
+});
+
+describe('ItemExplorerFacade automatic comment refresh', () => {
+  let component: ItemExplorerFacade;
+  let getCounts: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    getCounts = vi.fn().mockReturnValue(of({ revision: '1', counts: [] }));
+    component = createFacade({
+      api: { getItemCommentCounts: getCounts },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+  });
+  afterEach(() => {
+    component.ngOnDestroy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+  it('refreshes counts and the selected thread every five seconds', () => {
+    const token = component.itemCommentRefreshToken;
+    const sessionToken = component.itemCommentSessionToken;
+    vi.advanceTimersByTime(5000);
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    expect(component.itemCommentRefreshToken).toBe(token + 1);
+    expect(component.itemCommentSessionToken).toBe(sessionToken);
+  });
+  it('pauses hidden tabs and refreshes immediately on return or focus', () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.advanceTimersByTime(15000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('does not supersede an in-flight batch on timer or focus events', () => {
+    const response = new Subject<any>();
+    getCounts.mockReturnValue(response);
+    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    response.next({ revision: 'latest', counts: [{ unitId: 'U', itemId: 'I', count: 2 }] });
+    expect(component.itemCommentCounts['U\u0000I']).toBe(2);
+  });
+  it('recovers automatically after a failed batch', () => {
+    getCounts.mockReturnValueOnce(throwError(() => new Error('offline')));
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).not.toBe('');
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).toBe('');
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('stops polling and listeners on logout and destruction', () => {
+    const sessionToken = component.itemCommentSessionToken;
+    component.itemCommentsEnabled = false;
+    (component as any).syncItemCommentCountSession();
+    expect(component.itemCommentSessionToken).toBe(sessionToken + 1);
+    vi.advanceTimersByTime(10000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+    vi.advanceTimersByTime(10000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
   });
 });
 

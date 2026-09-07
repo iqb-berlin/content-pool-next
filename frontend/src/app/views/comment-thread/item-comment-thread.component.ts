@@ -9,7 +9,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject, Subscription, takeUntil } from 'rxjs';
+import { Subject, Subscription, takeUntil, timeout } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { Comment, CommentThreadSnapshot } from '../../core/models/api.models';
 
@@ -32,6 +32,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() itemId = '';
   @Input() enabled = false;
   @Input() refreshToken = 0;
+  @Input() sessionToken = 0;
   @Input() initiallyOpen = false;
   @Output() countChanged = new EventEmitter<{
     unitId: string;
@@ -43,16 +44,27 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   open = false;
   loading = false;
   busy = false;
-  error = '';
+  private operationError = '';
+
+  get error(): string {
+    return this.operationError || this.threadLoadError;
+  }
+
+  set error(value: string) {
+    this.operationError = value;
+  }
   snapshot: CommentThreadSnapshot | null = null;
   replyingTo: string | null = null;
   editingCommentId: string | null = null;
   editText = '';
+  private editingComment: Comment | null = null;
 
   private requestToken = 0;
+  private threadLoadError = '';
   private initialOpenConsumed = false;
   private threadRequest: Subscription | null = null;
   private readonly destroy$ = new Subject<void>();
+  private readonly sessionChanged$ = new Subject<void>();
   private readonly newDrafts = new Map<string, string>();
   private readonly replyDrafts = new Map<string, string>();
   private readonly expandedByTarget = new Map<string, Set<string>>();
@@ -62,22 +74,31 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   ngOnChanges(changes: SimpleChanges): void {
     const targetChanged =
       changes['acpId'] || changes['unitId'] || changes['itemId'] || changes['enabled'];
-    if (targetChanged) {
+    const sessionChanged = changes['sessionToken'];
+    if (sessionChanged) {
+      this.sessionChanged$.next();
+      this.busy = false;
+      this.newDrafts.clear();
+      this.replyDrafts.clear();
+      this.expandedByTarget.clear();
+    }
+    if (targetChanged || sessionChanged) {
       this.requestToken += 1;
       this.threadRequest?.unsubscribe();
       this.threadRequest = null;
       this.loading = false;
       this.snapshot = null;
       this.replyingTo = null;
-      this.editingCommentId = null;
+      this.cancelEdit();
       this.error = '';
+      this.threadLoadError = '';
       if (this.initiallyOpen && !this.initialOpenConsumed) {
         this.open = true;
         this.initialOpenConsumed = true;
       }
       if (this.hasTarget) this.loadThread();
     } else if (changes['refreshToken'] && !changes['refreshToken'].firstChange && this.hasTarget) {
-      this.loadThread();
+      if (!this.loading && !this.busy) this.loadThread(true);
     }
   }
 
@@ -85,6 +106,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.threadRequest?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
+    this.sessionChanged$.complete();
   }
 
   get hasTarget(): boolean {
@@ -108,7 +130,13 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get threadGroups(): CommentThreadGroup[] {
-    const comments = this.snapshot?.comments || [];
+    const comments = [...(this.snapshot?.comments || [])];
+    // Keep the active edit and its original version even when another tab changes it.
+    if (this.editingComment) {
+      const index = comments.findIndex((comment) => comment.id === this.editingComment!.id);
+      if (index >= 0) comments[index] = this.editingComment;
+      else comments.push(this.editingComment);
+    }
     const roots = comments.filter((comment) => !comment.parentCommentId);
     const repliesByParent = new Map<string, Comment[]>();
     for (const comment of comments) {
@@ -127,6 +155,10 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       if (!rootIds.has(parentId)) {
         groups.push({ id: parentId, root: null, replies });
       }
+    }
+    // A removed reply target must not remove the user's open draft form.
+    if (this.replyingTo && !groups.some((group) => group.id === this.replyingTo)) {
+      groups.push({ id: this.replyingTo, root: null, replies: [] });
     }
     return groups.sort((left, right) => {
       const leftDate = left.root?.createdAt || left.replies[0]?.createdAt || '';
@@ -148,7 +180,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.loading = true;
     this.threadRequest = this.api
       .getItemCommentThread(this.acpId, this.unitId, this.itemId)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(timeout(10_000), takeUntil(this.destroy$))
       .subscribe({
         next: (snapshot) => {
           if (token !== this.requestToken) return;
@@ -161,13 +193,18 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
           });
           this.loading = false;
           this.threadRequest = null;
-          if (!preserveError) this.error = '';
+          if (!preserveError) this.operationError = '';
+          this.threadLoadError = '';
         },
         error: (error) => {
           if (token !== this.requestToken) return;
           this.loading = false;
           this.threadRequest = null;
-          this.error = this.errorMessage(error, 'Kommentare konnten nicht geladen werden.');
+          this.threadLoadError = this.errorMessage(
+            error,
+            'Kommentare konnten nicht geladen werden.',
+          );
+          if (!preserveError) this.operationError = '';
         },
       });
   }
@@ -188,7 +225,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
         commentText: text.trim(),
         ...(parentCommentId ? { parentCommentId } : {}),
       })
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
       .subscribe({
         next: () => {
           if (parentCommentId) {
@@ -223,25 +260,30 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   startEdit(comment: Comment): void {
+    this.editingComment = { ...comment };
     this.editingCommentId = comment.id;
     this.editText = comment.commentText;
   }
 
   cancelEdit(): void {
+    this.editingComment = null;
     this.editingCommentId = null;
     this.editText = '';
   }
 
   saveEdit(comment: Comment): void {
     if (!this.editText.trim() || this.busy || !comment.version) return;
+    const version =
+      this.editingComment?.id === comment.id ? this.editingComment.version : comment.version;
+    if (!version) return;
     const targetKey = this.targetKey;
     this.busy = true;
     this.api
       .updateItemComment(this.acpId, comment.id, {
         commentText: this.editText.trim(),
-        version: comment.version,
+        version,
       })
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
       .subscribe({
         next: () => {
           this.busy = false;
@@ -267,7 +309,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.busy = true;
     this.api
       .deleteItemComment(this.acpId, comment.id, comment.version)
-      .pipe(takeUntil(this.destroy$))
+      .pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
       .subscribe({
         next: () => {
           this.busy = false;

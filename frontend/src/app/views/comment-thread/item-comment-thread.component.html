@@ -22,15 +22,17 @@
             <strong>Kommentare zu {{ unitId }} · {{ itemId }}</strong>
             <span class="visibility-badge">{{ visibilityLabel }}</span>
           </div>
-          <button
-            type="button"
-            class="btn btn-outline btn-sm"
-            (click)="loadThread()"
-            aria-label="Kommentare aktualisieren"
-            title="Kommentare aktualisieren"
-          >
-            ↻
-          </button>
+          @if (error) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              (click)="loadThread()"
+              [disabled]="loading || busy"
+              aria-label="Kommentare erneut laden"
+            >
+              Erneut versuchen
+            </button>
+          }
         </div>
 
         <div class="new-comment-form">

@@ -35,12 +35,12 @@ export default defineConfig({
     },
     {
       name: 'firefox',
-      testMatch: /item-explorer-sticky-visual\.spec\.ts/,
+      testMatch: /(?:item-explorer-sticky-visual|item-comment-refresh)\.spec\.ts/,
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
-      testMatch: /item-explorer-sticky-visual\.spec\.ts/,
+      testMatch: /(?:item-explorer-sticky-visual|item-comment-refresh)\.spec\.ts/,
       use: { ...devices['Desktop Safari'] },
     },
   ],

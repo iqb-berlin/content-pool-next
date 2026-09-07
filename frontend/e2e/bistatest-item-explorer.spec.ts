@@ -44,6 +44,7 @@ async function publishExplorerDraft(page: Page): Promise<void> {
 
 test('shares item comments and replies directly in the selected Item Explorer preview', async ({
   page,
+  browser,
 }) => {
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await page.goto(`/view/${ACP_ID}`);
@@ -56,6 +57,18 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await page.getByRole('button', { name: /Kommentare \(0\)/ }).click();
   const panel = page.getByRole('region', { name: 'Kommentare zum ausgewählten Item' });
   await expect(panel).toContainText('Geteilt');
+  const observerContext = await browser.newContext();
+  const observer = await observerContext.newPage();
+  await login(observer, VIEWER_ID, VIEWER_USERNAME);
+  await observer.goto(page.url());
+  await expect(observer.locator('tbody tr')).toHaveCount(2);
+  await observer.locator('tbody tr').first().click();
+  await observer.getByRole('button', { name: /Kommentare \(0\)/ }).click();
+  const observerPanel = observer.getByRole('region', { name: 'Kommentare zum ausgewählten Item' });
+  await observerPanel
+    .getByPlaceholder('Kommentar zu diesem Item …')
+    .fill('Ungespeicherter Entwurf');
+
   await panel.getByPlaceholder('Kommentar zu diesem Item …').fill('E2E Hauptkommentar');
   await Promise.all([
     page.waitForResponse(
@@ -69,6 +82,8 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(panel.getByText('E2E Hauptkommentar')).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(1);
   await expect(page.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
+  await expect(observerPanel.getByText('E2E Hauptkommentar', { exact: true })).toBeVisible();
+  await expect(observer.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
 
   await panel.getByRole('button', { name: 'Bearbeiten' }).click();
   await panel.locator('.edit-form textarea').fill('E2E Hauptkommentar geändert');
@@ -83,6 +98,32 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(panel.getByText('E2E Hauptkommentar geändert')).toBeVisible();
   await expect(panel.locator('.edited-label')).toContainText('geändert');
+  await expect(
+    observerPanel.getByText('E2E Hauptkommentar geändert', { exact: true }),
+  ).toBeVisible();
+  await expect(observerPanel.getByPlaceholder('Kommentar zu diesem Item …')).toHaveValue(
+    'Ungespeicherter Entwurf',
+  );
+  await panel
+    .getByPlaceholder('Kommentar zu diesem Item …')
+    .fill('Automatisch entfernten Kommentar prüfen');
+  await panel.getByRole('button', { name: 'Kommentieren', exact: true }).click();
+  await expect(
+    observerPanel.getByText('Automatisch entfernten Kommentar prüfen', { exact: true }),
+  ).toBeVisible();
+  const temporaryComment = panel
+    .locator('.comment-card')
+    .filter({ hasText: 'Automatisch entfernten Kommentar prüfen' });
+  page.once('dialog', (dialog) => dialog.accept());
+  await temporaryComment.getByRole('button', { name: 'Löschen', exact: true }).click();
+  await expect(
+    observerPanel.getByText('Automatisch entfernten Kommentar prüfen', { exact: true }),
+  ).toHaveCount(0);
+  await expect(observer.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
+  await expect(observerPanel.getByPlaceholder('Kommentar zu diesem Item …')).toHaveValue(
+    'Ungespeicherter Entwurf',
+  );
+  await observerContext.close();
 
   const firstTargetLabel = await panel.locator('.comment-panel-header strong').innerText();
   const firstItemId = firstTargetLabel.split('·').at(-1)?.trim() || '';

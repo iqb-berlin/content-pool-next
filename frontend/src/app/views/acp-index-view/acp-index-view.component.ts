@@ -1,7 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { catchError, forkJoin, of } from 'rxjs';
+import { catchError, forkJoin, of, switchMap } from 'rxjs';
+import { AcpNavigationService } from '../../core/services/acp-navigation.service';
 import { ApiService } from '../../core/services/api.service';
 import { AcpFile } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -45,7 +46,9 @@ interface NodeAction {
         <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(99)">
           Alles aufklappen
         </button>
-        <a [routerLink]="['/view', acpId]" class="btn btn-outline">← Zurück</a>
+        <a [routerLink]="navigation.overviewRoute(acpId)" class="btn btn-outline"
+          >← Zur ACP-Übersicht</a
+        >
       </div>
     </div>
 
@@ -273,6 +276,7 @@ interface NodeAction {
   ],
 })
 export class AcpIndexViewComponent implements OnInit {
+  readonly navigation = inject(AcpNavigationService);
   acpId = '';
   breadcrumbs: BreadcrumbItem[] = [];
 
@@ -306,7 +310,15 @@ export class AcpIndexViewComponent implements OnInit {
 
     forkJoin({
       index: this.api.getViewIndex(this.acpId),
-      files: this.api.getFiles(this.acpId).pipe(catchError(() => of([] as AcpFile[]))),
+      files: this.api.getAcpStartPage(this.acpId).pipe(
+        switchMap((data) =>
+          this.navigation.overviewRoute(this.acpId)[0] === '/manage' ||
+          data.featureConfig?.allowFileDownload
+            ? this.api.getFiles(this.acpId)
+            : of([] as AcpFile[]),
+        ),
+        catchError(() => of([] as AcpFile[])),
+      ),
     }).subscribe({
       next: ({ index, files }) => {
         this.configureLookups(index, files);

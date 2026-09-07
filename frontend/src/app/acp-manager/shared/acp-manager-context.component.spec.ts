@@ -67,6 +67,6 @@ describe('AcpManagerContextComponent', () => {
     component.ngOnInit();
 
     expect(component.backLink).toEqual(['/manage', 'acp-1']);
-    expect(component.backLabel).toBe('← Zur Übersicht');
+    expect(component.backLabel).toBe('← Zur ACP-Übersicht');
   });
 });

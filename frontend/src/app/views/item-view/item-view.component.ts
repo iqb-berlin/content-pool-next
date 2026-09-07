@@ -42,8 +42,8 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           @if (showCommentBtn) {
             <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
           }
-          <a [routerLink]="['/view', acpId, 'items']" class="btn btn-outline btn-sm"
-            >← Zur Item-Liste</a
+          <a [routerLink]="['/view', acpId, 'item-explorer']" class="btn btn-outline btn-sm"
+            >← Zum Item-Explorer</a
           >
         </div>
       </div>
@@ -271,7 +271,7 @@ export class ItemViewComponent implements OnInit, OnDestroy {
         this.breadcrumbs = [
           { label: 'Assessment Content Pool', route: ['/'] },
           { label: 'ACP', route: ['/view', this.acpId] },
-          { label: 'Items', route: ['/view', this.acpId, 'items'] },
+          { label: 'Item-Explorer', route: ['/view', this.acpId, 'item-explorer'] },
           { label: this.item.name || this.item.itemId || this.item.id },
         ];
 

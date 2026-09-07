@@ -57,14 +57,8 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </div>
         }
 
-        <!-- Item list — only if enableItemList -->
+        <!-- Item Explorer — only if enableItemList -->
         @if (fc.enableItemList !== false) {
-          <a [routerLink]="['/view', acpId, 'items']" class="card section-card">
-            <div class="section-icon">📊</div>
-            <h3>Item-Liste</h3>
-            <p>Alle Items mit Metadaten anzeigen</p>
-          </a>
-
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
             <div class="section-icon">🔭</div>
             <h3>Item-Explorer</h3>

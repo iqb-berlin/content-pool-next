@@ -50,6 +50,7 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await page.goto(`/view/${ACP_ID}`);
   await expect(page.getByRole('button', { name: 'Kommentar hinzufügen' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Kommentare', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Item-Liste', exact: true })).toHaveCount(0);
   await page
     .getByRole('link', {
       name: '🔭 Item-Explorer Items interaktiv durchsuchen und anzeigen',

@@ -162,6 +162,7 @@ describe('AcpStartComponent', () => {
     const element = fixture.nativeElement as HTMLElement;
     const explorerLink = element.querySelector('a[href="/view/acp-1/item-explorer"]');
     expect(explorerLink).not.toBeNull();
+    expect(element.querySelector('a[href="/view/acp-1/items"]')).toBeNull();
     expect(element.textContent).not.toContain('Meine Kommentare');
     expect(element.textContent).not.toContain('Prüfen');
     expect(

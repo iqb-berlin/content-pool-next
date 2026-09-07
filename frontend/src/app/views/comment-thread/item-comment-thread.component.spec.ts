@@ -5,16 +5,14 @@ import template from './item-comment-thread.component.html?raw';
 
 function createComponent() {
   const api = {
-    getItemCommentThread: vi
-      .fn()
-      .mockReturnValue(
-        of({
-          revision: '1',
-          target: { unitId: 'unit-1', itemId: 'item-1' },
-          visibilityMode: 'SHARED',
-          comments: [],
-        }),
-      ),
+    getItemCommentThread: vi.fn().mockReturnValue(
+      of({
+        revision: '1',
+        target: { unitId: 'unit-1', itemId: 'item-1' },
+        visibilityMode: 'SHARED',
+        comments: [],
+      }),
+    ),
     createItemComment: vi.fn().mockReturnValue(of({ id: 'created' })),
     updateItemComment: vi.fn().mockReturnValue(of({ id: 'updated' })),
     deleteItemComment: vi.fn().mockReturnValue(of({ success: true })),

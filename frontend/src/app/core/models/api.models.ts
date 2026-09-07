@@ -436,9 +436,15 @@ export interface Comment {
 }
 
 export interface CommentThreadSnapshot {
+  target: { unitId: string; itemId: string };
   revision: string;
   visibilityMode: 'PRIVATE' | 'SHARED';
   comments: Comment[];
+}
+
+export interface ItemCommentCountsSnapshot {
+  revision: string;
+  counts: Array<{ unitId: string; itemId: string; count: number }>;
 }
 
 export interface AppSettings {

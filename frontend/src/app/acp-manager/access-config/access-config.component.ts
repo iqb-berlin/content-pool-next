@@ -403,7 +403,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
       <!-- Item List -->
       <div class="feature-section">
-        <h4>📊 Item-Liste</h4>
+        <h4>🔭 Item-Explorer</h4>
         @for (feat of itemFlags; track feat.key) {
           <label class="feature-toggle">
             <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
@@ -990,10 +990,10 @@ export class AccessConfigComponent implements OnInit {
   ];
 
   itemFlags = [
-    { key: 'enableItemList', label: 'Item-Liste aktivieren' },
+    { key: 'enableItemList', label: 'Item-Explorer aktivieren' },
     { key: 'enableItemClick', label: 'Item-Klick → Navigation zur Aufgabe' },
-    { key: 'enableItemListFilter', label: 'Item-Liste filtern erlauben' },
-    { key: 'enableItemListSort', label: 'Item-Liste sortieren erlauben' },
+    { key: 'enableItemListFilter', label: 'Item-Explorer filtern erlauben' },
+    { key: 'enableItemListSort', label: 'Item-Explorer sortieren erlauben' },
     { key: 'enableItemListTags', label: 'Item-Tagging erlauben' },
   ];
 

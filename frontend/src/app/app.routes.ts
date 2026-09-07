@@ -129,11 +129,6 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'items',
-        loadComponent: () =>
-          import('./views/item-list/item-list.component').then((m) => m.ItemListComponent),
-      },
-      {
         path: 'item-explorer',
         canDeactivate: [itemExplorerPendingChangesGuard],
         loadComponent: () =>

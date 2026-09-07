@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
@@ -31,16 +31,23 @@ function createApiStub() {
   };
 }
 
+function createAuthStub(overrides: Record<string, unknown> = {}) {
+  return {
+    isLoggedIn: false,
+    isAdmin: false,
+    currentUser$: of(null),
+    hasAcpRole: vi.fn().mockReturnValue(false),
+    ...overrides,
+  };
+}
+
 describe('AcpStartComponent', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('shows manager return breadcrumb and action for ACP managers', () => {
     const route = createRouteStub();
     const api = createApiStub();
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(true),
-    };
+    const auth = createAuthStub({ hasAcpRole: vi.fn().mockReturnValue(true) });
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -56,10 +63,7 @@ describe('AcpStartComponent', () => {
   it('keeps public breadcrumbs for non-managers', () => {
     const route = createRouteStub();
     const api = createApiStub();
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub();
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -84,10 +88,7 @@ describe('AcpStartComponent', () => {
         }),
       ),
     };
-    const auth = {
-      isLoggedIn: false,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub();
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
@@ -95,7 +96,7 @@ describe('AcpStartComponent', () => {
     expect(api.getMyComments).not.toHaveBeenCalled();
   });
 
-  it('loads my comments for logged-in users when commenting is enabled', () => {
+  it('does not load comments on the start page for logged-in users', () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
@@ -108,18 +109,15 @@ describe('AcpStartComponent', () => {
         }),
       ),
     };
-    const auth = {
-      isLoggedIn: true,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub({ isLoggedIn: true });
 
     const component = new AcpStartComponent(route as any, api as any, auth as any);
     component.ngOnInit();
 
-    expect(api.getMyComments).toHaveBeenCalledWith('acp-1');
+    expect(api.getMyComments).not.toHaveBeenCalled();
   });
 
-  it('links item comments to the Item Explorer without rendering the generic dialog', async () => {
+  it('offers the Item Explorer without a duplicate comment card or exports', async () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
@@ -131,12 +129,22 @@ describe('AcpStartComponent', () => {
           sequences: [],
         }),
       ),
-      exportCommentsXlsx: vi.fn(),
+      exportMyReviewCommentsCsv: vi.fn(),
+      exportMyReviewCommentsXlsx: vi.fn(),
+      exportAllReviewCommentsXlsx: vi.fn(),
+      getMyComments: vi.fn().mockReturnValue(
+        of([
+          {
+            id: 'comment-1',
+            targetType: 'ITEM',
+            unitId: 'unit-1',
+            itemId: 'item-1',
+            commentText: 'Prüfen',
+          },
+        ]),
+      ),
     };
-    const auth = {
-      isLoggedIn: true,
-      hasAcpRole: vi.fn().mockReturnValue(false),
-    };
+    const auth = createAuthStub({ isLoggedIn: true });
 
     await TestBed.configureTestingModule({
       imports: [AcpStartComponent],
@@ -152,19 +160,41 @@ describe('AcpStartComponent', () => {
     const fixture = TestBed.createComponent(AcpStartComponent);
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
-    const itemCommentLink = Array.from(element.querySelectorAll('a')).find((link) =>
-      link.textContent?.includes('Item-Kommentare im Item-Explorer'),
-    );
-    const exportButton = Array.from(element.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Kommentare exportieren (XLSX)'),
-    );
-
-    expect(element.textContent).toContain(
-      'Item-Kommentare werden direkt beim ausgewählten Item im Item-Explorer erfasst.',
-    );
-    expect(itemCommentLink?.getAttribute('href')).toBe('/view/acp-1/item-explorer');
-    expect(exportButton).toBeDefined();
-    expect(element.textContent).not.toContain('Kommentar hinzufügen');
+    const explorerLink = element.querySelector('a[href="/view/acp-1/item-explorer"]');
+    expect(explorerLink).not.toBeNull();
+    expect(element.querySelector('a[href="/view/acp-1/items"]')).toBeNull();
+    expect(element.textContent).not.toContain('Meine Kommentare');
+    expect(element.textContent).not.toContain('Prüfen');
+    expect(
+      Array.from(element.querySelectorAll('h3')).map((heading) => heading.textContent),
+    ).not.toContain('Kommentare');
+    expect(api.getMyComments).not.toHaveBeenCalled();
     expect(element.querySelector('app-comment-dialog')).toBeNull();
+  });
+
+  it('reveals manager navigation after a delayed profile load', () => {
+    const route = createRouteStub();
+    const api = createApiStub();
+    const currentUser$ = new BehaviorSubject<any>(null);
+    let managerProfileLoaded = false;
+    const auth = createAuthStub({
+      isLoggedIn: true,
+      currentUser$,
+      hasAcpRole: vi.fn(() => managerProfileLoaded),
+    });
+    const component = new AcpStartComponent(route as any, api as any, auth as any);
+
+    component.ngOnInit();
+    expect(component.canManageAcp).toBe(false);
+
+    managerProfileLoaded = true;
+    currentUser$.next({ acpRoles: [{ acpId: 'acp-1', role: 'ACP_MANAGER' }] });
+
+    expect(component.canManageAcp).toBe(true);
+    expect(component.breadcrumbs).toContainEqual({
+      label: 'Verwaltung',
+      route: ['/manage', 'acp-1'],
+    });
+    component.ngOnDestroy();
   });
 });

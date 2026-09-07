@@ -831,6 +831,9 @@ describe('ApiService', () => {
         params: { unitId: 'unit1', itemId: 'item1' },
       });
 
+      service.getItemCommentCounts('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments/counts');
+
       service
         .createItemComment('acp1', {
           unitId: 'unit1',
@@ -856,6 +859,30 @@ describe('ApiService', () => {
       expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/review/comments/c1', {
         params: { version: 2 },
       });
+    });
+
+    it('uses explicit personal and administrative review export paths', () => {
+      const blob = new Blob(['export']);
+      httpClientMock.get.mockReturnValue(of(blob));
+
+      service.exportMyReviewCommentsCsv('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        1,
+        '/api/acp/acp1/review/comments/export/mine.csv',
+        { responseType: 'blob' },
+      );
+      service.exportMyReviewCommentsXlsx('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        2,
+        '/api/acp/acp1/review/comments/export/mine.xlsx',
+        { responseType: 'blob' },
+      );
+      service.exportAllReviewCommentsXlsx('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        3,
+        '/api/acp/acp1/review/comments/export/all.xlsx',
+        { responseType: 'blob' },
+      );
     });
   });
 

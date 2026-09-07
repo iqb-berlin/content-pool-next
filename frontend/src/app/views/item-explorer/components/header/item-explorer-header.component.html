@@ -6,6 +6,39 @@
     <span class="item-count"
       >{{ vm.filteredItems.length }} von {{ vm.totalItemsCount }} Zeilen</span
     >
+    @if (vm.itemCommentsEnabled) {
+      <details class="comment-export-menu">
+        <summary class="btn btn-outline btn-sm">💬 Kommentar-Exporte</summary>
+        <div class="comment-export-actions">
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            (click)="vm.exportMyCommentsCsv()"
+            [disabled]="vm.commentExportInProgress"
+          >
+            Meine Kommentare (CSV)
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            (click)="vm.exportMyCommentsXlsx()"
+            [disabled]="vm.commentExportInProgress"
+          >
+            Meine Kommentare (XLSX)
+          </button>
+          @if (vm.canExportAllComments) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              (click)="vm.exportAllCommentsXlsx()"
+              [disabled]="vm.commentExportInProgress"
+            >
+              Alle Kommentare (XLSX)
+            </button>
+          }
+        </div>
+      </details>
+    }
     <button
       class="btn btn-outline btn-sm btn-state"
       type="button"
@@ -206,6 +239,12 @@
 @if (vm.allPersonalDataExportError) {
   <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
     {{ vm.allPersonalDataExportError }}
+  </div>
+}
+
+@if (vm.commentExportError) {
+  <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.commentExportError }}
   </div>
 }
 

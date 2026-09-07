@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { ItemExplorerFacade } from './item-explorer.facade';
 import { VoudService } from '../../core/services/voud.service';
@@ -175,6 +175,403 @@ describe('ItemExplorerFacade role initialization', () => {
     component.checkUserRole();
 
     expect(component.viewPerspective).toBe('read-only');
+  });
+});
+
+describe('ItemExplorerFacade automatic comment refresh', () => {
+  let component: ItemExplorerFacade;
+  let getCounts: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    getCounts = vi.fn().mockReturnValue(of({ revision: '1', counts: [] }));
+    component = createFacade({
+      api: { getItemCommentCounts: getCounts },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+  });
+  afterEach(() => {
+    component.ngOnDestroy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+  it('refreshes counts and the selected thread every five seconds', () => {
+    const token = component.itemCommentRefreshToken;
+    const sessionToken = component.itemCommentSessionToken;
+    vi.advanceTimersByTime(5000);
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    expect(component.itemCommentRefreshToken).toBe(token + 1);
+    expect(component.itemCommentSessionToken).toBe(sessionToken);
+  });
+  it('pauses hidden tabs and refreshes immediately on return or focus', () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.advanceTimersByTime(15000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('does not supersede an in-flight batch on timer or focus events', () => {
+    const response = new Subject<any>();
+    getCounts.mockReturnValue(response);
+    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    response.next({ revision: 'latest', counts: [{ unitId: 'U', itemId: 'I', count: 2 }] });
+    expect(component.itemCommentCounts['U\u0000I']).toBe(2);
+  });
+  it('recovers automatically after a failed batch', () => {
+    getCounts.mockReturnValueOnce(throwError(() => new Error('offline')));
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).not.toBe('');
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).toBe('');
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('stops polling and listeners on logout and destruction', () => {
+    const sessionToken = component.itemCommentSessionToken;
+    component.itemCommentsEnabled = false;
+    (component as any).syncItemCommentCountSession();
+    expect(component.itemCommentSessionToken).toBe(sessionToken + 1);
+    vi.advanceTimersByTime(10000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+    vi.advanceTimersByTime(10000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ItemExplorerFacade comment counts', () => {
+  const item = (rowKey: string, itemId: string, subId = '') =>
+    ({
+      rowKey,
+      uuid: rowKey,
+      unitId: 'unit-1',
+      itemId,
+      subId,
+      unitLabel: 'Unit 1',
+      description: '',
+      variableId: itemId,
+      metadata: {},
+    }) as any;
+
+  it('uses the full backend catalog even when a canonical item has no table row', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: () =>
+          of({
+            revision: 'catalog',
+            counts: [
+              { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+              { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 },
+            ],
+          }),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('keeps canonical thread updates separate before the catalog arrives', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({
+      revision: 'old',
+      counts: [
+        { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+        { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 1 },
+      ],
+    });
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+  });
+
+  it('keeps distinct raw and prefixed item IDs separate', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
+  it('loading an empty colliding item does not erase another item count', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+  });
+
+  it.each(['item-1', 'unit-1_item-1'])(
+    'preserves a canonical zero count for requested item %s against an initial stale batch',
+    (threadItemId) => {
+      const response = new Subject<any>();
+      const component = createFacade({ api: { getItemCommentCounts: () => response } });
+      component.acpId = 'acp-1';
+      component.itemCommentsEnabled = true;
+      component.refreshItemComments(false);
+      component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 0 });
+      response.next({
+        revision: 'before-deletion',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 1 }],
+      });
+      expect(component.getItemCommentCount(item('row', threadItemId))).toBe(0);
+    },
+  );
+
+  it('preserves an unchanged positive thread count against an older batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 1 };
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+    expect(component.getItemCommentCount(item('row', 'item-1'))).toBe(1);
+  });
+
+  it('keeps colliding item counts separate when merging a delayed batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({ revision: 'old', counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }] });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
+  it('shares one item count across partial-credit rows and filters by status', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    component.items = [
+      item('row-a', 'item-1', '0'),
+      item('row-b', 'item-1', '1'),
+      item('row-c', 'item-2'),
+    ];
+    component.filteredItems = [...component.items];
+    component.itemCommentCountsAvailable = true;
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 3 });
+
+    expect(component.getItemCommentCount(component.items[0])).toBe(3);
+    expect(component.getItemCommentCount(component.items[1])).toBe(3);
+    expect(component.getItemCommentCount(item('row-prefixed', 'unit-1_item-1'))).toBe(3);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-a', 'row-b']);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-c']);
+  });
+
+  it('replaces counts from the batch endpoint and refreshes the selected thread', () => {
+    const getItemCommentCounts = vi.fn().mockReturnValue(
+      of({
+        revision: '1',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }],
+      }),
+    );
+    const component = createFacade({ api: { getItemCommentCounts } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    component.refreshItemComments();
+
+    expect(getItemCommentCounts).toHaveBeenCalledWith('acp-1');
+    expect(component.itemCommentRefreshToken).toBe(1);
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 2 });
+  });
+
+  it('does not apply a persisted comment filter when comments are unavailable', () => {
+    const component = createFacade();
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+    component.itemCommentsEnabled = false;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('does not let an older batch response overwrite a newer thread count', () => {
+    const response = new Subject<any>();
+    const component = createFacade({
+      api: { getItemCommentCounts: vi.fn().mockReturnValue(response) },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.refreshItemComments(false);
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 1 });
+  });
+
+  it('keeps comment filters inactive when the initial count request fails', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+
+    component.refreshItemComments(false);
+
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(component.itemCommentCountsError).toContain('nicht geladen');
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('invalidates private counts and old responses when the token identity changes', () => {
+    const firstResponse = new Subject<any>();
+    const secondResponse = new Subject<any>();
+    const getItemCommentCounts = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse)
+      .mockReturnValueOnce(secondResponse);
+    let token = createJwt('user-a');
+    const component = createFacade({
+      api: { getItemCommentCounts },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    (component as any).syncItemCommentCountSession();
+    token = createJwt('user-b');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.itemCommentCounts).toEqual({});
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(getItemCommentCounts).toHaveBeenCalledTimes(2);
+
+    firstResponse.next({
+      revision: 'old-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 4 }],
+    });
+    expect(component.itemCommentCounts).toEqual({});
+
+    secondResponse.next({
+      revision: 'new-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-2', count: 1 }],
+    });
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-2': 1 });
+  });
+
+  it('ignores a thread count emitted for an earlier comment refresh session', () => {
+    const component = createFacade();
+    component.itemCommentRefreshToken = 2;
+
+    component.updateItemCommentCount({
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      count: 3,
+      refreshToken: 1,
+    });
+
+    expect(component.itemCommentCounts).toEqual({});
+  });
+
+  it('adds the comment column after hydrating a configured shared layout', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: ['system:itemId'],
+        order: ['system:itemId'],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toContain('system:comments');
+    expect(component.metadataSettings.layout?.order).toContain('system:comments');
+  });
+
+  it('preserves an explicitly empty shared column selection during layout migration', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: [],
+        order: [],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toEqual([]);
+    expect(component.metadataSettings.layout?.order).toEqual([]);
+    expect(component.metadataSettings.layout?.schemaVersion).toBe(2);
+  });
+
+  it('resolves a filtered deep link and consumes its automatic-open state on navigation', () => {
+    const component = createFacade();
+    (component as any).previewCoordinator.select = vi.fn();
+    const target = item('row-target', 'item-1');
+    const other = item('row-other', 'item-2');
+    component.items = [target, other];
+    component.filterText = 'does-not-match';
+    component.applyFilter(false);
+    component.commentThreadInitiallyOpen = true;
+    (component as any).initialCommentTarget = {
+      unitId: 'unit-1',
+      itemId: 'item-1',
+    };
+
+    (component as any).selectInitialCommentTarget();
+
+    expect(component.filterText).toBe('');
+    expect(component.selectedItem?.rowKey).toBe('row-target');
+    expect(component.commentThreadInitiallyOpen).toBe(true);
+
+    component.selectItem(other, 1);
+
+    expect(component.commentThreadInitiallyOpen).toBe(false);
   });
 });
 

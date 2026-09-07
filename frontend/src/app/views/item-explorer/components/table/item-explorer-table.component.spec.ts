@@ -28,6 +28,13 @@ describe('ItemExplorerTableComponent', () => {
     expect(template).toContain('[style.width.px]="vm.getColumnWidth(col)"');
   });
 
+  it('distinguishes unavailable comment counts from a confirmed zero count', () => {
+    expect(template).toContain('@if (!vm.itemCommentCountsAvailable)');
+    expect(template).toContain("'Kommentaranzahl wird geladen'");
+    expect(template).toContain("'Kommentaranzahl unbekannt'");
+    expect(template).toContain('aria-label="Keine Kommentare"');
+  });
+
   it('offers a dedicated empty state for an empty active selection list', () => {
     expect(template).toContain('Diese Auswahlliste ist noch leer.');
     expect(template).toContain('(click)="vm.setCollectionViewMode(\'all\')"');

@@ -93,32 +93,120 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         }
       </div>
 
-      <div class="card">
-        <h3>Rollenzuweisungen</h3>
-        @for (role of roles; track role.id) {
-          <div class="role-item">
-            <span
-              >{{ role.user?.displayName || role.user?.username }} —
-              <strong>{{ role.role }}</strong></span
-            >
-            <button class="btn btn-sm btn-danger" (click)="removeRole(role.userId)">
-              Entfernen
-            </button>
-          </div>
+      <section class="card roles-card" aria-labelledby="roles-heading">
+        <h3 id="roles-heading">Rollenzuweisungen</h3>
+        @if (roleError) {
+          <p class="alert alert-error" role="alert">{{ roleError }}</p>
         }
-        <div class="toolbar" style="margin-top:12px">
-          <select [(ngModel)]="selectedUserId" class="form-select">
-            @for (u of allUsers; track u.id) {
-              <option [value]="u.id">{{ u.displayName || u.username }}</option>
-            }
-          </select>
-          <select [(ngModel)]="selectedRole" class="form-select">
-            <option value="ACP_MANAGER">ACP-Manager</option>
-            <option value="READ_ONLY">Nur Lesen</option>
-          </select>
-          <button class="btn btn-primary btn-sm" (click)="assignRole()">Zuweisen</button>
+        @if (roleStatus) {
+          <p class="role-status" role="status">{{ roleStatus }}</p>
+        }
+        <div class="roles-table-scroll">
+          <table class="roles-table">
+            <thead>
+              <tr>
+                <th scope="col">Person</th>
+                <th scope="col">Rolle</th>
+                <th scope="col">Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (role of roles; track role.id) {
+                <tr>
+                  <th scope="row" class="person-name">
+                    {{ role.user?.displayName || role.user?.username || role.userId }}
+                  </th>
+                  <td>
+                    <select
+                      class="form-select"
+                      [ngModel]="roleEdits[role.userId] ?? role.role"
+                      (ngModelChange)="roleEdits[role.userId] = $event"
+                      [attr.aria-label]="
+                        'Rolle für ' +
+                        (role.user?.displayName || role.user?.username || role.userId)
+                      "
+                      [disabled]="roleBusy"
+                    >
+                      <option value="ACP_MANAGER" [disabled]="!canAssignManager">
+                        ACP-Manager
+                      </option>
+                      <option value="READ_ONLY">Nur Lesen</option>
+                    </select>
+                  </td>
+                  <td>
+                    <div class="role-actions">
+                      <button
+                        class="btn btn-primary btn-sm"
+                        (click)="saveRole(role.userId)"
+                        [disabled]="
+                          roleBusy ||
+                          !roleEdits[role.userId] ||
+                          roleEdits[role.userId] === role.role
+                        "
+                      >
+                        Speichern
+                      </button>
+                      <button
+                        class="btn btn-outline btn-sm"
+                        (click)="removeRole(role.userId)"
+                        [disabled]="roleBusy || (role.role === 'ACP_MANAGER' && !canAssignManager)"
+                      >
+                        Entfernen
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="3">Noch keine Personen zugewiesen.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
-      </div>
+        <div class="add-person">
+          <h4>Person hinzufügen</h4>
+          @if (availableUsers.length) {
+            <div class="add-person-fields">
+              <div class="add-person-field">
+                <label for="new-role-person">Person</label>
+                <select
+                  id="new-role-person"
+                  [(ngModel)]="selectedUserId"
+                  class="form-select"
+                  [disabled]="roleBusy"
+                >
+                  <option value="">Person auswählen …</option>
+                  @for (u of availableUsers; track u.id) {
+                    <option [value]="u.id">{{ u.displayName || u.username }}</option>
+                  }
+                </select>
+              </div>
+              <div class="add-person-field">
+                <label for="new-role-value">Rolle</label>
+                <select
+                  id="new-role-value"
+                  [(ngModel)]="selectedRole"
+                  class="form-select"
+                  [disabled]="roleBusy"
+                >
+                  <option value="ACP_MANAGER" [disabled]="!canAssignManager">ACP-Manager</option>
+                  <option value="READ_ONLY">Nur Lesen</option>
+                </select>
+              </div>
+              <button
+                class="btn btn-primary btn-sm"
+                (click)="assignRole()"
+                [disabled]="roleBusy || !selectedUserId"
+              >
+                Hinzufügen
+              </button>
+            </div>
+          } @else {
+            <p>Alle verfügbaren Personen sind bereits zugewiesen.</p>
+          }
+        </div>
+      </section>
 
       <app-confirm-dialog
         [open]="showDeleteIndexDialog"
@@ -179,12 +267,72 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         max-height: 400px;
         margin-top: 12px;
       }
-      .role-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 0;
+      .roles-table-scroll {
+        overflow-x: auto;
+      }
+      .roles-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+      }
+      .roles-table th,
+      .roles-table td {
+        padding: 12px 8px;
         border-bottom: 1px solid var(--color-border);
+        text-align: left;
+      }
+      .roles-table thead th {
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      .roles-table th:nth-child(2) {
+        width: 180px;
+      }
+      .roles-table th:nth-child(3) {
+        width: 210px;
+      }
+      .person-name {
+        font-weight: 500;
+        overflow-wrap: anywhere;
+      }
+      .role-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .roles-table select {
+        width: 100%;
+      }
+      .add-person {
+        margin-top: 20px;
+      }
+      .add-person h4 {
+        margin-bottom: 12px;
+      }
+      .add-person-fields {
+        display: flex;
+        align-items: end;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .add-person-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 0.85rem;
+      }
+      .role-status {
+        color: var(--color-text-secondary);
+        margin: 12px 0;
+      }
+      @media (max-width: 650px) {
+        .roles-table {
+          min-width: 520px;
+        }
+        .add-person-field {
+          width: 100%;
+        }
       }
       .form-select {
         padding: 6px 10px;
@@ -201,7 +349,19 @@ export class DashboardComponent implements OnInit {
   allUsers: any[] = [];
   showIndex = false;
   selectedUserId = '';
-  selectedRole = 'ACP_MANAGER';
+  selectedRole = 'READ_ONLY';
+  roleEdits: Record<string, string> = {};
+  roleBusy = false;
+  roleError = '';
+  roleStatus = '';
+
+  get canAssignManager(): boolean {
+    return this.auth.isAdmin;
+  }
+
+  get availableUsers(): any[] {
+    return this.allUsers.filter((user) => !this.roles.some((role) => role.userId === user.id));
+  }
   myRole: string | null = null;
   editingName = false;
   editName = '';
@@ -232,7 +392,6 @@ export class DashboardComponent implements OnInit {
     });
     this.api.getAssignableUsers(id).subscribe((users) => {
       this.allUsers = users;
-      if (users.length) this.selectedUserId = users[0].id;
     });
   }
 
@@ -295,24 +454,69 @@ export class DashboardComponent implements OnInit {
   }
 
   assignRole() {
-    if (!this.acp || !this.selectedUserId) return;
-    this.error = '';
-    this.api
-      .assignAcpRole(this.acp.id, { userId: this.selectedUserId, role: this.selectedRole })
-      .subscribe({
-        next: () => this.api.getAcpRoles(this.acp!.id).subscribe((r) => (this.roles = r)),
-        error: (err) =>
-          (this.error = this.mapRoleError(err, 'Die Rolle konnte nicht zugewiesen werden.')),
-      });
+    if (
+      !this.selectedUserId ||
+      !this.availableUsers.some((user) => user.id === this.selectedUserId)
+    )
+      return;
+    this.persistRole(this.selectedUserId, this.selectedRole);
+  }
+
+  saveRole(userId: string) {
+    const assignment = this.roles.find((role) => role.userId === userId);
+    const nextRole = this.roleEdits[userId];
+    if (!assignment || !nextRole || nextRole === assignment.role) return;
+    this.persistRole(userId, nextRole);
+  }
+
+  private persistRole(userId: string, role: string) {
+    if (!this.acp || this.roleBusy) return;
+    this.roleBusy = true;
+    this.roleError = '';
+    this.roleStatus = '';
+    this.api.assignAcpRole(this.acp.id, { userId, role }).subscribe({
+      next: (saved) => {
+        const existing = this.roles.find((entry) => entry.userId === userId);
+        const updated = {
+          ...existing,
+          ...saved,
+          userId,
+          role,
+          user: existing?.user || this.allUsers.find((user) => user.id === userId),
+        };
+        this.roles = existing
+          ? this.roles.map((entry) => (entry.userId === userId ? updated : entry))
+          : [...this.roles, updated];
+        delete this.roleEdits[userId];
+        if (this.selectedUserId === userId) this.selectedUserId = '';
+        if (this.auth.currentUser?.id === userId) this.myRole = role;
+        this.roleBusy = false;
+        this.roleStatus = existing ? 'Rolle gespeichert.' : 'Person hinzugefügt.';
+      },
+      error: (err) => {
+        this.roleBusy = false;
+        this.roleError = this.mapRoleError(err, 'Die Rolle konnte nicht gespeichert werden.');
+      },
+    });
   }
 
   removeRole(userId: string) {
-    if (!this.acp) return;
-    this.error = '';
+    if (!this.acp || this.roleBusy) return;
+    this.roleBusy = true;
+    this.roleError = '';
+    this.roleStatus = '';
     this.api.removeAcpRole(this.acp.id, userId).subscribe({
-      next: () => this.api.getAcpRoles(this.acp!.id).subscribe((r) => (this.roles = r)),
-      error: (err) =>
-        (this.error = this.mapRoleError(err, 'Die Rolle konnte nicht entfernt werden.')),
+      next: () => {
+        this.roles = this.roles.filter((role) => role.userId !== userId);
+        delete this.roleEdits[userId];
+        if (this.auth.currentUser?.id === userId) this.myRole = null;
+        this.roleBusy = false;
+        this.roleStatus = 'Rollenzuweisung entfernt.';
+      },
+      error: (err) => {
+        this.roleBusy = false;
+        this.roleError = this.mapRoleError(err, 'Die Rolle konnte nicht entfernt werden.');
+      },
     });
   }
 

@@ -80,7 +80,19 @@ export class ItemExplorerComponent implements OnInit, OnDestroy, ItemExplorerShe
   }
 
   ngOnInit(): void {
-    this.feature.init(this.route.snapshot.paramMap.get('acpId') || '');
+    const query = this.route.snapshot.queryParamMap;
+    const unitId = query?.get('unitId') || '';
+    const itemId = query?.get('itemId') || '';
+    const acpId = this.route.snapshot.paramMap.get('acpId') || '';
+    if (unitId && itemId) {
+      this.feature.init(acpId, {
+        unitId,
+        itemId,
+        open: query?.get('comments') === 'open',
+      });
+    } else {
+      this.feature.init(acpId);
+    }
   }
 
   ngOnDestroy(): void {

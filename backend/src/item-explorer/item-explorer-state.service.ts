@@ -35,6 +35,7 @@ export interface ExplorerTableColumnLayout {
   order: string[];
   configured: boolean;
   widths: Record<string, number>;
+  schemaVersion?: number;
 }
 
 export interface ExplorerSharedStatePayload {
@@ -1180,6 +1181,7 @@ export class ItemExplorerStateService {
     const configured =
       source.configured === true || visible.length > 0 || order.length > 0;
     const widths = this.normalizeTableColumnWidths(source.widths);
+    const schemaVersion = Number(source.schemaVersion);
     if (!configured && Object.keys(widths).length === 0) return undefined;
     return {
       visible:
@@ -1187,6 +1189,9 @@ export class ItemExplorerStateService {
       order: order.length ? order : visible,
       configured,
       widths,
+      ...(Number.isInteger(schemaVersion) && schemaVersion > 0
+        ? { schemaVersion }
+        : {}),
     };
   }
 

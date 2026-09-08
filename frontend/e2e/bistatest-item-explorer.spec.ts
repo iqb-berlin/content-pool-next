@@ -53,7 +53,7 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(page.getByRole('heading', { name: 'Item-Liste', exact: true })).toHaveCount(0);
   await page
     .getByRole('link', {
-      name: '🔭 Item-Explorer Items interaktiv durchsuchen und anzeigen',
+      name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
       exact: true,
     })
     .click();
@@ -281,7 +281,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await login(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  await expect(page.getByRole('heading', { name: 'Zugriffskonfiguration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Zugriff & Funktionen' })).toBeVisible();
   await expect(page.getByLabel('ID der zusätzlichen Spalte 1')).toHaveValue('customQuality');
   await expect(page.getByLabel('Name der zusätzlichen Spalte 1')).toHaveValue(
     'Eigene Qualitätsspalte',

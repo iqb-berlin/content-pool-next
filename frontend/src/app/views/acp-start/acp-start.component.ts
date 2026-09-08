@@ -1,5 +1,6 @@
+import { sequenceLabel } from '../../shared/sequence-label';
 import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
@@ -17,7 +18,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         <div class="acp-header-main">
           <h1>{{ data.name }}</h1>
           @if (canManageAcp) {
-            <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm">← Zur Verwaltung</a>
+            <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm"
+              >← Zur ACP-Übersicht</a
+            >
           }
         </div>
         @if (data.description) {
@@ -26,19 +29,24 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
       </div>
 
       <div class="sections-grid">
-        <!-- ACP-Index — always available -->
-        <a [routerLink]="['/view', acpId, 'index']" class="card section-card">
-          <div class="section-icon">🗂️</div>
-          <h3>ACP-Index</h3>
-          <p>Paketstruktur interaktiv durchsuchen</p>
-        </a>
+        <!-- Item Explorer — only if enableItemList -->
+        @if (fc.enableItemList !== false) {
+          <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
+            <div class="section-icon">🔭</div>
+            <h3>Item-Explorer</h3>
+            <p>Items durchsuchen, prüfen und kommentieren</p>
+          </a>
+        }
 
         <!-- Units list — always available if units exist -->
         @if (data.units?.length && fc.enableUnitListNavigation !== false) {
           <a [routerLink]="['/view', acpId, 'units']" class="card section-card">
             <div class="section-icon">📝</div>
-            <h3>Aufgaben</h3>
-            <p>{{ data.units.length }} Aufgaben verfügbar</p>
+            <h3>Aufgaben ansehen</h3>
+            <p>
+              Vollständige Aufgaben öffnen · {{ data.units.length }}
+              {{ data.units.length === 1 ? 'Aufgabe' : 'Aufgaben' }}
+            </p>
           </a>
         }
 
@@ -55,15 +63,6 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               }
             </div>
           </div>
-        }
-
-        <!-- Item Explorer — only if enableItemList -->
-        @if (fc.enableItemList !== false) {
-          <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
-            <div class="section-icon">🔭</div>
-            <h3>Item-Explorer</h3>
-            <p>Items interaktiv durchsuchen und anzeigen</p>
-          </a>
         }
 
         <!-- Downloads — only if any download flag is enabled -->
@@ -84,6 +83,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </div>
         }
       </div>
+      <a class="index-link" [routerLink]="['/view', acpId, 'index']"
+        >Paketstruktur (ACP-Index) ansehen</a
+      >
     } @else {
       <div class="empty-state">
         <h3>Lade ACP-Daten...</h3>
@@ -113,9 +115,13 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         line-height: 1.6;
       }
 
+      .index-link {
+        display: inline-block;
+        margin-top: 20px;
+      }
       .sections-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
         gap: 20px;
       }
 
@@ -190,6 +196,7 @@ export class AcpStartComponent implements OnInit, OnDestroy {
   private readonly destroy$ = new Subject<void>();
 
   constructor(
+    @Inject(Router) private router: Router,
     @Inject(ActivatedRoute) private route: ActivatedRoute,
     @Inject(ApiService) private api: ApiService,
     @Inject(AuthService) private auth: AuthService,
@@ -221,34 +228,13 @@ export class AcpStartComponent implements OnInit, OnDestroy {
     window.open(this.api.getViewIndexExportUrl(this.acpId), '_blank');
   }
 
-  sequenceLabel(sequence: any): string {
-    const name = this.textValue(sequence?.name);
-    if (name) return name;
-
-    const instrumentName = this.textValue(sequence?.instrumentName);
-    if (instrumentName) return instrumentName;
-
-    return sequence?.id || '';
-  }
-
-  private textValue(value: any): string {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) {
-      const de = value.find((entry: any) => entry && entry.lang === 'de');
-      if (de?.value) return String(de.value);
-      const first = value.find((entry: any) => entry && entry.value);
-      if (first?.value) return String(first.value);
-      return '';
-    }
-    if (value && typeof value === 'object') {
-      if (typeof value.de === 'string') return value.de;
-      if (typeof value.value === 'string') return value.value;
-    }
-    return '';
-  }
+  sequenceLabel = sequenceLabel;
 
   private updateManagerState(): void {
     this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
+    if (this.canManageAcp) {
+      void this.router.navigate(['/manage', this.acpId], { replaceUrl: true });
+    }
     this.updateBreadcrumbs();
   }
 

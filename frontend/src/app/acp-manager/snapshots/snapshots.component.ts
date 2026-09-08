@@ -15,7 +15,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     <app-acp-manager-context />
 
     <div class="page-header">
-      <h1>Snapshots</h1>
+      <h1>Sicherungsstände</h1>
       <button
         class="btn btn-outline btn-state"
         (click)="showCreate = !showCreate"

@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { sequenceLabel } from '../../shared/sequence-label';
+import { Component, ElementRef, ViewChild, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { JsonPipe } from '@angular/common';
@@ -45,56 +46,131 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         <div class="alert alert-success">{{ indexSuccessMessage }}</div>
       }
 
-      <div class="grid">
-        <a [routerLink]="['/manage', acp.id, 'files']" class="card link-card">
-          <h3>📁 Dateien</h3>
-          <p>Dateien hochladen, herunterladen und validieren</p>
-        </a>
-        <a [routerLink]="['/manage', acp.id, 'snapshots']" class="card link-card">
-          <h3>📸 Snapshots</h3>
-          <p>Versionierung und Wiederherstellung</p>
-        </a>
-        <a [routerLink]="['/manage', acp.id, 'access']" class="card link-card">
-          <h3>🔐 Zugriffskonfiguration</h3>
-          <p>Zugriffsrechte und Features konfigurieren</p>
-        </a>
-        <a [routerLink]="['/manage', acp.id, 'application-tokens']" class="card link-card">
-          <h3>Applikationstoken</h3>
-          <p>Tokens für externe Anwendungen auf dieses ACP begrenzen</p>
-        </a>
-        <a [routerLink]="['/view', acp.id]" class="card link-card">
-          <h3>👁️ Vorschau</h3>
-          <p>Read-Only-Ansicht des ACP</p>
-        </a>
-      </div>
+      <section class="card overview-section" aria-labelledby="content-heading">
+        <h2 id="content-heading">Inhalte</h2>
+        @if (contentData) {
+          <div class="grid content-grid">
+            @if (contentData.featureConfig?.enableItemList !== false) {
+              <a
+                [routerLink]="['/view', acp.id, 'item-explorer']"
+                class="card link-card primary-content"
+              >
+                <span class="tile-icon" aria-hidden="true">🔭</span>
+                <div>
+                  <h3>Item-Explorer</h3>
+                  <p>Items prüfen, kommentieren und bearbeiten</p>
+                </div>
+                <span class="tile-arrow" aria-hidden="true">›</span>
+              </a>
+            }
+            @if (
+              contentData.units?.length &&
+              contentData.featureConfig?.enableUnitListNavigation !== false
+            ) {
+              <a [routerLink]="['/view', acp.id, 'units']" class="card link-card">
+                <span class="tile-icon" aria-hidden="true">📝</span>
+                <div>
+                  <h3>Aufgaben ansehen</h3>
+                  <p>
+                    Vollständige Aufgaben öffnen · {{ contentData.units.length }}
+                    {{ contentData.units.length === 1 ? 'Aufgabe' : 'Aufgaben' }}
+                  </p>
+                </div>
+                <span class="tile-arrow" aria-hidden="true">›</span>
+              </a>
+            }
+            @if (
+              contentData.sequences?.length &&
+              contentData.featureConfig?.enableSequenceNavigation !== false
+            ) {
+              @for (sequence of contentData.sequences; track sequence.id) {
+                <a [routerLink]="['/view', acp.id, 'sequence', sequence.id]" class="card link-card">
+                  <span class="tile-icon" aria-hidden="true">📋</span>
+                  <div>
+                    <h3>Aufgabenfolge</h3>
+                    <p>{{ sequenceLabel(sequence) }}</p>
+                  </div>
+                  <span class="tile-arrow" aria-hidden="true">›</span>
+                </a>
+              }
+            }
+          </div>
+        } @else {
+          <p>{{ contentError || 'Inhalte werden geladen …' }}</p>
+        }
+      </section>
 
-      <div class="card">
-        <h3>ACP-Index</h3>
-        <div class="toolbar">
-          <button
-            class="btn btn-outline btn-state"
-            (click)="showIndex = !showIndex"
-            [attr.aria-expanded]="showIndex"
-            aria-controls="acp-index-content"
-          >
-            {{ showIndex ? 'Verbergen' : 'Anzeigen' }}
+      <section class="card overview-section" aria-labelledby="management-heading">
+        <h2 id="management-heading">Verwaltung</h2>
+        <div class="grid management-grid">
+          <a [routerLink]="['/manage', acp.id, 'files']" class="card link-card">
+            <span class="tile-icon" aria-hidden="true">📁</span>
+            <div>
+              <h3>Dateien verwalten</h3>
+              <p>Dateien hochladen, prüfen und herunterladen</p>
+            </div>
+          </a>
+          <a [routerLink]="['/manage', acp.id, 'snapshots']" class="card link-card">
+            <span class="tile-icon" aria-hidden="true">📸</span>
+            <div>
+              <h3>Sicherungsstände</h3>
+              <p>Paketstand sichern und wiederherstellen</p>
+            </div>
+          </a>
+          <a [routerLink]="['/manage', acp.id, 'access']" class="card link-card">
+            <span class="tile-icon" aria-hidden="true">🔐</span>
+            <div>
+              <h3>Zugriff &amp; Funktionen</h3>
+              <p>Zugang und Funktionen festlegen</p>
+            </div>
+          </a>
+          <a [routerLink]="['/manage', acp.id, 'application-tokens']" class="card link-card">
+            <span class="tile-icon" aria-hidden="true">🔑</span>
+            <div>
+              <h3>API-Zugänge</h3>
+              <p>Zugriff für externe Anwendungen verwalten</p>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <details class="card index-section">
+        <summary>Paketstruktur (ACP-Index)</summary>
+        <div class="toolbar index-actions">
+          <a [routerLink]="['/view', acp.id, 'index']" class="btn btn-outline">Struktur ansehen</a>
+          <button #indexTrigger class="btn btn-outline" (click)="openIndexDialog()">
+            JSON anzeigen
           </button>
-          <a [href]="api.getIndexExportUrl(acp.id)" class="btn btn-outline" target="_blank"
-            >Exportieren</a
-          >
-          <label class="btn btn-accent">
-            Importieren
+          <a [href]="api.getIndexExportUrl(acp.id)" class="btn btn-outline">Exportieren</a>
+          <label class="btn btn-accent"
+            >Importieren
             <input type="file" accept=".json" (change)="importIndex($event)" hidden />
           </label>
-          <button class="btn btn-danger" (click)="openDeleteIndexDialog()">Index löschen</button>
+          <button class="btn btn-outline danger-action" (click)="openDeleteIndexDialog()">
+            Index zurücksetzen
+          </button>
         </div>
-        @if (showIndex) {
-          <pre id="acp-index-content" class="json-view">{{ acp.acpIndex | json }}</pre>
-        }
-      </div>
+      </details>
+
+      <dialog
+        #indexDialog
+        class="index-dialog"
+        aria-labelledby="index-dialog-title"
+        (close)="restoreIndexFocus()"
+      >
+        <div class="index-dialog-header">
+          <h2 id="index-dialog-title">ACP-Index als JSON</h2>
+          <button class="btn btn-outline btn-sm" (click)="closeIndexDialog()" autofocus>
+            Schließen
+          </button>
+        </div>
+        <pre class="json-view" tabindex="0" aria-label="ACP-Index JSON">{{
+          acp.acpIndex | json
+        }}</pre>
+      </dialog>
 
       <section class="card roles-card" aria-labelledby="roles-heading">
-        <h3 id="roles-heading">Rollenzuweisungen</h3>
+        <h2 id="roles-heading">Personen &amp; Rollen</h2>
         @if (roleError) {
           <p class="alert alert-error" role="alert">{{ roleError }}</p>
         }
@@ -210,7 +286,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 
       <app-confirm-dialog
         [open]="showDeleteIndexDialog"
-        title="ACP-Index löschen"
+        title="ACP-Index zurücksetzen"
         message="Der aktuelle ACP-Index wird auf den Standardzustand zurückgesetzt."
         [details]="[
           'Diese Aktion betrifft den gesamten Index (inkl. Struktur und Metadaten).',
@@ -218,8 +294,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         ]"
         [error]="deleteIndexError"
         [busy]="deletingIndex"
-        busyLabel="Index wird gelöscht..."
-        confirmLabel="Index löschen"
+        busyLabel="Index wird zurückgesetzt..."
+        confirmLabel="Zurücksetzen"
         confirmVariant="danger"
         (confirmed)="confirmDeleteIndex()"
         (cancelled)="closeDeleteIndexDialog()"
@@ -228,11 +304,86 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
   `,
   styles: [
     `
+      .overview-section {
+        margin-bottom: 16px;
+      }
+      .overview-section h2,
+      .roles-card h2 {
+        font-size: 1.05rem;
+        margin-bottom: 16px;
+      }
+      .grid.content-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+      }
+      .grid.management-grid {
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+      }
+      .grid .link-card {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        margin: 0;
+        padding: 20px;
+      }
+      .grid .link-card h3 {
+        font-size: 1rem;
+      }
+      .tile-icon {
+        font-size: 1.8rem;
+        flex-shrink: 0;
+      }
+      .tile-arrow {
+        margin-left: auto;
+        font-size: 1.8rem;
+      }
+      .primary-content {
+        background: #f0f7fc;
+        border-color: #aacfe8;
+      }
+      .index-section {
+        margin-bottom: 16px;
+      }
+      .index-section summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .index-actions {
+        margin-top: 16px;
+        flex-wrap: wrap;
+      }
+      .danger-action {
+        color: var(--color-danger-text);
+      }
+      .index-dialog {
+        width: min(900px, calc(100vw - 32px));
+        max-height: 80dvh;
+        padding: 24px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-surface);
+        color: var(--color-text);
+        margin: auto;
+      }
+      .index-dialog::backdrop {
+        background: rgba(0, 0, 0, 0.4);
+      }
+      .index-dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+      }
+      .index-dialog-header h2 {
+        font-size: 1.15rem;
+      }
+      .roles-card button:disabled {
+        opacity: 0.5;
+      }
       .grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
         gap: 16px;
-        margin-bottom: 24px;
+        margin-bottom: 0;
       }
       .header-main {
         display: flex;
@@ -264,7 +415,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         border-radius: var(--radius);
         overflow-x: auto;
         font-size: 0.8rem;
-        max-height: 400px;
+        max-height: 55dvh;
         margin-top: 12px;
       }
       .roles-table-scroll {
@@ -344,13 +495,27 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
   ],
 })
 export class DashboardComponent implements OnInit {
+  sequenceLabel = sequenceLabel;
   acp: Acp | null = null;
   roles: any[] = [];
   allUsers: any[] = [];
-  showIndex = false;
+  contentData: any = null;
+  contentError = '';
+  @ViewChild('indexDialog') indexDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('indexTrigger') indexTrigger?: ElementRef<HTMLButtonElement>;
+
+  openIndexDialog() {
+    this.indexDialog?.nativeElement.showModal();
+  }
+  closeIndexDialog() {
+    this.indexDialog?.nativeElement.close();
+  }
+  restoreIndexFocus() {
+    this.indexTrigger?.nativeElement.focus();
+  }
   selectedUserId = '';
   selectedRole = 'READ_ONLY';
-  roleEdits: Record<string, string> = {};
+  roleEdits: Record<string, string | undefined> = {};
   roleBusy = false;
   roleError = '';
   roleStatus = '';
@@ -384,6 +549,10 @@ export class DashboardComponent implements OnInit {
   ngOnInit() {
     const id = this.route.snapshot.paramMap.get('acpId')!;
     this.api.getAcp(id).subscribe((acp) => (this.acp = acp));
+    this.api.getAcpStartPage(id).subscribe({
+      next: (data) => (this.contentData = data),
+      error: () => (this.contentError = 'Inhalte konnten nicht geladen werden.'),
+    });
     this.api.getAcpRoles(id).subscribe((roles) => {
       this.roles = roles;
       const myId = this.auth.currentUser?.id;
@@ -395,8 +564,18 @@ export class DashboardComponent implements OnInit {
     });
   }
 
-  exportIndex() {
-    // Replaced by direct link via getIndexExportUrl
+  private reloadContent() {
+    if (!this.acp) return;
+    this.api.getAcpStartPage(this.acp.id).subscribe({
+      next: (data) => {
+        this.contentData = data;
+        this.contentError = '';
+      },
+      error: () => {
+        this.contentData = null;
+        this.contentError = 'Inhalte konnten nicht geladen werden.';
+      },
+    });
   }
 
   importIndex(event: Event) {
@@ -413,7 +592,9 @@ export class DashboardComponent implements OnInit {
             this.acp!.acpIndex = idx;
             this.error = '';
             this.indexSuccessMessage = 'ACP-Index wurde importiert.';
+            this.reloadContent();
           },
+          error: () => (this.error = 'ACP-Index konnte nicht importiert werden.'),
         });
       } catch {
         this.error = 'Ungültige JSON-Datei';
@@ -445,10 +626,11 @@ export class DashboardComponent implements OnInit {
         this.indexSuccessMessage = 'ACP-Index wurde auf den Standardzustand zurückgesetzt.';
         this.deletingIndex = false;
         this.showDeleteIndexDialog = false;
+        this.reloadContent();
       },
       error: (err) => {
         this.deletingIndex = false;
-        this.deleteIndexError = err?.error?.message || 'Fehler beim Löschen des ACP-Index.';
+        this.deleteIndexError = err?.error?.message || 'Fehler beim Zurücksetzen des ACP-Index.';
       },
     });
   }

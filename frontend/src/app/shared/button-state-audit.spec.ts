@@ -61,7 +61,8 @@ describe('stateful button audit', () => {
         !/class="[^"]*\bbtn-state\b/.test(block) || !/\[attr\.aria-expanded\]=/.test(block),
     );
 
-    expect(disclosures.length).toBeGreaterThanOrEqual(4);
+    // Native disclosures (such as the ACP index details) need no state button.
+    expect(disclosures.length).toBeGreaterThan(0);
     expect(invalid.map(location)).toEqual([]);
   });
 

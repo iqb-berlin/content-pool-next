@@ -396,6 +396,26 @@ export class ItemCollectionsService {
     return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
+  async getAccessibleCollectionRowKeys(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    collectionId: string,
+  ): Promise<string[]> {
+    const state = this.normalizeState(
+      await this.store.readPreferences(acpId, identity),
+    );
+    const own = state.collections.find(
+      (collection) => collection.id === collectionId,
+    );
+    const collection =
+      own ??
+      (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+        (source) => source.collection.id === collectionId,
+      )?.collection;
+    if (!collection) throw new NotFoundException("Item collection not found");
+    return [...collection.rowKeys];
+  }
+
   async exportItemCollectionCsv(
     acpId: string,
     identity: StablePreferenceIdentity,

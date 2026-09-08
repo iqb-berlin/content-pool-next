@@ -414,6 +414,42 @@ describe("ViewsService", () => {
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
   });
 
+  it("filters every participant by exact collection row keys without duplicating sub-items", async () => {
+    itemPreferenceRepository.find.mockResolvedValue(
+      ["one", "two"].map((username) => ({
+        user: { username },
+        preferences: {
+          rowData: {
+            "uuid::A": { note: `${username}-included` },
+            "uuid::B": { note: `${username}-excluded` },
+          },
+        },
+      })),
+    );
+    unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
+    const csv = (
+      await service.exportAllPersonalItemDataCsv("acp-1", false, [
+        "uuid::A",
+        "uuid::A",
+      ])
+    ).toString("utf8");
+    expect(csv).toContain("one-included");
+    expect(csv).toContain("two-included");
+    expect(csv).not.toContain("excluded");
+    expect(csv.trim().split("\r\n")).toHaveLength(3);
+    const empty = (
+      await service.exportAllPersonalItemDataCsv("acp-1", false, [])
+    ).toString("utf8");
+    expect(empty.trim().split("\r\n")).toHaveLength(1);
+    expect(empty).toContain("Teilnehmerkennung");
+    const noData = (
+      await service.exportAllPersonalItemDataCsv("acp-1", false, [
+        "without-data",
+      ])
+    ).toString("utf8");
+    expect(noData).toBe(empty);
+  });
+
   it("exports all stored participant rows as CSV with literal note line breaks", async () => {
     itemPreferenceRepository.find.mockResolvedValue([
       {

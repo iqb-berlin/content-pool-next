@@ -1019,6 +1019,16 @@ describe('ApiService', () => {
       );
     });
 
+    it('sends the selected collection identifier for the aggregate CSV export', () => {
+      httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));
+      service.exportAllViewPersonalItemDataCsv('acp1', 'editor', 'collection-1').subscribe();
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/preferences/export-all.csv',
+        { perspective: 'editor', collectionId: 'collection-1' },
+        { responseType: 'blob' },
+      );
+    });
+
     it('should persist the active personal item list view mode', () => {
       const payload = {
         activeCollectionId: 'collection-1',

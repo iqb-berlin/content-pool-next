@@ -7,9 +7,26 @@
   <div
     id="item-explorer-metadata-drawer"
     class="drawer-container"
+    [style.width.px]="width"
     [class.open]="vm.showMetadataDrawer"
     (click)="$event.stopPropagation()"
   >
+    <div
+      class="drawer-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      tabindex="0"
+      aria-label="Breite der Metadaten ändern"
+      title="Zum Ändern der Breite ziehen oder Pfeiltasten verwenden"
+      aria-valuemin="320"
+      [attr.aria-valuenow]="width"
+      (pointerdown)="startResize($event)"
+      (pointermove)="resize($event)"
+      (pointerup)="stopResize()"
+      (pointercancel)="stopResize()"
+      (lostpointercapture)="stopResize()"
+      (keydown)="resizeWithKeyboard($event)"
+    ></div>
     <div class="drawer-header">
       <div class="drawer-title">
         <span class="drawer-icon">📄</span>

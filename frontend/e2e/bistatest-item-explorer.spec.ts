@@ -595,6 +595,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await openExplorer(page);
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
+  const nameDialog = page.getByRole('dialog', { name: 'Neue Auswahlliste' });
+  await nameDialog.getByLabel('Name der Auswahlliste').fill('E2E Freigabetest');
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -602,7 +606,7 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         response.url().endsWith(`/api/view/acp/${ACP_ID}/items/collections`) &&
         response.ok(),
     ),
-    page.getByRole('button', { name: 'Neu', exact: true }).click(),
+    nameDialog.getByRole('button', { name: 'Anlegen', exact: true }).click(),
   ]);
   const managerRowCheckbox = page.getByLabel('Item 01 in Auswahlliste auswählen');
   await Promise.all([

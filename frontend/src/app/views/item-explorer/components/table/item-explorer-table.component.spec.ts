@@ -43,7 +43,8 @@ describe('ItemExplorerTableComponent', () => {
   it('preserves native keyboard actions on controls inside the table', () => {
     const onTableKeydown = vi.fn();
     const component = new ItemExplorerTableComponent({
-      registerTableDom: vi.fn(), tableViewModel: { onTableKeydown },
+      registerTableDom: vi.fn(),
+      tableViewModel: { onTableKeydown },
     } as any);
     for (const tag of ['input', 'select', 'textarea', 'button', 'a', 'summary']) {
       component.onTableKeydown({ target: document.createElement(tag) } as any);

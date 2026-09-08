@@ -84,7 +84,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       } @else {
         <div class="unit-embed card">
           <div class="embed-body">
-            <p class="help-text">Diese Aufgabenfolge enthält aktuell keine referenzierten Aufgaben.</p>
+            <p class="help-text">
+              Diese Aufgabenfolge enthält aktuell keine referenzierten Aufgaben.
+            </p>
           </div>
         </div>
       }

@@ -42,7 +42,9 @@
           [title]="
             vm.activeItemCollection?.ownedByCurrentUser
               ? 'Andere Zugangsberechtigte dieses ACP können diese Liste ansehen und kopieren. Persönliche Eingaben werden nicht geteilt.'
-              : 'Geteilt von ' + vm.activeItemCollection?.ownerLabel + '. Sie können diese Liste ansehen und kopieren. Persönliche Eingaben werden nicht geteilt.'
+              : 'Geteilt von ' +
+                vm.activeItemCollection?.ownerLabel +
+                '. Sie können diese Liste ansehen und kopieren. Persönliche Eingaben werden nicht geteilt.'
           "
           >Geteilt</span
         >

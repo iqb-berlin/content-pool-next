@@ -161,8 +161,9 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
     @if (lastSyncReport) {
       <div class="alert alert-info">
         Index-Sync: {{ lastSyncReport.unitsAdded }} Aufgaben hinzugefügt,
-        {{ lastSyncReport.unitsUpdated }} Aufgaben aktualisiert, {{ lastSyncReport.itemsAdded }} Items
-        hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items aktualisiert.
+        {{ lastSyncReport.unitsUpdated }} Aufgaben aktualisiert,
+        {{ lastSyncReport.itemsAdded }} Items hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items
+        aktualisiert.
         @if (lastSyncReport.warnings?.length) {
           <div style="margin-top:6px">
             Warnungen:

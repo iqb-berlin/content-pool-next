@@ -5654,7 +5654,12 @@ describe('ItemExplorerFacade', () => {
   it('leaves modified navigation keys to the browser', () => {
     const component = createFacade();
     component.filteredItems = [{}] as any;
-    for (const modifiers of [{ altKey: true }, { shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+    for (const modifiers of [
+      { altKey: true },
+      { shiftKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+    ]) {
       const event = new KeyboardEvent('keydown', { key: 'Home', cancelable: true, ...modifiers });
       component.onTableKeydown(event);
       expect(event.defaultPrevented).toBe(false);

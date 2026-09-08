@@ -50,7 +50,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <strong>{{ currentUnit.name || currentUnit.id }}</strong>
           </span>
         } @else {
-          <span class="nav-info"><strong>Keine Unit in dieser Aufgabenfolge</strong></span>
+          <span class="nav-info"><strong>Keine Aufgabe in dieser Aufgabenfolge</strong></span>
         }
         <button class="btn btn-primary" [disabled]="!canGoNext" (click)="next()">Weiter →</button>
       </div>
@@ -84,7 +84,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       } @else {
         <div class="unit-embed card">
           <div class="embed-body">
-            <p class="help-text">Diese Aufgabenfolge enthält aktuell keine referenzierten Units.</p>
+            <p class="help-text">Diese Aufgabenfolge enthält aktuell keine referenzierten Aufgaben.</p>
           </div>
         </div>
       }

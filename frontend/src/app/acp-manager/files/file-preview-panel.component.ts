@@ -112,7 +112,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
               @case ('unit-xml') {
                 <div class="stats-grid">
                   <div class="stat-card">
-                    <span class="stat-label">Unit-ID</span>
+                    <span class="stat-label">Aufgaben-ID</span>
                     <code>{{ structuredData.unitId }}</code>
                   </div>
                   <div class="stat-card">
@@ -155,7 +155,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                     <strong>{{ structuredData.itemCount }}</strong>
                   </div>
                   <div class="stat-card">
-                    <span class="stat-label">Unit-Profile</span>
+                    <span class="stat-label">Aufgabenprofile</span>
                     <strong>{{ structuredData.unitProfileCount }}</strong>
                   </div>
                   <div class="stat-card">
@@ -166,7 +166,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
 
                 @if (structuredData.unitProfiles.length) {
                   <div class="info-block">
-                    <strong>Unit-Profile</strong>
+                    <strong>Aufgabenprofile</strong>
                     <dl class="data-list">
                       @for (entry of structuredData.unitProfiles; track entry.id) {
                         <dt>{{ entry.label }}</dt>

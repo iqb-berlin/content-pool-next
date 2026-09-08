@@ -533,7 +533,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await openExplorer(page);
 
   await page.locator('tbody tr').first().click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   const codingDialog = page
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
@@ -548,7 +548,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await codingDialog.getByRole('button', { name: /Schließen/ }).click();
 
   await page.locator('tbody tr').nth(1).click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(page.getByText('Allgemeiner Testhinweis zur Kodierung.')).toHaveCount(0);
   await page.getByRole('button', { name: /Schließen/ }).click();
 
@@ -565,7 +565,7 @@ test('applies coding configuration defaults and the alternative combinations in 
 
   await openExplorer(page);
   await page.locator('tbody tr').first().click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   const alternativeDialog = page
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
@@ -574,7 +574,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await alternativeDialog.getByRole('button', { name: /Schließen/ }).click();
 
   await page.locator('tbody tr').nth(1).click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(page.getByText('Allgemeiner Testhinweis zur Kodierung.')).toBeVisible();
   await page.getByRole('button', { name: /Schließen/ }).click();
 
@@ -583,7 +583,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   const viewerPage = viewerContext.pages()[0];
   await openExplorer(viewerPage);
   await viewerPage.locator('tbody tr').nth(1).click();
-  await viewerPage.getByRole('button', { name: /Kodierung/ }).click();
+  await viewerPage.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(viewerPage.getByText('Allgemeiner Testhinweis zur Kodierung.')).toBeVisible();
   await viewerContext.close();
 });
@@ -615,7 +615,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
     ),
     managerRowCheckbox.check(),
   ]);
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Freigeben …', exact: true }).click();
   const shareToggle = page.getByLabel('Für diesen ACP freigeben');
+  await shareToggle.check();
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -623,7 +626,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         /\/items\/collections\/[^/]+$/.test(new URL(response.url()).pathname) &&
         response.ok(),
     ),
-    shareToggle.check(),
+    page
+      .getByRole('dialog', { name: 'Auswahlliste freigeben' })
+      .getByRole('button', { name: 'Speichern', exact: true })
+      .click(),
   ]);
   await expect(shareToggle).toBeChecked();
 
@@ -637,9 +643,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
   const sharedId = await sharedOption.getAttribute('value');
   expect(sharedId).toBeTruthy();
   await viewerSelect.selectOption(sharedId!);
-  await expect(viewerPage.getByText('Geteilt von E2E Manager')).toBeVisible();
+  await expect(viewerPage.getByTitle(/^Geteilt von E2E Manager\./)).toBeVisible();
+  await viewerPage.getByText('Liste verwalten ▾', { exact: true }).click();
   await expect(viewerPage.getByRole('button', { name: 'Umbenennen' })).toBeDisabled();
-  await expect(viewerPage.getByRole('button', { name: 'Leeren' })).toBeDisabled();
+  await expect(viewerPage.getByRole('button', { name: 'Liste leeren …' })).toBeDisabled();
   await expect(viewerPage.getByLabel('Item 01 in Auswahlliste auswählen')).toBeDisabled();
   await expect(viewerPage.getByRole('button', { name: 'Private Kopie erstellen' })).toBeEnabled();
 
@@ -653,8 +660,11 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
     viewerPage.getByRole('button', { name: 'Private Kopie erstellen' }).click(),
   ]);
   await expect(viewerSelect).toContainText('(Kopie)');
-  await expect(viewerPage.getByLabel('Für diesen ACP freigeben')).not.toBeChecked();
+  await expect(viewerPage.getByText('Geteilt', { exact: true })).toHaveCount(0);
   await expect(viewerPage.getByLabel('Item 01 in Auswahlliste auswählen')).toBeEnabled();
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Freigabe verwalten …', exact: true }).click();
+  await shareToggle.uncheck();
 
   await Promise.all([
     page.waitForResponse(
@@ -663,7 +673,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         /\/items\/collections\/[^/]+$/.test(new URL(response.url()).pathname) &&
         response.ok(),
     ),
-    shareToggle.uncheck(),
+    page
+      .getByRole('dialog', { name: 'Auswahlliste freigeben' })
+      .getByRole('button', { name: 'Speichern', exact: true })
+      .click(),
   ]);
   await viewerPage.reload();
   await expect(viewerPage.getByLabel('Aktive persönliche Auswahlliste auswählen')).toContainText(

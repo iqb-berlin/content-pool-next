@@ -1,136 +1,208 @@
 <div class="preview-panel" tabindex="0" role="region" aria-label="Item-Vorschau">
   @if (vm.selectedItem) {
-    @if (vm.canEditExplorer) {
-      <div
-        class="preview-target-info card"
-        [class.unavailable]="!vm.canPreviewSelectedItem || !!vm.previewUnavailableReason"
-      >
-        <div class="preview-target-header">
-          <strong>Explorer-Item</strong>
-          <code>{{ vm.selectedItem.unitId }}{{ vm.selectedItem.itemId }}</code>
-          @if (vm.selectedItem.subId) {
-            <span class="player-target-badge secondary">
-              {{ vm.itemSubIdLabel }}:
-              {{ vm.selectedItem.subIdDisplay || vm.selectedItem.subId }}
-            </span>
-          }
-          @if (vm.isItemExcluded(vm.selectedItem)) {
-            <span class="excluded-item-badge">Ausgeschlossen</span>
-          }
-          @if (vm.selectedItemTarget && vm.selectedItemTarget !== vm.selectedPreviewTarget) {
-            <span class="player-target-badge secondary">
-              Kodierschema {{ vm.selectedItemTarget }}
-            </span>
-          }
-          @if (vm.selectedPreviewTarget) {
-            <span class="player-target-badge">Player {{ vm.selectedPreviewTarget }}</span>
-          } @else {
-            <span class="player-target-badge unmapped">Kein Player-Ziel</span>
-          }
-        </div>
-        @if (vm.showPlayerTargetInfo) {
-          @if (
-            vm.hasStoredPreviewTargetOverride && vm.selectedItemTarget && vm.selectedPreviewTarget
-          ) {
-            <p>
-              Das Item referenziert standardmäßig
-              <code>{{ vm.selectedItemTarget }}</code
-              >. Für die Vorschau wird aktuell manuell
-              <code>{{ vm.selectedPreviewTarget }}</code> verwendet.
-            </p>
-          } @else if (
-            vm.selectedItemUsesDerivedTarget && vm.selectedItemTarget && vm.selectedPreviewTarget
-          ) {
-            <p>
-              Das Item referenziert im Kodierschema die abhängige Variable
-              <code>{{ vm.selectedItemTarget }}</code
-              >. Für die Vorschau wird standardmäßig zur Basisvariable
-              <code>{{ vm.selectedPreviewTarget }}</code> gesprungen.
-            </p>
-          } @else if (vm.selectedPreviewTarget && !vm.previewUnavailableReason) {
-            <p>
-              Der Listeneintrag springt im Player zur Variable
-              <code>{{ vm.selectedPreviewTarget }}</code
-              >.
-            </p>
-          } @else if (vm.selectedPreviewTarget) {
-            <p>
-              Für diesen Listeneintrag ist die Player-Variable
-              <code>{{ vm.selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht zuverlässig
-              in der Unit-Definition aufgelöst werden.
-            </p>
-          } @else {
-            <p>
-              Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können unten ein
-              alternatives Sprungziel auswählen oder manuell eintragen.
-            </p>
-          }
+    <div
+      class="preview-target-info card"
+      [class.unavailable]="!vm.canPreviewSelectedItem || !!vm.previewUnavailableReason"
+    >
+      <div class="preview-target-header">
+        <strong>Item</strong>
+        <code>{{ vm.selectedItem.unitId }}{{ vm.selectedItem.itemId }}</code>
+        @if (vm.selectedItem.subId) {
+          <span class="player-target-badge secondary">
+            {{ vm.itemSubIdLabel }}:
+            {{ vm.selectedItem.subIdDisplay || vm.selectedItem.subId }}
+          </span>
         }
-
-        <div class="preview-target-controls">
-          @if (vm.showPreviewTargetSelector) {
-            <div class="preview-target-selector">
-              <label for="item-explorer-preview-target-select">Sprungziel aus Kodierschema</label>
-              <select
-                id="item-explorer-preview-target-select"
-                class="preview-target-select"
-                [ngModel]="vm.selectedPreviewTargetId"
-                (ngModelChange)="vm.setSelectedPreviewTargetId($event)"
-                (ngModelChange)="vm.onPreviewTargetSelectionChange()"
-              >
-                <option value="">{{ vm.previewTargetDefaultOptionLabel }}</option>
-                @for (option of vm.previewTargetOptions; track option.id) {
-                  <option [value]="option.id">{{ option.label }}</option>
-                }
-              </select>
-              <small>
-                {{ vm.previewTargetOptions.length }} bekannte Variablen aus dem Kodierschema
-                verfügbar.
-              </small>
-            </div>
-          }
-
-          <div class="preview-target-selector">
-            <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
-            <div class="preview-target-custom-row">
-              <input
-                id="item-explorer-custom-preview-target"
-                type="text"
-                class="preview-target-input"
-                placeholder="z.B. VAR_12 oder alias_12"
-                [ngModel]="vm.customPreviewTargetDraft"
-                (ngModelChange)="vm.setCustomPreviewTargetDraft($event)"
-                (keydown.enter)="vm.applyCustomPreviewTarget()"
-              />
-              <button class="btn btn-outline btn-sm" (click)="vm.applyCustomPreviewTarget()">
-                Übernehmen
-              </button>
-            </div>
-            <small> Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden. </small>
-          </div>
-
-          <div class="preview-target-actions">
-            <button
-              class="btn btn-outline btn-sm"
-              [disabled]="!vm.hasStoredPreviewTargetOverride"
-              (click)="vm.resetPreviewTargetSelection()"
-            >
-              Standardziel verwenden
-            </button>
-            @if (vm.hasStoredPreviewTargetOverride && vm.selectedPreviewTarget) {
-              <small>
-                Manueller Override aktiv:
-                <code>{{ vm.selectedPreviewTarget }}</code>
-              </small>
-            }
-          </div>
-        </div>
-
-        @if (vm.previewUnavailableReason && vm.showPlayerTargetInfo) {
-          <p class="preview-warning">{{ vm.previewUnavailableMessage }}</p>
+        @if (vm.isItemExcluded(vm.selectedItem)) {
+          <span class="excluded-item-badge">Ausgeschlossen</span>
+        }
+        @if (vm.selectedItemTarget && vm.selectedItemTarget !== vm.selectedPreviewTarget) {
+          <span
+            class="player-target-badge secondary"
+            tabindex="0"
+            [title]="
+              'Dieses Item ist im Kodierschema der Variable ' +
+              vm.selectedItemTarget +
+              ' zugeordnet. ' +
+              (vm.selectedPreviewTarget
+                ? 'Die Player-Vorschau zeigt die zugehörige Stelle ' +
+                  vm.selectedPreviewTarget +
+                  '.'
+                : 'Für die Player-Vorschau ist derzeit kein Ziel zugeordnet.')
+            "
+          >
+            Kodiervariable: {{ vm.selectedItemTarget }}
+          </span>
+        }
+        @if (vm.selectedPreviewTarget) {
+          <span
+            class="player-target-badge"
+            tabindex="0"
+            [title]="
+              'Die Vorschau springt zur Variable „' +
+              vm.selectedPreviewTarget +
+              '“ innerhalb der Aufgabe. Das ist die Zuordnung dieses Items zur angezeigten Stelle im Player.'
+            "
+            >Player-Ziel: {{ vm.selectedPreviewTarget }}</span
+          >
+        } @else {
+          <span class="player-target-badge unmapped">Kein Player-Ziel</span>
         }
       </div>
-    }
+      <details #previewSettings class="preview-settings">
+        <summary
+          class="btn btn-outline btn-sm"
+          title="Seitendarstellung und Zuordnung der Vorschau einstellen"
+        >
+          Vorschau einstellen ▾
+        </summary>
+        <div class="preview-settings-body">
+          <div class="preview-target-selector">
+            <label for="preview-paging-mode">Seitendarstellung</label>
+            <select
+              class="btn btn-outline btn-sm"
+              id="preview-paging-mode"
+              aria-label="Seitendarstellung der Player-Vorschau"
+              [ngModel]="vm.pagingMode"
+              (ngModelChange)="vm.setPagingMode($event)"
+              (change)="vm.onPagingModeChange()"
+              [disabled]="!vm.canPreviewSelectedItem"
+            >
+              <option value="buttons">Seiten mit Schaltflächen</option>
+              <option value="separate">Einzelseiten</option>
+              <option value="concat-scroll">Fortlaufend scrollen</option>
+              <option value="concat-scroll-snap">Scrollen mit Einrasten</option>
+              <option value="view-all">Alle Seiten (Druckansicht)</option>
+              <option value="print-ids">Alle Seiten mit IDs (Druckansicht)</option>
+            </select>
+          </div>
+          @if (vm.canEditExplorer) {
+            <div class="preview-target-controls">
+              @if (vm.showPreviewTargetSelector) {
+                <div class="preview-target-selector">
+                  <label for="item-explorer-preview-target-select">Sprungziel</label>
+                  <select
+                    id="item-explorer-preview-target-select"
+                    class="preview-target-select"
+                    [ngModel]="vm.selectedPreviewTargetId"
+                    (ngModelChange)="vm.setSelectedPreviewTargetId($event)"
+                    (ngModelChange)="vm.onPreviewTargetSelectionChange()"
+                  >
+                    <option value="">{{ vm.previewTargetDefaultOptionLabel }}</option>
+                    @for (option of vm.previewTargetOptions; track option.id) {
+                      <option [value]="option.id">{{ option.label }}</option>
+                    }
+                  </select>
+                </div>
+              }
+
+              @if (vm.showPlayerTargetInfo) {
+                @if (
+                  vm.hasStoredPreviewTargetOverride &&
+                  vm.selectedItemTarget &&
+                  vm.selectedPreviewTarget
+                ) {
+                  <p>
+                    Das Item referenziert standardmäßig
+                    <code>{{ vm.selectedItemTarget }}</code
+                    >. Für die Vorschau wird aktuell manuell
+                    <code>{{ vm.selectedPreviewTarget }}</code> verwendet.
+                  </p>
+                } @else if (
+                  vm.selectedItemUsesDerivedTarget &&
+                  vm.selectedItemTarget &&
+                  vm.selectedPreviewTarget
+                ) {
+                  <p>
+                    Das Item referenziert im Kodierschema die abhängige Variable
+                    <code>{{ vm.selectedItemTarget }}</code
+                    >. Für die Vorschau wird standardmäßig zur Basisvariable
+                    <code>{{ vm.selectedPreviewTarget }}</code> gesprungen.
+                  </p>
+                } @else if (vm.selectedPreviewTarget && !vm.previewUnavailableReason) {
+                  <p>
+                    Der Listeneintrag springt im Player zur Variable
+                    <code>{{ vm.selectedPreviewTarget }}</code
+                    >.
+                  </p>
+                } @else if (vm.selectedPreviewTarget) {
+                  <p>
+                    Für diesen Listeneintrag ist die Player-Variable
+                    <code>{{ vm.selectedPreviewTarget }}</code> hinterlegt, konnte aber nicht
+                    zuverlässig in der Aufgabendefinition aufgelöst werden.
+                  </p>
+                } @else {
+                  <p>
+                    Für diesen Listeneintrag ist keine Player-Variable hinterlegt. Sie können unten
+                    ein alternatives Sprungziel auswählen oder manuell eintragen.
+                  </p>
+                }
+              }
+
+              <details class="preview-correction">
+                <summary class="btn btn-outline btn-sm">Zuordnung korrigieren …</summary>
+                <div class="preview-target-selector">
+                  <label for="item-explorer-custom-preview-target">Manuelles Sprungziel</label>
+                  <div class="preview-target-custom-row">
+                    <input
+                      id="item-explorer-custom-preview-target"
+                      type="text"
+                      class="preview-target-input"
+                      placeholder="z.B. VAR_12 oder alias_12"
+                      [ngModel]="vm.customPreviewTargetDraft"
+                      (ngModelChange)="vm.setCustomPreviewTargetDraft($event)"
+                      (keydown.enter)="vm.applyCustomPreviewTarget()"
+                    />
+                    <button class="btn btn-outline btn-sm" (click)="vm.applyCustomPreviewTarget()">
+                      Übernehmen
+                    </button>
+                  </div>
+                  <small>
+                    Für VOUD-IDs oder Aliasse, die nicht im Kodierschema angeboten werden.
+                  </small>
+                </div>
+
+                @if (vm.hasStoredPreviewTargetOverride) {
+                  <div class="preview-target-actions">
+                    <button
+                      class="btn btn-outline btn-sm"
+                      [disabled]="!vm.hasStoredPreviewTargetOverride"
+                      (click)="vm.resetPreviewTargetSelection()"
+                    >
+                      Standardziel verwenden
+                    </button>
+                    @if (vm.hasStoredPreviewTargetOverride && vm.selectedPreviewTarget) {
+                      <small>
+                        Manueller Override aktiv:
+                        <code>{{ vm.selectedPreviewTarget }}</code>
+                      </small>
+                    }
+                  </div>
+                }
+              </details>
+            </div>
+
+            @if (vm.previewUnavailableReason && vm.showPlayerTargetInfo) {
+              <p class="preview-warning">{{ vm.previewUnavailableMessage }}</p>
+            }
+          }
+        </div>
+      </details>
+      @if (vm.previewUnavailableReason) {
+        <div class="preview-warning">
+          {{ vm.previewUnavailableMessage }}
+          @if (vm.canEditExplorer) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              (click)="previewSettings.open = true"
+            >
+              Zuordnung prüfen
+            </button>
+          }
+        </div>
+      }
+    </div>
 
     <!-- Player -->
     <div
@@ -208,72 +280,121 @@
 
     <!-- Action Buttons -->
     <div class="action-buttons">
-      <select
-        class="btn btn-outline btn-sm"
-        aria-label="Paging-Modus der Player-Vorschau"
-        [ngModel]="vm.pagingMode"
-        (ngModelChange)="vm.setPagingMode($event)"
-        (change)="vm.onPagingModeChange()"
-        [disabled]="!vm.canPreviewSelectedItem"
-      >
-        <option value="buttons">Paging: Buttons</option>
-        <option value="separate">Paging: Separate</option>
-        <option value="concat-scroll">Paging: Scroll</option>
-        <option value="concat-scroll-snap">Paging: Scroll-Snap</option>
-        <option value="view-all">Paging: Alles (Print)</option>
-        <option value="print-ids">Paging: Alles + IDs (Print)</option>
-      </select>
-      <button class="btn btn-outline btn-sm" (click)="vm.openCodingOverlay()">📋 Kodierung</button>
+      <button class="btn btn-outline btn-sm" (click)="vm.openCodingOverlay()">
+        <svg class="preview-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M4 3h16v18H4ZM8 7h8M8 11h8M8 15h5" /></svg
+        >Kodierung
+      </button>
       <button
         class="btn btn-outline btn-sm btn-state"
         (click)="vm.setMetadataDrawerOpen(!vm.showMetadataDrawer)"
         [attr.aria-expanded]="vm.showMetadataDrawer"
         aria-controls="item-explorer-metadata-drawer"
       >
-        📄 Metadaten
+        <svg class="preview-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M4 3h16v18H4ZM8 7h8M8 11h8M8 15h5" /></svg
+        >Metadaten
       </button>
+      @if (vm.itemCommentsEnabled) {
+        <button
+          type="button"
+          class="btn btn-outline btn-sm"
+          (click)="commentThread.toggleOpen()"
+          [attr.aria-expanded]="commentThread.open"
+          aria-controls="item-comment-panel"
+          title="Kommentare zum ausgewählten Item öffnen oder schließen"
+        >
+          <svg class="preview-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 4h18v13h-9l-5 4v-4H3Z" /></svg
+          >Kommentare ({{ commentThread.commentCount }})
+        </button>
+      }
       @if (vm.canEditExplorer) {
-        <button
-          class="btn btn-outline btn-sm btn-state"
-          (click)="vm.toggleSelectedItemExclusion()"
-          [attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"
-          [title]="
-            vm.isItemExcluded(vm.selectedItem)
-              ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
-              : 'Schließt das Item aus und blendet es standardmäßig aus.'
-          "
-        >
-          {{
-            vm.isItemExcluded(vm.selectedItem) ? '↩️ Ausschluss aufheben' : '🚫 Item ausschließen'
-          }}
-        </button>
-        <button
-          class="btn btn-outline btn-sm"
-          (click)="vm.saveCurrentResponseState()"
-          [disabled]="vm.previewUpdateInProgress"
-          title="Aktuellen Zustand speichern"
-        >
-          💾 Zustand speichern
-        </button>
-        <button
-          class="btn btn-outline btn-sm"
-          (click)="vm.resetResponseState()"
-          title="Zustand zurücksetzen"
-          style="color: var(--color-danger-text); border-color: currentColor"
-        >
-          🗑️ Zustand löschen
-        </button>
-        <button
-          class="btn btn-outline btn-sm"
-          (click)="vm.loadAllResponseStates()"
-          title="Alle gespeicherten Daten anzeigen"
-        >
-          👁️ Rohdaten
-        </button>
+        <details #playerActions name="item-explorer-toolbar" class="player-actions-menu">
+          <summary
+            class="btn btn-outline btn-sm"
+            title="Item ausschließen oder gespeicherte Player-Eingaben verwalten"
+          >
+            Weitere Aktionen ▾
+          </summary>
+          <div class="player-actions-panel">
+            <button
+              class="btn btn-outline btn-sm btn-state"
+              (click)="playerActions.removeAttribute('open'); vm.toggleSelectedItemExclusion()"
+              [attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"
+              [title]="
+                vm.isItemExcluded(vm.selectedItem)
+                  ? 'Hebt den Ausschluss auf und zeigt das Item wieder standardmäßig an.'
+                  : 'Schließt das Item aus und blendet es standardmäßig aus.'
+              "
+            >
+              <svg
+                class="preview-action-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                @if (vm.isItemExcluded(vm.selectedItem)) {
+                  <path d="M9 5 3 11l6 6M3 11h12a6 6 0 0 1 6 6" />
+                } @else {
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="m6 6 12 12" />
+                }
+              </svg>
+              {{ vm.isItemExcluded(vm.selectedItem) ? 'Ausschluss aufheben' : 'Item ausschließen' }}
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="playerActions.removeAttribute('open'); vm.saveCurrentResponseState()"
+              [disabled]="vm.previewUpdateInProgress"
+              title="Die aktuellen Player-Eingaben für dieses Item nach Bestätigung speichern"
+            >
+              <svg
+                class="preview-action-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M4 3h14l3 3v15H3V3ZM7 3v6h10V3M7 21v-8h10v8" /></svg
+              >Player-Eingaben speichern …
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="playerActions.removeAttribute('open'); vm.resetResponseState()"
+              title="Die gespeicherten Player-Eingaben für dieses Item nach Bestätigung löschen"
+              style="color: var(--color-danger-text); border-color: currentColor"
+            >
+              <svg
+                class="preview-action-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15" /></svg
+              >Gespeicherte Player-Eingaben löschen …
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="playerActions.removeAttribute('open'); vm.loadAllResponseStates()"
+              title="Gespeicherte Player-Zustände des gesamten ACP anzeigen"
+            >
+              <svg
+                class="preview-action-icon"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M4 4h16v16H4ZM4 10h16M10 10v10" /></svg
+              >Gespeicherte Player-Daten anzeigen …
+            </button>
+          </div>
+        </details>
       }
     </div>
 
     <app-item-comment-thread
+      #commentThread
+      [hideToggle]="true"
       [acpId]="vm.acpId"
       [unitId]="vm.selectedItem.unitId"
       [itemId]="vm.selectedItem.itemId"

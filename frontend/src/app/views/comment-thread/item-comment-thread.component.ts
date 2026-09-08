@@ -34,6 +34,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() refreshToken = 0;
   @Input() sessionToken = 0;
   @Input() initiallyOpen = false;
+  @Input() hideToggle = false;
   @Output() countChanged = new EventEmitter<{
     unitId: string;
     itemId: string;

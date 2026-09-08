@@ -5651,6 +5651,16 @@ describe('ItemExplorerFacade', () => {
     expect(component.selectedItem?.uuid).toBe('uuid-3');
   });
 
+  it('leaves modified navigation keys to the browser', () => {
+    const component = createFacade();
+    component.filteredItems = [{}] as any;
+    for (const modifiers of [{ altKey: true }, { shiftKey: true }, { ctrlKey: true }, { metaKey: true }]) {
+      const event = new KeyboardEvent('keydown', { key: 'Home', cancelable: true, ...modifiers });
+      component.onTableKeydown(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
   it('routes manual ordering shortcuts to moveSelectedItem', () => {
     const component = createFacade();
     component.filteredItems = [

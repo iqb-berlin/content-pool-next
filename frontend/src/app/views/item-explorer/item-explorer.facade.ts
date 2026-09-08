@@ -2336,6 +2336,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   // --- Sorting ---
   onTableKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.altKey || event.shiftKey) return;
     if (this.filteredItems.length === 0) {
       return;
     }
@@ -2351,6 +2352,8 @@ export class ItemExplorerFacade implements OnDestroy {
       this.moveSelectedItem(1);
       return;
     }
+
+    if (hasModifier) return;
 
     switch (event.key) {
       case 'ArrowDown':

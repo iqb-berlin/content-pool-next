@@ -48,7 +48,7 @@ export class ItemExplorerTableComponent implements OnDestroy, ItemExplorerTableD
   }
 
   onTableKeydown(event: KeyboardEvent): void {
-    if (this.isEditableTarget(event.target)) return;
+    if (event.defaultPrevented || this.isEditableTarget(event.target)) return;
     this.vm.onTableKeydown(event);
   }
 
@@ -80,7 +80,11 @@ export class ItemExplorerTableComponent implements OnDestroy, ItemExplorerTableD
     if (!(target instanceof HTMLElement)) return false;
     return (
       target.isContentEditable ||
-      Boolean(target.closest('input, textarea, select, [contenteditable="true"]'))
+      Boolean(
+        target.closest(
+          'input, textarea, select, button, a, summary, [role="button"], [contenteditable="true"]',
+        ),
+      )
     );
   }
 }

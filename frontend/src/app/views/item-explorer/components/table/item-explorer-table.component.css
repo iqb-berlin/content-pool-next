@@ -134,9 +134,15 @@
   text-align: left;
   border-bottom: 1px solid var(--color-border);
 }
-.explorer-table th {
+.explorer-table thead {
   position: sticky;
   top: 0;
+  z-index: 50;
+  background: var(--color-bg);
+}
+.explorer-table th {
+  position: sticky;
+  top: auto;
   background-color: var(--color-bg) !important;
   z-index: 20;
   white-space: nowrap;
@@ -230,7 +236,7 @@ tr:not(.active) {
   background-color: var(--color-bg) !important;
   border-bottom: 2px solid var(--color-border);
   position: sticky;
-  top: 44px; /* Matches the header height */
+  top: auto;
   z-index: 20;
 }
 .explorer-table .filter-row th.sticky-col {
@@ -381,4 +387,8 @@ tr:not(.active) {
     inset: 0;
     margin: auto;
   }
+}
+
+.explorer-table tbody tr:hover:not(.active) td {
+  background: color-mix(in srgb, var(--color-primary-light) 7%, var(--color-surface)) !important;
 }

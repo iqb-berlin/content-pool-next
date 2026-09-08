@@ -10,7 +10,12 @@
         (input)="vm.applyFilter()"
       />
       <div class="search-count-group">
-        <span class="visibility-summary" aria-live="polite">
+        <span
+          class="visibility-summary"
+          aria-live="polite"
+          tabindex="0"
+          title="Angezeigte Tabellenzeilen / alle Tabellenzeilen. Suche, Spaltenfilter, Auswahlliste und Ausblendungen begrenzen die Anzeige. Ein Item kann mehrere Zeilen haben."
+        >
           @if (vm.filteredItems.length === vm.totalItemsCount) {
             {{ vm.totalItemsCount }} Zeilen
           } @else {

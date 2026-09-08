@@ -66,7 +66,12 @@ export class ItemExplorerTableComponent implements OnDestroy, ItemExplorerTableD
     if (this.scrollTimer) clearTimeout(this.scrollTimer);
     this.scrollTimer = setTimeout(() => {
       this.scrollTimer = null;
-      const row = this.scrollContainer?.nativeElement.querySelector('tr.active');
+      const container = this.scrollContainer?.nativeElement;
+      const header = container?.querySelector('thead');
+      if (container && header) {
+        container.style.scrollPaddingTop = `${header.getBoundingClientRect().height}px`;
+      }
+      const row = container?.querySelector('tr.active');
       row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }, 50);
   }

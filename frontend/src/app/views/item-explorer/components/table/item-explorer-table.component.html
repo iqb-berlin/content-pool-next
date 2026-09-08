@@ -196,8 +196,8 @@
               [style.left.px]="vm.getStickyTableColumnLeft(col, tableColumns)"
               [attr.title]="
                 col.key === 'system:referenceNumber'
-                  ? 'Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
-                  : null
+                  ? col.label + ': Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
+                  : col.label
               "
             >
               {{ col.label }} {{ vm.getTableColumnSortIndicator(col) }}
@@ -398,15 +398,6 @@
                       >
                       @if (vm.isItemExcluded(item)) {
                         <span class="excluded-item-badge">Ausgeschlossen</span>
-                      }
-                      @if (vm.showPlayerTargetInfo) {
-                        @if (vm.getPlayerTarget(item)) {
-                          <span class="player-target-badge"
-                            >Player {{ vm.getPlayerTarget(item) }}</span
-                          >
-                        } @else {
-                          <span class="player-target-badge unmapped">Kein Player-Ziel</span>
-                        }
                       }
                     </div>
                   }

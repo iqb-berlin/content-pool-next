@@ -309,17 +309,41 @@
       <span [class]="'status-pill status-' + vm.explorerUiStatus.toLowerCase()">{{
         vm.explorerStatusLabel
       }}</span>
-      <span class="status-meta"
-        >v{{ vm.explorerVersion }} · veröffentlicht v{{ vm.explorerPublishedVersion }}</span
+      <button
+        type="button"
+        class="status-info"
+        popovertarget="explorer-status-info"
+        aria-label="Details zum Explorer-Stand anzeigen"
+        title="Details zum Explorer-Stand anzeigen"
       >
-      @if (vm.lastExplorerChangeInfo) {
-        <span class="status-meta">· {{ vm.lastExplorerChangeInfo }}</span>
-      }
+        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6m0-10v1" />
+        </svg>
+      </button>
+      <div id="explorer-status-info" popover class="status-info-popover">
+        <strong>Explorer-Stand</strong>
+        <p>Veröffentlichte Version: {{ vm.explorerPublishedVersion }}</p>
+        <p>Technische Revision: {{ vm.explorerVersion }}</p>
+        <p class="status-meta">
+          Die technische Revision zählt Aktualisierungen des Explorer-Stands. Sie ist unabhängig von
+          der veröffentlichten Version und zählt keine offenen Änderungen.
+        </p>
+        @if (vm.lastExplorerChangeInfo) {
+          <p>Zuletzt geändert von {{ vm.lastExplorerChangeInfo }}</p>
+        }
+      </div>
     </div>
     <div class="status-actions">
       @if (vm.canPublishExplorer) {
         <button
-          title="Änderungen vor dem Veröffentlichen in einer Übersicht prüfen"
+          [title]="
+            !vm.hasPendingDraftChanges()
+              ? 'Keine Änderungen vorhanden'
+              : vm.explorerUiStatus === 'SAVING'
+                ? 'Speichern läuft'
+                : 'Änderungen vor dem Veröffentlichen in einer Übersicht prüfen'
+          "
           class="btn btn-primary btn-sm"
           [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
           (click)="vm.openSavePreviewDialog()"
@@ -330,7 +354,13 @@
           Änderungen prüfen …
         </button>
         <button
-          title="Den unveröffentlichten Explorer-Entwurf nach Bestätigung verwerfen"
+          [title]="
+            !vm.hasPendingDraftChanges()
+              ? 'Keine Änderungen vorhanden'
+              : vm.explorerUiStatus === 'SAVING'
+                ? 'Speichern läuft'
+                : 'Den unveröffentlichten Explorer-Entwurf nach Bestätigung verwerfen'
+          "
           class="btn btn-outline btn-sm"
           [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
           (click)="vm.openDiscardExplorerDraftDialog()"

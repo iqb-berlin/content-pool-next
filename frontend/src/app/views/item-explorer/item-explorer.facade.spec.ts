@@ -5687,6 +5687,22 @@ describe('ItemExplorerFacade', () => {
     expect(moveSelectedItem).toHaveBeenCalledWith(-1);
   });
 
+  it('keeps review and discard closed when there are no unpublished changes', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.explorerUiStatus = 'CLEAN';
+    component.latestExplorerState = { status: 'CLEAN' } as any;
+    expect(component.explorerStatusLabel).toBe('Keine unveröffentlichten Änderungen');
+    expect(component.hasPendingDraftChanges()).toBe(false);
+    component.openSavePreviewDialog();
+    component.openDiscardExplorerDraftDialog();
+    expect(component.showSavePreviewDialog).toBe(false);
+    expect(component.showDiscardDraftDialog).toBe(false);
+    const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true });
+    component.handleWindowKeydown(event);
+    expect(component.showSavePreviewDialog).toBe(false);
+  });
+
   it('opens the draft save preview with Ctrl/Cmd+S', () => {
     const component = createFacade();
     component.canPublishExplorer = true;

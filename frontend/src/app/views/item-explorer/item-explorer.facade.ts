@@ -1090,7 +1090,7 @@ export class ItemExplorerFacade implements OnDestroy {
       case 'ERROR':
         return 'Fehler';
       default:
-        return 'Unverändert';
+        return 'Keine unveröffentlichten Änderungen';
     }
   }
 

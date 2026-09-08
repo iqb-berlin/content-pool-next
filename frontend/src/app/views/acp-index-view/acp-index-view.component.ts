@@ -1,8 +1,10 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { catchError, forkJoin, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 import { AcpNavigationService } from '../../core/services/acp-navigation.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { AcpFile } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -277,6 +279,8 @@ interface NodeAction {
 })
 export class AcpIndexViewComponent implements OnInit {
   readonly navigation = inject(AcpNavigationService);
+  private readonly auth = inject(AuthService);
+  private readonly destroyRef = inject(DestroyRef);
   acpId = '';
   breadcrumbs: BreadcrumbItem[] = [];
 
@@ -308,29 +312,40 @@ export class AcpIndexViewComponent implements OnInit {
       { label: 'ACP-Index' },
     ];
 
-    forkJoin({
+    combineLatest({
       index: this.api.getViewIndex(this.acpId),
-      files: this.api.getAcpStartPage(this.acpId).pipe(
-        switchMap((data) =>
-          this.navigation.overviewRoute(this.acpId)[0] === '/manage' ||
-          data.featureConfig?.allowFileDownload
-            ? this.api.getFiles(this.acpId)
+      files: combineLatest([this.api.getAcpStartPage(this.acpId), this.auth.currentUser$]).pipe(
+        map(([data, user]) =>
+          Boolean(
+            data.featureConfig?.allowFileDownload ||
+            user?.isAppAdmin ||
+            user?.acpRoles?.some(
+              (role) => role.acpId === this.acpId && role.role === 'ACP_MANAGER',
+            ),
+          ),
+        ),
+        distinctUntilChanged(),
+        switchMap((canListFiles) =>
+          canListFiles
+            ? this.api.getFiles(this.acpId).pipe(catchError(() => of([] as AcpFile[])))
             : of([] as AcpFile[]),
         ),
         catchError(() => of([] as AcpFile[])),
       ),
-    }).subscribe({
-      next: ({ index, files }) => {
-        this.configureLookups(index, files);
-        this.rootNodes = this.buildRoot(index);
-        this.applyExpandDepth(this.expandDepth);
-        this.loading = false;
-      },
-      error: () => {
-        this.error = 'ACP-Index konnte nicht geladen werden.';
-        this.loading = false;
-      },
-    });
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ index, files }) => {
+          this.configureLookups(index, files);
+          this.rootNodes = this.buildRoot(index);
+          this.applyExpandDepth(this.expandDepth);
+          this.loading = false;
+        },
+        error: () => {
+          this.error = 'ACP-Index konnte nicht geladen werden.';
+          this.loading = false;
+        },
+      });
   }
 
   formatPrimitive(value: unknown): string {

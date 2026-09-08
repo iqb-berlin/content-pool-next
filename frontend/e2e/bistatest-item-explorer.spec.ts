@@ -25,7 +25,7 @@ async function saveFeatureConfig(page: Page): Promise<void> {
 }
 
 async function publishExplorerDraft(page: Page): Promise<void> {
-  const saveButton = page.getByRole('button', { name: /Speichern/ });
+  const saveButton = page.getByRole('button', { name: 'Änderungen prüfen …', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(
@@ -397,8 +397,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   );
   await expect(reorderedCompetenceHeader).toHaveCSS('width', '230px');
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   const readOnlyCustomHeader = page.locator('thead tr').first().locator('th', {
     hasText: 'Eigene Qualitätsspalte',
   });
@@ -423,7 +423,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     )
     .toBe(expectedCompetenceCellIndex);
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+  await expect(page.getByText('Leseansicht aktiv.')).toHaveCount(0);
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const emptySelectionDialog = page
@@ -468,14 +468,14 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await reloadedDialog.getByRole('button', { name: 'Abbrechen' }).click();
   await expect(reloadedDialog).toHaveCount(0);
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(page.locator('tbody tr').first().locator('td.meta-cell')).toHaveCount(0);
   await expect(
     page.locator('thead tr').first().locator('th', { hasText: 'Eigene Qualitätsspalte' }),
   ).toHaveCount(0);
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+  await expect(page.getByText('Leseansicht aktiv.')).toHaveCount(0);
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const resetDialog = page
@@ -514,8 +514,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   ).toHaveCount(0);
 
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(
     page.locator('tbody tr').first().locator('.tag-badge', { hasText: 'Alt' }),
   ).toHaveCount(0);

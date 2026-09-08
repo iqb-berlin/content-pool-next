@@ -257,3 +257,72 @@
     min-width: 760px;
   }
 }
+
+.collection-management {
+  position: relative;
+}
+.collection-management summary {
+  cursor: pointer;
+  list-style: none;
+}
+.collection-management summary::-webkit-details-marker {
+  display: none;
+}
+.collection-management-actions {
+  position: absolute;
+  right: 0;
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: min(300px, calc(100vw - 48px));
+  padding: 12px;
+  margin-top: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.collection-management-actions .btn {
+  text-align: left;
+}
+.collection-management-actions .collection-share-toggle,
+.collection-management-actions .collection-owner {
+  white-space: normal;
+}
+.collection-summary {
+  flex-basis: 100%;
+}
+
+.collection-name-dialog {
+  margin: auto;
+  inset: 0;
+  width: min(420px, calc(100vw - 40px));
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+}
+.collection-name-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+.collection-name-dialog h2 {
+  font-size: 1.2rem;
+  margin: 0 0 20px;
+}
+.collection-name-dialog label {
+  display: block;
+  margin-bottom: 8px;
+}
+.collection-name-dialog input {
+  box-sizing: border-box;
+  width: 100%;
+}
+.collection-name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}

@@ -26,17 +26,21 @@
   gap: 16px;
   flex-wrap: wrap;
 }
-.comment-export-menu {
+.comment-export-menu,
+.data-export-menu {
   position: relative;
 }
-.comment-export-menu summary {
+.comment-export-menu summary,
+.data-export-menu summary {
   list-style: none;
   cursor: pointer;
 }
-.comment-export-menu summary::-webkit-details-marker {
+.comment-export-menu summary::-webkit-details-marker,
+.data-export-menu summary::-webkit-details-marker {
   display: none;
 }
-.comment-export-actions {
+.comment-export-actions,
+.data-export-actions {
   position: absolute;
   right: 0;
   z-index: 80;
@@ -50,7 +54,8 @@
   background: var(--color-surface);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.16);
 }
-.comment-export-actions .btn {
+.comment-export-actions .btn,
+.data-export-actions .btn {
   justify-content: flex-start;
 }
 .renumber-blocked-hint {
@@ -153,4 +158,64 @@
   .renumber-blocked-hint {
     text-align: left;
   }
+}
+
+.data-export-actions {
+  width: min(340px, calc(100vw - 48px));
+  min-width: 0;
+}
+.data-export-actions .btn {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.data-export-hint {
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+@media (max-width: 700px) {
+  .data-export-actions {
+    left: 0;
+    right: auto;
+  }
+}
+
+.toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+.toolbar-group + .toolbar-group {
+  border-inline-start: 1px solid var(--color-border);
+  padding-inline-start: 16px;
+}
+@media (max-width: 700px) {
+  .toolbar-group {
+    width: 100%;
+  }
+  .toolbar-group + .toolbar-group {
+    border-inline-start: 0;
+    padding-inline-start: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--color-border);
+  }
+}
+
+.toolbar-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.header-actions .btn,
+.status-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

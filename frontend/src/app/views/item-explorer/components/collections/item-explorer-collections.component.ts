@@ -42,6 +42,54 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
     this.vm = facade.collectionsViewModel;
   }
 
+  @ViewChild('nameDialog') private nameDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('nameInput') private nameInput?: ElementRef<HTMLInputElement>;
+  nameMode: 'create' | 'rename' = 'create';
+  collectionName = '';
+  nameError = '';
+  nameSaving = false;
+  private nameTrigger: HTMLElement | null = null;
+
+  openNameDialog(mode: 'create' | 'rename', trigger: HTMLElement): void {
+    if (this.vm.collectionBusy) return;
+    this.nameMode = mode;
+    this.nameTrigger = trigger;
+    this.nameError = '';
+    this.collectionName =
+      mode === 'rename' ? this.vm.activeItemCollection?.name || '' : 'Meine Auswahlliste';
+    this.nameDialog?.nativeElement.showModal();
+    setTimeout(() => {
+      this.nameInput?.nativeElement.focus();
+      this.nameInput?.nativeElement.select();
+    });
+  }
+
+  closeNameDialog(): void {
+    if (this.nameSaving) return;
+    this.nameDialog?.nativeElement.close();
+    this.nameTrigger?.focus();
+  }
+
+  async saveCollectionName(): Promise<void> {
+    if (!this.collectionName.trim() || this.nameSaving || this.vm.collectionBusy) return;
+    this.nameSaving = true;
+    this.nameError = '';
+    try {
+      if (this.nameMode === 'create') {
+        const created = await this.vm.createCollection(this.collectionName.trim());
+        if (!created)
+          this.nameError =
+            this.vm.collectionError || 'Die Auswahlliste konnte nicht erstellt werden.';
+      } else if (this.collectionName.trim() !== this.vm.activeItemCollection?.name) {
+        await this.vm.renameActiveCollection(this.collectionName.trim());
+        this.nameError = this.vm.collectionError;
+      }
+    } finally {
+      this.nameSaving = false;
+    }
+    if (!this.nameError) this.closeNameDialog();
+  }
+
   ngDoCheck(): void {
     const collectionId = this.vm.activeItemCollection?.id || null;
     if (this.collectionIdSource === collectionId) return;
@@ -193,7 +241,7 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
 
   @HostListener('document:keydown', ['$event'])
   onDocumentKeydown(event: KeyboardEvent): void {
-    if (!this.vm.showCollectionDialog) return;
+    if (this.nameDialog?.nativeElement.open || !this.vm.showCollectionDialog) return;
     if (event.key === 'Escape') {
       event.preventDefault();
       if (this.showRemoveConfirmation) this.cancelRemoveConfirmation();

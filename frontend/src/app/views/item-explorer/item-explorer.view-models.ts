@@ -8,6 +8,10 @@ type ReadonlyViewModelSlice<T> = {
 export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'activeItemCollection'
+    | 'enableItemCollections'
+    | 'collectionBusy'
+    | 'collectionLoadState'
     | 'allPersonalDataExportError'
     | 'allPersonalDataExportInProgress'
     | 'canEditExplorer'
@@ -96,6 +100,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'totalItemsCount'
     | 'addCustomTag'
     | 'addItemTag'
     | 'addPersonalItemTagToRow'
@@ -185,6 +190,11 @@ export type ItemExplorerTableViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerCollectionsViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'allPersonalDataExportInProgress'
+    | 'collectionDataExportError'
+    | 'canExportAllPersonalItemData'
+    | 'exportAllPersonalItemDataCsv'
+    | 'perspectiveSwitchBusy'
     | 'activateCollection'
     | 'activeCollectionId'
     | 'activeCollectionItems'

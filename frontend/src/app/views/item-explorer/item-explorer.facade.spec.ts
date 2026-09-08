@@ -907,7 +907,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.canExportAllPersonalItemData).toBe(true);
     await component.exportAllPersonalItemDataCsv();
 
-    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', undefined);
     expect(createObjectUrl).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:all-export');
@@ -920,6 +920,74 @@ describe('ItemExplorerFacade', () => {
     createObjectUrl.mockRestore();
     revokeObjectUrl.mockRestore();
     click.mockRestore();
+  });
+
+  it('exports the active shared list independently of displayed rows and refuses a missing list', async () => {
+    const exportAllViewPersonalItemDataCsv = vi.fn().mockReturnValue(of(new Blob(['csv'])));
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:collection-export');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    let filename = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      filename = this.download;
+    });
+    const component = createFacade({ api: { exportAllViewPersonalItemDataCsv } });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      viewPerspective: 'editor',
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'shared-1',
+      itemCollections: [
+        {
+          id: 'shared-1',
+          name: 'Auswahl A',
+          rowKeys: ['uuid::A', 'uuid::B'],
+          ownedByCurrentUser: false,
+        },
+      ],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', 'shared-1');
+    expect(filename).toContain('collection-Auswahl-A-shared-1.csv');
+    component.activeCollectionId = 'removed';
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
+    click.mockRestore();
+  });
+
+  it('shows a scoped export failure beside collections without leaving the export busy', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const component = createFacade({
+      api: {
+        exportAllViewPersonalItemDataCsv: vi
+          .fn()
+          .mockReturnValue(throwError(() => ({ status: 404 }))),
+      },
+    });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'removed',
+      itemCollections: [{ id: 'removed', name: 'Removed', rowKeys: [] }],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(component.collectionDataExportError).toContain('nicht mehr verfügbar');
+    expect(component.allPersonalDataExportError).toBe('');
+    expect(component.allPersonalDataExportInProgress).toBe(false);
+    component.ngOnDestroy();
+    log.mockRestore();
   });
 
   it('does not expose personal working-data controls to anonymous visitors', () => {

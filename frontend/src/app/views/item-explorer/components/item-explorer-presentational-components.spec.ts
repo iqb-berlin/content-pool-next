@@ -73,7 +73,7 @@ describe('ItemExplorer presentational components', () => {
   it.each([
     ['header fullscreen', headerTemplate, '(click)="vm.toggleFullscreen()"'],
     ['header save', headerTemplate, '(click)="vm.openSavePreviewDialog()"'],
-    ['collections create', collectionsTemplate, '(click)="vm.createCollection()"'],
+    ['collections create', collectionsTemplate, "openNameDialog('create', listActionsTrigger)"],
     ['collections delete', collectionsTemplate, '(click)="deleteActiveCollection()"'],
     ['coding close', codingTemplate, '(click)="vm.closeCodingOverlay()"'],
     ['metadata close', metadataTemplate, '(click)="vm.setMetadataDrawerOpen(false)"'],
@@ -165,8 +165,8 @@ describe('ItemExplorer presentational components', () => {
 
   it('exposes read-only sharing and private-copy actions for collections', () => {
     expect(collectionsTemplate).toContain('Für diesen ACP freigeben');
-    expect(collectionsTemplate).toContain('Geteilt von {{ activeCollection.ownerLabel }}');
-    expect(collectionsTemplate).toContain('(click)="vm.copyActiveCollection()"');
+    expect(collectionsTemplate).toContain("'Geteilt von ' + vm.activeItemCollection?.ownerLabel");
+    expect(collectionsTemplate).toContain('vm.copyActiveCollection()');
     expect(collectionsTemplate).toContain('collection.ownedByCurrentUser');
   });
 

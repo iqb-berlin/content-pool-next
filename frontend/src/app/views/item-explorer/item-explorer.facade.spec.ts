@@ -5337,7 +5337,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).definitionContent = '{"pages":[]}';
     (component as any).playerFrameReady = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_BAD" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_BAD" kommt in der Aufgabendefinition nicht vor.',
     );
 
     const envelope = createExplorerEnvelope();
@@ -5560,7 +5560,7 @@ describe('ItemExplorerFacade', () => {
     component.canEditExplorer = false;
     component.itemExplorerPlayerTargetInfoEnabled = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_404" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_404" kommt in der Aufgabendefinition nicht vor.',
     );
 
     expect(component.previewUnavailableMessage).toBe(
@@ -5721,6 +5721,29 @@ describe('ItemExplorerFacade', () => {
     expect(component.showHistoryOverlay).toBe(false);
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it('keeps native dialog keyboard events out of the explorer shortcuts', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    dialog.appendChild(input);
+    for (const modifier of ['ctrlKey', 'metaKey']) {
+      const event = new KeyboardEvent('keydown', { key: 's', [modifier]: true, cancelable: true });
+      Object.defineProperty(event, 'target', { value: input });
+      component.handleWindowKeydown(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    Object.defineProperty(escape, 'target', { value: input });
+    component.handleWindowKeydown(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(component.showHistoryOverlay).toBe(true);
+    expect(openSave).not.toHaveBeenCalled();
   });
 
   it('enters fullscreen on the explorer root and keeps the fullscreen state local', async () => {

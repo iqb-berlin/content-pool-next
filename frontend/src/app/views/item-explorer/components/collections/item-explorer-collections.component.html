@@ -35,6 +35,18 @@
           </option>
         }
       </select>
+      @if (vm.activeItemCollection?.shared) {
+        <span
+          class="collection-shared-badge"
+          tabindex="0"
+          [title]="
+            vm.activeItemCollection?.ownedByCurrentUser
+              ? 'Andere Zugangsberechtigte dieses ACP können diese Liste ansehen und kopieren. Persönliche Eingaben werden nicht geteilt.'
+              : 'Geteilt von ' + vm.activeItemCollection?.ownerLabel + '. Sie können diese Liste ansehen und kopieren. Persönliche Eingaben werden nicht geteilt.'
+          "
+          >Geteilt</span
+        >
+      }
       <div class="collection-view-toggle" role="group" aria-label="Angezeigte Items">
         <button
           title="Alle Items des ACP anzeigen; bestehende Suchfilter bleiben aktiv"
@@ -105,33 +117,6 @@
           >
             Neu
           </button>
-          @if (vm.activeItemCollection; as activeCollection) {
-            @if (activeCollection.ownedByCurrentUser) {
-              <label
-                class="collection-share-toggle"
-                title="Die Auswahlliste für andere Zugangsberechtigte dieses ACP schreibgeschützt freigeben; persönliche Eingaben werden dadurch nicht geteilt"
-              >
-                <input
-                  type="checkbox"
-                  [checked]="activeCollection.shared"
-                  [disabled]="vm.collectionBusy"
-                  (change)="vm.setActiveCollectionShared($any($event.target).checked)"
-                />
-                Für diesen ACP freigeben
-              </label>
-            } @else {
-              <span class="collection-owner">Geteilt von {{ activeCollection.ownerLabel }}</span>
-              <button
-                title="Eine eigene, bearbeitbare Kopie der geteilten Auswahlliste erstellen"
-                class="btn btn-outline btn-sm"
-                type="button"
-                [disabled]="vm.collectionBusy"
-                (click)="listActions.removeAttribute('open'); vm.copyActiveCollection()"
-              >
-                Private Kopie erstellen
-              </button>
-            }
-          }
           <button
             title="Den Namen der aktiven eigenen Auswahlliste ändern"
             class="btn btn-outline btn-sm"
@@ -143,14 +128,6 @@
             Umbenennen
           </button>
           <button
-            title="Alle Einträge aus der Auswahlliste entfernen; die Liste und die Item-Eingaben bleiben erhalten"
-            class="btn btn-outline btn-sm"
-            [disabled]="!vm.canEditActiveCollection || vm.collectionBusy"
-            (click)="listActions.removeAttribute('open'); vm.clearActiveCollection()"
-          >
-            Leeren
-          </button>
-          <button
             title="Einträge der aktiven Auswahlliste ansehen und verwalten"
             class="btn btn-outline btn-sm"
             [disabled]="!vm.activeItemCollection || vm.collectionBusy"
@@ -158,30 +135,107 @@
           >
             Details
           </button>
+          @if (vm.activeItemCollection; as activeCollection) {
+            @if (activeCollection.ownedByCurrentUser) {
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                [disabled]="vm.collectionBusy"
+                title="Freigabe dieser Auswahlliste für andere Zugangsberechtigte verwalten"
+                (click)="listActions.removeAttribute('open'); openShareDialog(listActionsTrigger)"
+              >
+                {{ activeCollection.shared ? 'Freigabe verwalten …' : 'Freigeben …' }}
+              </button>
+            } @else {
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                [disabled]="vm.collectionBusy"
+                title="Eine eigene, bearbeitbare Kopie dieser geteilten Liste erstellen"
+                (click)="listActions.removeAttribute('open'); vm.copyActiveCollection()"
+              >
+                Private Kopie erstellen
+              </button>
+            }
+          }
+          <hr class="collection-menu-divider" />
+          <button
+            title="Alle Einträge aus der Auswahlliste entfernen; die Liste und die Item-Eingaben bleiben erhalten"
+            class="btn btn-outline btn-sm"
+            [disabled]="!vm.canEditActiveCollection || vm.collectionBusy"
+            (click)="listActions.removeAttribute('open'); vm.clearActiveCollection()"
+          >
+            Liste leeren …
+          </button>
         </div>
       </details>
       @if (vm.activeItemCollection; as collection) {
         <span class="collection-summary">
-          {{ collection.summary.itemCount }} Items · {{ collection.summary.unitCount }} Units ·
-          <strong
-            >{{ vm.formatDuration(collection.summary.testTimeSeconds) }}
-            {{ collection.summary.testTimeSeconds >= 3600 ? 'h' : 'min' }}</strong
-          >
-          @if (!collection.summary.complete) {
-            <span
-              class="collection-warning"
-              tabindex="0"
+          {{ collection.summary.itemCount }} Items · {{ collection.summary.unitCount }} Aufgaben
+          @if (collection.summary.itemCount > 0) {
+            · {{ collection.summary.complete ? 'Dauer' : 'Bekannte Zeit' }}:
+            <strong
               [title]="
-                collection.summary.missingItemTimeCount +
-                ' Itemzeiten und ' +
-                collection.summary.missingStimulusTimeUnitCount +
-                ' Stimuluszeiten fehlen'
+                collection.summary.complete
+                  ? 'Gesamte Bearbeitungsdauer der Auswahlliste: Itemzeiten plus einmal Stimuluszeit je Aufgabe.'
+                  : 'Summe der vorhandenen Item- und Stimuluszeiten. Fehlende Zeiten sind nicht enthalten; die vollständige Bearbeitungsdauer ist noch unbekannt.'
               "
+              >{{ vm.formatDuration(collection.summary.testTimeSeconds) }}
+              {{ collection.summary.testTimeSeconds >= 3600 ? 'h' : 'min' }}</strong
             >
-              ⚠ Zeitangaben unvollständig
-            </span>
+            <button
+              type="button"
+              class="collection-time-help"
+              [class.collection-warning]="!collection.summary.complete"
+              aria-label="Zeitberechnung anzeigen"
+              title="Zeitberechnung anzeigen"
+              popovertarget="collection-time-info"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v6m0-10v1" />
+              </svg>
+            </button>
           }
         </span>
+        @if (collection.summary.itemCount > 0) {
+          <div id="collection-time-info" popover class="collection-time-info">
+            <strong>{{
+              collection.summary.complete ? 'Zeitberechnung' : 'Zeitangaben unvollständig'
+            }}</strong>
+            <dl>
+              <dt>Itemzeiten</dt>
+              <dd>
+                {{ vm.formatDuration(collection.summary.itemTimeSeconds) }}
+                {{ collection.summary.itemTimeSeconds >= 3600 ? 'h' : 'min' }}
+              </dd>
+              <dt>Stimuluszeiten</dt>
+              <dd>
+                {{ vm.formatDuration(collection.summary.stimulusTimeSeconds) }}
+                {{ collection.summary.stimulusTimeSeconds >= 3600 ? 'h' : 'min' }}
+              </dd>
+            </dl>
+            @if (!collection.summary.complete) {
+              <p class="collection-warning">
+                Es fehlen: {{ collection.summary.missingItemTimeCount }}
+                {{ collection.summary.missingItemTimeCount === 1 ? 'Itemzeit' : 'Itemzeiten' }} und
+                {{ collection.summary.missingStimulusTimeUnitCount }}
+                {{
+                  collection.summary.missingStimulusTimeUnitCount === 1
+                    ? 'Stimuluszeit'
+                    : 'Stimuluszeiten'
+                }}.
+              </p>
+            }
+            <p>
+              Für die aktive Auswahlliste zählt jede Itemzeit einmal je Item und jede Stimuluszeit
+              einmal je Aufgabe.
+            </p>
+            @if (!collection.summary.complete) {
+              <p>Fehlende Zeiten sind nicht in der Summe enthalten.</p>
+            }
+          </div>
+        }
       }
     }
   </div>
@@ -218,7 +272,7 @@
               }
               <strong>{{ vm.formatDuration(collection.summary.testTimeSeconds) }}</strong>
               · {{ collection.summary.rowCount }} Zeilen · {{ collection.summary.itemCount }} Items
-              · {{ collection.summary.unitCount }} Units
+              · {{ collection.summary.unitCount }} Aufgaben
             </p>
           </div>
           <button
@@ -468,6 +522,44 @@
         [disabled]="!collectionName.trim() || nameSaving || vm.collectionBusy"
       >
         {{ nameSaving ? 'Speichert …' : nameMode === 'create' ? 'Anlegen' : 'Umbenennen' }}
+      </button>
+    </div>
+  </form>
+</dialog>
+
+<dialog
+  #shareDialog
+  class="collection-name-dialog"
+  aria-labelledby="collection-share-title"
+  (cancel)="$event.preventDefault(); closeShareDialog()"
+>
+  <form (ngSubmit)="saveCollectionSharing()">
+    <h2 id="collection-share-title">Auswahlliste freigeben</h2>
+    <p>
+      Andere Zugangsberechtigte dieses ACP können die Liste ansehen und kopieren. Persönliche
+      Eingaben werden nicht geteilt.
+    </p>
+    <label class="collection-share-toggle"
+      ><input
+        type="checkbox"
+        name="collectionShared"
+        [(ngModel)]="collectionShared"
+        [disabled]="shareSaving"
+      />
+      Für diesen ACP freigeben</label
+    >
+    <p class="personal-data-error" role="alert">{{ shareError }}</p>
+    <div class="collection-name-actions">
+      <button
+        type="button"
+        class="btn btn-outline"
+        [disabled]="shareSaving"
+        (click)="closeShareDialog()"
+      >
+        Abbrechen
+      </button>
+      <button type="submit" class="btn btn-primary" [disabled]="shareSaving || vm.collectionBusy">
+        {{ shareSaving ? 'Speichert …' : 'Speichern' }}
       </button>
     </div>
   </form>

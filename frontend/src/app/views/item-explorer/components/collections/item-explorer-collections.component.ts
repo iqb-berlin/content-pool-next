@@ -90,6 +90,43 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
     if (!this.nameError) this.closeNameDialog();
   }
 
+  @ViewChild('shareDialog') private shareDialog?: ElementRef<HTMLDialogElement>;
+  collectionShared = false;
+  shareSaving = false;
+  shareError = '';
+  private shareTrigger: HTMLElement | null = null;
+
+  openShareDialog(trigger: HTMLElement): void {
+    if (!this.vm.canEditActiveCollection || this.vm.collectionBusy) return;
+    this.shareTrigger = trigger;
+    this.collectionShared = this.vm.activeItemCollection?.shared === true;
+    this.shareError = '';
+    this.shareDialog?.nativeElement.showModal();
+  }
+
+  closeShareDialog(): void {
+    if (this.shareSaving) return;
+    this.shareDialog?.nativeElement.close();
+    this.shareTrigger?.focus();
+  }
+
+  async saveCollectionSharing(): Promise<void> {
+    if (this.shareSaving || this.vm.collectionBusy) return;
+    if (this.collectionShared === this.vm.activeItemCollection?.shared) {
+      this.closeShareDialog();
+      return;
+    }
+    this.shareSaving = true;
+    this.shareError = '';
+    try {
+      await this.vm.setActiveCollectionShared(this.collectionShared);
+      this.shareError = this.vm.collectionError;
+    } finally {
+      this.shareSaving = false;
+    }
+    if (!this.shareError) this.closeShareDialog();
+  }
+
   ngDoCheck(): void {
     const collectionId = this.vm.activeItemCollection?.id || null;
     if (this.collectionIdSource === collectionId) return;
@@ -241,7 +278,12 @@ export class ItemExplorerCollectionsComponent implements DoCheck {
 
   @HostListener('document:keydown', ['$event'])
   onDocumentKeydown(event: KeyboardEvent): void {
-    if (this.nameDialog?.nativeElement.open || !this.vm.showCollectionDialog) return;
+    if (
+      this.nameDialog?.nativeElement.open ||
+      this.shareDialog?.nativeElement.open ||
+      !this.vm.showCollectionDialog
+    )
+      return;
     if (event.key === 'Escape') {
       event.preventDefault();
       if (this.showRemoveConfirmation) this.cancelRemoveConfirmation();

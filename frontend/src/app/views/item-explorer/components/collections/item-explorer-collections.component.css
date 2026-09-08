@@ -326,3 +326,103 @@
   gap: 8px;
   margin-top: 20px;
 }
+
+.collection-time-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  width: 28px;
+  height: 28px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.collection-time-help:hover {
+  border-color: var(--color-border);
+}
+.collection-time-help:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.collection-time-help svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.collection-time-info {
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  margin: auto;
+  padding: 16px;
+  max-width: min(360px, calc(100vw - 40px));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  font-size: 0.85rem;
+}
+.collection-time-info dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+  margin: 12px 0;
+}
+.collection-time-info dd {
+  margin: 0;
+}
+.collection-time-info p {
+  margin: 10px 0 0;
+}
+@supports (top: anchor(bottom)) {
+  .collection-time-help {
+    anchor-name: --collection-time-help;
+  }
+  .collection-time-info {
+    position-anchor: --collection-time-help;
+    inset: auto;
+    top: anchor(bottom);
+    left: clamp(20px, anchor(left), calc(100vw - 380px));
+    margin: 8px 0 0;
+  }
+}
+
+@media (max-width: 700px), (max-height: 600px) {
+  .collection-time-info {
+    position-anchor: auto;
+    inset: 0;
+    margin: auto;
+  }
+}
+
+.collection-menu-divider {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 4px 0;
+}
+.collection-shared-badge {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e8f3fc;
+  color: #205b85;
+  font-weight: 600;
+  cursor: default;
+}
+.collection-name-dialog .collection-share-toggle {
+  display: flex;
+  margin-top: 16px;
+  white-space: normal;
+}
+.collection-name-dialog .collection-share-toggle input {
+  width: auto;
+}

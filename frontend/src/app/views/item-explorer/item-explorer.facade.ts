@@ -1538,6 +1538,10 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     const lowerKey = event.key.toLowerCase();
+    if (event.target instanceof Element && event.target.closest('dialog[open]')) {
+      if ((event.ctrlKey || event.metaKey) && lowerKey === 's') event.preventDefault();
+      return;
+    }
     if (lowerKey === 'escape' && this.closeTopmostOverlay()) {
       event.preventDefault();
       event.stopPropagation();
@@ -3353,7 +3357,7 @@ export class ItemExplorerFacade implements OnDestroy {
     );
     if (!targetLocation) {
       this.previewCoordinator.markUnavailable(
-        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`,
+        `Das Player-Ziel "${previewTarget}" kommt in der Aufgabendefinition nicht vor.`,
       );
       this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-target' });
       this.playerReadyTiming = null;

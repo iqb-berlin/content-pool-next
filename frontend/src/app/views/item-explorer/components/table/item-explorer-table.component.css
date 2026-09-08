@@ -327,6 +327,10 @@ tr:not(.active) {
   margin-left: 4px;
 }
 .search-help-popover {
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
   margin: auto;
   padding: 16px;
   max-width: min(360px, calc(100vw - 40px));
@@ -351,14 +355,30 @@ tr:not(.active) {
 }
 
 @supports (top: anchor(bottom)) {
-  [popovertarget="explorer-visibility-help"] { anchor-name: --visibility-help; }
-  [popovertarget="explorer-keyboard-help"] { anchor-name: --keyboard-help; }
-  #explorer-visibility-help { position-anchor: --visibility-help; }
-  #explorer-keyboard-help { position-anchor: --keyboard-help; }
+  [popovertarget='explorer-visibility-help'] {
+    anchor-name: --visibility-help;
+  }
+  [popovertarget='explorer-keyboard-help'] {
+    anchor-name: --keyboard-help;
+  }
+  #explorer-visibility-help {
+    position-anchor: --visibility-help;
+  }
+  #explorer-keyboard-help {
+    position-anchor: --keyboard-help;
+  }
   .search-help-popover {
     inset: auto;
     top: anchor(bottom);
-    right: anchor(right);
+    right: clamp(20px, anchor(right), calc(100vw - 380px));
     margin: 8px 0 0;
+  }
+}
+
+@media (max-width: 700px), (max-height: 600px) {
+  .search-help-popover {
+    position-anchor: auto;
+    inset: 0;
+    margin: auto;
   }
 }

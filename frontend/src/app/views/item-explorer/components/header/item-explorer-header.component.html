@@ -284,11 +284,6 @@
       </div>
     }
   </div>
-  @if (vm.canEditExplorer && vm.isRenumberingBlocked()) {
-    <div class="renumber-blocked-hint" role="status">
-      {{ vm.getRenumberingBlockedMessage() }}
-    </div>
-  }
 </div>
 
 @if (vm.showReadOnlyPreviewBanner) {

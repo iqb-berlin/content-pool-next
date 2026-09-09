@@ -419,6 +419,49 @@ test('paginates large personal collections and removes selections across pages',
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(49);
 });
 
+test('keeps collection management actions inside wide, narrow and mobile panels', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+
+  const trigger = page.getByText('Liste verwalten ▾', { exact: true });
+  const menu = page.locator('.collection-management-actions');
+  const panel = page.locator('.table-panel');
+  const checkMenu = async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    const panelBox = await panel.boundingBox();
+    const menuBox = await menu.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+    await menu.getByRole('button', { name: 'Neu', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Neue Auswahlliste' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  };
+
+  await checkMenu();
+  const divider = await page.locator('.divider').boundingBox();
+  const splitPane = await page.locator('.split-pane').boundingBox();
+  expect(divider).not.toBeNull();
+  expect(splitPane).not.toBeNull();
+  await page.mouse.move(divider!.x + divider!.width / 2, divider!.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(splitPane!.x + 350, divider!.y + 20);
+  await page.mouse.up();
+  await expect(panel).toHaveCSS('width', '350px');
+  await checkMenu();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await checkMenu();
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
 }) => {

@@ -258,7 +258,8 @@
   }
 }
 
-.collection-management {
+.collection-bar {
+  /* Keep the menu inside the panel even when its trigger wraps to a new row. */
   position: relative;
 }
 .collection-management summary {
@@ -270,11 +271,11 @@
 }
 .collection-management-actions {
   position: absolute;
-  right: 0;
+  right: 12px;
   z-index: 80;
   display: grid;
   gap: 8px;
-  width: min(300px, calc(100vw - 48px));
+  width: min(300px, calc(100% - 24px));
   padding: 12px;
   margin-top: 6px;
   background: var(--color-surface);

@@ -5777,6 +5777,45 @@ describe('ItemExplorerFacade', () => {
     expect(openSave).not.toHaveBeenCalled();
   });
 
+  it('blocks global shortcuts when a pending native dialog has lost focus', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    input.disabled = true;
+    dialog.appendChild(input);
+    document.body.appendChild(dialog);
+    try {
+      for (const modifier of ['ctrlKey', 'metaKey']) {
+        const event = new KeyboardEvent('keydown', {
+          key: 's',
+          [modifier]: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, 'target', { value: document.body });
+        component.handleWindowKeydown(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+      Object.defineProperty(escape, 'target', { value: document.body });
+      component.handleWindowKeydown(escape);
+      expect(escape.defaultPrevented).toBe(false);
+      expect(component.showHistoryOverlay).toBe(true);
+      expect(openSave).not.toHaveBeenCalled();
+      dialog.removeAttribute('open');
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      // The separate history overlay still prevents opening another overlay.
+      component.showHistoryOverlay = false;
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      expect(openSave).toHaveBeenCalledOnce();
+    } finally {
+      dialog.remove();
+    }
+  });
+
   it('enters fullscreen on the explorer root and keeps the fullscreen state local', async () => {
     const component = createFacade();
     const shellDom = {

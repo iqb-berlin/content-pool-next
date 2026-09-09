@@ -1538,7 +1538,11 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     const lowerKey = event.key.toLowerCase();
-    if (event.target instanceof Element && event.target.closest('dialog[open]')) {
+    // Disabled controls can move focus outside a modal while its request is pending.
+    if (
+      document.querySelector('dialog[open]') ||
+      (event.target instanceof Element && event.target.closest('dialog[open]'))
+    ) {
       if ((event.ctrlKey || event.metaKey) && lowerKey === 's') event.preventDefault();
       return;
     }

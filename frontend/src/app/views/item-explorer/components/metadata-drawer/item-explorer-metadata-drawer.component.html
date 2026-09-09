@@ -19,7 +19,7 @@
       aria-label="Breite der Metadaten ändern"
       title="Zum Ändern der Breite ziehen oder Pfeiltasten verwenden"
       aria-valuemin="320"
-      [attr.aria-valuenow]="width"
+      [attr.aria-valuenow]="visibleWidth"
       (pointerdown)="startResize($event)"
       (pointermove)="resize($event)"
       (pointerup)="stopResize()"

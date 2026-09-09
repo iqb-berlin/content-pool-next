@@ -15,8 +15,12 @@ export class ItemExplorerMetadataDrawerComponent {
   width = 560;
   private resizeStart: { x: number; width: number } | null = null;
 
+  get visibleWidth(): number {
+    return Math.min(this.width, window.innerWidth);
+  }
+
   startResize(event: PointerEvent): void {
-    this.resizeStart = { x: event.clientX, width: this.width };
+    this.resizeStart = { x: event.clientX, width: this.visibleWidth };
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     event.preventDefault();
   }
@@ -38,7 +42,7 @@ export class ItemExplorerMetadataDrawerComponent {
     event.preventDefault();
     this.width = Math.min(
       window.innerWidth,
-      Math.max(320, this.width + (event.key === 'ArrowLeft' ? 40 : -40)),
+      Math.max(320, this.visibleWidth + (event.key === 'ArrowLeft' ? 40 : -40)),
     );
   }
 

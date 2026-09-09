@@ -77,7 +77,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
                 </button>
               }
               @if (fc.allowUnitDownload) {
-                <span class="download-info">Unit-Download verfügbar in Aufgabenansicht</span>
+                <span class="download-info">Aufgaben-Download verfügbar in Aufgabenansicht</span>
               }
             </div>
           </div>

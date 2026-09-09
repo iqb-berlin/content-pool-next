@@ -47,6 +47,10 @@ class ItemExplorerHeaderTemplateHarness {
 })
 class ItemExplorerCollectionsTemplateHarness {
   readonly vm = inject(ItemExplorerFacade).collectionsViewModel;
+  collectionName = '';
+  nameMode = 'create';
+  nameError = '';
+  nameSaving = false;
 }
 
 @Component({

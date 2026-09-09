@@ -538,10 +538,11 @@ export class ApiService {
   exportAllViewPersonalItemDataCsv(
     acpId: string,
     perspective: ItemExplorerPerspective,
+    collectionId?: string,
   ): Observable<Blob> {
     return this.http.post(
       `${this.API}/view/acp/${acpId}/items/preferences/export-all.csv`,
-      { perspective },
+      { perspective, ...(collectionId === undefined ? {} : { collectionId }) },
       { responseType: 'blob' },
     );
   }

@@ -255,6 +255,7 @@ export class ItemExplorerFacade implements OnDestroy {
   personalExportError = '';
   allPersonalDataExportInProgress = false;
   allPersonalDataExportError = '';
+  collectionDataExportError = '';
   showDiscardPersonalItemDataDialog = false;
   private readonly personalPreferenceViewId = 'item-explorer';
   private readonly personalSaveDebounceMs = 350;
@@ -1089,7 +1090,7 @@ export class ItemExplorerFacade implements OnDestroy {
       case 'ERROR':
         return 'Fehler';
       default:
-        return 'Unverändert';
+        return 'Keine unveröffentlichten Änderungen';
     }
   }
 
@@ -1537,6 +1538,14 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     const lowerKey = event.key.toLowerCase();
+    // Disabled controls can move focus outside a modal while its request is pending.
+    if (
+      document.querySelector('dialog[open]') ||
+      (event.target instanceof Element && event.target.closest('dialog[open]'))
+    ) {
+      if ((event.ctrlKey || event.metaKey) && lowerKey === 's') event.preventDefault();
+      return;
+    }
     if (lowerKey === 'escape' && this.closeTopmostOverlay()) {
       event.preventDefault();
       event.stopPropagation();
@@ -1735,7 +1744,7 @@ export class ItemExplorerFacade implements OnDestroy {
       });
   }
 
-  async createCollection(): Promise<ItemCollection | null> {
+  async createCollection(requestedName?: string): Promise<ItemCollection | null> {
     if (this.collectionBusy) return null;
     const session = this.getItemCollectionSession();
     if (!session.identity) {
@@ -1745,11 +1754,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionBusy = true;
     this.collectionError = '';
     const name =
-      this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length === 0
+      requestedName?.trim() ||
+      (this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length === 0
         ? 'Meine Auswahlliste'
         : `Auswahlliste ${
             this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length + 1
-          }`;
+          }`);
     try {
       const payload = await firstValueFrom(
         this.api.createItemCollection(this.acpId, name, this.getPerspectiveForViewerRequests()),
@@ -1823,10 +1833,10 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.persistActiveCollectionRowsMutation({ clear: true });
   }
 
-  async renameActiveCollection() {
+  async renameActiveCollection(requestedName: string) {
     const collection = this.activeItemCollection;
     if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return;
-    const name = window.prompt('Name der Auswahlliste', collection.name)?.trim();
+    const name = requestedName.trim();
     if (!name || name === collection.name) return;
     await this.persistActiveCollectionUpdate({ name });
   }
@@ -2330,6 +2340,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   // --- Sorting ---
   onTableKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.altKey || event.shiftKey) return;
     if (this.filteredItems.length === 0) {
       return;
     }
@@ -2345,6 +2356,8 @@ export class ItemExplorerFacade implements OnDestroy {
       this.moveSelectedItem(1);
       return;
     }
+
+    if (hasModifier) return;
 
     switch (event.key) {
       case 'ArrowDown':
@@ -3351,7 +3364,7 @@ export class ItemExplorerFacade implements OnDestroy {
     );
     if (!targetLocation) {
       this.previewCoordinator.markUnavailable(
-        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`,
+        `Das Player-Ziel "${previewTarget}" kommt in der Aufgabendefinition nicht vor.`,
       );
       this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-target' });
       this.playerReadyTiming = null;
@@ -4522,7 +4535,16 @@ export class ItemExplorerFacade implements OnDestroy {
     }
   }
 
-  async exportAllPersonalItemDataCsv() {
+  async exportAllPersonalItemDataCsv(scope: 'all' | 'collection' = 'all') {
+    const collection = scope === 'collection' ? this.activeItemCollection : null;
+    if (
+      scope === 'collection' &&
+      (!this.enableItemCollections ||
+        !collection ||
+        this.collectionBusy ||
+        this.collectionLoadState !== 'loaded')
+    )
+      return;
     if (
       this.destroyed ||
       !this.canExportAllPersonalItemData ||
@@ -4533,27 +4555,53 @@ export class ItemExplorerFacade implements OnDestroy {
 
     this.allPersonalDataExportInProgress = true;
     this.allPersonalDataExportError = '';
+    this.collectionDataExportError = '';
     try {
       const blob = await firstValueFrom(
         this.api.exportAllViewPersonalItemDataCsv(
           this.acpId,
           this.getPerspectiveForViewerRequests(),
+          collection?.id,
         ),
       );
       if (this.destroyed) return;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `all-participant-item-data-${this.acpId}.csv`;
+      const collectionSuffix = collection
+        ? `-collection-${collection.name.replace(/[^a-zA-Z0-9äöüÄÖÜß_-]+/g, '-').slice(0, 80)}-${collection.id}`
+        : '';
+      anchor.download = `all-participant-item-data-${this.acpId}${collectionSuffix}.csv`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     } catch (error) {
       if (this.destroyed) return;
-      console.error('Failed to export all personal item working data', error);
-      this.allPersonalDataExportError =
-        'Die persönlichen Item-Arbeitsdaten aller Teilnehmenden konnten nicht exportiert werden.';
+      const response = error as { status?: number; error?: unknown };
+      let details = response.error;
+      if (details instanceof Blob) {
+        try {
+          details = JSON.parse(await details.text());
+        } catch {
+          details = undefined;
+        }
+      }
+      if (this.destroyed) return;
+      console.error(
+        'Failed to export all personal item working data',
+        JSON.stringify({ status: response.status, details }),
+      );
+      const message =
+        response.status === 404 && collection
+          ? 'Die Auswahlliste ist nicht mehr verfügbar oder nicht mehr freigegeben. Bitte die Auswahllisten neu laden.'
+          : response.status === 403
+            ? 'Für diesen Export fehlt die Berechtigung oder die benötigte ACP-Funktion ist deaktiviert.'
+            : response.status === 0
+              ? 'Der Server ist nicht erreichbar. Bitte die Verbindung prüfen und den Export erneut versuchen.'
+              : `Die Item-Arbeitsdaten aller Teilnehmenden konnten nicht exportiert werden${response.status ? ` (HTTP ${response.status})` : ''}.`;
+      if (collection) this.collectionDataExportError = message;
+      else this.allPersonalDataExportError = message;
     } finally {
       if (!this.destroyed) this.allPersonalDataExportInProgress = false;
     }

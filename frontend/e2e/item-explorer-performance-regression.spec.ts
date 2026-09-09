@@ -88,7 +88,8 @@ test('loads direct, fallback, partial-credit and legacy response states through 
     },
   });
 
-  await page.getByRole('button', { name: /Zustand speichern/ }).click();
+  await page.getByText('Weitere Aktionen ▾', { exact: true }).last().click();
+  await page.getByRole('button', { name: 'Player-Eingaben speichern …', exact: true }).click();
   const saveDialog = page
     .getByRole('heading', { name: 'Zustand speichern' })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
@@ -307,7 +308,7 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
   await selectAndReadResponseState(page, rowIds.direct, 'i1');
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   const codingDialog = page.getByRole('heading', { name: /Kodierung – Regression Aufgabe 1/ });
   await expect(codingDialog).toBeVisible();
   const codingFocus = page.getByTestId('coding-variable-focus');
@@ -325,6 +326,8 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
       response.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`) &&
       response.ok(),
   );
+  await page.getByText('Vorschau einstellen ▾', { exact: true }).click();
+  await page.getByText('Zuordnung korrigieren …', { exact: true }).click();
   await page.getByLabel('Manuelles Sprungziel').fill('V2');
   await page.getByRole('button', { name: 'Übernehmen' }).click();
   await patchResponse;
@@ -336,9 +339,9 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
       response.url().includes('perspective=read-only') &&
       response.ok(),
   );
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
   await readOnlyList;
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(page.getByText(/unveröffentlichter Explorer-Entwurf/)).toBeVisible();
   await expect(page.getByRole('button', { name: /Itemparameter/ })).toHaveCount(0);
 
@@ -355,7 +358,7 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
   await expect(page.locator(rowIds.direct)).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByText(/Manueller Override aktiv:/)).toContainText('V2');
 
-  const saveButton = page.getByRole('button', { name: /Speichern/ });
+  const saveButton = page.getByRole('button', { name: 'Änderungen prüfen …', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(
@@ -377,9 +380,9 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
       response.url().includes('perspective=read-only') &&
       response.ok(),
   );
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
   await publishedReadOnlyList;
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(page.getByText(/unveröffentlichter Explorer-Entwurf/)).toHaveCount(0);
   await expect(page.locator('iframe.player-iframe')).toBeVisible();
 });

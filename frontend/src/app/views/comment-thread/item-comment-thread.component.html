@@ -1,14 +1,16 @@
 @if (hasTarget) {
   <section class="comment-thread-shell">
-    <button
-      type="button"
-      class="btn btn-outline btn-sm btn-state comment-toggle"
-      (click)="toggleOpen()"
-      [attr.aria-expanded]="open"
-      aria-controls="item-comment-panel"
-    >
-      💬 Kommentare ({{ commentCount }})
-    </button>
+    @if (!hideToggle) {
+      <button
+        type="button"
+        class="btn btn-outline btn-sm btn-state comment-toggle"
+        (click)="toggleOpen()"
+        [attr.aria-expanded]="open"
+        aria-controls="item-comment-panel"
+      >
+        💬 Kommentare ({{ commentCount }})
+      </button>
+    }
 
     @if (open) {
       <div

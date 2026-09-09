@@ -547,7 +547,11 @@ export class ViewsService {
   async exportAllPersonalItemDataCsv(
     acpId: string,
     canEditExplorerState = false,
+    collectionRowKeys?: readonly string[],
   ): Promise<Buffer> {
+    // An empty collection must stay empty; only an omitted filter exports all rows.
+    const includedRows =
+      collectionRowKeys === undefined ? null : new Set(collectionRowKeys);
     const [preferenceRecords, explorerState] = await Promise.all([
       this.itemPreferenceRepository.find({
         where: { acpId, viewId: "item-explorer" },
@@ -574,8 +578,9 @@ export class ViewsService {
       if (!participant) return [];
 
       const preferences = normalizeItemPreferences(record.preferences);
-      return Object.entries(preferences.rowData).map(
-        ([rowKey, personalRow]) => {
+      return Object.entries(preferences.rowData)
+        .filter(([rowKey]) => includedRows === null || includedRows.has(rowKey))
+        .map(([rowKey, personalRow]) => {
           const item = itemsByRowKey.get(rowKey);
           const projection = projectItemExportRow({
             rowKey,
@@ -588,8 +593,7 @@ export class ViewsService {
             participant,
             itemOrder: itemOrder.get(rowKey) ?? Number.MAX_SAFE_INTEGER,
           };
-        },
-      );
+        });
     });
 
     rows.sort(

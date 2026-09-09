@@ -120,4 +120,27 @@ describe('ItemExplorerCollectionsComponent', () => {
     expect(component.showRemoveConfirmation).toBe(false);
     expect(component.removeConfirmationError).toBe('');
   });
+  it('saves sharing only on confirmation and retains errors in the dialog', async () => {
+    const vm = {
+      activeItemCollection: { shared: false },
+      collectionBusy: false,
+      collectionError: '',
+      setActiveCollectionShared: vi.fn(async () => {
+        vm.collectionError = 'Fehler';
+      }),
+    };
+    const component = new ItemExplorerCollectionsComponent({ collectionsViewModel: vm } as any);
+    component.collectionShared = true;
+    const close = vi.spyOn(component, 'closeShareDialog');
+    expect(vm.setActiveCollectionShared).not.toHaveBeenCalled();
+    await component.saveCollectionSharing();
+    expect(vm.setActiveCollectionShared).toHaveBeenCalledWith(true);
+    expect(component.shareError).toBe('Fehler');
+    expect(close).not.toHaveBeenCalled();
+    vm.setActiveCollectionShared.mockImplementation(async () => {
+      vm.collectionError = '';
+    });
+    await component.saveCollectionSharing();
+    expect(close).toHaveBeenCalledOnce();
+  });
 });

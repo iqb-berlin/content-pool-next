@@ -6,7 +6,7 @@ const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 const MANAGER_USERNAME = 'e2e-manager';
 
 async function publishExplorerDraft(page: Page): Promise<void> {
-  const saveButton = page.getByRole('button', { name: /Speichern/ });
+  const saveButton = page.getByRole('button', { name: 'Änderungen prüfen …', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(
@@ -338,6 +338,7 @@ test('paginates large personal collections and removes selections across pages',
   });
 
   await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const collectionDialog = page.getByRole('dialog', { name: 'Große Auswahlliste' });
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(50);
@@ -418,6 +419,49 @@ test('paginates large personal collections and removes selections across pages',
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(49);
 });
 
+test('keeps collection management actions inside wide, narrow and mobile panels', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+
+  const trigger = page.getByText('Liste verwalten ▾', { exact: true });
+  const menu = page.locator('.collection-management-actions');
+  const panel = page.locator('.table-panel');
+  const checkMenu = async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    const panelBox = await panel.boundingBox();
+    const menuBox = await menu.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+    await menu.getByRole('button', { name: 'Neu', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Neue Auswahlliste' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  };
+
+  await checkMenu();
+  const divider = await page.locator('.divider').boundingBox();
+  const splitPane = await page.locator('.split-pane').boundingBox();
+  expect(divider).not.toBeNull();
+  expect(splitPane).not.toBeNull();
+  await page.mouse.move(divider!.x + divider!.width / 2, divider!.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(splitPane!.x + 350, divider!.y + 20);
+  await page.mouse.up();
+  await expect(panel).toHaveCSS('width', '350px');
+  await checkMenu();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await checkMenu();
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
 }) => {
@@ -429,6 +473,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeHidden();
   await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
 
+  await page.getByText('Weitere Aktionen ▾', { exact: true }).click();
   await page.getByRole('button', { name: /Referenznummern neu vergeben/ }).click();
   await expect(page.getByRole('heading', { name: 'Referenznummern neu vergeben' })).toBeVisible();
   await expect(page.getByText(/Alle 2 Zeilen des vollständigen Itembestands/)).toBeVisible();
@@ -470,6 +515,8 @@ test('keeps positions gapless and persists the personal selection view across pe
   expect(positionBox!.x + positionBox!.width).toBeLessThanOrEqual(referenceBox!.x + 1);
   expect(referenceBox!.x + referenceBox!.width).toBeLessThanOrEqual(itemIdBox!.x + 1);
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -477,7 +524,7 @@ test('keeps positions gapless and persists the personal selection view across pe
         response.url().endsWith('/items/collections') &&
         response.ok(),
     ),
-    page.getByRole('button', { name: 'Neu', exact: true }).click(),
+    page.getByRole('button', { name: 'Anlegen', exact: true }).click(),
   ]);
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeEnabled();
 
@@ -499,6 +546,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   );
   const activeOnlyButton = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const collectionDialog = page.getByRole('dialog', { name: 'Meine Auswahlliste' });
   await expect(collectionDialog).toBeVisible();
@@ -529,7 +577,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(collectionDialog).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeFocused();
+  await expect(page.getByText('Liste verwalten ▾', { exact: true })).toBeFocused();
 
   await Promise.all([
     page.waitForResponse(
@@ -568,7 +616,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   if (await editingViewButton.isVisible()) {
     await editingViewButton.click();
   }
-  const readOnlyPreviewButton = page.getByRole('button', { name: 'READ ONLY-Vorschau' });
+  const readOnlyPreviewButton = page.getByRole('button', { name: 'Leseansicht' });
   await expect(readOnlyPreviewButton).toBeVisible();
   await readOnlyPreviewButton.click();
   await expect(page.getByRole('button', { name: 'Bearbeitungsansicht' })).toBeVisible();

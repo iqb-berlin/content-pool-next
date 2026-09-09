@@ -40,6 +40,20 @@ describe('ItemExplorerTableComponent', () => {
     expect(template).toContain('(click)="vm.setCollectionViewMode(\'all\')"');
   });
 
+  it('preserves native keyboard actions on controls inside the table', () => {
+    const onTableKeydown = vi.fn();
+    const component = new ItemExplorerTableComponent({
+      registerTableDom: vi.fn(),
+      tableViewModel: { onTableKeydown },
+    } as any);
+    for (const tag of ['input', 'select', 'textarea', 'button', 'a', 'summary']) {
+      component.onTableKeydown({ target: document.createElement(tag) } as any);
+    }
+    expect(onTableKeydown).not.toHaveBeenCalled();
+    component.onTableKeydown({ target: document.createElement('td') } as any);
+    expect(onTableKeydown).toHaveBeenCalledTimes(1);
+  });
+
   it('owns filter focus and selection scrolling', () => {
     vi.useFakeTimers();
     const feature = {

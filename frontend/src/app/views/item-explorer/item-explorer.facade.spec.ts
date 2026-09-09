@@ -907,7 +907,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.canExportAllPersonalItemData).toBe(true);
     await component.exportAllPersonalItemDataCsv();
 
-    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', undefined);
     expect(createObjectUrl).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:all-export');
@@ -920,6 +920,74 @@ describe('ItemExplorerFacade', () => {
     createObjectUrl.mockRestore();
     revokeObjectUrl.mockRestore();
     click.mockRestore();
+  });
+
+  it('exports the active shared list independently of displayed rows and refuses a missing list', async () => {
+    const exportAllViewPersonalItemDataCsv = vi.fn().mockReturnValue(of(new Blob(['csv'])));
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:collection-export');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    let filename = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      filename = this.download;
+    });
+    const component = createFacade({ api: { exportAllViewPersonalItemDataCsv } });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      viewPerspective: 'editor',
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'shared-1',
+      itemCollections: [
+        {
+          id: 'shared-1',
+          name: 'Auswahl A',
+          rowKeys: ['uuid::A', 'uuid::B'],
+          ownedByCurrentUser: false,
+        },
+      ],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', 'shared-1');
+    expect(filename).toContain('collection-Auswahl-A-shared-1.csv');
+    component.activeCollectionId = 'removed';
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
+    click.mockRestore();
+  });
+
+  it('shows a scoped export failure beside collections without leaving the export busy', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const component = createFacade({
+      api: {
+        exportAllViewPersonalItemDataCsv: vi
+          .fn()
+          .mockReturnValue(throwError(() => ({ status: 404 }))),
+      },
+    });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'removed',
+      itemCollections: [{ id: 'removed', name: 'Removed', rowKeys: [] }],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(component.collectionDataExportError).toContain('nicht mehr verfügbar');
+    expect(component.allPersonalDataExportError).toBe('');
+    expect(component.allPersonalDataExportInProgress).toBe(false);
+    component.ngOnDestroy();
+    log.mockRestore();
   });
 
   it('does not expose personal working-data controls to anonymous visitors', () => {
@@ -5269,7 +5337,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).definitionContent = '{"pages":[]}';
     (component as any).playerFrameReady = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_BAD" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_BAD" kommt in der Aufgabendefinition nicht vor.',
     );
 
     const envelope = createExplorerEnvelope();
@@ -5492,7 +5560,7 @@ describe('ItemExplorerFacade', () => {
     component.canEditExplorer = false;
     component.itemExplorerPlayerTargetInfoEnabled = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_404" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_404" kommt in der Aufgabendefinition nicht vor.',
     );
 
     expect(component.previewUnavailableMessage).toBe(
@@ -5583,6 +5651,21 @@ describe('ItemExplorerFacade', () => {
     expect(component.selectedItem?.uuid).toBe('uuid-3');
   });
 
+  it('leaves modified navigation keys to the browser', () => {
+    const component = createFacade();
+    component.filteredItems = [{}] as any;
+    for (const modifiers of [
+      { altKey: true },
+      { shiftKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+    ]) {
+      const event = new KeyboardEvent('keydown', { key: 'Home', cancelable: true, ...modifiers });
+      component.onTableKeydown(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
   it('routes manual ordering shortcuts to moveSelectedItem', () => {
     const component = createFacade();
     component.filteredItems = [
@@ -5607,6 +5690,22 @@ describe('ItemExplorerFacade', () => {
     } as any);
 
     expect(moveSelectedItem).toHaveBeenCalledWith(-1);
+  });
+
+  it('keeps review and discard closed when there are no unpublished changes', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.explorerUiStatus = 'CLEAN';
+    component.latestExplorerState = { status: 'CLEAN' } as any;
+    expect(component.explorerStatusLabel).toBe('Keine unveröffentlichten Änderungen');
+    expect(component.hasPendingDraftChanges()).toBe(false);
+    component.openSavePreviewDialog();
+    component.openDiscardExplorerDraftDialog();
+    expect(component.showSavePreviewDialog).toBe(false);
+    expect(component.showDiscardDraftDialog).toBe(false);
+    const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true });
+    component.handleWindowKeydown(event);
+    expect(component.showSavePreviewDialog).toBe(false);
   });
 
   it('opens the draft save preview with Ctrl/Cmd+S', () => {
@@ -5653,6 +5752,68 @@ describe('ItemExplorerFacade', () => {
     expect(component.showHistoryOverlay).toBe(false);
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it('keeps native dialog keyboard events out of the explorer shortcuts', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    dialog.appendChild(input);
+    for (const modifier of ['ctrlKey', 'metaKey']) {
+      const event = new KeyboardEvent('keydown', { key: 's', [modifier]: true, cancelable: true });
+      Object.defineProperty(event, 'target', { value: input });
+      component.handleWindowKeydown(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    Object.defineProperty(escape, 'target', { value: input });
+    component.handleWindowKeydown(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(component.showHistoryOverlay).toBe(true);
+    expect(openSave).not.toHaveBeenCalled();
+  });
+
+  it('blocks global shortcuts when a pending native dialog has lost focus', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    input.disabled = true;
+    dialog.appendChild(input);
+    document.body.appendChild(dialog);
+    try {
+      for (const modifier of ['ctrlKey', 'metaKey']) {
+        const event = new KeyboardEvent('keydown', {
+          key: 's',
+          [modifier]: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, 'target', { value: document.body });
+        component.handleWindowKeydown(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+      Object.defineProperty(escape, 'target', { value: document.body });
+      component.handleWindowKeydown(escape);
+      expect(escape.defaultPrevented).toBe(false);
+      expect(component.showHistoryOverlay).toBe(true);
+      expect(openSave).not.toHaveBeenCalled();
+      dialog.removeAttribute('open');
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      // The separate history overlay still prevents opening another overlay.
+      component.showHistoryOverlay = false;
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      expect(openSave).toHaveBeenCalledOnce();
+    } finally {
+      dialog.remove();
+    }
   });
 
   it('enters fullscreen on the explorer root and keeps the fullscreen state local', async () => {

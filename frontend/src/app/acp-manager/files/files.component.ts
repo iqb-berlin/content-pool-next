@@ -160,9 +160,10 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
 
     @if (lastSyncReport) {
       <div class="alert alert-info">
-        Index-Sync: {{ lastSyncReport.unitsAdded }} Units hinzugefügt,
-        {{ lastSyncReport.unitsUpdated }} Units aktualisiert, {{ lastSyncReport.itemsAdded }} Items
-        hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items aktualisiert.
+        Index-Sync: {{ lastSyncReport.unitsAdded }} Aufgaben hinzugefügt,
+        {{ lastSyncReport.unitsUpdated }} Aufgaben aktualisiert,
+        {{ lastSyncReport.itemsAdded }} Items hinzugefügt, {{ lastSyncReport.itemsUpdated }} Items
+        aktualisiert.
         @if (lastSyncReport.warnings?.length) {
           <div style="margin-top:6px">
             Warnungen:
@@ -198,7 +199,7 @@ type DeleteDialogMode = 'single' | 'selected' | 'all';
     <!-- Validation Results -->
     @if (validationResults.length) {
       <div class="card" style="margin-bottom:16px">
-        <h3 style="margin-bottom:12px">Unit-Dateien Prüfung</h3>
+        <h3 style="margin-bottom:12px">Aufgabendateien prüfen</h3>
         @for (result of validationResults; track result.unitId) {
           <div class="validation-unit" [class.valid]="result.valid" [class.invalid]="!result.valid">
             <div class="validation-header">

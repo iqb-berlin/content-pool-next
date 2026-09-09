@@ -365,7 +365,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                 [checked]="commentTargets.includes('UNIT')"
                 (change)="toggleCommentTarget('UNIT')"
               />
-              <span>Aufgaben (Units)</span>
+              <span>Aufgaben</span>
             </label>
             <label class="feature-toggle">
               <input
@@ -973,19 +973,19 @@ export class AccessConfigComponent implements OnInit {
 
   downloadFlags = [
     { key: 'allowIndexDownload', label: 'ACP-Index Download erlauben' },
-    { key: 'allowUnitDownload', label: 'Unit-Download erlauben (ZIP)' },
+    { key: 'allowUnitDownload', label: 'Aufgaben-Download erlauben (ZIP)' },
     { key: 'allowFileDownload', label: 'Andere Dateien Download erlauben' },
   ];
 
   unitViewFlags = [
-    { key: 'enableUnitView', label: 'Unit-Ansicht (Verona Player) aktivieren' },
+    { key: 'enableUnitView', label: 'Aufgabenansicht (Verona Player) aktivieren' },
     { key: 'showMetadata', label: 'Metadaten anzeigen' },
     { key: 'showRichText', label: 'RichText-Inhalte anzeigen' },
     { key: 'showCodingScheme', label: 'Kodierschema anzeigen' },
   ];
 
   navFlags = [
-    { key: 'enableUnitListNavigation', label: 'Navigation über Unit-Liste' },
+    { key: 'enableUnitListNavigation', label: 'Navigation über Aufgabenliste' },
     { key: 'enableSequenceNavigation', label: 'Aufgabenfolgen aus Testheften generieren' },
   ];
 

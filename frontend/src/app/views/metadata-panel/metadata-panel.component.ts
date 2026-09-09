@@ -13,7 +13,7 @@ import { DomSanitizer } from '@angular/platform-browser';
       <h3>Metadaten</h3>
       @if (unit) {
         <dl class="meta-grid">
-          <dt>Unit-ID</dt>
+          <dt>Aufgaben-ID</dt>
           <dd>{{ unit.id }}</dd>
           <dt>Name</dt>
           <dd>{{ unit.name }}</dd>

@@ -399,6 +399,21 @@ item/stimulus times, booklet assignments, and their optional positions.
 Participants without stored rows are skipped without failing the export. Note line breaks are
 written as literal `\\n` sequences so every personal entry remains on one CSV row.
 
+With item collections enabled, select an own or shared collection and use
+**↓ CSV** next to the collection management controls to download all participants' stored entries
+for that complete collection. The selected list determines the item row keys, not the participants.
+Search filters and table pagination do not narrow this export. The toolbar's **Teilnehmendendaten (CSV) ▾** menu
+provides **Gesamtdaten exportieren** for all stored entries and **Auswahlliste „[name]“ exportieren**
+for the current collection. Both collection entry points use the same export function. The scoped
+filename includes the collection name and ID; an empty
+collection or one without stored entries produces a CSV containing only the usual header.
+
+The aggregate export accepts an optional `collectionId`. The server resolves its row keys using
+the caller's identity and the existing own/shared collection access rules. Missing or inaccessible
+collections fail without falling back to the full export. Manager/admin authorization and the
+personal-data feature gate also apply to scoped exports. The ordinary collection CSV continues to
+include only the caller's own personal data.
+
 ## Empirical Difficulty Import
 
 Managers can upload empirical difficulty CSV data through item endpoints.
@@ -487,7 +502,8 @@ item from overwriting one another and gives exports a unique identifier for ever
 
 When `enableItemCollections` is enabled, authenticated users and credential identities can maintain
 multiple named collections. Collections are stored in the existing `acp_item_preferences` JSONB
-record under the `item-explorer` view and are never exposed to other participants or managers.
+record under the `item-explorer` view. Private collections remain visible only to their owner;
+explicitly shared collections are available to other authorized participants in the same ACP.
 Every collection stores an ordered list of stable row keys and an optimistic-lock version.
 Non-manager collection access additionally requires the Item Explorer item list to be enabled.
 

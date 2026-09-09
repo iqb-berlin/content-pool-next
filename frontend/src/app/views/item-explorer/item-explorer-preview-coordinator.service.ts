@@ -198,7 +198,7 @@ export class ItemExplorerPreviewCoordinator implements OnDestroy {
     if (result.assets.definition === null) {
       return {
         kind: 'unavailable',
-        reason: 'Für diese Aufgabe ist keine Unit-Definition verfügbar.',
+        reason: 'Für diese Aufgabe ist keine Aufgabendefinition verfügbar.',
       };
     }
     return { kind: 'ready', item: result.item };

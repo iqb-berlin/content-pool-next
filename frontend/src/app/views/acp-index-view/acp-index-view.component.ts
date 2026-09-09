@@ -62,7 +62,7 @@ interface NodeAction {
       <div class="card">
         <div class="tree-toolbar">
           <span class="tree-hint">
-            Rekursive Strukturansicht mit Links für Aufgabenfolgen, Units, Items und Dateien.
+            Rekursive Strukturansicht mit Links für Aufgabenfolgen, Aufgaben, Items und Dateien.
           </span>
         </div>
 
@@ -537,7 +537,7 @@ export class AcpIndexViewComponent implements OnInit {
       actions.push({
         id: `unit:${raw}`,
         kind: 'route',
-        label: 'Unit öffnen',
+        label: 'Aufgabe öffnen',
         route: ['/view', this.acpId, 'unit', raw],
       });
     }

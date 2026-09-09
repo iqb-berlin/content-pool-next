@@ -4,8 +4,37 @@ import { createOidcAppToken, installOidcSession } from './oidc-test-session';
 const ACP_ID = '10000000-0000-4000-8000-000000000201';
 const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 
+const headers = { Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, 'e2e-manager')}` };
+const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+let originalFilterText = '';
+
+test.beforeEach(async ({ request }) => {
+  const response = await request.get(stateUrl, { headers });
+  expect(response.ok()).toBeTruthy();
+  originalFilterText = (await response.json()).activeState.ui.filterText;
+});
+
+test.afterEach(async ({ page, request }) => {
+  // Stop pending UI requests before restoring the shared fixture, even after a failed assertion.
+  await page.close();
+  const response = await request.get(stateUrl, { headers });
+  expect(response.ok()).toBeTruthy();
+  const state = await response.json();
+  const restored = await request.patch(`/api/acp/${ACP_ID}/item-explorer/draft`, {
+    headers,
+    data: {
+      baseVersion: state.version,
+      changeType: 'UI_STATE_CHANGED',
+      patch: { ui: { filterText: originalFilterText } },
+    },
+  });
+  expect(restored.ok()).toBeTruthy();
+  const verification = await request.get(stateUrl, { headers });
+  expect(verification.ok()).toBeTruthy();
+  expect((await verification.json()).activeState.ui.filterText).toBe(originalFilterText);
+});
+
 async function openExplorer(page: Page) {
-  const headers = { Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, 'e2e-manager')}` };
   const accessUrl = `/api/acp/${ACP_ID}/access`;
   const accessResponse = await page.request.get(accessUrl, { headers });
   expect(accessResponse.ok()).toBeTruthy();

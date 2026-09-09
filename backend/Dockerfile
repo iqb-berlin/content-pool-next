@@ -7,8 +7,10 @@ RUN npm install
 
 COPY . .
 
-# Nest watch mode needs ps to terminate child processes before restarting.
-RUN apt-get update && apt-get install -y --no-install-recommends procps && rm -rf /var/lib/apt/lists/*
+# Nest watch needs ps to terminate children and tini to reap orphaned processes.
+RUN apt-get update && apt-get install -y --no-install-recommends procps tini && rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
 EXPOSE 3000
 CMD ["npm", "run", "start:dev"]

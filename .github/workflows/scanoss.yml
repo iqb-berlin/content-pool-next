@@ -1,0 +1,64 @@
+name: External code provenance
+
+on:
+  pull_request:
+    paths:
+      - 'backend/src/**'
+      - 'backend/test/**'
+      - 'frontend/src/**'
+      - 'frontend/e2e/**'
+      - 'keycloak/extensions/**'
+      - 'scripts/**'
+      - 'nginx/**'
+      - 'compliance/scanoss-requirements.txt'
+      - '.github/workflows/scanoss.yml'
+  schedule:
+    - cron: '45 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scanoss-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scanoss:
+    name: SCANOSS external code matches
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: compliance/scanoss-requirements.txt
+      - name: Install SCANOSS
+        run: python -m pip install -r compliance/scanoss-requirements.txt
+      - name: Test report validation
+        run: python -m unittest discover -s scripts -p test_scanoss_summary.py
+      - name: Scan tracked source against OSSKB
+        run: |
+          mkdir -p "$RUNNER_TEMP/scanoss-source" dist/scanoss
+          git archive HEAD backend/src backend/test frontend/src frontend/e2e \
+            keycloak/extensions scripts nginx | tar -x -C "$RUNNER_TEMP/scanoss-source"
+          git rev-parse HEAD > dist/scanoss/revision.txt
+          scanoss-py version > dist/scanoss/tool-version.txt
+          scanoss-py scan --skip-settings-file --threads 2 --timeout 60 --retry 2 \
+            --apiurl https://api.osskb.org \
+            --output dist/scanoss/results.json "$RUNNER_TEMP/scanoss-source"
+          python scripts/summarize-scanoss.py dist/scanoss/results.json \
+            > dist/scanoss/summary.md
+          cat dist/scanoss/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload scan evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scanoss-code-provenance
+          path: dist/scanoss/
+          if-no-files-found: warn
+          retention-days: 30

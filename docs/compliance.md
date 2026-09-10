@@ -12,6 +12,40 @@ backend, frontend, and Keycloak extension. The resulting `dependency-sboms`
 artifact is retained for 30 days. The same job verifies that the canonical
 Apache-2.0 license text and package declarations remain consistent.
 
+## External code provenance (SCANOSS)
+
+The separate `External code provenance` workflow runs on pull requests changing
+application source, tests, Keycloak extensions, scripts, nginx configuration or
+the scan configuration. It also runs every Monday and can be started manually.
+It scans a clean archive of those tracked directories, including tests; it does
+not scan the entire repository or untracked working files. SCANOSS's default
+file-type and directory exclusions still apply. Dependency inventories and
+ScanCode cover different concerns and remain in place.
+
+The pinned Python client uses the free public `https://api.osskb.org` API without
+an API key. Fingerprints and file metadata (including paths) leave the runner;
+raw source text is not uploaded. The public service may have availability or
+throughput limits. API failures, invalid responses and timeouts fail the job,
+so an unavailable scan is not presented as a clean result.
+
+The `scanoss-code-provenance` artifact retains raw JSON, a summary, the scanned
+Git revision and tool version for 30 days. On pull requests the revision is the
+checked-out test merge commit. Findings are advisory: reviewers must examine
+source URLs, actual licenses and attribution requirements before merging. A
+match can be legitimate reuse, common code or the project's own public code.
+Document the review decision in the pull request. There is no automatic license
+allowlist or legal approval gate; a green job only means the scan completed.
+No matches do not establish originality or rights clearance.
+
+For a local check, install `compliance/scanoss-requirements.txt` in a virtual
+environment, then run:
+
+```sh
+scanoss-py scan --skip-settings-file --apiurl https://api.osskb.org \
+  -o results.json <source-directory>
+```
+Read [contribution guidance](../CONTRIBUTING.md) before submitting AI-assisted code.
+
 ## Scheduled and manual scans
 
 Every Monday, and whenever the workflow is started manually, ScanCode scans a
@@ -38,6 +72,7 @@ The pipeline uses open source tools with pinned versions:
 - CycloneDX for npm 6.0.0 (Apache-2.0)
 - CycloneDX Maven plugin 2.9.3 (Apache-2.0)
 - ScanCode Toolkit 32.5.0 (Apache-2.0)
+- SCANOSS Python client 1.54.2 (MIT)
 - Syft 1.51.1 (Apache-2.0)
 - Dolos 2.9.3 (MIT)
 

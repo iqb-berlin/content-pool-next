@@ -43,7 +43,9 @@ All notable changes to ContentPool are documented in this file. Releases use
 - Expand player previews and the resizable metadata drawer, improve keyboard
   handling and accessible help, and keep collection menus inside narrow panels.
 - Make backend development watch restarts reliable and reap child processes.
-- Apply security patch updates for Angular, DOMPurify, and qs.
+- Apply security patch updates for Angular, DOMPurify, qs, and Multer.
+- Update Multer to 2.3.0 to resolve the upload denial-of-service findings
+  CVE-2026-77037, CVE-2026-77078, and CVE-2026-82333 in the release image scan.
 - Document the current product concepts and comparison with the legacy system.
 
 ### Breaking changes

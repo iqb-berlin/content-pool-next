@@ -12,7 +12,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
   template: `
     <app-acp-manager-context />
 
-    <div class="page-header"><h1>Zugriffskonfiguration</h1></div>
+    <div class="page-header"><h1>Zugriff &amp; Funktionen</h1></div>
 
     <!-- Access Model -->
     <div class="card">
@@ -365,7 +365,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                 [checked]="commentTargets.includes('UNIT')"
                 (change)="toggleCommentTarget('UNIT')"
               />
-              <span>Aufgaben (Units)</span>
+              <span>Aufgaben</span>
             </label>
             <label class="feature-toggle">
               <input
@@ -403,7 +403,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
       <!-- Item List -->
       <div class="feature-section">
-        <h4>📊 Item-Liste</h4>
+        <h4>🔭 Item-Explorer</h4>
         @for (feat of itemFlags; track feat.key) {
           <label class="feature-toggle">
             <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
@@ -973,27 +973,27 @@ export class AccessConfigComponent implements OnInit {
 
   downloadFlags = [
     { key: 'allowIndexDownload', label: 'ACP-Index Download erlauben' },
-    { key: 'allowUnitDownload', label: 'Unit-Download erlauben (ZIP)' },
+    { key: 'allowUnitDownload', label: 'Aufgaben-Download erlauben (ZIP)' },
     { key: 'allowFileDownload', label: 'Andere Dateien Download erlauben' },
   ];
 
   unitViewFlags = [
-    { key: 'enableUnitView', label: 'Unit-Ansicht (Verona Player) aktivieren' },
+    { key: 'enableUnitView', label: 'Aufgabenansicht (Verona Player) aktivieren' },
     { key: 'showMetadata', label: 'Metadaten anzeigen' },
     { key: 'showRichText', label: 'RichText-Inhalte anzeigen' },
     { key: 'showCodingScheme', label: 'Kodierschema anzeigen' },
   ];
 
   navFlags = [
-    { key: 'enableUnitListNavigation', label: 'Navigation über Unit-Liste' },
+    { key: 'enableUnitListNavigation', label: 'Navigation über Aufgabenliste' },
     { key: 'enableSequenceNavigation', label: 'Aufgabenfolgen aus Testheften generieren' },
   ];
 
   itemFlags = [
-    { key: 'enableItemList', label: 'Item-Liste aktivieren' },
+    { key: 'enableItemList', label: 'Item-Explorer aktivieren' },
     { key: 'enableItemClick', label: 'Item-Klick → Navigation zur Aufgabe' },
-    { key: 'enableItemListFilter', label: 'Item-Liste filtern erlauben' },
-    { key: 'enableItemListSort', label: 'Item-Liste sortieren erlauben' },
+    { key: 'enableItemListFilter', label: 'Item-Explorer filtern erlauben' },
+    { key: 'enableItemListSort', label: 'Item-Explorer sortieren erlauben' },
     { key: 'enableItemListTags', label: 'Item-Tagging erlauben' },
   ];
 

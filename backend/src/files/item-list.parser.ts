@@ -333,21 +333,35 @@ export class ItemListParser {
                         : {};
                     return {
                       booklet: String(occurrence.booklet || "").trim(),
-                      position: Number(occurrence.position),
+                      position:
+                        occurrence.position === null ||
+                        occurrence.position === undefined ||
+                        occurrence.position === ""
+                          ? null
+                          : Number(occurrence.position),
                     };
                   })
                   .filter(
                     (occurrence) =>
                       occurrence.booklet.length > 0 &&
-                      Number.isInteger(occurrence.position) &&
-                      occurrence.position > 0,
+                      (occurrence.position === null ||
+                        (Number.isInteger(occurrence.position) &&
+                          occurrence.position > 0)),
                   )
-                  .sort(
-                    (left, right) =>
-                      left.booklet.localeCompare(right.booklet, "de", {
+                  .sort((left, right) => {
+                    const bookletComparison = left.booklet.localeCompare(
+                      right.booklet,
+                      "de",
+                      {
                         numeric: true,
-                      }) || left.position - right.position,
-                  )
+                      },
+                    );
+                    if (bookletComparison) return bookletComparison;
+                    if (left.position === right.position) return 0;
+                    if (left.position === null) return 1;
+                    if (right.position === null) return -1;
+                    return left.position - right.position;
+                  })
               : [];
 
             items.push({

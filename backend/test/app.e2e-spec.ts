@@ -766,6 +766,39 @@ describe("ContentPool API (e2e)", () => {
       ]),
     );
 
+    const countsRes = await request(server)
+      .get(`/api/acp/${acpId}/review/comments/counts`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(countsRes.body.counts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ unitId: "U1", itemId: "I1", count: 3 }),
+      ]),
+    );
+
+    const managerMineCsv = await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/mine.csv`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const managerMineText = Buffer.from(managerMineCsv.body).toString("utf8");
+    expect(managerMineText).toContain("Manager reply");
+    expect(managerMineText).not.toContain("Shared root updated");
+
+    await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/all.xlsx`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/all.xlsx`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(403);
+
     const personalExportRes = await request(server)
       .get(`/api/acp/${acpId}/comments/export`)
       .set("Authorization", `Bearer ${credentialToken}`)

@@ -32,6 +32,7 @@ export interface TableColumnLayoutSettings {
   order: string[];
   configured: boolean;
   widths: Record<string, number>;
+  schemaVersion?: number;
 }
 
 export interface ExplorerItem {
@@ -58,7 +59,7 @@ export interface ExplorerItem {
   textComplexity?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
   previewTargetId?: string;
   excluded?: boolean;
@@ -104,7 +105,7 @@ export interface ItemParameterUploadSuccess {
   subId?: string;
   value?: number;
   fields?: string[];
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
 }
 
 export interface ItemParameterUploadWarning {

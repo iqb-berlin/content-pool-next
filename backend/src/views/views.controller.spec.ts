@@ -50,6 +50,7 @@ describe("ViewsController", () => {
     };
 
     itemCollectionsService = {
+      getAccessibleCollectionRowKeys: jest.fn().mockResolvedValue(["uuid::1"]),
       getItemCollections: jest.fn().mockResolvedValue({
         activeCollectionId: "collection-1",
         collections: [],
@@ -523,6 +524,7 @@ describe("ViewsController", () => {
     expect(viewsService.exportAllPersonalItemDataCsv).toHaveBeenCalledWith(
       "acp-1",
       true,
+      undefined,
     );
     expect(res.setHeader).toHaveBeenCalledWith(
       "Content-Type",
@@ -533,6 +535,80 @@ describe("ViewsController", () => {
       'attachment; filename="all-participant-item-data-acp-1.csv"',
     );
     expect(res.send).toHaveBeenCalledWith(Buffer.from("all-personal-csv"));
+  });
+
+  it("resolves a collection using the caller identity before exporting all participants", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+    await controller.exportAllPersonalItemDataCsv(
+      "acp-1",
+      { collectionId: "collection-1" },
+      { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+      res,
+    );
+    expect(
+      itemCollectionsService.getAccessibleCollectionRowKeys,
+    ).toHaveBeenCalledWith(
+      "acp-1",
+      { kind: "user", userId: "manager-1" },
+      "collection-1",
+    );
+    expect(viewsService.exportAllPersonalItemDataCsv).toHaveBeenCalledWith(
+      "acp-1",
+      false,
+      ["uuid::1"],
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      "Content-Disposition",
+      'attachment; filename="all-participant-item-data-acp-1-collection-collection-1.csv"',
+    );
+  });
+
+  it("does not fall back to all data when the requested collection is unavailable", async () => {
+    itemCollectionsService.getAccessibleCollectionRowKeys.mockRejectedValue(
+      new Error("Item collection not found"),
+    );
+    await expect(
+      controller.exportAllPersonalItemDataCsv(
+        "acp-1",
+        { collectionId: "removed" },
+        { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+        {} as any,
+      ),
+    ).rejects.toThrow("Item collection not found");
+    expect(viewsService.exportAllPersonalItemDataCsv).not.toHaveBeenCalled();
+  });
+
+  it.each(["READ_ONLY", "EDITOR"])(
+    "rejects scoped aggregate exports for %s",
+    async (role) => {
+      await expect(
+        controller.exportAllPersonalItemDataCsv(
+          "acp-1",
+          { collectionId: "collection-1" },
+          { user: { sub: "user-1" }, acpAccessLevel: role },
+          {} as any,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(
+        itemCollectionsService.getAccessibleCollectionRowKeys,
+      ).not.toHaveBeenCalled();
+      expect(viewsService.exportAllPersonalItemDataCsv).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects scoped exports when collections are disabled", async () => {
+    viewsService.getAcpStartPage.mockResolvedValue({
+      featureConfig: { enablePersonalItemData: true },
+    });
+    await expect(
+      controller.exportAllPersonalItemDataCsv(
+        "acp-1",
+        { collectionId: "collection-1" },
+        { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+        {} as any,
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(viewsService.exportAllPersonalItemDataCsv).not.toHaveBeenCalled();
   });
 
   it("routes personal collection reads, updates and exports to the caller identity", async () => {

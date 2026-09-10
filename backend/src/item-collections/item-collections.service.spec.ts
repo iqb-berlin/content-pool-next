@@ -37,6 +37,50 @@ describe("ItemCollectionsService", () => {
     );
   });
 
+  it("resolves own and foreign shared lists but rejects private or removed lists", async () => {
+    store.readPreferences.mockResolvedValue({
+      collections: [{ id: "own", name: "Own", rowKeys: ["uuid::A"] }],
+    });
+    store.readSharedCollections.mockResolvedValue([
+      {
+        collection: {
+          id: "shared",
+          name: "Shared",
+          shared: true,
+          rowKeys: ["uuid::B"],
+        },
+        ownerLabel: "Other",
+      },
+      {
+        collection: {
+          id: "private",
+          name: "Private",
+          shared: false,
+          rowKeys: ["uuid::C"],
+        },
+        ownerLabel: "Other",
+      },
+    ]);
+    await expect(
+      service.getAccessibleCollectionRowKeys("acp-1", owner, "own"),
+    ).resolves.toEqual(["uuid::A"]);
+    expect(store.readSharedCollections).not.toHaveBeenCalled();
+    await expect(
+      service.getAccessibleCollectionRowKeys("acp-1", owner, "shared"),
+    ).resolves.toEqual(["uuid::B"]);
+    expect(store.readSharedCollections).toHaveBeenCalledWith(
+      "acp-1",
+      owner,
+      expect.any(Number),
+    );
+    await expect(
+      service.getAccessibleCollectionRowKeys("acp-1", owner, "private"),
+    ).rejects.toThrow(NotFoundException);
+    await expect(
+      service.getAccessibleCollectionRowKeys("acp-1", owner, "removed"),
+    ).rejects.toThrow(NotFoundException);
+  });
+
   it("resolves summaries without double-counting partial-credit rows", async () => {
     store.readPreferences.mockResolvedValue({
       activeCollectionId: "collection-1",

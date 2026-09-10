@@ -130,8 +130,13 @@ interface ImportGroup {
   rowIndexes: number[];
   scalars: Map<ImportedScalarProperty, Set<number>>;
   texts: Map<ImportedTextProperty, Set<string>>;
-  occurrences: Map<string, { booklet: string; position: number }>;
+  occurrences: Map<string, BookletOccurrence>;
   emptyOccurrenceRows: number[];
+}
+
+interface BookletOccurrence {
+  booklet: string;
+  position: number | null;
 }
 
 @Injectable()
@@ -211,7 +216,7 @@ export class ItemParameterImportPipeline {
 
     if (!scalarColumns.length && !textColumns.length && bookletIdx < 0) {
       throw new BadRequestException(
-        'CSV must contain at least one supported item parameter column: "est", "bista", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or the pair "booklet" and "position"',
+        'CSV must contain at least one supported item parameter column: "est", "bista", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or "booklet"',
       );
     }
 
@@ -492,23 +497,32 @@ export class ItemParameterImportPipeline {
         }
       }
 
-      const bookletOccurrences =
+      const importedBookletOccurrences =
         bookletIdx >= 0
-          ? Array.from(group.occurrences.values()).sort(
-              (left, right) =>
-                left.booklet.localeCompare(right.booklet, "de", {
-                  numeric: true,
-                }) || left.position - right.position,
-            )
+          ? this.sortBookletOccurrences(Array.from(group.occurrences.values()))
           : undefined;
-      if (bookletOccurrences) {
-        mutations.push({
-          action: "set",
-          scope: "row",
-          property: "bookletOccurrences",
-          targetKeys: affectedRowKeys,
-          value: bookletOccurrences,
+      let reportedBookletOccurrences = importedBookletOccurrences;
+      if (importedBookletOccurrences) {
+        const resolvedByTarget = affectedRowKeys.map((targetKey) => {
+          const existingOccurrences =
+            request.itemProperties[targetKey]?.bookletOccurrences ??
+            request.itemProperties[group.match.uuid]?.bookletOccurrences;
+          const resolved = this.preserveKnownOccurrencePositions(
+            importedBookletOccurrences,
+            existingOccurrences,
+          );
+          mutations.push({
+            action: "set",
+            scope: "row",
+            property: "bookletOccurrences",
+            targetKeys: [targetKey],
+            value: resolved,
+          });
+          return resolved;
         });
+        if (resolvedByTarget.length === 1) {
+          reportedBookletOccurrences = resolvedByTarget[0];
+        }
       }
 
       successes.push({
@@ -522,7 +536,9 @@ export class ItemParameterImportPipeline {
               fields: [
                 ...scalarColumns.map((definition) => definition.header),
                 ...textColumns.map((definition) => definition.header),
-                ...(bookletIdx >= 0 ? ["booklet", "position"] : []),
+                ...(bookletIdx >= 0
+                  ? ["booklet", ...(hasPositionColumn ? ["position"] : [])]
+                  : []),
               ],
             }
           : {}),
@@ -534,7 +550,7 @@ export class ItemParameterImportPipeline {
             }
           : {}),
         ...(!requireEmpiricalDifficulty && bookletIdx >= 0
-          ? { bookletOccurrences }
+          ? { bookletOccurrences: reportedBookletOccurrences }
           : {}),
       });
     }
@@ -578,34 +594,32 @@ export class ItemParameterImportPipeline {
       return { importOccurrences: false };
     }
 
-    if (!hasBookletColumn || !hasPositionColumn) {
-      const missingColumn = hasBookletColumn ? "position" : "booklet";
+    if (!hasBookletColumn) {
       return {
         importOccurrences: false,
         warning: {
           code: "BOOKLET_OCCURRENCES_SKIPPED",
-          message: `Die Spalte "${missingColumn}" fehlt. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.`,
+          message:
+            'Die Spalte "booklet" fehlt. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.',
         },
       };
     }
 
-    let hasCompleteOccurrence = false;
-    let hasIncompleteOccurrence = false;
+    let hasBookletValue = false;
+    let hasPositionWithoutBooklet = false;
     for (let index = 1; index < lines.length; index++) {
       const line = lines[index].trim();
       if (!line) continue;
       const row = this.parseCsvLine(line);
       const booklet = row[bookletIdx]?.trim() || "";
-      const position = row[positionIdx]?.trim() || "";
-      if (booklet && position) hasCompleteOccurrence = true;
-      if ((booklet && !position) || (!booklet && position)) {
-        hasIncompleteOccurrence = true;
-      }
+      const position = positionIdx >= 0 ? row[positionIdx]?.trim() || "" : "";
+      if (booklet) hasBookletValue = true;
+      if (!booklet && position) hasPositionWithoutBooklet = true;
     }
 
     if (
-      !hasIncompleteOccurrence &&
-      (hasCompleteOccurrence || !hasParameterColumns)
+      !hasPositionWithoutBooklet &&
+      (hasBookletValue || !hasParameterColumns)
     ) {
       return { importOccurrences: true };
     }
@@ -614,9 +628,9 @@ export class ItemParameterImportPipeline {
       importOccurrences: false,
       warning: {
         code: "BOOKLET_OCCURRENCES_SKIPPED",
-        message: hasIncompleteOccurrence
-          ? 'Mindestens eine Zeile enthält "booklet" und "position" nicht gemeinsam. Alle Booklet-Zuordnungen werden übersprungen; bereits vorhandene Zuordnungen bleiben unverändert.'
-          : 'Die Spalten "booklet" und "position" enthalten keine vollständige Zuordnung. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.',
+        message: hasPositionWithoutBooklet
+          ? 'Mindestens eine Zeile enthält eine "position" ohne "booklet". Alle Booklet-Zuordnungen werden übersprungen; bereits vorhandene Zuordnungen bleiben unverändert.'
+          : 'Die Spalte "booklet" enthält keine Zuordnung. Booklet-Zuordnungen werden nicht importiert; bereits vorhandene Zuordnungen bleiben unverändert.',
       },
     };
   }
@@ -685,13 +699,13 @@ export class ItemParameterImportPipeline {
     itemValRaw: string,
     failed: Array<{ csvRow: string; reason: string }>,
   ):
-    | { key: string; value: { booklet: string; position: number } }
+    | { key: string; value: BookletOccurrence }
     | { empty: true }
     | undefined
     | null {
     if (bookletIdx < 0) return undefined;
     const booklet = row[bookletIdx]?.trim() || "";
-    const rawPosition = row[positionIdx]?.trim() || "";
+    const rawPosition = positionIdx >= 0 ? row[positionIdx]?.trim() || "" : "";
     if (!booklet && !rawPosition) {
       if (group.emptyOccurrenceRows.length > 0) {
         throw new BadRequestException(
@@ -700,12 +714,22 @@ export class ItemParameterImportPipeline {
       }
       return { empty: true };
     }
-    if (!booklet || !rawPosition) {
+    if (!booklet) {
       failed.push({
         csvRow: itemValRaw,
-        reason: "Booklet und Position müssen gemeinsam gesetzt sein",
+        reason:
+          "Eine Position darf nur gemeinsam mit einem Booklet gesetzt sein",
       });
       return null;
+    }
+    if (!rawPosition) {
+      const key = `${booklet}\u0000`;
+      if (group.occurrences.has(key)) {
+        throw new BadRequestException(
+          `Konflikt: Booklet "${booklet}" ohne Position kommt für Item "${match.itemId}"${subId ? ` und Sub-ID "${subId}"` : ""} mehrfach vor.`,
+        );
+      }
+      return { key, value: { booklet, position: null } };
     }
     const position = Number(rawPosition);
     if (!Number.isInteger(position) || position <= 0) {
@@ -722,6 +746,65 @@ export class ItemParameterImportPipeline {
       );
     }
     return { key, value: { booklet, position } };
+  }
+
+  private preserveKnownOccurrencePositions(
+    imported: BookletOccurrence[],
+    existingValue: unknown,
+  ): BookletOccurrence[] {
+    const existing = this.normalizeBookletOccurrences(existingValue);
+    const resolved = imported.flatMap((occurrence) => {
+      if (occurrence.position !== null) return [occurrence];
+      const matchingExisting = existing.filter(
+        (candidate) => candidate.booklet === occurrence.booklet,
+      );
+      return matchingExisting.length ? matchingExisting : [occurrence];
+    });
+    return this.sortBookletOccurrences(resolved);
+  }
+
+  private normalizeBookletOccurrences(value: unknown): BookletOccurrence[] {
+    if (!Array.isArray(value)) return [];
+    return this.sortBookletOccurrences(
+      value.flatMap((entry): BookletOccurrence[] => {
+        if (!entry || typeof entry !== "object" || !("booklet" in entry)) {
+          return [];
+        }
+        const booklet = String(
+          (entry as { booklet?: unknown }).booklet || "",
+        ).trim();
+        if (!booklet) return [];
+        const rawPosition = (entry as { position?: unknown }).position;
+        if (
+          rawPosition === null ||
+          rawPosition === undefined ||
+          rawPosition === ""
+        ) {
+          return [{ booklet, position: null }];
+        }
+        const position = Number(rawPosition);
+        return Number.isInteger(position) && position > 0
+          ? [{ booklet, position }]
+          : [];
+      }),
+    );
+  }
+
+  private sortBookletOccurrences(
+    occurrences: BookletOccurrence[],
+  ): BookletOccurrence[] {
+    return [...occurrences].sort((left, right) => {
+      const bookletComparison = left.booklet.localeCompare(
+        right.booklet,
+        "de",
+        { numeric: true },
+      );
+      if (bookletComparison) return bookletComparison;
+      if (left.position === right.position) return 0;
+      if (left.position === null) return 1;
+      if (right.position === null) return -1;
+      return left.position - right.position;
+    });
   }
 
   private validateGroupConflicts(groups: Map<string, ImportGroup>): void {

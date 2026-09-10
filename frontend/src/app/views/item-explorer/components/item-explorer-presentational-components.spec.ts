@@ -73,7 +73,7 @@ describe('ItemExplorer presentational components', () => {
   it.each([
     ['header fullscreen', headerTemplate, '(click)="vm.toggleFullscreen()"'],
     ['header save', headerTemplate, '(click)="vm.openSavePreviewDialog()"'],
-    ['collections create', collectionsTemplate, '(click)="vm.createCollection()"'],
+    ['collections create', collectionsTemplate, "openNameDialog('create', listActionsTrigger)"],
     ['collections delete', collectionsTemplate, '(click)="deleteActiveCollection()"'],
     ['coding close', codingTemplate, '(click)="vm.closeCodingOverlay()"'],
     ['metadata close', metadataTemplate, '(click)="vm.setMetadataDrawerOpen(false)"'],
@@ -97,6 +97,37 @@ describe('ItemExplorer presentational components', () => {
 
   it('gives the collection selector an accessible name', () => {
     expect(collectionsTemplate).toContain('aria-label="Aktive persönliche Auswahlliste auswählen"');
+  });
+
+  it('marks header and collection modes as semantic state buttons', () => {
+    expect(headerTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
+    expect(headerTemplate).toContain('[attr.aria-pressed]="vm.sortField === \'__manual__\'"');
+    expect(headerTemplate).toContain('(click)="vm.toggleManualOrderMode()"');
+    expect(headerTemplate).toContain('Manuell sortieren');
+    expect(headerTemplate).not.toContain('btn-state-indicator');
+    expect(collectionsTemplate.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'all\'"',
+    );
+    expect(collectionsTemplate).toContain(
+      '[attr.aria-pressed]="vm.collectionViewMode === \'active\'"',
+    );
+    expect(collectionsTemplate).not.toContain('btn-state-indicator');
+  });
+
+  it('links the metadata disclosure to its controlled drawer', () => {
+    expect(metadataTemplate).toContain('id="item-explorer-metadata-drawer"');
+  });
+
+  it('only shows movement controls in manual mode and binds their availability', () => {
+    const manualControls = headerTemplate.match(
+      /@if \(vm.sortField === '__manual__'\) \{([\s\S]*?)\n {6}\}/,
+    )?.[1];
+    expect(manualControls).toBeDefined();
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(-1)"');
+    expect(manualControls).toContain('[disabled]="!vm.canMoveSelectedItem(1)"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach oben verschieben"');
+    expect(manualControls).toContain('aria-label="Ausgewähltes Item nach unten verschieben"');
   });
 
   it('renders collection details as an accessible paginated modal', () => {
@@ -134,8 +165,10 @@ describe('ItemExplorer presentational components', () => {
 
   it('exposes read-only sharing and private-copy actions for collections', () => {
     expect(collectionsTemplate).toContain('Für diesen ACP freigeben');
-    expect(collectionsTemplate).toContain('Geteilt von {{ activeCollection.ownerLabel }}');
-    expect(collectionsTemplate).toContain('(click)="vm.copyActiveCollection()"');
+    expect(collectionsTemplate.replace(/\s+/g, ' ')).toContain(
+      "'Geteilt von ' + vm.activeItemCollection?.ownerLabel",
+    );
+    expect(collectionsTemplate).toContain('vm.copyActiveCollection()');
     expect(collectionsTemplate).toContain('collection.ownedByCurrentUser');
   });
 

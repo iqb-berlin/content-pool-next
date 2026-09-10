@@ -11,7 +11,15 @@ import { AuthService } from '../../core/services/auth.service';
 import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
 import { BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { CodingSchemeTextFactory, CodingAsText } from '@iqb/responses';
-import { finalize, firstValueFrom, ReplaySubject, Subscription, takeUntil } from 'rxjs';
+import {
+  finalize,
+  firstValueFrom,
+  Observable,
+  ReplaySubject,
+  Subscription,
+  takeUntil,
+  timeout,
+} from 'rxjs';
 import {
   ItemCollection,
   ItemCollectionSummary,
@@ -73,6 +81,7 @@ const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 const COLLECTION_SELECTION_COLUMN_WIDTH = 38;
 const POSITION_COLUMN_WIDTH = 72;
+const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
 const TABLE_COLUMN_KEYS = {
   referenceNumber: 'system:referenceNumber',
   itemId: 'system:itemId',
@@ -80,6 +89,7 @@ const TABLE_COLUMN_KEYS = {
   subId: 'system:subId',
   empiricalDifficulty: 'system:empiricalDifficulty',
   meanTaskDifficulty: 'system:meanTaskDifficulty',
+  comments: 'system:comments',
   tags: 'system:tags',
   personalCategory: 'personal:category',
   personalTags: 'personal:tags',
@@ -92,6 +102,7 @@ const TABLE_COLUMN_SORT_FIELDS: Readonly<Record<string, string>> = {
   [TABLE_COLUMN_KEYS.subId]: 'subIdDisplay',
   [TABLE_COLUMN_KEYS.empiricalDifficulty]: 'empiricalDifficulty',
   [TABLE_COLUMN_KEYS.meanTaskDifficulty]: 'meanTaskDifficulty',
+  [TABLE_COLUMN_KEYS.comments]: 'commentCount',
 };
 const METADATA_COLUMN_KEY_PREFIX = 'metadata:';
 type ItemListLoadOutcome = 'loaded' | 'version-mismatch' | 'superseded' | 'error';
@@ -158,6 +169,12 @@ export class ItemExplorerFacade implements OnDestroy {
   sortField = DEFAULT_EXPLORER_SORT_FIELD;
   sortIsMeta = false;
   sortDir: 'asc' | 'desc' = DEFAULT_EXPLORER_SORT_DIR;
+  // Session-only return target; a reloaded manual mode falls back to the default sort.
+  private sortBeforeManualOrder: {
+    field: string;
+    isMeta: boolean;
+    direction: 'asc' | 'desc';
+  } | null = null;
   breadcrumbs: BreadcrumbItem[] = [];
   columnFilters: Record<string, string> = {};
   showExcludedItems = false;
@@ -201,6 +218,23 @@ export class ItemExplorerFacade implements OnDestroy {
   itemExplorerPlayerTargetInfoEnabled = false;
   itemCommentsEnabled = false;
   private itemCommentsConfigured = false;
+  itemCommentCounts: Record<string, number> = {};
+  itemCommentCountsLoading = false;
+  itemCommentCountsAvailable = false;
+  itemCommentCountsError = '';
+  itemCommentRefreshToken = 0;
+  itemCommentSessionToken = 0;
+  commentThreadInitiallyOpen = false;
+  commentExportInProgress = false;
+  commentExportError = '';
+  private itemCommentCountsRequestToken = 0;
+  private commentRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly commentVisibilityListener = () => this.refreshVisibleItemComments();
+  private itemCommentCountStateVersion = 0;
+  private readonly itemCommentCountChangeVersions = new Map<string, number>();
+  private itemCommentCountSessionIdentity: string | null = null;
+  private initialCommentTarget: { unitId: string; itemId: string } | null = null;
+  private selectingInitialCommentTarget = false;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
   persistUserPreferences = false;
@@ -221,6 +255,7 @@ export class ItemExplorerFacade implements OnDestroy {
   personalExportError = '';
   allPersonalDataExportInProgress = false;
   allPersonalDataExportError = '';
+  collectionDataExportError = '';
   showDiscardPersonalItemDataDialog = false;
   private readonly personalPreferenceViewId = 'item-explorer';
   private readonly personalSaveDebounceMs = 350;
@@ -234,6 +269,7 @@ export class ItemExplorerFacade implements OnDestroy {
   private authSessionSubscription: Subscription | null = null;
   private readonly authStorageListener = (event: StorageEvent) => {
     if (!event.key || event.key === 'cp_token') {
+      this.syncItemCommentCountSession();
       this.syncPersonalItemDataSession();
       this.syncItemCollectionSession();
     }
@@ -321,6 +357,7 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [],
       configured: false,
       widths: {},
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     },
   };
   private columnManagerOriginalSettings: MetadataSettings | null = null;
@@ -569,6 +606,97 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get totalItemsCount(): number {
     return this.items.length;
+  }
+
+  get canExportAllComments(): boolean {
+    return this.itemCommentsEnabled && this.hasExplorerEditPermission;
+  }
+
+  getItemCommentCount(item?: ReadonlyExplorerItem | null): number {
+    if (!item) return 0;
+    const key = this.resolveItemCommentCountKey(item.unitId, item.itemId, this.itemCommentCounts);
+    return this.itemCommentCounts[key] || 0;
+  }
+
+  updateItemCommentCount(event: {
+    unitId: string;
+    itemId: string;
+    count: number;
+    refreshToken?: number;
+  }): void {
+    if (event.refreshToken !== undefined && event.refreshToken !== this.itemCommentRefreshToken) {
+      return;
+    }
+    const key = this.itemCommentTargetKey(event.unitId, event.itemId);
+    const count = Math.max(0, Number(event.count) || 0);
+    // Even an unchanged count is a newer observation than an in-flight batch.
+    this.itemCommentCountStateVersion += 1;
+    this.itemCommentCountChangeVersions.set(key, this.itemCommentCountStateVersion);
+    if (this.itemCommentCounts[key] === count) return;
+    this.itemCommentCounts = { ...this.itemCommentCounts, [key]: count };
+    this.applyFilter(false);
+  }
+
+  refreshItemComments(refreshSelectedThread = true): void {
+    if (!this.itemCommentsEnabled || !this.acpId) return;
+    const token = ++this.itemCommentCountsRequestToken;
+    const stateVersion = this.itemCommentCountStateVersion;
+    if (refreshSelectedThread) this.itemCommentRefreshToken += 1;
+    this.itemCommentCountsLoading = true;
+    this.itemCommentCountsError = '';
+    this.api
+      .getItemCommentCounts(this.acpId)
+      .pipe(timeout(10_000), takeUntil(this.destroy$))
+      .subscribe({
+        next: (snapshot) => {
+          if (token !== this.itemCommentCountsRequestToken) return;
+          const nextCounts = Object.fromEntries(
+            (snapshot.counts || []).map((entry) => [
+              this.itemCommentTargetKey(entry.unitId, entry.itemId),
+              entry.count,
+            ]),
+          );
+          for (const [key, changeVersion] of this.itemCommentCountChangeVersions) {
+            if (changeVersion > stateVersion) {
+              nextCounts[key] = this.itemCommentCounts[key] || 0;
+            } else {
+              this.itemCommentCountChangeVersions.delete(key);
+            }
+          }
+          this.itemCommentCounts = nextCounts;
+          this.itemCommentCountsAvailable = true;
+          this.itemCommentCountsLoading = false;
+          this.applyFilter(false);
+        },
+        error: () => {
+          if (token !== this.itemCommentCountsRequestToken) return;
+          this.itemCommentCountsLoading = false;
+          this.itemCommentCountsError = 'Kommentaranzahlen konnten nicht geladen werden.';
+          this.applyFilter(false);
+        },
+      });
+  }
+
+  exportMyCommentsCsv(): void {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsCsv(this.acpId),
+      `comments-${this.acpId}-mine.csv`,
+    );
+  }
+
+  exportMyCommentsXlsx(): void {
+    this.downloadCommentExport(
+      this.api.exportMyReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-mine.xlsx`,
+    );
+  }
+
+  exportAllCommentsXlsx(): void {
+    if (!this.canExportAllComments) return;
+    this.downloadCommentExport(
+      this.api.exportAllReviewCommentsXlsx(this.acpId),
+      `comments-${this.acpId}-all.xlsx`,
+    );
   }
 
   get visibleItemsCount(): number {
@@ -833,6 +961,15 @@ export class ItemExplorerFacade implements OnDestroy {
         defaultWidth: 230,
       });
     }
+    if (this.itemCommentsEnabled) {
+      columns.push({
+        key: TABLE_COLUMN_KEYS.comments,
+        id: 'comments',
+        label: 'Kommentare',
+        source: 'system',
+        defaultWidth: 150,
+      });
+    }
     columns.push(
       ...this.allColumns.map((metadataColumn) => ({
         key: this.getMetadataTableColumnKey(metadataColumn.id),
@@ -953,7 +1090,7 @@ export class ItemExplorerFacade implements OnDestroy {
       case 'ERROR':
         return 'Fehler';
       default:
-        return 'Unverändert';
+        return 'Keine unveröffentlichten Änderungen';
     }
   }
 
@@ -1141,10 +1278,17 @@ export class ItemExplorerFacade implements OnDestroy {
     this.uploadItemParameterFile(this.pendingItemParameterUploadFile, true);
   }
 
-  init(acpId: string) {
+  init(acpId: string, initialCommentTarget?: { unitId: string; itemId: string; open?: boolean }) {
     if (this.initialized || this.destroyed) return;
     this.initialized = true;
     this.acpId = acpId;
+    if (initialCommentTarget?.unitId && initialCommentTarget.itemId) {
+      this.initialCommentTarget = {
+        unitId: initialCommentTarget.unitId,
+        itemId: initialCommentTarget.itemId,
+      };
+      this.commentThreadInitiallyOpen = initialCommentTarget.open === true;
+    }
     this.breadcrumbs = [
       { label: 'Assessment Content Pool', route: ['/'] },
       { label: 'ACP', route: ['/view', this.acpId] },
@@ -1156,6 +1300,7 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => {
         this.checkUserRole();
+        this.syncItemCommentCountSession();
         this.syncPersonalItemDataSession();
         this.syncItemCollectionSession();
       });
@@ -1201,8 +1346,10 @@ export class ItemExplorerFacade implements OnDestroy {
 
           // Load metadata column settings
           this.metadataSettings = this.resolveMetadataSettings(fc);
+          this.ensureCommentColumnDefault();
           this.configuredMetadataColumns = this.resolveConfiguredMetadataColumns(fc);
           void this.reloadSharedExplorerStateAndItems();
+          this.syncItemCommentCountSession();
           this.syncPersonalItemDataSession();
           this.syncItemCollectionSession();
           this.startPlayerIfReady();
@@ -1286,6 +1433,7 @@ export class ItemExplorerFacade implements OnDestroy {
           this.unitMetadataCache = result.unitMetadata || {};
           this.codingSchemeCache = result.codingSchemes || {};
           this.applyFilter(false); // re-apply current filters and sort
+          this.selectInitialCommentTarget();
           if (this.enableItemCollections && this.collectionLoadState === 'loaded') {
             this.recalculateCollectionSummaries();
           }
@@ -1333,6 +1481,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.destroy$.next();
     this.destroy$.complete();
     window.removeEventListener('storage', this.authStorageListener);
+    this.stopCommentAutoRefresh();
     this.authSessionSubscription?.unsubscribe();
     this.authSessionSubscription = null;
     this.playerDom?.stopAutoResize();
@@ -1389,6 +1538,14 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     const lowerKey = event.key.toLowerCase();
+    // Disabled controls can move focus outside a modal while its request is pending.
+    if (
+      document.querySelector('dialog[open]') ||
+      (event.target instanceof Element && event.target.closest('dialog[open]'))
+    ) {
+      if ((event.ctrlKey || event.metaKey) && lowerKey === 's') event.preventDefault();
+      return;
+    }
     if (lowerKey === 'escape' && this.closeTopmostOverlay()) {
       event.preventDefault();
       event.stopPropagation();
@@ -1460,7 +1617,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     if (column.kind === 'position') {
       return (item.bookletOccurrences || [])
-        .map((occurrence) => String(occurrence.position))
+        .map((occurrence) => (occurrence.position === null ? '' : String(occurrence.position)))
         .join(' | ');
     }
     const value = this.getMetadataColumnRawValue(item, column);
@@ -1488,10 +1645,12 @@ export class ItemExplorerFacade implements OnDestroy {
         return item.stimulusTimeSeconds;
       case 'booklet':
         return item.bookletOccurrences?.[0]?.booklet;
-      case 'bookletPosition':
-        return item.bookletOccurrences?.length
-          ? Math.min(...item.bookletOccurrences.map((occurrence) => occurrence.position))
-          : undefined;
+      case 'bookletPosition': {
+        const positions = (item.bookletOccurrences || []).flatMap((occurrence) =>
+          occurrence.position === null ? [] : [occurrence.position],
+        );
+        return positions.length ? Math.min(...positions) : undefined;
+      }
       default:
         return item.metadata[column.id];
     }
@@ -1585,7 +1744,7 @@ export class ItemExplorerFacade implements OnDestroy {
       });
   }
 
-  async createCollection(): Promise<ItemCollection | null> {
+  async createCollection(requestedName?: string): Promise<ItemCollection | null> {
     if (this.collectionBusy) return null;
     const session = this.getItemCollectionSession();
     if (!session.identity) {
@@ -1595,11 +1754,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.collectionBusy = true;
     this.collectionError = '';
     const name =
-      this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length === 0
+      requestedName?.trim() ||
+      (this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length === 0
         ? 'Meine Auswahlliste'
         : `Auswahlliste ${
             this.itemCollections.filter((collection) => collection.ownedByCurrentUser).length + 1
-          }`;
+          }`);
     try {
       const payload = await firstValueFrom(
         this.api.createItemCollection(this.acpId, name, this.getPerspectiveForViewerRequests()),
@@ -1673,10 +1833,10 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.persistActiveCollectionRowsMutation({ clear: true });
   }
 
-  async renameActiveCollection() {
+  async renameActiveCollection(requestedName: string) {
     const collection = this.activeItemCollection;
     if (!collection || collection.ownedByCurrentUser === false || this.collectionBusy) return;
-    const name = window.prompt('Name der Auswahlliste', collection.name)?.trim();
+    const name = requestedName.trim();
     if (!name || name === collection.name) return;
     await this.persistActiveCollectionUpdate({ name });
   }
@@ -2085,7 +2245,9 @@ export class ItemExplorerFacade implements OnDestroy {
         const matchesBooklet =
           !bookletFilter || occurrence.booklet.toLowerCase().includes(bookletFilter);
         const matchesPosition =
-          !positionFilter || matchesNumericFilter(occurrence.position, positionFilter);
+          !positionFilter ||
+          (occurrence.position !== null &&
+            matchesNumericFilter(occurrence.position, positionFilter));
         return matchesBooklet && matchesPosition;
       });
       if (!matchesOccurrence) return false;
@@ -2114,6 +2276,11 @@ export class ItemExplorerFacade implements OnDestroy {
       } else if (colId === 'meanTaskDifficulty') {
         if (item.meanTaskDifficulty === undefined || item.meanTaskDifficulty === null) return false;
         if (!matchesNumericFilter(item.meanTaskDifficulty, filterValue)) return false;
+      } else if (colId === 'comments') {
+        if (!this.itemCommentsEnabled || !this.itemCommentCountsAvailable) continue;
+        const count = this.getItemCommentCount(item);
+        if (filterValue === 'with' && count === 0) return false;
+        if (filterValue === 'without' && count > 0) return false;
       } else if (colId === 'booklet' || colId === 'bookletPosition') {
         continue;
       } else {
@@ -2173,6 +2340,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   // --- Sorting ---
   onTableKeydown(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.altKey || event.shiftKey) return;
     if (this.filteredItems.length === 0) {
       return;
     }
@@ -2188,6 +2356,8 @@ export class ItemExplorerFacade implements OnDestroy {
       this.moveSelectedItem(1);
       return;
     }
+
+    if (hasModifier) return;
 
     switch (event.key) {
       case 'ArrowDown':
@@ -2278,12 +2448,18 @@ export class ItemExplorerFacade implements OnDestroy {
         bVal = column ? this.getMetadataColumnRawValue(b, column) : b.metadata[this.sortField];
       } else if (
         this.sortField === 'empiricalDifficulty' ||
-        this.sortField === 'meanTaskDifficulty'
+        this.sortField === 'meanTaskDifficulty' ||
+        this.sortField === 'commentCount'
       ) {
-        aVal =
-          this.sortField === 'empiricalDifficulty' ? a.empiricalDifficulty : a.meanTaskDifficulty;
-        bVal =
-          this.sortField === 'empiricalDifficulty' ? b.empiricalDifficulty : b.meanTaskDifficulty;
+        if (this.sortField === 'commentCount') {
+          aVal = this.getItemCommentCount(a);
+          bVal = this.getItemCommentCount(b);
+        } else {
+          aVal =
+            this.sortField === 'empiricalDifficulty' ? a.empiricalDifficulty : a.meanTaskDifficulty;
+          bVal =
+            this.sortField === 'empiricalDifficulty' ? b.empiricalDifficulty : b.meanTaskDifficulty;
+        }
       } else {
         aVal = (a as any)[this.sortField] || '';
         bVal = (b as any)[this.sortField] || '';
@@ -2410,7 +2586,11 @@ export class ItemExplorerFacade implements OnDestroy {
         (label) => label !== 'Booklet' && label !== 'Position im Booklet',
       );
       withoutSeparateBookletFields.push(
-        success.bookletOccurrences?.length ? 'Booklet / Position' : 'Booklet / Position gelöscht',
+        success.bookletOccurrences?.length
+          ? success.bookletOccurrences.some((occurrence) => occurrence.position !== null)
+            ? 'Booklet / Position'
+            : 'Booklet'
+          : 'Booklet / Position gelöscht',
       );
       return [...new Set(withoutSeparateBookletFields)].join(', ') || '–';
     }
@@ -2425,7 +2605,11 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!success.bookletOccurrences.length) return 'Gelöscht';
 
     return success.bookletOccurrences
-      .map((occurrence) => `${occurrence.booklet} / ${occurrence.position}`)
+      .map((occurrence) =>
+        occurrence.position === null
+          ? occurrence.booklet
+          : `${occurrence.booklet} / ${occurrence.position}`,
+      )
       .join(' | ');
   }
 
@@ -2735,6 +2919,9 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Item Selection ---
   selectItem(readonlyItem: ReadonlyExplorerItem, index: number) {
     const item = readonlyItem as ExplorerItem;
+    if (!this.selectingInitialCommentTarget) {
+      this.commentThreadInitiallyOpen = false;
+    }
     item.rowKey = this.getStableRowKey(item);
     if (
       this.selectedItem &&
@@ -3177,7 +3364,7 @@ export class ItemExplorerFacade implements OnDestroy {
     );
     if (!targetLocation) {
       this.previewCoordinator.markUnavailable(
-        `Das Player-Ziel "${previewTarget}" kommt in der Unit-Definition nicht vor.`,
+        `Das Player-Ziel "${previewTarget}" kommt in der Aufgabendefinition nicht vor.`,
       );
       this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-target' });
       this.playerReadyTiming = null;
@@ -4348,7 +4535,16 @@ export class ItemExplorerFacade implements OnDestroy {
     }
   }
 
-  async exportAllPersonalItemDataCsv() {
+  async exportAllPersonalItemDataCsv(scope: 'all' | 'collection' = 'all') {
+    const collection = scope === 'collection' ? this.activeItemCollection : null;
+    if (
+      scope === 'collection' &&
+      (!this.enableItemCollections ||
+        !collection ||
+        this.collectionBusy ||
+        this.collectionLoadState !== 'loaded')
+    )
+      return;
     if (
       this.destroyed ||
       !this.canExportAllPersonalItemData ||
@@ -4359,27 +4555,53 @@ export class ItemExplorerFacade implements OnDestroy {
 
     this.allPersonalDataExportInProgress = true;
     this.allPersonalDataExportError = '';
+    this.collectionDataExportError = '';
     try {
       const blob = await firstValueFrom(
         this.api.exportAllViewPersonalItemDataCsv(
           this.acpId,
           this.getPerspectiveForViewerRequests(),
+          collection?.id,
         ),
       );
       if (this.destroyed) return;
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `all-participant-item-data-${this.acpId}.csv`;
+      const collectionSuffix = collection
+        ? `-collection-${collection.name.replace(/[^a-zA-Z0-9äöüÄÖÜß_-]+/g, '-').slice(0, 80)}-${collection.id}`
+        : '';
+      anchor.download = `all-participant-item-data-${this.acpId}${collectionSuffix}.csv`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
     } catch (error) {
       if (this.destroyed) return;
-      console.error('Failed to export all personal item working data', error);
-      this.allPersonalDataExportError =
-        'Die persönlichen Item-Arbeitsdaten aller Teilnehmenden konnten nicht exportiert werden.';
+      const response = error as { status?: number; error?: unknown };
+      let details = response.error;
+      if (details instanceof Blob) {
+        try {
+          details = JSON.parse(await details.text());
+        } catch {
+          details = undefined;
+        }
+      }
+      if (this.destroyed) return;
+      console.error(
+        'Failed to export all personal item working data',
+        JSON.stringify({ status: response.status, details }),
+      );
+      const message =
+        response.status === 404 && collection
+          ? 'Die Auswahlliste ist nicht mehr verfügbar oder nicht mehr freigegeben. Bitte die Auswahllisten neu laden.'
+          : response.status === 403
+            ? 'Für diesen Export fehlt die Berechtigung oder die benötigte ACP-Funktion ist deaktiviert.'
+            : response.status === 0
+              ? 'Der Server ist nicht erreichbar. Bitte die Verbindung prüfen und den Export erneut versuchen.'
+              : `Die Item-Arbeitsdaten aller Teilnehmenden konnten nicht exportiert werden${response.status ? ` (HTTP ${response.status})` : ''}.`;
+      if (collection) this.collectionDataExportError = message;
+      else this.allPersonalDataExportError = message;
     } finally {
       if (!this.destroyed) this.allPersonalDataExportInProgress = false;
     }
@@ -5072,7 +5294,24 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [...visible, ...hidden],
       configured: true,
       widths: { ...(this.metadataSettings.layout?.widths || {}) },
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     };
+  }
+
+  private ensureCommentColumnDefault(): void {
+    if (!this.itemCommentsEnabled) return;
+    const layout = this.metadataSettings.layout;
+    if (!layout?.configured || (layout.schemaVersion || 0) >= TABLE_COLUMN_LAYOUT_SCHEMA_VERSION) {
+      return;
+    }
+    if (
+      (layout.order.length > 0 || layout.visible.length > 0) &&
+      !layout.order.includes(TABLE_COLUMN_KEYS.comments)
+    ) {
+      layout.order.push(TABLE_COLUMN_KEYS.comments);
+      layout.visible.push(TABLE_COLUMN_KEYS.comments);
+    }
+    layout.schemaVersion = TABLE_COLUMN_LAYOUT_SCHEMA_VERSION;
   }
 
   private syncLegacyMetadataSettingsFromLayout() {
@@ -5293,7 +5532,21 @@ export class ItemExplorerFacade implements OnDestroy {
     return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
   }
 
-  enableManualOrderMode() {
+  toggleManualOrderMode() {
+    if (this.sortField === '__manual__') {
+      this.sortField = this.sortBeforeManualOrder?.field ?? DEFAULT_EXPLORER_SORT_FIELD;
+      this.sortIsMeta = this.sortBeforeManualOrder?.isMeta ?? false;
+      this.sortDir = this.sortBeforeManualOrder?.direction ?? DEFAULT_EXPLORER_SORT_DIR;
+      this.sortBeforeManualOrder = null;
+      this.applySort();
+      return;
+    }
+
+    this.sortBeforeManualOrder = {
+      field: this.sortField,
+      isMeta: this.sortIsMeta,
+      direction: this.sortDir,
+    };
     this.sortField = '__manual__';
     this.sortIsMeta = false;
     this.sortDir = 'asc';
@@ -5303,21 +5556,23 @@ export class ItemExplorerFacade implements OnDestroy {
     this.applySort();
   }
 
-  moveSelectedItem(delta: number) {
+  canMoveSelectedItem(delta: number): boolean {
     if (!this.canEditExplorer || !this.selectedItem || this.sortField !== '__manual__') {
-      return;
+      return false;
     }
+    const order = this.itemOrder.length ? this.itemOrder : this.items.map((item) => item.rowKey);
+    const currentIndex = order.indexOf(this.selectedItem.rowKey);
+    const targetIndex = currentIndex + delta;
+    return currentIndex >= 0 && targetIndex >= 0 && targetIndex < order.length;
+  }
+
+  moveSelectedItem(delta: number) {
+    if (!this.selectedItem || !this.canMoveSelectedItem(delta)) return;
     if (!this.itemOrder.length) {
       this.itemOrder = this.items.map((item) => item.rowKey);
     }
     const currentIndex = this.itemOrder.indexOf(this.selectedItem.rowKey);
-    if (currentIndex === -1) {
-      return;
-    }
     const targetIndex = currentIndex + delta;
-    if (targetIndex < 0 || targetIndex >= this.itemOrder.length) {
-      return;
-    }
     [this.itemOrder[currentIndex], this.itemOrder[targetIndex]] = [
       this.itemOrder[targetIndex],
       this.itemOrder[currentIndex],
@@ -5333,6 +5588,7 @@ export class ItemExplorerFacade implements OnDestroy {
       order: [],
       configured: false,
       widths: {},
+      schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
     };
     this.columns = this.filterVisibleColumns(this.allColumns);
     this.clearHiddenTableColumnFilters();
@@ -5356,6 +5612,7 @@ export class ItemExplorerFacade implements OnDestroy {
             order: [...layout.order],
             configured: layout.configured,
             widths: { ...layout.widths },
+            schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
           },
         },
       },
@@ -5375,6 +5632,7 @@ export class ItemExplorerFacade implements OnDestroy {
         order: [],
         configured: false,
         widths: {},
+        schemaVersion: TABLE_COLUMN_LAYOUT_SCHEMA_VERSION,
       },
     };
     this.columns = this.filterVisibleColumns(this.allColumns);
@@ -5439,6 +5697,9 @@ export class ItemExplorerFacade implements OnDestroy {
       order: order.length ? order : visible,
       configured: layout['configured'] === true || visible.length > 0 || order.length > 0,
       widths: this.normalizeMetadataColumnWidths(layout['widths']),
+      ...(Number.isInteger(Number(layout['schemaVersion']))
+        ? { schemaVersion: Number(layout['schemaVersion']) }
+        : {}),
     };
   }
 
@@ -5667,6 +5928,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.metadataSettings = this.resolveMetadataSettings({
         metadataColumns: (activeState as ItemExplorerSharedState).metadataColumns,
       });
+      this.ensureCommentColumnDefault();
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.itemOrder = Array.isArray((activeState as ItemExplorerSharedState).itemOrder)
         ? (activeState as ItemExplorerSharedState).itemOrder!.filter(
@@ -6077,6 +6339,9 @@ export class ItemExplorerFacade implements OnDestroy {
               order: [...this.metadataSettings.layout.order],
               configured: this.metadataSettings.layout.configured,
               widths: { ...this.metadataSettings.layout.widths },
+              ...(this.metadataSettings.layout.schemaVersion
+                ? { schemaVersion: this.metadataSettings.layout.schemaVersion }
+                : {}),
             },
           }
         : {}),
@@ -6647,6 +6912,133 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     return tags;
+  }
+
+  private resolveItemCommentCountKey(
+    unitId: string,
+    itemId: string,
+    counts: Record<string, number>,
+  ): string {
+    const exactKey = this.itemCommentTargetKey(unitId, itemId);
+    if (Object.prototype.hasOwnProperty.call(counts, exactKey)) return exactKey;
+    const prefix = `${unitId}_`;
+    // Match the backend: exact canonical ID first, then a unit-prefixed request alias.
+    if (!itemId.startsWith(prefix)) return exactKey;
+    const alternateKey = this.itemCommentTargetKey(unitId, itemId.slice(prefix.length));
+    return Object.prototype.hasOwnProperty.call(counts, alternateKey) ? alternateKey : exactKey;
+  }
+
+  private itemCommentTargetKey(unitId: string, itemId: string): string {
+    return `${unitId}\u0000${itemId}`;
+  }
+
+  private syncItemCommentCountSession(): void {
+    const nextIdentity = this.itemCommentsEnabled
+      ? this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken())
+      : null;
+    if (nextIdentity === this.itemCommentCountSessionIdentity) return;
+
+    this.stopCommentAutoRefresh();
+    this.itemCommentCountSessionIdentity = nextIdentity;
+    this.itemCommentSessionToken += 1;
+    this.itemCommentCountsRequestToken += 1;
+    this.itemCommentRefreshToken += 1;
+    this.itemCommentCountsLoading = false;
+    this.itemCommentCountsAvailable = false;
+    this.itemCommentCounts = {};
+    this.itemCommentCountsError = '';
+    this.itemCommentCountStateVersion += 1;
+    this.itemCommentCountChangeVersions.clear();
+    this.applyFilter(false);
+
+    if (nextIdentity) {
+      this.ensureCommentColumnDefault();
+      this.refreshItemComments(false);
+      document.addEventListener('visibilitychange', this.commentVisibilityListener);
+      window.addEventListener('focus', this.commentVisibilityListener);
+      this.commentRefreshTimer = setInterval(() => this.refreshVisibleItemComments(), 5_000);
+    }
+  }
+
+  private refreshVisibleItemComments(): void {
+    if (
+      this.destroyed ||
+      document.visibilityState !== 'visible' ||
+      !this.itemCommentsEnabled ||
+      !this.authService.isLoggedIn ||
+      !this.itemCommentCountSessionIdentity ||
+      this.itemCommentCountsLoading
+    )
+      return;
+    this.refreshItemComments();
+  }
+
+  private stopCommentAutoRefresh(): void {
+    document.removeEventListener('visibilitychange', this.commentVisibilityListener);
+    window.removeEventListener('focus', this.commentVisibilityListener);
+    if (this.commentRefreshTimer !== null) clearInterval(this.commentRefreshTimer);
+    this.commentRefreshTimer = null;
+  }
+
+  private selectInitialCommentTarget(): void {
+    const target = this.initialCommentTarget;
+    if (!target) return;
+    const matchesTarget = (item: ReadonlyExplorerItem) => {
+      if (item.unitId !== target.unitId) return false;
+      if (item.itemId === target.itemId) return true;
+      const prefix = `${target.unitId}_`;
+      return (
+        item.itemId === `${prefix}${target.itemId}` || target.itemId === `${prefix}${item.itemId}`
+      );
+    };
+    const item = this.items.find(matchesTarget);
+    if (!item) return;
+    this.initialCommentTarget = null;
+    let index = this.filteredItems.findIndex(
+      (entry) => this.getStableRowKey(entry) === this.getStableRowKey(item),
+    );
+    if (index < 0) {
+      this.filterText = '';
+      this.columnFilters = {};
+      this.personalColumnFilters = {};
+      this.collectionViewMode = 'all';
+      if (this.isItemExcluded(item)) this.showExcludedItems = true;
+      this.applyFilter(false);
+      index = this.filteredItems.findIndex(
+        (entry) => this.getStableRowKey(entry) === this.getStableRowKey(item),
+      );
+    }
+    this.selectingInitialCommentTarget = true;
+    try {
+      this.selectItem(item, index);
+    } finally {
+      this.selectingInitialCommentTarget = false;
+    }
+  }
+
+  private downloadCommentExport(request: Observable<Blob>, fileName: string): void {
+    if (this.commentExportInProgress) return;
+    this.commentExportInProgress = true;
+    this.commentExportError = '';
+    request.pipe(takeUntil(this.destroy$)).subscribe({
+      next: (blob) => {
+        this.commentExportInProgress = false;
+        if (!blob?.size) {
+          this.commentExportError = 'Der Kommentar-Export war leer.';
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = fileName;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      },
+      error: () => {
+        this.commentExportInProgress = false;
+        this.commentExportError = 'Kommentare konnten nicht exportiert werden.';
+      },
+    });
   }
 
   private isRecord(value: unknown): value is Record<string, any> {

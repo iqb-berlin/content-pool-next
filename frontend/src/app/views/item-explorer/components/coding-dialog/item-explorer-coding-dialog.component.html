@@ -60,15 +60,17 @@
               </div>
               <div class="sort-actions">
                 <button
-                  class="btn btn-outline btn-sm"
+                  class="btn btn-outline btn-sm btn-state"
                   (click)="vm.toggleCodingSort('id')"
+                  [attr.aria-pressed]="vm.codingSortField === 'id'"
                   title="Nach ID sortieren"
                 >
                   ID {{ vm.getCodingSortIndicator('id') }}
                 </button>
                 <button
-                  class="btn btn-outline btn-sm"
+                  class="btn btn-outline btn-sm btn-state"
                   (click)="vm.toggleCodingSort('label')"
+                  [attr.aria-pressed]="vm.codingSortField === 'label'"
                   title="Nach Label sortieren"
                 >
                   Label {{ vm.getCodingSortIndicator('label') }}

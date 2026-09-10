@@ -1,20 +1,105 @@
 <div class="table-panel">
   <div class="table-toolbar">
-    <input
-      #globalFilterInput
-      class="filter-input"
-      [ngModel]="vm.filterText"
-      (ngModelChange)="vm.setFilterText($event)"
-      placeholder="🔍 Items filtern..."
-      (input)="vm.applyFilter()"
-    />
+    <div class="search-row">
+      <input
+        #globalFilterInput
+        class="filter-input"
+        [ngModel]="vm.filterText"
+        (ngModelChange)="vm.setFilterText($event)"
+        placeholder="🔍 Items filtern..."
+        (input)="vm.applyFilter()"
+      />
+      <div class="search-count-group">
+        <span
+          class="visibility-summary"
+          aria-live="polite"
+          tabindex="0"
+          title="Angezeigte Tabellenzeilen / alle Tabellenzeilen. Suche, Spaltenfilter, Auswahlliste und Ausblendungen begrenzen die Anzeige. Ein Item kann mehrere Zeilen haben."
+        >
+          @if (vm.filteredItems.length === vm.totalItemsCount) {
+            {{ vm.totalItemsCount }} Zeilen
+          } @else {
+            {{ vm.filteredItems.length }} / {{ vm.totalItemsCount }} Zeilen
+          }
+        </span>
+        @if (vm.hiddenMissingDifficultyItemsCount > 0 || vm.hiddenExcludedItemsCount > 0) {
+          <button
+            type="button"
+            class="search-help"
+            aria-label="Ausblendgründe anzeigen"
+            title="Ausblendgründe anzeigen"
+            popovertarget="explorer-visibility-help"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 11v6m0-10v1" />
+            </svg>
+          </button>
+          <div id="explorer-visibility-help" popover class="search-help-popover">
+            <strong>Ausgeblendete Zeilen</strong>
+            @if (vm.hiddenMissingDifficultyItemsCount > 0) {
+              <p>{{ vm.hiddenMissingDifficultyItemsCount }} ohne Itemschwierigkeit</p>
+            }
+            @if (vm.hiddenExcludedItemsCount > 0) {
+              <p>{{ vm.hiddenExcludedItemsCount }} als ausgeschlossen markiert</p>
+            }
+          </div>
+        }
+      </div>
+      @if (vm.showExplorerKeyboardHints) {
+        <button
+          type="button"
+          class="search-help keyboard-help"
+          aria-label="Tastaturkürzel anzeigen"
+          title="Tastaturkürzel anzeigen"
+          popovertarget="explorer-keyboard-help"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="2" y="5" width="20" height="14" rx="2" />
+            <path d="M6 9h1m4 0h1m4 0h1M6 12h1m4 0h1m4 0h1M7 15h10" />
+          </svg>
+        </button>
+        <div id="explorer-keyboard-help" popover class="search-help-popover">
+          <strong>Tastaturkürzel</strong>
+          <p>
+            Navigation bei Fokus in der Tabelle; Eingabefelder behalten ihre üblichen
+            Tastenfunktionen. Im Player gelten dessen eigene Kürzel.
+          </p>
+          <dl>
+            <dt><kbd>/</kbd></dt>
+            <dd>Suchfeld fokussieren</dd>
+            <dt><kbd>↑</kbd> / <kbd>↓</kbd></dt>
+            <dd>Item auswählen</dd>
+            <dt><kbd>Pos1</kbd> / <kbd>Ende</kbd></dt>
+            <dd>Zum ersten / letzten Item springen</dd>
+            <dt><kbd>Bild ↑</kbd> / <kbd>Bild ↓</kbd></dt>
+            <dd>Zehn Zeilen zurück / weiter springen</dd>
+            <dt><kbd>Strg/Cmd + ↑</kbd> / <kbd>Strg/Cmd + ↓</kbd></dt>
+            <dd>Item bei manueller Sortierung verschieben (mit Bearbeitungsrecht)</dd>
+            <dt><kbd>Strg/Cmd + S</kbd></dt>
+            <dd>Änderungen prüfen (mit Veröffentlichungsrecht)</dd>
+          </dl>
+        </div>
+      }
+    </div>
+    @if (vm.itemCommentsEnabled && vm.itemCommentCountsError) {
+      <span class="personal-data-error" role="alert">{{ vm.itemCommentCountsError }}</span>
+      <button
+        class="btn btn-outline btn-sm"
+        type="button"
+        (click)="vm.refreshItemComments()"
+        [disabled]="vm.itemCommentCountsLoading"
+      >
+        Erneut versuchen
+      </button>
+    }
     @if (vm.excludedItemsCount > 0 || vm.showExcludedItems) {
       <div class="table-toolbar-actions">
         <button
-          class="btn btn-outline btn-sm"
+          class="btn btn-outline btn-sm btn-state"
           type="button"
           (click)="vm.toggleShowExcludedItems()"
-          [class.btn-primary]="vm.showExcludedItems"
+          [attr.aria-pressed]="vm.showExcludedItems"
         >
           {{
             vm.showExcludedItems
@@ -22,26 +107,6 @@
               : 'Ausgeschlossene anzeigen (' + vm.excludedItemsCount + ')'
           }}
         </button>
-      </div>
-    }
-    @if (vm.hiddenMissingDifficultyItemsCount > 0 || vm.hiddenExcludedItemsCount > 0) {
-      <div class="visibility-summary" aria-live="polite">
-        @if (vm.hiddenMissingDifficultyItemsCount > 0) {
-          <span
-            >{{ vm.hiddenMissingDifficultyItemsCount }} ohne Itemschwierigkeit ausgeblendet</span
-          >
-        }
-        @if (vm.hiddenExcludedItemsCount > 0) {
-          <span>{{ vm.hiddenExcludedItemsCount }} ausgeschlossene Items ausgeblendet</span>
-        }
-      </div>
-    }
-    @if (vm.showExplorerKeyboardHints) {
-      <div class="help-text">
-        Tastatur: <kbd>/</kbd> Filter, <kbd>↑</kbd>/<kbd>↓</kbd> Auswahl, <kbd>Pos1</kbd>/<kbd
-          >Ende</kbd
-        >
-        Sprung, <kbd>Strg/Cmd + S</kbd> speichern
       </div>
     }
     @if (vm.showPersonalItemData) {
@@ -129,10 +194,11 @@
               [style.minWidth.px]="vm.getColumnWidth(col)"
               [style.maxWidth.px]="vm.getColumnWidth(col)"
               [style.left.px]="vm.getStickyTableColumnLeft(col, tableColumns)"
-              [title]="
+              [attr.title]="
                 col.key === 'system:referenceNumber'
-                  ? 'Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
-                  : null
+                  ? col.label +
+                    ': Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
+                  : col.label
               "
             >
               {{ col.label }} {{ vm.getTableColumnSortIndicator(col) }}
@@ -199,6 +265,20 @@
                     placeholder="Min..Max"
                     (input)="vm.applyFilter()"
                   />
+                }
+                @case ('system:comments') {
+                  <select
+                    class="col-filter-input"
+                    [ngModel]="vm.columnFilters['comments']"
+                    (ngModelChange)="vm.setColumnFilter('comments', $event)"
+                    (change)="vm.applyFilter()"
+                    [disabled]="!vm.itemCommentCountsAvailable"
+                    aria-label="Nach Kommentarstatus filtern"
+                  >
+                    <option value="">Alle</option>
+                    <option value="with">Mit Kommentaren</option>
+                    <option value="without">Ohne Kommentare</option>
+                  </select>
                 }
                 @case ('system:tags') {
                   <input
@@ -296,7 +376,7 @@
                 [style.minWidth.px]="vm.getColumnWidth(col)"
                 [style.maxWidth.px]="vm.getColumnWidth(col)"
                 [style.left.px]="vm.getStickyTableColumnLeft(col, tableColumns)"
-                [title]="
+                [attr.title]="
                   col.key === 'system:referenceNumber'
                     ? 'Stabile Nummer im vollständigen Itembestand'
                     : null
@@ -320,15 +400,6 @@
                       @if (vm.isItemExcluded(item)) {
                         <span class="excluded-item-badge">Ausgeschlossen</span>
                       }
-                      @if (vm.showPlayerTargetInfo) {
-                        @if (vm.getPlayerTarget(item)) {
-                          <span class="player-target-badge"
-                            >Player {{ vm.getPlayerTarget(item) }}</span
-                          >
-                        } @else {
-                          <span class="player-target-badge unmapped">Kein Player-Ziel</span>
-                        }
-                      }
                     </div>
                   }
                   @case ('system:unitLabel') {
@@ -342,6 +413,29 @@
                   }
                   @case ('system:meanTaskDifficulty') {
                     {{ item.meanTaskDifficulty ?? '' }}
+                  }
+                  @case ('system:comments') {
+                    @if (!vm.itemCommentCountsAvailable) {
+                      <span
+                        class="comment-count-unknown"
+                        [attr.aria-label]="
+                          vm.itemCommentCountsLoading
+                            ? 'Kommentaranzahl wird geladen'
+                            : 'Kommentaranzahl unbekannt'
+                        "
+                      >
+                        {{ vm.itemCommentCountsLoading ? '…' : '?' }}
+                      </span>
+                    } @else if (vm.getItemCommentCount(item); as count) {
+                      <span
+                        class="comment-count-badge"
+                        [attr.aria-label]="count === 1 ? '1 Kommentar' : count + ' Kommentare'"
+                      >
+                        💬 {{ count }}
+                      </span>
+                    } @else {
+                      <span class="comment-count-empty" aria-label="Keine Kommentare">–</span>
+                    }
                   }
                   @case ('system:tags') {
                     <div class="tags-cell-content">

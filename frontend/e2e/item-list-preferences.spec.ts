@@ -4,11 +4,9 @@ import { createOidcAppToken, installOidcSession } from './oidc-test-session';
 const ACP_ID = '10000000-0000-4000-8000-000000000001';
 const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 const MANAGER_USERNAME = 'e2e-manager';
-const CREDENTIAL_USERNAME = 'e2e-reviewer';
-const CREDENTIAL_PASSWORD = 'Reviewer-E2E-123!';
 
 async function publishExplorerDraft(page: Page): Promise<void> {
-  const saveButton = page.getByRole('button', { name: /Speichern/ });
+  const saveButton = page.getByRole('button', { name: 'Änderungen prüfen …', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(
@@ -25,21 +23,121 @@ async function publishExplorerDraft(page: Page): Promise<void> {
   ]);
 }
 
-async function loginWithCredential(page: Page): Promise<void> {
-  await page.goto(`/credential-login/${ACP_ID}`);
-  await page.getByLabel('Benutzername').fill(CREDENTIAL_USERNAME);
-  await page.getByLabel('Kennwort').fill(CREDENTIAL_PASSWORD);
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().endsWith('/api/auth/credential-login') &&
-        response.ok(),
-    ),
-    page.getByRole('button', { name: 'Zugang öffnen' }).click(),
-  ]);
-  await expect(page).toHaveURL(new RegExp(`/view/${ACP_ID}`));
-}
+test('toggles manual sorting without discarding the edited item order', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  const headers = {
+    Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, MANAGER_USERNAME)}`,
+  };
+  const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+  const draftUrl = `/api/acp/${ACP_ID}/item-explorer/draft`;
+  const originalResponse = await request.get(stateUrl, { headers });
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+
+  const change = async (action: () => Promise<unknown>) => {
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (response) => response.request().method() === 'PATCH' && response.url().endsWith(draftUrl),
+      ),
+      action(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+    return response.json();
+  };
+
+  try {
+    const setup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: original.version,
+        changeType: 'UI_STATE_CHANGED',
+        patch: {
+          ui: {
+            filterText: '',
+            columnFilters: {},
+            sortField: 'unitLabel',
+            sortDir: 'asc',
+            sortIsMeta: false,
+          },
+        },
+      },
+    });
+    expect(setup.ok()).toBeTruthy();
+    await page.goto(`/view/${ACP_ID}/item-explorer`);
+    const toggle = page.getByRole('button', { name: 'Manuell sortieren' });
+    const idHeader = page.getByRole('columnheader', { name: /^Item-ID/ });
+    const up = page.getByRole('button', { name: 'Ausgewähltes Item nach oben verschieben' });
+    const down = page.getByRole('button', { name: 'Ausgewähltes Item nach unten verschieben' });
+    const rows = page.locator('.explorer-table tbody tr');
+    const rowIds = () => rows.evaluateAll((elements) => elements.map((element) => element.id));
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
+
+    await change(() => idHeader.click());
+    await change(() => idHeader.click());
+    await expect(idHeader).toContainText('↓');
+    const descendingIds = await rowIds();
+
+    await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await expect(toggle).toHaveCSS('font-weight', '700');
+    await expect(up).toBeVisible();
+    await expect(down).toBeVisible();
+    await rows.first().click();
+    await expect(up).toBeDisabled();
+    await expect(down).toBeEnabled();
+    const moved = await change(() => down.click());
+    const manualIds = await rowIds();
+
+    const restored = await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
+    await expect(idHeader).toContainText('↓');
+    expect(await rowIds()).toEqual(descendingIds);
+    expect(restored.draftState.itemOrder).toEqual(moved.draftState.itemOrder);
+    expect(restored.draftState.ui).toMatchObject({
+      sortField: 'itemId',
+      sortDir: 'desc',
+      sortIsMeta: false,
+    });
+
+    await change(() => toggle.click());
+    expect(await rowIds()).toEqual(manualIds);
+    await rows.last().click();
+    await expect(up).toBeEnabled();
+    await expect(down).toBeDisabled();
+    await page.reload();
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    const fallback = await change(() => toggle.click());
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    await expect(up).toHaveCount(0);
+    await expect(down).toHaveCount(0);
+    expect(fallback.draftState.ui).toMatchObject({
+      sortField: 'unitLabel',
+      sortDir: 'asc',
+      sortIsMeta: false,
+    });
+    expect(fallback.draftState.itemOrder).toEqual(moved.draftState.itemOrder);
+  } finally {
+    await page.close();
+    const current = await request.get(stateUrl, { headers });
+    expect(current.ok()).toBeTruthy();
+    const cleanup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: (await current.json()).version,
+        changeType: 'UI_STATE_CHANGED',
+        patch: { ui: original.draftState.ui, itemOrder: original.draftState.itemOrder },
+      },
+    });
+    expect(cleanup.ok()).toBeTruthy();
+  }
+});
 
 test('shows a slow-connection hint while the Explorer item list is delayed', async ({ page }) => {
   await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
@@ -128,122 +226,55 @@ test('reuses preview assets and requests only response state within one unit', a
   expect(sameUnitReuseRequests).toEqual(['responseState', 'responseState']);
 });
 
-test('reconciles mean filters across clear, reimport, reload and credential relogin', async ({
-  browser,
+test('imports booklet assignments without positions and retains known positions', async ({
   page,
   request,
 }) => {
-  await loginWithCredential(page);
-  await page.goto(`/view/${ACP_ID}/items`);
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
 
-  const meanFilter = page.getByPlaceholder('Mittlere Schwierigkeit: Min..Max');
-  await expect(meanFilter).toBeVisible();
-  await expect(
-    page.getByRole('columnheader', { name: /Mittlere Aufgabenschwierigkeit/ }),
-  ).toBeVisible();
-  await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        response.request().method() === 'PUT' &&
-        response.url().includes('/items/preferences') &&
-        response.ok(),
-    ),
-    meanFilter.fill('-0.1..0.1'),
-  ]);
-  await expect(page.locator('tbody tr')).toHaveCount(2);
-  await page.reload();
-  await expect(meanFilter).toHaveValue('-0.1..0.1');
+  const upload = async (content: string): Promise<void> => {
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/upload-item-parameters') &&
+          response.ok(),
+      ),
+      page.locator('input[type="file"][accept=".csv"]').setInputFiles({
+        name: 'booklets.csv',
+        mimeType: 'text/csv',
+        buffer: Buffer.from(content),
+      }),
+    ]);
+    await expect(page.getByRole('heading', { name: 'Upload Bericht' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: 'Booklet-Zuordnungen überspringen?' }),
+    ).toBeHidden();
+    await page.getByRole('button', { name: /Schließen/ }).click();
+    await publishExplorerDraft(page);
+  };
 
-  const managerToken = createOidcAppToken(MANAGER_ID, MANAGER_USERNAME);
-  const managerContext = await browser.newContext();
-  await managerContext.addInitScript((token) => {
-    localStorage.setItem('cp_token', token);
-    localStorage.setItem('cp_auth_type', 'oidc');
-  }, managerToken);
-  const managerPage = await managerContext.newPage();
+  await upload('item;booklet;position\ni1;B1;3\ni2;B2;4');
+  await upload('item;booklet\ni1;B1\ni2;B3');
 
-  await managerPage.goto(`/view/${ACP_ID}/item-explorer`);
-  await expect(managerPage.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
-  await managerPage.getByRole('button', { name: /Werte bereinigen/ }).click();
-  await Promise.all([
-    managerPage.waitForResponse(
-      (response) =>
-        response.request().method() === 'DELETE' &&
-        response.url().includes('/empirical-difficulty') &&
-        response.ok(),
-    ),
-    managerPage.getByRole('button', { name: 'Alle Werte entfernen' }).click(),
-  ]);
-  await publishExplorerDraft(managerPage);
-
-  const preferenceCleanup = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'PUT' &&
-      response.url().includes('/items/preferences') &&
-      response.ok(),
-  );
-  await page.reload();
-  await preferenceCleanup;
-  await expect(page.getByPlaceholder('Mittlere Schwierigkeit: Min..Max')).toBeHidden();
-  await expect(
-    page.getByRole('columnheader', { name: /Mittlere Aufgabenschwierigkeit/ }),
-  ).toBeHidden();
-
-  const credentialToken = await page.evaluate(() => localStorage.getItem('cp_token'));
-  expect(credentialToken).toBeTruthy();
-  const cleanedPreferences = await request.get(
-    `/api/view/acp/${ACP_ID}/items/preferences?viewId=item-list`,
-    { headers: { Authorization: `Bearer ${credentialToken}` } },
-  );
-  expect(cleanedPreferences.ok()).toBeTruthy();
-  expect((await cleanedPreferences.json()).ui).toMatchObject({
-    meanTaskDifficultyFilter: '',
-    sortField: 'itemId',
+  const managerToken = await page.evaluate(() => localStorage.getItem('cp_token'));
+  expect(managerToken).toBeTruthy();
+  const itemListResponse = await request.get(`/api/acp/${ACP_ID}/files/item-list`, {
+    headers: { Authorization: `Bearer ${managerToken}` },
   });
-
-  const uploadInput = managerPage.locator('input[type="file"][accept=".csv"]');
-  await Promise.all([
-    managerPage.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/upload-item-parameters') &&
-        response.ok(),
-    ),
-    uploadInput.setInputFiles({
-      name: 'difficulty.csv',
-      mimeType: 'text/csv',
-      buffer: Buffer.from('item;est\ni1;0.2\ni2;0.8'),
-    }),
-  ]);
-  await expect(managerPage.getByRole('heading', { name: 'Upload Bericht' })).toBeVisible();
-  await managerPage.getByRole('button', { name: /Schließen/ }).click();
-  await publishExplorerDraft(managerPage);
-
-  await page.reload();
-  const restoredMeanFilter = page.getByPlaceholder('Mittlere Schwierigkeit: Min..Max');
-  await expect(restoredMeanFilter).toBeVisible();
-  await expect(restoredMeanFilter).toHaveValue('');
-  await expect(page.getByText('0.5', { exact: true })).toHaveCount(2);
-
-  await page.getByRole('button', { name: 'Abmelden' }).click();
-  await expect(page).toHaveURL(/\/$/);
-  await loginWithCredential(page);
-  await page.goto(`/view/${ACP_ID}/items`);
-  await expect(page.getByPlaceholder('Mittlere Schwierigkeit: Min..Max')).toHaveValue('');
-  await expect(page.getByText('0.5', { exact: true })).toHaveCount(2);
-
-  const reloginToken = await page.evaluate(() => localStorage.getItem('cp_token'));
-  const persistedPreferences = await request.get(
-    `/api/view/acp/${ACP_ID}/items/preferences?viewId=item-list`,
-    { headers: { Authorization: `Bearer ${reloginToken}` } },
-  );
-  expect(persistedPreferences.ok()).toBeTruthy();
-  expect((await persistedPreferences.json()).ui).toMatchObject({
-    meanTaskDifficultyFilter: '',
-    sortField: 'itemId',
-  });
-
-  await managerContext.close();
+  expect(itemListResponse.ok()).toBeTruthy();
+  const itemList = (await itemListResponse.json()) as {
+    items: Array<{
+      itemId: string;
+      bookletOccurrences: Array<{ booklet: string; position: number | null }>;
+    }>;
+  };
+  const item1 = itemList.items.find((item) => item.itemId === 'i1');
+  const item2 = itemList.items.find((item) => item.itemId === 'i2');
+  expect(item1?.bookletOccurrences).toEqual([{ booklet: 'B1', position: 3 }]);
+  expect(item2?.bookletOccurrences).toEqual([{ booklet: 'B3', position: null }]);
 });
 
 test('paginates large personal collections and removes selections across pages', async ({
@@ -307,6 +338,7 @@ test('paginates large personal collections and removes selections across pages',
   });
 
   await page.goto(`/view/${ACP_ID}/item-explorer`);
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const collectionDialog = page.getByRole('dialog', { name: 'Große Auswahlliste' });
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(50);
@@ -387,6 +419,49 @@ test('paginates large personal collections and removes selections across pages',
   await expect(collectionDialog.locator('.collection-table tbody tr')).toHaveCount(49);
 });
 
+test('keeps collection management actions inside wide, narrow and mobile panels', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  await page.goto(`/view/${ACP_ID}/item-explorer`);
+
+  const trigger = page.getByText('Liste verwalten ▾', { exact: true });
+  const menu = page.locator('.collection-management-actions');
+  const panel = page.locator('.table-panel');
+  const checkMenu = async () => {
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    const panelBox = await panel.boundingBox();
+    const menuBox = await menu.boundingBox();
+    expect(panelBox).not.toBeNull();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+    expect(menuBox!.x + menuBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+    await menu.getByRole('button', { name: 'Neu', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Neue Auswahlliste' });
+    await expect(dialog).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(trigger).toBeFocused();
+  };
+
+  await checkMenu();
+  const divider = await page.locator('.divider').boundingBox();
+  const splitPane = await page.locator('.split-pane').boundingBox();
+  expect(divider).not.toBeNull();
+  expect(splitPane).not.toBeNull();
+  await page.mouse.move(divider!.x + divider!.width / 2, divider!.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(splitPane!.x + 350, divider!.y + 20);
+  await page.mouse.up();
+  await expect(panel).toHaveCSS('width', '350px');
+  await checkMenu();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await checkMenu();
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
 }) => {
@@ -398,6 +473,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.getByRole('columnheader', { name: /Referenz-Nr/ })).toBeHidden();
   await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
 
+  await page.getByText('Weitere Aktionen ▾', { exact: true }).click();
   await page.getByRole('button', { name: /Referenznummern neu vergeben/ }).click();
   await expect(page.getByRole('heading', { name: 'Referenznummern neu vergeben' })).toBeVisible();
   await expect(page.getByText(/Alle 2 Zeilen des vollständigen Itembestands/)).toBeVisible();
@@ -439,6 +515,8 @@ test('keeps positions gapless and persists the personal selection view across pe
   expect(positionBox!.x + positionBox!.width).toBeLessThanOrEqual(referenceBox!.x + 1);
   expect(referenceBox!.x + referenceBox!.width).toBeLessThanOrEqual(itemIdBox!.x + 1);
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -446,7 +524,7 @@ test('keeps positions gapless and persists the personal selection view across pe
         response.url().endsWith('/items/collections') &&
         response.ok(),
     ),
-    page.getByRole('button', { name: 'Neu', exact: true }).click(),
+    page.getByRole('button', { name: 'Anlegen', exact: true }).click(),
   ]);
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeEnabled();
 
@@ -468,6 +546,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   );
   const activeOnlyButton = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
   await page.getByRole('button', { name: 'Details', exact: true }).click();
   const collectionDialog = page.getByRole('dialog', { name: 'Meine Auswahlliste' });
   await expect(collectionDialog).toBeVisible();
@@ -498,7 +577,7 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.getByRole('button', { name: 'Nur Auswahlliste (0)' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(collectionDialog).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Details', exact: true })).toBeFocused();
+  await expect(page.getByText('Liste verwalten ▾', { exact: true })).toBeFocused();
 
   await Promise.all([
     page.waitForResponse(
@@ -525,17 +604,19 @@ test('keeps positions gapless and persists the personal selection view across pe
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Nur Auswahlliste (1)' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  const activeCollectionFilter = page.getByRole('button', { name: 'Nur Auswahlliste (1)' });
+  const allItemsFilter = page.getByRole('button', { name: 'Alle Items' });
+  await expect(activeCollectionFilter).toHaveAttribute('aria-pressed', 'true');
+  await expect(activeCollectionFilter).toHaveCSS('font-weight', '700');
+  await expect(allItemsFilter).toHaveAttribute('aria-pressed', 'false');
+  await expect(allItemsFilter).not.toHaveCSS('font-weight', '700');
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
   const editingViewButton = page.getByRole('button', { name: 'Bearbeitungsansicht' });
   if (await editingViewButton.isVisible()) {
     await editingViewButton.click();
   }
-  const readOnlyPreviewButton = page.getByRole('button', { name: 'READ ONLY-Vorschau' });
+  const readOnlyPreviewButton = page.getByRole('button', { name: 'Leseansicht' });
   await expect(readOnlyPreviewButton).toBeVisible();
   await readOnlyPreviewButton.click();
   await expect(page.getByRole('button', { name: 'Bearbeitungsansicht' })).toBeVisible();
@@ -545,7 +626,9 @@ test('keeps positions gapless and persists the personal selection view across pe
   );
   await expect(page.locator('tbody tr')).toHaveCount(1);
 
-  await page.getByRole('button', { name: 'Alle Items' }).click();
+  await allItemsFilter.click();
+  await expect(allItemsFilter).toHaveCSS('font-weight', '700');
+  await expect(activeCollectionFilter).not.toHaveCSS('font-weight', '700');
   await expect(page.locator('tbody tr')).toHaveCount(2);
 
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();

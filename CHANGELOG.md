@@ -26,6 +26,46 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 - No special instructions.
 
+## [0.5.0] - 2026-09-10
+
+### Changes
+
+- Consolidate ACP content and management into a role-aware overview, improve
+  navigation back from content views, and support inline ACP role editing.
+- Use the Item Explorer as the central task list and streamline collection
+  management, sharing, exports, and visible task labels.
+- Add participant CSV exports scoped to accessible item collections.
+- Add scoped comment visibility controls and exports, accurate thread counts,
+  and automatic comment refresh with session-safe response handling.
+- Support BiSta item parameters and booklet imports without position values.
+- Improve sticky selection columns, complete-row highlighting, column resizing,
+  headings, table counts, active button states, and reversible manual sorting.
+- Expand player previews and the resizable metadata drawer, improve keyboard
+  handling and accessible help, and keep collection menus inside narrow panels.
+- Make backend development watch restarts reliable and reap child processes.
+- Apply security patch updates for Angular, DOMPurify, qs, and Multer.
+- Update Multer to 2.3.0 to resolve the upload denial-of-service findings
+  CVE-2026-77037, CVE-2026-77078, and CVE-2026-82333 in the release image scan.
+- Update the frontend runtime Expat and util-linux libraries to the Alpine
+  security releases required by the release image scan.
+- Document the current product concepts and comparison with the legacy system.
+
+### Breaking changes
+
+- The standalone item-list view is removed; use the Item Explorer instead.
+
+### Configuration
+
+- None.
+
+### Database migrations
+
+- Classification: `none`
+
+### Rollback
+
+- No special instructions.
+
 ## [0.4.1] - 2026-08-27
 
 ### Changes
@@ -198,7 +238,8 @@ All notable changes to ContentPool are documented in this file. Releases use
 - After an application rollback, users created by 0.2.0 continue to sign in
   through Keycloak; no local password is synthesized for them.
 
-[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/iqb-berlin/content-pool-next/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/iqb-berlin/content-pool-next/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/iqb-berlin/content-pool-next/compare/v0.2.0...v0.3.0

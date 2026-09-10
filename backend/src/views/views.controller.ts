@@ -31,6 +31,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from "class-validator";
 import { Response } from "express";
@@ -136,6 +137,14 @@ class ExportPersonalItemDataDto {
 }
 
 class ExportAllPersonalItemDataDto {
+  @ApiPropertyOptional({
+    description: "Restrict to one accessible item collection",
+    format: "uuid",
+  })
+  @IsOptional()
+  @IsUUID()
+  collectionId?: string;
+
   @ApiPropertyOptional({
     description: "Explorer state used to resolve item metadata",
     enum: ["editor", "read-only"],
@@ -527,14 +536,25 @@ export class ViewsController {
       );
     }
 
+    let rowKeys: string[] | undefined;
+    if (dto.collectionId !== undefined) {
+      await this.assertItemCollectionsEnabled(acpId, req);
+      rowKeys =
+        await this.itemCollectionsService.getAccessibleCollectionRowKeys(
+          acpId,
+          this.requireCollectionIdentity(req),
+          dto.collectionId,
+        );
+    }
     const buffer = await this.viewsService.exportAllPersonalItemDataCsv(
       acpId,
       dto.perspective === "editor",
+      rowKeys,
     );
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="all-participant-item-data-${acpId}.csv"`,
+      `attachment; filename="all-participant-item-data-${acpId}${dto.collectionId ? `-collection-${dto.collectionId}` : ""}.csv"`,
     );
     res.send(buffer);
   }

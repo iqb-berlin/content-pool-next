@@ -25,7 +25,7 @@ async function saveFeatureConfig(page: Page): Promise<void> {
 }
 
 async function publishExplorerDraft(page: Page): Promise<void> {
-  const saveButton = page.getByRole('button', { name: /Speichern/ });
+  const saveButton = page.getByRole('button', { name: 'Änderungen prüfen …', exact: true });
   await expect(saveButton).toBeEnabled();
   await saveButton.click();
   await expect(
@@ -44,11 +44,19 @@ async function publishExplorerDraft(page: Page): Promise<void> {
 
 test('shares item comments and replies directly in the selected Item Explorer preview', async ({
   page,
+  browser,
 }) => {
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await page.goto(`/view/${ACP_ID}`);
   await expect(page.getByRole('button', { name: 'Kommentar hinzufügen' })).toHaveCount(0);
-  await page.getByRole('link', { name: 'Item-Kommentare im Item-Explorer', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Kommentare', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Item-Liste', exact: true })).toHaveCount(0);
+  await page
+    .getByRole('link', {
+      name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
+      exact: true,
+    })
+    .click();
   await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.locator('tbody tr').first().click();
@@ -56,6 +64,18 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await page.getByRole('button', { name: /Kommentare \(0\)/ }).click();
   const panel = page.getByRole('region', { name: 'Kommentare zum ausgewählten Item' });
   await expect(panel).toContainText('Geteilt');
+  const observerContext = await browser.newContext();
+  const observer = await observerContext.newPage();
+  await login(observer, VIEWER_ID, VIEWER_USERNAME);
+  await observer.goto(page.url());
+  await expect(observer.locator('tbody tr')).toHaveCount(2);
+  await observer.locator('tbody tr').first().click();
+  await observer.getByRole('button', { name: /Kommentare \(0\)/ }).click();
+  const observerPanel = observer.getByRole('region', { name: 'Kommentare zum ausgewählten Item' });
+  await observerPanel
+    .getByPlaceholder('Kommentar zu diesem Item …')
+    .fill('Ungespeicherter Entwurf');
+
   await panel.getByPlaceholder('Kommentar zu diesem Item …').fill('E2E Hauptkommentar');
   await Promise.all([
     page.waitForResponse(
@@ -68,6 +88,9 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(panel.getByText('E2E Hauptkommentar')).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Bearbeiten' })).toHaveCount(1);
+  await expect(page.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
+  await expect(observerPanel.getByText('E2E Hauptkommentar', { exact: true })).toBeVisible();
+  await expect(observer.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
 
   await panel.getByRole('button', { name: 'Bearbeiten' }).click();
   await panel.locator('.edit-form textarea').fill('E2E Hauptkommentar geändert');
@@ -82,6 +105,32 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(panel.getByText('E2E Hauptkommentar geändert')).toBeVisible();
   await expect(panel.locator('.edited-label')).toContainText('geändert');
+  await expect(
+    observerPanel.getByText('E2E Hauptkommentar geändert', { exact: true }),
+  ).toBeVisible();
+  await expect(observerPanel.getByPlaceholder('Kommentar zu diesem Item …')).toHaveValue(
+    'Ungespeicherter Entwurf',
+  );
+  await panel
+    .getByPlaceholder('Kommentar zu diesem Item …')
+    .fill('Automatisch entfernten Kommentar prüfen');
+  await panel.getByRole('button', { name: 'Kommentieren', exact: true }).click();
+  await expect(
+    observerPanel.getByText('Automatisch entfernten Kommentar prüfen', { exact: true }),
+  ).toBeVisible();
+  const temporaryComment = panel
+    .locator('.comment-card')
+    .filter({ hasText: 'Automatisch entfernten Kommentar prüfen' });
+  page.once('dialog', (dialog) => dialog.accept());
+  await temporaryComment.getByRole('button', { name: 'Löschen', exact: true }).click();
+  await expect(
+    observerPanel.getByText('Automatisch entfernten Kommentar prüfen', { exact: true }),
+  ).toHaveCount(0);
+  await expect(observer.locator('tbody tr').first().getByLabel('1 Kommentar')).toBeVisible();
+  await expect(observerPanel.getByPlaceholder('Kommentar zu diesem Item …')).toHaveValue(
+    'Ungespeicherter Entwurf',
+  );
+  await observerContext.close();
 
   const firstTargetLabel = await panel.locator('.comment-panel-header strong').innerText();
   const firstItemId = firstTargetLabel.split('·').at(-1)?.trim() || '';
@@ -150,6 +199,7 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   ]);
   await expect(viewerPanel.getByText('E2E Antwort')).toBeVisible();
   await expect(page.getByRole('button', { name: /Kommentare \(2\)/ })).toBeVisible();
+  await expect(page.locator('tbody tr').first().getByLabel('2 Kommentare')).toBeVisible();
 
   await page.reload();
   await expect(page.locator('tbody tr')).toHaveCount(2);
@@ -167,6 +217,14 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(reloadedPanel.getByText('E2E Antwort')).toBeVisible();
   await reloadedPanel.getByRole('button', { name: 'Antworten einklappen' }).click();
   await expect(reloadedPanel.getByText('E2E Antwort')).not.toBeVisible();
+
+  const commentStatusFilter = page.getByLabel('Nach Kommentarstatus filtern');
+  await commentStatusFilter.selectOption('with');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await commentStatusFilter.selectOption('without');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await commentStatusFilter.selectOption('');
+  await expect(page.locator('tbody tr')).toHaveCount(2);
 });
 
 test('serializes delayed draft updates while typing into the item filter', async ({ page }) => {
@@ -223,7 +281,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await login(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  await expect(page.getByRole('heading', { name: 'Zugriffskonfiguration' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Zugriff & Funktionen' })).toBeVisible();
   await expect(page.getByLabel('ID der zusätzlichen Spalte 1')).toHaveValue('customQuality');
   await expect(page.getByLabel('Name der zusätzlichen Spalte 1')).toHaveValue(
     'Eigene Qualitätsspalte',
@@ -339,8 +397,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   );
   await expect(reorderedCompetenceHeader).toHaveCSS('width', '230px');
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   const readOnlyCustomHeader = page.locator('thead tr').first().locator('th', {
     hasText: 'Eigene Qualitätsspalte',
   });
@@ -365,7 +423,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     )
     .toBe(expectedCompetenceCellIndex);
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+  await expect(page.getByText('Leseansicht aktiv.')).toHaveCount(0);
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const emptySelectionDialog = page
@@ -410,14 +468,14 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await reloadedDialog.getByRole('button', { name: 'Abbrechen' }).click();
   await expect(reloadedDialog).toHaveCount(0);
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(page.locator('tbody tr').first().locator('td.meta-cell')).toHaveCount(0);
   await expect(
     page.locator('thead tr').first().locator('th', { hasText: 'Eigene Qualitätsspalte' }),
   ).toHaveCount(0);
   await page.getByRole('button', { name: 'Bearbeitungsansicht' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toHaveCount(0);
+  await expect(page.getByText('Leseansicht aktiv.')).toHaveCount(0);
 
   await page.getByRole('button', { name: /Spalten verwalten/ }).click();
   const resetDialog = page
@@ -456,8 +514,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   ).toHaveCount(0);
 
   await publishExplorerDraft(page);
-  await page.getByRole('button', { name: 'READ ONLY-Vorschau' }).click();
-  await expect(page.getByText('READ ONLY-Vorschau aktiv.')).toBeVisible();
+  await page.getByRole('button', { name: 'Leseansicht' }).click();
+  await expect(page.getByText('Leseansicht aktiv.')).toBeVisible();
   await expect(
     page.locator('tbody tr').first().locator('.tag-badge', { hasText: 'Alt' }),
   ).toHaveCount(0);
@@ -475,7 +533,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await openExplorer(page);
 
   await page.locator('tbody tr').first().click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   const codingDialog = page
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
@@ -490,7 +548,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await codingDialog.getByRole('button', { name: /Schließen/ }).click();
 
   await page.locator('tbody tr').nth(1).click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(page.getByText('Allgemeiner Testhinweis zur Kodierung.')).toHaveCount(0);
   await page.getByRole('button', { name: /Schließen/ }).click();
 
@@ -507,7 +565,7 @@ test('applies coding configuration defaults and the alternative combinations in 
 
   await openExplorer(page);
   await page.locator('tbody tr').first().click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   const alternativeDialog = page
     .getByRole('heading', { name: /Kodierung – Lieblingsbücher_2/ })
     .locator('xpath=ancestor::div[contains(@class, "overlay-dialog")]');
@@ -516,7 +574,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   await alternativeDialog.getByRole('button', { name: /Schließen/ }).click();
 
   await page.locator('tbody tr').nth(1).click();
-  await page.getByRole('button', { name: /Kodierung/ }).click();
+  await page.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(page.getByText('Allgemeiner Testhinweis zur Kodierung.')).toBeVisible();
   await page.getByRole('button', { name: /Schließen/ }).click();
 
@@ -525,7 +583,7 @@ test('applies coding configuration defaults and the alternative combinations in 
   const viewerPage = viewerContext.pages()[0];
   await openExplorer(viewerPage);
   await viewerPage.locator('tbody tr').nth(1).click();
-  await viewerPage.getByRole('button', { name: /Kodierung/ }).click();
+  await viewerPage.getByRole('button', { name: 'Kodierung', exact: true }).click();
   await expect(viewerPage.getByText('Allgemeiner Testhinweis zur Kodierung.')).toBeVisible();
   await viewerContext.close();
 });
@@ -537,6 +595,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await openExplorer(page);
 
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
+  const nameDialog = page.getByRole('dialog', { name: 'Neue Auswahlliste' });
+  await nameDialog.getByLabel('Name der Auswahlliste').fill('E2E Freigabetest');
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -544,7 +606,7 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         response.url().endsWith(`/api/view/acp/${ACP_ID}/items/collections`) &&
         response.ok(),
     ),
-    page.getByRole('button', { name: 'Neu', exact: true }).click(),
+    nameDialog.getByRole('button', { name: 'Anlegen', exact: true }).click(),
   ]);
   const managerRowCheckbox = page.getByLabel('Item 01 in Auswahlliste auswählen');
   await Promise.all([
@@ -557,7 +619,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
     ),
     managerRowCheckbox.check(),
   ]);
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Freigeben …', exact: true }).click();
   const shareToggle = page.getByLabel('Für diesen ACP freigeben');
+  await shareToggle.check();
   await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -565,7 +630,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         /\/items\/collections\/[^/]+$/.test(new URL(response.url()).pathname) &&
         response.ok(),
     ),
-    shareToggle.check(),
+    page
+      .getByRole('dialog', { name: 'Auswahlliste freigeben' })
+      .getByRole('button', { name: 'Speichern', exact: true })
+      .click(),
   ]);
   await expect(shareToggle).toBeChecked();
 
@@ -579,9 +647,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
   const sharedId = await sharedOption.getAttribute('value');
   expect(sharedId).toBeTruthy();
   await viewerSelect.selectOption(sharedId!);
-  await expect(viewerPage.getByText('Geteilt von E2E Manager')).toBeVisible();
+  await expect(viewerPage.getByTitle(/^Geteilt von E2E Manager\./)).toBeVisible();
+  await viewerPage.getByText('Liste verwalten ▾', { exact: true }).click();
   await expect(viewerPage.getByRole('button', { name: 'Umbenennen' })).toBeDisabled();
-  await expect(viewerPage.getByRole('button', { name: 'Leeren' })).toBeDisabled();
+  await expect(viewerPage.getByRole('button', { name: 'Liste leeren …' })).toBeDisabled();
   await expect(viewerPage.getByLabel('Item 01 in Auswahlliste auswählen')).toBeDisabled();
   await expect(viewerPage.getByRole('button', { name: 'Private Kopie erstellen' })).toBeEnabled();
 
@@ -595,8 +664,11 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
     viewerPage.getByRole('button', { name: 'Private Kopie erstellen' }).click(),
   ]);
   await expect(viewerSelect).toContainText('(Kopie)');
-  await expect(viewerPage.getByLabel('Für diesen ACP freigeben')).not.toBeChecked();
+  await expect(viewerPage.getByText('Geteilt', { exact: true })).toHaveCount(0);
   await expect(viewerPage.getByLabel('Item 01 in Auswahlliste auswählen')).toBeEnabled();
+  await page.getByText('Liste verwalten ▾', { exact: true }).click();
+  await page.getByRole('button', { name: 'Freigabe verwalten …', exact: true }).click();
+  await shareToggle.uncheck();
 
   await Promise.all([
     page.waitForResponse(
@@ -605,7 +677,10 @@ test('shares personal lists ACP-wide as read-only and creates independent privat
         /\/items\/collections\/[^/]+$/.test(new URL(response.url()).pathname) &&
         response.ok(),
     ),
-    shareToggle.uncheck(),
+    page
+      .getByRole('dialog', { name: 'Auswahlliste freigeben' })
+      .getByRole('button', { name: 'Speichern', exact: true })
+      .click(),
   ]);
   await viewerPage.reload();
   await expect(viewerPage.getByLabel('Aktive persönliche Auswahlliste auswählen')).toContainText(

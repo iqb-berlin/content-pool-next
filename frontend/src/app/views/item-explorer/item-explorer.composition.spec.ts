@@ -1,5 +1,7 @@
 /// <reference types="vite/client" />
 
+import { of } from 'rxjs';
+import { AuthService } from '../../core/services/auth.service';
 import { CommonModule } from '@angular/common';
 import { Component, inject, OnInit, provideZonelessChangeDetection } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -45,6 +47,10 @@ class ItemExplorerHeaderTemplateHarness {
 })
 class ItemExplorerCollectionsTemplateHarness {
   readonly vm = inject(ItemExplorerFacade).collectionsViewModel;
+  collectionName = '';
+  nameMode = 'create';
+  nameError = '';
+  nameSaving = false;
 }
 
 @Component({
@@ -211,6 +217,7 @@ describe('ItemExplorer production template composition', () => {
       providers: [
         provideZonelessChangeDetection(),
         provideRouter([]),
+        { provide: AuthService, useValue: { currentUser$: of(null) } },
         { provide: ItemExplorerFacade, useValue: facade },
         {
           provide: ActivatedRoute,

@@ -180,3 +180,115 @@
   align-items: center;
   justify-content: center;
 }
+
+.preview-target-info {
+  padding: 10px 16px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.preview-settings {
+  margin-left: auto;
+}
+.preview-settings summary,
+.player-actions-menu summary {
+  cursor: pointer;
+  list-style: none;
+}
+.preview-settings summary::-webkit-details-marker,
+.player-actions-menu summary::-webkit-details-marker {
+  display: none;
+}
+.preview-settings[open] {
+  flex-basis: 100%;
+}
+.preview-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+.preview-warning {
+  flex-basis: 100%;
+}
+.player-actions-menu {
+  position: relative;
+}
+.player-actions-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: min(350px, calc(100vw - 40px));
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+.player-actions-panel .btn {
+  white-space: normal;
+  text-align: left;
+}
+.action-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.preview-action-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.preview-target-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.preview-settings,
+.preview-settings[open] {
+  display: contents;
+}
+.preview-settings > summary {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+}
+.preview-settings-body {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.preview-settings-body select {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+  min-height: 38px;
+}
+.preview-target-controls {
+  min-width: 0;
+}
+.preview-correction > .preview-target-selector {
+  margin-top: 12px;
+}
+.preview-correction .preview-target-actions {
+  margin-top: 12px;
+}
+.preview-target-info > .preview-warning {
+  grid-column: 1 / -1;
+}
+@media (max-width: 700px) {
+  .preview-settings-body {
+    grid-template-columns: 1fr;
+  }
+}

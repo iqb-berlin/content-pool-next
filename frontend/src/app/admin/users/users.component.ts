@@ -11,11 +11,18 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
   template: `
     <div class="page-header">
       <h1>Nutzerverwaltung</h1>
-      <button class="btn btn-primary" (click)="showCreate = !showCreate">+ Nutzer anlegen</button>
+      <button
+        class="btn btn-outline btn-state"
+        (click)="showCreate = !showCreate"
+        [attr.aria-expanded]="showCreate"
+        aria-controls="user-create-form"
+      >
+        + Nutzer anlegen
+      </button>
     </div>
 
     @if (showCreate) {
-      <div class="card">
+      <div id="user-create-form" class="card">
         <h3>Neuen Nutzer anlegen</h3>
         <form (ngSubmit)="createUser()">
           <div class="form-group">

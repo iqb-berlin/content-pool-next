@@ -1,23 +1,40 @@
 @if (hasTarget) {
   <section class="comment-thread-shell">
-    <button
-      type="button"
-      class="btn btn-outline btn-sm comment-toggle"
-      [class.btn-primary]="open"
-      (click)="toggleOpen()"
-      [attr.aria-expanded]="open"
-    >
-      💬 Kommentare ({{ commentCount }})
-    </button>
+    @if (!hideToggle) {
+      <button
+        type="button"
+        class="btn btn-outline btn-sm btn-state comment-toggle"
+        (click)="toggleOpen()"
+        [attr.aria-expanded]="open"
+        aria-controls="item-comment-panel"
+      >
+        💬 Kommentare ({{ commentCount }})
+      </button>
+    }
 
     @if (open) {
-      <div class="comment-panel card" role="region" aria-label="Kommentare zum ausgewählten Item">
+      <div
+        id="item-comment-panel"
+        class="comment-panel card"
+        role="region"
+        aria-label="Kommentare zum ausgewählten Item"
+      >
         <div class="comment-panel-header">
           <div>
             <strong>Kommentare zu {{ unitId }} · {{ itemId }}</strong>
             <span class="visibility-badge">{{ visibilityLabel }}</span>
           </div>
-          <button type="button" class="btn btn-outline btn-sm" (click)="loadThread()">↻</button>
+          @if (error) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              (click)="loadThread()"
+              [disabled]="loading || busy"
+              aria-label="Kommentare erneut laden"
+            >
+              Erneut versuchen
+            </button>
+          }
         </div>
 
         <div class="new-comment-form">
@@ -60,7 +77,13 @@
 
                 <div class="thread-actions">
                   @if (thread.replies.length > 0) {
-                    <button type="button" class="link-button" (click)="toggleReplies(thread.id)">
+                    <button
+                      type="button"
+                      class="link-button"
+                      (click)="toggleReplies(thread.id)"
+                      [attr.aria-expanded]="repliesExpanded(thread.id)"
+                      [attr.aria-controls]="'comment-replies-' + thread.id"
+                    >
                       {{
                         repliesExpanded(thread.id)
                           ? 'Antworten einklappen'
@@ -105,7 +128,7 @@
                 }
 
                 @if (repliesExpanded(thread.id)) {
-                  <div class="reply-list">
+                  <div class="reply-list" [id]="'comment-replies-' + thread.id">
                     @for (reply of thread.replies; track reply.id) {
                       <ng-container
                         *ngTemplateOutlet="

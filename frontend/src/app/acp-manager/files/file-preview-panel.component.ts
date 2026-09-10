@@ -50,11 +50,13 @@ type PreviewTab = 'render' | 'structured' | 'raw';
         </div>
       } @else {
         @if (showTabs) {
-          <div class="preview-tabs">
+          <div class="preview-tabs" role="group" aria-label="Vorschauformat">
             @if (hasRenderTab) {
               <button
                 class="tab"
+                type="button"
                 [class.active]="activeTab === 'render'"
+                [attr.aria-pressed]="activeTab === 'render'"
                 (click)="activeTab = 'render'"
               >
                 Medien
@@ -63,14 +65,22 @@ type PreviewTab = 'render' | 'structured' | 'raw';
             @if (hasStructuredTab) {
               <button
                 class="tab"
+                type="button"
                 [class.active]="activeTab === 'structured'"
+                [attr.aria-pressed]="activeTab === 'structured'"
                 (click)="activeTab = 'structured'"
               >
                 Struktur
               </button>
             }
             @if (hasRawTab) {
-              <button class="tab" [class.active]="activeTab === 'raw'" (click)="activeTab = 'raw'">
+              <button
+                class="tab"
+                type="button"
+                [class.active]="activeTab === 'raw'"
+                [attr.aria-pressed]="activeTab === 'raw'"
+                (click)="activeTab = 'raw'"
+              >
                 Rohdaten
               </button>
             }
@@ -102,7 +112,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
               @case ('unit-xml') {
                 <div class="stats-grid">
                   <div class="stat-card">
-                    <span class="stat-label">Unit-ID</span>
+                    <span class="stat-label">Aufgaben-ID</span>
                     <code>{{ structuredData.unitId }}</code>
                   </div>
                   <div class="stat-card">
@@ -145,7 +155,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
                     <strong>{{ structuredData.itemCount }}</strong>
                   </div>
                   <div class="stat-card">
-                    <span class="stat-label">Unit-Profile</span>
+                    <span class="stat-label">Aufgabenprofile</span>
                     <strong>{{ structuredData.unitProfileCount }}</strong>
                   </div>
                   <div class="stat-card">
@@ -156,7 +166,7 @@ type PreviewTab = 'render' | 'structured' | 'raw';
 
                 @if (structuredData.unitProfiles.length) {
                   <div class="info-block">
-                    <strong>Unit-Profile</strong>
+                    <strong>Aufgabenprofile</strong>
                     <dl class="data-list">
                       @for (entry of structuredData.unitProfiles; track entry.id) {
                         <dt>{{ entry.label }}</dt>
@@ -444,8 +454,9 @@ type PreviewTab = 'render' | 'structured' | 'raw';
       }
       .tab.active {
         background: var(--color-primary);
-        color: #fff;
+        color: var(--color-on-primary);
         border-color: var(--color-primary);
+        font-weight: 700;
       }
       .render-surface,
       .structured-surface {

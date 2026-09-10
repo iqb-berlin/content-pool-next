@@ -141,7 +141,11 @@ export function projectItemExportRow(input: {
       ? occurrences.map((occurrence) => occurrence.booklet).join(" | ")
       : null,
     bookletPositions: occurrences.length
-      ? occurrences.map((occurrence) => String(occurrence.position)).join(" | ")
+      ? occurrences
+          .map((occurrence) =>
+            occurrence.position === null ? "" : String(occurrence.position),
+          )
+          .join(" | ")
       : null,
     meanTaskDifficulty: item?.meanTaskDifficulty ?? null,
   };

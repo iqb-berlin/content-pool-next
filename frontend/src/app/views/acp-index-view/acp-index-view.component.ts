@@ -1,7 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { catchError, forkJoin, of } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { AcpNavigationService } from '../../core/services/acp-navigation.service';
+import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { AcpFile } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -45,7 +48,9 @@ interface NodeAction {
         <button class="btn btn-outline btn-sm" (click)="applyExpandDepth(99)">
           Alles aufklappen
         </button>
-        <a [routerLink]="['/view', acpId]" class="btn btn-outline">← Zurück</a>
+        <a [routerLink]="navigation.overviewRoute(acpId)" class="btn btn-outline"
+          >← Zur ACP-Übersicht</a
+        >
       </div>
     </div>
 
@@ -57,7 +62,7 @@ interface NodeAction {
       <div class="card">
         <div class="tree-toolbar">
           <span class="tree-hint">
-            Rekursive Strukturansicht mit Links für Aufgabenfolgen, Units, Items und Dateien.
+            Rekursive Strukturansicht mit Links für Aufgabenfolgen, Aufgaben, Items und Dateien.
           </span>
         </div>
 
@@ -273,6 +278,9 @@ interface NodeAction {
   ],
 })
 export class AcpIndexViewComponent implements OnInit {
+  readonly navigation = inject(AcpNavigationService);
+  private readonly auth = inject(AuthService);
+  private readonly destroyRef = inject(DestroyRef);
   acpId = '';
   breadcrumbs: BreadcrumbItem[] = [];
 
@@ -304,21 +312,40 @@ export class AcpIndexViewComponent implements OnInit {
       { label: 'ACP-Index' },
     ];
 
-    forkJoin({
+    combineLatest({
       index: this.api.getViewIndex(this.acpId),
-      files: this.api.getFiles(this.acpId).pipe(catchError(() => of([] as AcpFile[]))),
-    }).subscribe({
-      next: ({ index, files }) => {
-        this.configureLookups(index, files);
-        this.rootNodes = this.buildRoot(index);
-        this.applyExpandDepth(this.expandDepth);
-        this.loading = false;
-      },
-      error: () => {
-        this.error = 'ACP-Index konnte nicht geladen werden.';
-        this.loading = false;
-      },
-    });
+      files: combineLatest([this.api.getAcpStartPage(this.acpId), this.auth.currentUser$]).pipe(
+        map(([data, user]) =>
+          Boolean(
+            data.featureConfig?.allowFileDownload ||
+            user?.isAppAdmin ||
+            user?.acpRoles?.some(
+              (role) => role.acpId === this.acpId && role.role === 'ACP_MANAGER',
+            ),
+          ),
+        ),
+        distinctUntilChanged(),
+        switchMap((canListFiles) =>
+          canListFiles
+            ? this.api.getFiles(this.acpId).pipe(catchError(() => of([] as AcpFile[])))
+            : of([] as AcpFile[]),
+        ),
+        catchError(() => of([] as AcpFile[])),
+      ),
+    })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ index, files }) => {
+          this.configureLookups(index, files);
+          this.rootNodes = this.buildRoot(index);
+          this.applyExpandDepth(this.expandDepth);
+          this.loading = false;
+        },
+        error: () => {
+          this.error = 'ACP-Index konnte nicht geladen werden.';
+          this.loading = false;
+        },
+      });
   }
 
   formatPrimitive(value: unknown): string {
@@ -510,7 +537,7 @@ export class AcpIndexViewComponent implements OnInit {
       actions.push({
         id: `unit:${raw}`,
         kind: 'route',
-        label: 'Unit öffnen',
+        label: 'Aufgabe öffnen',
         route: ['/view', this.acpId, 'unit', raw],
       });
     }

@@ -3,128 +3,292 @@
     <h1>Item-Explorer</h1>
   </div>
   <div class="header-actions">
-    <span class="item-count"
-      >{{ vm.filteredItems.length }} von {{ vm.totalItemsCount }} Zeilen</span
-    >
-    <button
-      class="btn btn-outline btn-sm"
-      type="button"
-      (click)="vm.toggleFullscreen()"
-      [class.btn-primary]="vm.isFullscreen"
-      [attr.aria-pressed]="vm.isFullscreen"
-      [title]="
-        vm.isFullscreen ? 'Vollbild verlassen (auch mit Esc)' : 'Item-Explorer im Vollbild anzeigen'
-      "
-    >
-      {{ vm.isFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
-    </button>
-    @if (vm.canToggleReadOnlyPreview) {
+    <div class="toolbar-group" role="group" aria-label="Ansicht">
       <button
-        class="btn btn-outline btn-sm"
+        class="btn btn-outline btn-sm btn-state"
         type="button"
-        (click)="vm.toggleReadOnlyPreview()"
-        [class.btn-primary]="vm.isReadOnlyPreview"
-        [attr.aria-pressed]="vm.isReadOnlyPreview"
-        [disabled]="vm.perspectiveSwitchBusy || !vm.latestExplorerState"
+        (click)="vm.toggleFullscreen()"
+        [attr.aria-pressed]="vm.isFullscreen"
         [title]="
-          vm.isReadOnlyPreview
-            ? 'Zurück zur Bearbeitungsansicht wechseln'
-            : 'Explorer aus READ ONLY-Perspektive anzeigen'
+          vm.isFullscreen
+            ? 'Vollbild verlassen (auch mit Esc)'
+            : 'Item-Explorer im Vollbild anzeigen'
         "
       >
-        {{ vm.isReadOnlyPreview ? 'Bearbeitungsansicht' : 'READ ONLY-Vorschau' }}
+        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />
+        </svg>
+        {{ vm.isFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
       </button>
+      @if (vm.canToggleReadOnlyPreview) {
+        <button
+          class="btn btn-outline btn-sm btn-state"
+          type="button"
+          (click)="vm.toggleReadOnlyPreview()"
+          [attr.aria-pressed]="vm.isReadOnlyPreview"
+          [disabled]="vm.perspectiveSwitchBusy || !vm.latestExplorerState"
+          [title]="
+            vm.isReadOnlyPreview
+              ? 'Zurück zur Bearbeitungsansicht wechseln'
+              : 'Den veröffentlichten Stand mit den Einschränkungen der Leseansicht anzeigen'
+          "
+        >
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Zm10-3a3 3 0 1 0 0 6 3 3 0 0 0 0-6"
+            />
+          </svg>
+          {{ vm.isReadOnlyPreview ? 'Bearbeitungsansicht' : 'Leseansicht' }}
+        </button>
+      }
+      @if (vm.canEditExplorer) {
+        <button
+          title="Sichtbare Tabellenspalten und ihre Reihenfolge festlegen"
+          class="btn btn-outline btn-sm"
+          (click)="vm.openColumnManager()"
+        >
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 4h18v16H3ZM9 4v16m6-16v16" />
+          </svg>
+          Spalten verwalten
+        </button>
+      }
+    </div>
+    @if (vm.canEditExplorer) {
+      <div class="toolbar-group" role="group" aria-label="Reihenfolge">
+        <button
+          class="btn btn-outline btn-sm btn-state"
+          type="button"
+          (click)="vm.toggleManualOrderMode()"
+          [attr.aria-pressed]="vm.sortField === '__manual__'"
+          [title]="
+            vm.sortField === '__manual__'
+              ? 'Zur vorherigen Sortierung zurückkehren. Die manuelle Reihenfolge bleibt erhalten.'
+              : 'Manuelle Reihenfolge anzeigen und Items mit den Schaltflächen ↑/↓ verschieben.'
+          "
+        >
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M7 3v18m-4-4 4 4 4-4M17 21V3m-4 4 4-4 4 4" />
+          </svg>
+          Manuell sortieren
+        </button>
+        @if (vm.sortField === '__manual__') {
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            aria-label="Ausgewähltes Item nach oben verschieben"
+            title="Ausgewähltes Item nach oben verschieben"
+            [disabled]="!vm.canMoveSelectedItem(-1)"
+            (click)="vm.moveSelectedItem(-1)"
+          >
+            ↑
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            aria-label="Ausgewähltes Item nach unten verschieben"
+            title="Ausgewähltes Item nach unten verschieben"
+            [disabled]="!vm.canMoveSelectedItem(1)"
+            (click)="vm.moveSelectedItem(1)"
+          >
+            ↓
+          </button>
+        }
+      </div>
     }
-    @if (vm.showPersonalItemData) {
-      <button
-        class="btn btn-outline btn-sm"
-        type="button"
-        (click)="vm.exportPersonalItemDataXlsx()"
-        [disabled]="
-          vm.personalExportInProgress ||
-          vm.personalDataLoadState !== 'loaded' ||
-          vm.filteredItems.length === 0 ||
-          vm.perspectiveSwitchBusy
-        "
-        title="Aktuell gefilterte und sortierte persönliche Item-Arbeitsdaten exportieren"
-      >
-        {{ vm.personalExportInProgress ? 'Export läuft …' : '📊 Persönliche Daten (XLSX)' }}
-      </button>
-    }
-    @if (vm.canExportAllPersonalItemData) {
-      <button
-        class="btn btn-outline btn-sm"
-        type="button"
-        (click)="vm.exportAllPersonalItemDataCsv()"
-        [disabled]="vm.allPersonalDataExportInProgress || vm.perspectiveSwitchBusy"
-        title="Persönliche Item-Arbeitsdaten aller Teilnehmenden exportieren"
-      >
-        {{ vm.allPersonalDataExportInProgress ? 'Gesamtexport läuft …' : '📄 Gesamtdaten (CSV)' }}
-      </button>
+    @if (vm.showPersonalItemData || vm.canExportAllPersonalItemData || vm.itemCommentsEnabled) {
+      <div class="toolbar-group" role="group" aria-label="Datenexport">
+        @if (vm.showPersonalItemData) {
+          <button
+            class="btn btn-outline btn-sm"
+            type="button"
+            (click)="vm.exportPersonalItemDataXlsx()"
+            [disabled]="
+              vm.personalExportInProgress ||
+              vm.personalDataLoadState !== 'loaded' ||
+              vm.filteredItems.length === 0 ||
+              vm.perspectiveSwitchBusy
+            "
+            title="Aktuell gefilterte und sortierte persönliche Item-Arbeitsdaten exportieren"
+          >
+            <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" />
+            </svg>
+            {{ vm.personalExportInProgress ? 'Export läuft …' : 'Meine Eingaben (XLSX)' }}
+          </button>
+        }
+        @if (vm.canExportAllPersonalItemData) {
+          <details #dataExportMenu name="item-explorer-toolbar" class="data-export-menu">
+            <summary
+              class="btn btn-outline btn-sm"
+              title="Item-Eingaben aller Teilnehmenden exportieren: gesamter ACP oder aktive Auswahlliste"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 3v12m-4-4 4 4 4-4M4 16v5h16v-5" />
+              </svg>
+              Teilnehmendendaten (CSV) ▾
+            </summary>
+            <div class="data-export-actions">
+              <span class="data-export-hint">Gespeicherte Eingaben aller Teilnehmenden</span>
+              <button
+                title="Gespeicherte Item-Eingaben aller Teilnehmenden für den gesamten ACP herunterladen; Suchfilter werden nicht berücksichtigt"
+                class="btn btn-outline btn-sm"
+                type="button"
+                (click)="dataExportMenu.removeAttribute('open'); vm.exportAllPersonalItemDataCsv()"
+                [disabled]="vm.allPersonalDataExportInProgress || vm.perspectiveSwitchBusy"
+              >
+                Gesamtdaten exportieren
+              </button>
+              @if (vm.enableItemCollections) {
+                <button
+                  class="btn btn-outline btn-sm"
+                  type="button"
+                  (click)="
+                    dataExportMenu.removeAttribute('open');
+                    vm.exportAllPersonalItemDataCsv('collection')
+                  "
+                  [disabled]="
+                    vm.allPersonalDataExportInProgress ||
+                    vm.collectionBusy ||
+                    vm.collectionLoadState !== 'loaded' ||
+                    !vm.activeItemCollection ||
+                    vm.perspectiveSwitchBusy
+                  "
+                  [title]="
+                    vm.activeItemCollection
+                      ? 'Die vollständige Auswahlliste exportieren; Suchfilter werden nicht berücksichtigt.'
+                      : 'Zuerst eine Auswahlliste auswählen'
+                  "
+                >
+                  {{
+                    vm.activeItemCollection
+                      ? 'Auswahlliste „' + vm.activeItemCollection.name + '“ exportieren'
+                      : 'Auswahlliste exportieren'
+                  }}
+                </button>
+              }
+            </div>
+          </details>
+        }
+        @if (vm.itemCommentsEnabled) {
+          <details name="item-explorer-toolbar" class="comment-export-menu">
+            <summary
+              class="btn btn-outline btn-sm"
+              title="Eigene oder alle Review-Kommentare exportieren"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M21 4H3v13h5l4 4v-4h9ZM7 8h10M7 12h6" />
+              </svg>
+              Kommentare exportieren ▾
+            </summary>
+            <div class="comment-export-actions">
+              <button
+                title="Eigene Review-Kommentare als CSV herunterladen"
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="vm.exportMyCommentsCsv()"
+                [disabled]="vm.commentExportInProgress"
+              >
+                Meine Kommentare (CSV)
+              </button>
+              <button
+                title="Eigene Review-Kommentare als Excel-Datei herunterladen"
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="vm.exportMyCommentsXlsx()"
+                [disabled]="vm.commentExportInProgress"
+              >
+                Meine Kommentare (XLSX)
+              </button>
+              @if (vm.canExportAllComments) {
+                <button
+                  title="Review-Kommentare aller Teilnehmenden als Excel-Datei herunterladen"
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  (click)="vm.exportAllCommentsXlsx()"
+                  [disabled]="vm.commentExportInProgress"
+                >
+                  Alle Kommentare (XLSX)
+                </button>
+              }
+            </div>
+          </details>
+        }
+      </div>
     }
     @if (vm.canEditExplorer) {
-      <input
-        type="file"
-        #csvUploadInput
-        style="display: none"
-        accept=".csv"
-        (change)="vm.onCsvFileSelected($event)"
-      />
-      <button class="btn btn-outline btn-sm" (click)="csvUploadInput.click()">
-        📄 Itemparameter (CSV) hochladen
-      </button>
-      <button
-        class="btn btn-outline btn-sm btn-clear-difficulties"
-        (click)="vm.openClearEmpiricalDifficultiesDialog()"
-        title="Alle Itemschwierigkeiten löschen"
-      >
-        🗑️ Werte bereinigen
-      </button>
-      <button class="btn btn-outline btn-sm" (click)="vm.openColumnManager()">
-        👁️ Spalten verwalten
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        (click)="vm.openRenumberDialog()"
-        [disabled]="vm.isRenumberingBlocked()"
-        [title]="vm.getRenumberingActionTitle()"
-      >
-        🔢 Referenznummern neu vergeben
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        (click)="vm.enableManualOrderMode()"
-        [class.btn-primary]="vm.sortField === '__manual__'"
-      >
-        ↕️ Reihenfolge
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(-1)"
-      >
-        ↑
-      </button>
-      <button
-        class="btn btn-outline btn-sm"
-        [disabled]="!vm.selectedItem || vm.sortField !== '__manual__'"
-        (click)="vm.moveSelectedItem(1)"
-      >
-        ↓
-      </button>
-      <button class="btn btn-outline btn-sm" (click)="vm.showHistory()">🕒 Änderungsverlauf</button>
+      <div class="toolbar-group" role="group" aria-label="Verwaltung">
+        <details #moreActions name="item-explorer-toolbar" class="data-export-menu">
+          <summary
+            class="btn btn-outline btn-sm"
+            title="Import, empirische Itemschwierigkeiten, Referenznummern und Änderungsverlauf verwalten"
+          >
+            <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M5 11v2m7-2v2m7-2v2" />
+            </svg>
+            Weitere Aktionen ▾
+          </summary>
+          <div class="data-export-actions">
+            <input
+              type="file"
+              #csvUploadInput
+              style="display: none"
+              accept=".csv"
+              (change)="vm.onCsvFileSelected($event)"
+            />
+            <button
+              title="Eine CSV-Datei auswählen, um Itemparameter zu importieren"
+              class="btn btn-outline btn-sm"
+              (click)="moreActions.removeAttribute('open'); csvUploadInput.click()"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M12 16V3m-4 4 4-4 4 4M4 16v5h16v-5" />
+              </svg>
+              Itemparameter importieren …
+            </button>
+            <button
+              class="btn btn-outline btn-sm btn-clear-difficulties"
+              (click)="
+                moreActions.removeAttribute('open'); vm.openClearEmpiricalDifficultiesDialog()
+              "
+              title="Alle empirischen Itemschwierigkeiten nach Bestätigung löschen; weitere Itemparameter bleiben erhalten"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7" />
+              </svg>
+              Empirische Itemschwierigkeiten löschen …
+            </button>
+            <button
+              class="btn btn-outline btn-sm"
+              (click)="moreActions.removeAttribute('open'); vm.openRenumberDialog()"
+              [disabled]="vm.isRenumberingBlocked()"
+              [title]="vm.getRenumberingActionTitle()"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M10 4 8 20M17 4l-2 16M4 9h17M3 15h17" />
+              </svg>
+              Referenznummern neu vergeben
+            </button>
+            <button
+              title="Änderungen am Item-Explorer und frühere Versionen ansehen"
+              class="btn btn-outline btn-sm"
+              (click)="moreActions.removeAttribute('open'); vm.showHistory()"
+            >
+              <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M3 11a9 9 0 1 1 2 7M3 4v7h7m2-4v5l4 2" />
+              </svg>
+              Änderungsverlauf
+            </button>
+          </div>
+        </details>
+      </div>
     }
   </div>
-  @if (vm.canEditExplorer && vm.isRenumberingBlocked()) {
-    <div class="renumber-blocked-hint" role="status">
-      {{ vm.getRenumberingBlockedMessage() }}
-    </div>
-  }
 </div>
 
 @if (vm.showReadOnlyPreviewBanner) {
   <div class="card" style="margin-bottom: 12px">
-    <strong>READ ONLY-Vorschau aktiv.</strong>
+    <strong>Leseansicht aktiv.</strong>
     <p class="help-text" style="margin: 8px 0 0">
       Sie sehen den veröffentlichten Stand inklusive derselben Feature-Beschränkungen wie nicht
       editierende Nutzerinnen und Nutzer.
@@ -145,28 +309,66 @@
       <span [class]="'status-pill status-' + vm.explorerUiStatus.toLowerCase()">{{
         vm.explorerStatusLabel
       }}</span>
-      <span class="status-meta"
-        >v{{ vm.explorerVersion }} · veröffentlicht v{{ vm.explorerPublishedVersion }}</span
+      <button
+        type="button"
+        class="status-info"
+        popovertarget="explorer-status-info"
+        aria-label="Details zum Explorer-Stand anzeigen"
+        title="Details zum Explorer-Stand anzeigen"
       >
-      @if (vm.lastExplorerChangeInfo) {
-        <span class="status-meta">· {{ vm.lastExplorerChangeInfo }}</span>
-      }
+        <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6m0-10v1" />
+        </svg>
+      </button>
+      <div id="explorer-status-info" popover class="status-info-popover">
+        <strong>Explorer-Stand</strong>
+        <p>Veröffentlichte Version: {{ vm.explorerPublishedVersion }}</p>
+        <p>Technische Revision: {{ vm.explorerVersion }}</p>
+        <p class="status-meta">
+          Die technische Revision zählt Aktualisierungen des Explorer-Stands. Sie ist unabhängig von
+          der veröffentlichten Version und zählt keine offenen Änderungen.
+        </p>
+        @if (vm.lastExplorerChangeInfo) {
+          <p>Zuletzt geändert von {{ vm.lastExplorerChangeInfo }}</p>
+        }
+      </div>
     </div>
     <div class="status-actions">
       @if (vm.canPublishExplorer) {
         <button
+          [title]="
+            !vm.hasPendingDraftChanges()
+              ? 'Keine Änderungen vorhanden'
+              : vm.explorerUiStatus === 'SAVING'
+                ? 'Speichern läuft'
+                : 'Änderungen vor dem Veröffentlichen in einer Übersicht prüfen'
+          "
           class="btn btn-primary btn-sm"
           [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
           (click)="vm.openSavePreviewDialog()"
         >
-          💾 Speichern
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 3H5v18h14V3h-4M9 2h6v4H9Zm-1 11 3 3 5-6" />
+          </svg>
+          Änderungen prüfen …
         </button>
         <button
+          [title]="
+            !vm.hasPendingDraftChanges()
+              ? 'Keine Änderungen vorhanden'
+              : vm.explorerUiStatus === 'SAVING'
+                ? 'Speichern läuft'
+                : 'Den unveröffentlichten Explorer-Entwurf nach Bestätigung verwerfen'
+          "
           class="btn btn-outline btn-sm"
           [disabled]="!vm.hasPendingDraftChanges() || vm.explorerUiStatus === 'SAVING'"
           (click)="vm.openDiscardExplorerDraftDialog()"
         >
-          ↩️ Verwerfen
+          <svg class="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 5 3 11l6 6M3 11h12a6 6 0 0 1 6 6" />
+          </svg>
+          Verwerfen
         </button>
       }
     </div>
@@ -194,6 +396,12 @@
 @if (vm.allPersonalDataExportError) {
   <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
     {{ vm.allPersonalDataExportError }}
+  </div>
+}
+
+@if (vm.commentExportError) {
+  <div class="alert alert-error" style="margin-bottom: 12px" aria-live="polite">
+    {{ vm.commentExportError }}
   </div>
 }
 
@@ -233,7 +441,7 @@
 
 <app-confirm-dialog
   [open]="vm.showClearEmpiricalDifficultiesDialog"
-  title="Werte bereinigen"
+  title="Empirische Itemschwierigkeiten löschen"
   message="Alle empirischen Itemschwierigkeiten im Entwurf werden entfernt."
   [details]="[
     'Die Änderungen betreffen alle Items im aktuellen ACP.',
@@ -315,6 +523,7 @@
           <button
             class="btn btn-outline"
             [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            title="Auf dieser Seite bleiben und den Entwurf weiter bearbeiten"
             (click)="vm.stayOnPage()"
           >
             Bleiben
@@ -322,6 +531,7 @@
           <button
             class="btn btn-danger"
             [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            title="Den unveröffentlichten Entwurf verwerfen und die Seite verlassen"
             (click)="vm.discardAndLeave()"
           >
             Nicht speichern
@@ -329,6 +539,7 @@
           <button
             class="btn btn-primary"
             [disabled]="vm.leaveWithChangesDialogState !== 'idle'"
+            title="Den Explorer-Entwurf speichern und die Seite verlassen"
             (click)="vm.saveAndLeave()"
           >
             Speichern & Weiter

@@ -58,7 +58,7 @@ describe("item export projection", () => {
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
           { booklet: "B1", position: 3 },
-          { booklet: "B2", position: 8 },
+          { booklet: "B2", position: null },
         ],
       } as any,
       personalRow: {
@@ -78,7 +78,7 @@ describe("item export projection", () => {
         bista: 503.25,
         textComplexity: "anspruchsvoll",
         booklets: "B1 | B2",
-        bookletPositions: "3 | 8",
+        bookletPositions: "3 | ",
         meanTaskDifficulty: 0.5,
       }),
     );

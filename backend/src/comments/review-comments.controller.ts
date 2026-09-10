@@ -3,13 +3,16 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Patch,
   Post,
   Query,
   Request,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import { Response } from "express";
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -94,6 +97,79 @@ export class ReviewCommentsController {
     );
   }
 
+  @Get("counts")
+  @ApiOperation({ summary: "Get visible comment counts for all ACP items" })
+  async getItemCommentCounts(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+  ) {
+    return this.commentsService.getItemCommentCounts(
+      acpId,
+      this.reviewPolicy.resolveActor(req),
+    );
+  }
+
+  @Get("export/mine.csv")
+  @ApiOperation({ summary: "Export own review comments as CSV" })
+  async exportMineCsv(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const actor = this.reviewPolicy.resolveActor(req);
+    const buffer = await this.commentsService.exportReviewCommentsCsv(acpId, {
+      userId: actor.userId,
+      credentialId: actor.credentialId,
+    });
+    this.sendExport(
+      res,
+      buffer,
+      "text/csv; charset=utf-8",
+      `comments-${acpId}-mine.csv`,
+    );
+  }
+
+  @Get("export/mine.xlsx")
+  @ApiOperation({ summary: "Export own review comments as XLSX" })
+  async exportMineXlsx(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const actor = this.reviewPolicy.resolveActor(req);
+    const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
+      userId: actor.userId,
+      credentialId: actor.credentialId,
+    });
+    this.sendExport(
+      res,
+      buffer,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      `comments-${acpId}-mine.xlsx`,
+    );
+  }
+
+  @Get("export/all.xlsx")
+  @ApiOperation({
+    summary: "Export all review comments as XLSX (Manager only)",
+  })
+  async exportAllXlsx(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    if (!this.reviewPolicy.isManagerRequest(req)) {
+      throw new ForbiddenException("Manager access required");
+    }
+    const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId);
+    this.sendExport(
+      res,
+      buffer,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      `comments-${acpId}-all.xlsx`,
+    );
+  }
+
   @Post()
   @ApiOperation({ summary: "Create an item comment or reply" })
   async createItemComment(
@@ -158,5 +234,16 @@ export class ReviewCommentsController {
       throw new BadRequestException("unitId and itemId are required");
     }
     return { unitId: normalizedUnitId, itemId: normalizedItemId };
+  }
+
+  private sendExport(
+    res: Response,
+    buffer: Buffer,
+    contentType: string,
+    fileName: string,
+  ): void {
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(buffer);
   }
 }

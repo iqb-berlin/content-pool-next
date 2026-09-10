@@ -1,4 +1,4 @@
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { Observable, of, Subject, throwError } from 'rxjs';
 import { ItemExplorerFacade } from './item-explorer.facade';
 import { VoudService } from '../../core/services/voud.service';
@@ -175,6 +175,403 @@ describe('ItemExplorerFacade role initialization', () => {
     component.checkUserRole();
 
     expect(component.viewPerspective).toBe('read-only');
+  });
+});
+
+describe('ItemExplorerFacade automatic comment refresh', () => {
+  let component: ItemExplorerFacade;
+  let getCounts: ReturnType<typeof vi.fn>;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    getCounts = vi.fn().mockReturnValue(of({ revision: '1', counts: [] }));
+    component = createFacade({
+      api: { getItemCommentCounts: getCounts },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+  });
+  afterEach(() => {
+    component.ngOnDestroy();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+  it('refreshes counts and the selected thread every five seconds', () => {
+    const token = component.itemCommentRefreshToken;
+    const sessionToken = component.itemCommentSessionToken;
+    vi.advanceTimersByTime(5000);
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    expect(component.itemCommentRefreshToken).toBe(token + 1);
+    expect(component.itemCommentSessionToken).toBe(sessionToken);
+  });
+  it('pauses hidden tabs and refreshes immediately on return or focus', () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.advanceTimersByTime(15000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('does not supersede an in-flight batch on timer or focus events', () => {
+    const response = new Subject<any>();
+    getCounts.mockReturnValue(response);
+    vi.advanceTimersByTime(5000);
+    vi.advanceTimersByTime(5000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    response.next({ revision: 'latest', counts: [{ unitId: 'U', itemId: 'I', count: 2 }] });
+    expect(component.itemCommentCounts['U\u0000I']).toBe(2);
+  });
+  it('recovers automatically after a failed batch', () => {
+    getCounts.mockReturnValueOnce(throwError(() => new Error('offline')));
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).not.toBe('');
+    vi.advanceTimersByTime(5000);
+    expect(component.itemCommentCountsError).toBe('');
+    expect(getCounts).toHaveBeenCalledTimes(3);
+  });
+  it('stops polling and listeners on logout and destruction', () => {
+    const sessionToken = component.itemCommentSessionToken;
+    component.itemCommentsEnabled = false;
+    (component as any).syncItemCommentCountSession();
+    expect(component.itemCommentSessionToken).toBe(sessionToken + 1);
+    vi.advanceTimersByTime(10000);
+    window.dispatchEvent(new Event('focus'));
+    expect(getCounts).toHaveBeenCalledTimes(1);
+    component.itemCommentsEnabled = true;
+    (component as any).syncItemCommentCountSession();
+    expect(getCounts).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+    vi.advanceTimersByTime(10000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(getCounts).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ItemExplorerFacade comment counts', () => {
+  const item = (rowKey: string, itemId: string, subId = '') =>
+    ({
+      rowKey,
+      uuid: rowKey,
+      unitId: 'unit-1',
+      itemId,
+      subId,
+      unitLabel: 'Unit 1',
+      description: '',
+      variableId: itemId,
+      metadata: {},
+    }) as any;
+
+  it('uses the full backend catalog even when a canonical item has no table row', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: () =>
+          of({
+            revision: 'catalog',
+            counts: [
+              { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+              { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 },
+            ],
+          }),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('keeps canonical thread updates separate before the catalog arrives', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({
+      revision: 'old',
+      counts: [
+        { unitId: 'unit-1', itemId: 'item-1', count: 2 },
+        { unitId: 'unit-1', itemId: 'unit-1_item-1', count: 1 },
+      ],
+    });
+    expect(component.getItemCommentCount(component.items[0])).toBe(0);
+    expect(component.itemCommentCounts['unit-1\u0000item-1']).toBe(2);
+  });
+
+  it('keeps distinct raw and prefixed item IDs separate', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
+  it('loading an empty colliding item does not erase another item count', () => {
+    const component = createFacade();
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 2, 'unit-1\u0000unit-1_item-1': 0 };
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+  });
+
+  it.each(['item-1', 'unit-1_item-1'])(
+    'preserves a canonical zero count for requested item %s against an initial stale batch',
+    (threadItemId) => {
+      const response = new Subject<any>();
+      const component = createFacade({ api: { getItemCommentCounts: () => response } });
+      component.acpId = 'acp-1';
+      component.itemCommentsEnabled = true;
+      component.refreshItemComments(false);
+      component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 0 });
+      response.next({
+        revision: 'before-deletion',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 1 }],
+      });
+      expect(component.getItemCommentCount(item('row', threadItemId))).toBe(0);
+    },
+  );
+
+  it('preserves an unchanged positive thread count against an older batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.itemCommentCounts = { 'unit-1\u0000item-1': 1 };
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+    expect(component.getItemCommentCount(item('row', 'item-1'))).toBe(1);
+  });
+
+  it('keeps colliding item counts separate when merging a delayed batch', () => {
+    const response = new Subject<any>();
+    const component = createFacade({ api: { getItemCommentCounts: () => response } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('raw', 'item-1'), item('prefixed', 'unit-1_item-1')];
+    component.refreshItemComments(false);
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'unit-1_item-1', count: 0 });
+    response.next({ revision: 'old', counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }] });
+    expect(component.getItemCommentCount(component.items[0])).toBe(2);
+    expect(component.getItemCommentCount(component.items[1])).toBe(0);
+  });
+
+  it('shares one item count across partial-credit rows and filters by status', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    component.items = [
+      item('row-a', 'item-1', '0'),
+      item('row-b', 'item-1', '1'),
+      item('row-c', 'item-2'),
+    ];
+    component.filteredItems = [...component.items];
+    component.itemCommentCountsAvailable = true;
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 3 });
+
+    expect(component.getItemCommentCount(component.items[0])).toBe(3);
+    expect(component.getItemCommentCount(component.items[1])).toBe(3);
+    expect(component.getItemCommentCount(item('row-prefixed', 'unit-1_item-1'))).toBe(3);
+    component.columnFilters['comments'] = 'with';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-a', 'row-b']);
+    component.columnFilters['comments'] = 'without';
+    component.applyFilter(false);
+    expect(component.filteredItems.map((entry) => entry.rowKey)).toEqual(['row-c']);
+  });
+
+  it('replaces counts from the batch endpoint and refreshes the selected thread', () => {
+    const getItemCommentCounts = vi.fn().mockReturnValue(
+      of({
+        revision: '1',
+        counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 2 }],
+      }),
+    );
+    const component = createFacade({ api: { getItemCommentCounts } });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    component.refreshItemComments();
+
+    expect(getItemCommentCounts).toHaveBeenCalledWith('acp-1');
+    expect(component.itemCommentRefreshToken).toBe(1);
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 2 });
+  });
+
+  it('does not apply a persisted comment filter when comments are unavailable', () => {
+    const component = createFacade();
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+    component.itemCommentsEnabled = false;
+
+    component.applyFilter(false);
+
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('does not let an older batch response overwrite a newer thread count', () => {
+    const response = new Subject<any>();
+    const component = createFacade({
+      api: { getItemCommentCounts: vi.fn().mockReturnValue(response) },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.refreshItemComments(false);
+
+    component.updateItemCommentCount({ unitId: 'unit-1', itemId: 'item-1', count: 1 });
+    response.next({ revision: 'old', counts: [] });
+
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-1': 1 });
+  });
+
+  it('keeps comment filters inactive when the initial count request fails', () => {
+    const component = createFacade({
+      api: {
+        getItemCommentCounts: vi.fn().mockReturnValue(throwError(() => new Error('offline'))),
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+    component.items = [item('row-a', 'item-1')];
+    component.columnFilters['comments'] = 'with';
+
+    component.refreshItemComments(false);
+
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(component.itemCommentCountsError).toContain('nicht geladen');
+    expect(component.filteredItems).toHaveLength(1);
+  });
+
+  it('invalidates private counts and old responses when the token identity changes', () => {
+    const firstResponse = new Subject<any>();
+    const secondResponse = new Subject<any>();
+    const getItemCommentCounts = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse)
+      .mockReturnValueOnce(secondResponse);
+    let token = createJwt('user-a');
+    const component = createFacade({
+      api: { getItemCommentCounts },
+      authService: {
+        isLoggedIn: true,
+        getToken: () => token,
+      },
+    });
+    component.acpId = 'acp-1';
+    component.itemCommentsEnabled = true;
+
+    (component as any).syncItemCommentCountSession();
+    token = createJwt('user-b');
+    (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+
+    expect(component.itemCommentCounts).toEqual({});
+    expect(component.itemCommentCountsAvailable).toBe(false);
+    expect(getItemCommentCounts).toHaveBeenCalledTimes(2);
+
+    firstResponse.next({
+      revision: 'old-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-1', count: 4 }],
+    });
+    expect(component.itemCommentCounts).toEqual({});
+
+    secondResponse.next({
+      revision: 'new-user',
+      counts: [{ unitId: 'unit-1', itemId: 'item-2', count: 1 }],
+    });
+    expect(component.itemCommentCounts).toEqual({ 'unit-1\u0000item-2': 1 });
+  });
+
+  it('ignores a thread count emitted for an earlier comment refresh session', () => {
+    const component = createFacade();
+    component.itemCommentRefreshToken = 2;
+
+    component.updateItemCommentCount({
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      count: 3,
+      refreshToken: 1,
+    });
+
+    expect(component.itemCommentCounts).toEqual({});
+  });
+
+  it('adds the comment column after hydrating a configured shared layout', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: ['system:itemId'],
+        order: ['system:itemId'],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toContain('system:comments');
+    expect(component.metadataSettings.layout?.order).toContain('system:comments');
+  });
+
+  it('preserves an explicitly empty shared column selection during layout migration', () => {
+    const component = createFacade();
+    component.itemCommentsEnabled = true;
+    const envelope = createExplorerEnvelope();
+    envelope.draftState.metadataColumns = {
+      layout: {
+        configured: true,
+        visible: [],
+        order: [],
+        widths: {},
+      },
+    };
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.layout?.visible).toEqual([]);
+    expect(component.metadataSettings.layout?.order).toEqual([]);
+    expect(component.metadataSettings.layout?.schemaVersion).toBe(2);
+  });
+
+  it('resolves a filtered deep link and consumes its automatic-open state on navigation', () => {
+    const component = createFacade();
+    (component as any).previewCoordinator.select = vi.fn();
+    const target = item('row-target', 'item-1');
+    const other = item('row-other', 'item-2');
+    component.items = [target, other];
+    component.filterText = 'does-not-match';
+    component.applyFilter(false);
+    component.commentThreadInitiallyOpen = true;
+    (component as any).initialCommentTarget = {
+      unitId: 'unit-1',
+      itemId: 'item-1',
+    };
+
+    (component as any).selectInitialCommentTarget();
+
+    expect(component.filterText).toBe('');
+    expect(component.selectedItem?.rowKey).toBe('row-target');
+    expect(component.commentThreadInitiallyOpen).toBe(true);
+
+    component.selectItem(other, 1);
+
+    expect(component.commentThreadInitiallyOpen).toBe(false);
   });
 });
 
@@ -510,7 +907,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.canExportAllPersonalItemData).toBe(true);
     await component.exportAllPersonalItemDataCsv();
 
-    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', undefined);
     expect(createObjectUrl).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();
     expect(revokeObjectUrl).toHaveBeenCalledWith('blob:all-export');
@@ -523,6 +920,74 @@ describe('ItemExplorerFacade', () => {
     createObjectUrl.mockRestore();
     revokeObjectUrl.mockRestore();
     click.mockRestore();
+  });
+
+  it('exports the active shared list independently of displayed rows and refuses a missing list', async () => {
+    const exportAllViewPersonalItemDataCsv = vi.fn().mockReturnValue(of(new Blob(['csv'])));
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:collection-export');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    let filename = '';
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      filename = this.download;
+    });
+    const component = createFacade({ api: { exportAllViewPersonalItemDataCsv } });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      viewPerspective: 'editor',
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'shared-1',
+      itemCollections: [
+        {
+          id: 'shared-1',
+          name: 'Auswahl A',
+          rowKeys: ['uuid::A', 'uuid::B'],
+          ownedByCurrentUser: false,
+        },
+      ],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledWith('acp-1', 'editor', 'shared-1');
+    expect(filename).toContain('collection-Auswahl-A-shared-1.csv');
+    component.activeCollectionId = 'removed';
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(exportAllViewPersonalItemDataCsv).toHaveBeenCalledTimes(1);
+    component.ngOnDestroy();
+    createObjectUrl.mockRestore();
+    revokeObjectUrl.mockRestore();
+    click.mockRestore();
+  });
+
+  it('shows a scoped export failure beside collections without leaving the export busy', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const component = createFacade({
+      api: {
+        exportAllViewPersonalItemDataCsv: vi
+          .fn()
+          .mockReturnValue(throwError(() => ({ status: 404 }))),
+      },
+    });
+    Object.assign(component, {
+      acpId: 'acp-1',
+      enablePersonalItemData: true,
+      hasExplorerEditPermission: true,
+      enableItemCollections: true,
+      collectionLoadState: 'loaded',
+      activeCollectionId: 'removed',
+      itemCollections: [{ id: 'removed', name: 'Removed', rowKeys: [] }],
+    });
+    await component.exportAllPersonalItemDataCsv('collection');
+    expect(component.collectionDataExportError).toContain('nicht mehr verfügbar');
+    expect(component.allPersonalDataExportError).toBe('');
+    expect(component.allPersonalDataExportInProgress).toBe(false);
+    component.ngOnDestroy();
+    log.mockRestore();
   });
 
   it('does not expose personal working-data controls to anonymous visitors', () => {
@@ -892,6 +1357,202 @@ describe('ItemExplorerFacade', () => {
     expect(component.sortField).toBe('unitLabel');
     expect(component.sortDir).toBe('asc');
     expect(component.sortIsMeta).toBe(false);
+  });
+
+  describe('manual sorting toggle', () => {
+    function createSortingFacade() {
+      const component = createFacade();
+      component.canEditExplorer = true;
+      component.allColumns = [{ id: 'level', label: 'Level', kind: 'number' }];
+      component.columns = [...component.allColumns];
+      component.items = [1, 2, 3].map((index) => ({
+        itemId: `ITEM_${index}`,
+        uuid: `uuid-${index}`,
+        rowKey: `uuid-${index}`,
+        unitId: `UNIT_${index}`,
+        unitLabel: `Aufgabe ${index}`,
+        description: '',
+        variableId: '',
+        metadata: { level: index },
+      }));
+      component.filteredItems = [...component.items];
+      component.itemOrder = ['uuid-2', 'uuid-1', 'uuid-3'];
+      vi.spyOn(component as any, 'syncSelectionAfterListMutation').mockImplementation(() => {});
+      const queueDraftPatch = vi
+        .spyOn(component as any, 'queueDraftPatch')
+        .mockImplementation(() => {});
+      return { component, queueDraftPatch };
+    }
+
+    it.each(['asc', 'desc'] as const)('restores a system column sorted %s', (direction) => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.sortBy('itemId');
+      if (direction === 'desc') component.sortBy('itemId');
+      const previousRows = component.filteredItems.map((item) => item.rowKey);
+      queueDraftPatch.mockClear();
+
+      component.toggleManualOrderMode();
+      expect(component.sortField).toBe('__manual__');
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(component.itemOrder);
+
+      component.toggleManualOrderMode();
+      expect(component.sortField).toBe('itemId');
+      expect(component.sortDir).toBe(direction);
+      expect(component.sortIsMeta).toBe(false);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(previousRows);
+      expect(queueDraftPatch.mock.calls.map(([type]) => type)).toEqual([
+        'UI_STATE_CHANGED',
+        'UI_STATE_CHANGED',
+      ]);
+      expect(queueDraftPatch).toHaveBeenLastCalledWith('UI_STATE_CHANGED', {
+        ui: expect.objectContaining({ sortField: 'itemId', sortDir: direction, sortIsMeta: false }),
+      });
+    });
+
+    it('restores the metadata sort column and direction', () => {
+      const { component } = createSortingFacade();
+      component.sortByMeta('level');
+      component.sortByMeta('level');
+      const previousRows = component.filteredItems.map((item) => item.rowKey);
+
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('level');
+      expect(component.sortDir).toBe('desc');
+      expect(component.sortIsMeta).toBe(true);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(previousRows);
+    });
+
+    it('retains edited manual order when leaving and re-entering the mode', () => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.selectedItem = component.items[1];
+      component.moveSelectedItem(1);
+      const editedOrder = [...component.itemOrder];
+      expect(editedOrder).toEqual(['uuid-1', 'uuid-2', 'uuid-3']);
+      expect(queueDraftPatch).toHaveBeenLastCalledWith(
+        'ITEM_ORDER_CHANGED',
+        { itemOrder: editedOrder },
+        true,
+      );
+      queueDraftPatch.mockClear();
+
+      component.toggleManualOrderMode();
+      component.moveSelectedItem(1);
+      expect(component.itemOrder).toEqual(editedOrder);
+      component.toggleManualOrderMode();
+
+      expect(component.itemOrder).toEqual(editedOrder);
+      expect(component.filteredItems.map((item) => item.rowKey)).toEqual(editedOrder);
+      expect(queueDraftPatch.mock.calls.every(([type]) => type === 'UI_STATE_CHANGED')).toBe(true);
+    });
+
+    it('remembers a newly selected column on the next toggle cycle', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.sortBy('itemId');
+      component.sortBy('itemId');
+
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('itemId');
+      expect(component.sortDir).toBe('desc');
+    });
+
+    it('falls back to task ascending after reloading a saved manual mode', () => {
+      const { component } = createSortingFacade();
+      (component as any).applyUiPreferences({
+        sortField: '__manual__',
+        sortDir: 'asc',
+        sortIsMeta: false,
+      });
+      const savedOrder = [...component.itemOrder];
+
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('unitLabel');
+      expect(component.sortDir).toBe('asc');
+      expect(component.sortIsMeta).toBe(false);
+      expect(component.itemOrder).toEqual(savedOrder);
+    });
+
+    it('uses a visible fallback if the previous column was hidden meanwhile', () => {
+      const { component } = createSortingFacade();
+      component.metadataSettings.referenceNumberVisible = true;
+      component.sortBy('rowNumber');
+      component.toggleManualOrderMode();
+      component.metadataSettings.referenceNumberVisible = false;
+
+      component.toggleManualOrderMode();
+
+      expect(component.sortField).toBe('unitLabel');
+      expect(component.sortDir).toBe('asc');
+    });
+
+    it('initializes an absent manual order only once', () => {
+      const { component } = createSortingFacade();
+      component.itemOrder = [];
+      component.toggleManualOrderMode();
+      const order = component.itemOrder;
+      component.toggleManualOrderMode();
+      component.toggleManualOrderMode();
+      expect(component.itemOrder).toBe(order);
+      expect(order).toEqual(component.items.map((item) => item.rowKey));
+    });
+
+    it('disables movement without a selection, edit permission or manual mode', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.selectedItem = component.items[0];
+      expect(component.canMoveSelectedItem(-1)).toBe(true);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.canEditExplorer = false;
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.canEditExplorer = true;
+      component.toggleManualOrderMode();
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+    });
+
+    it('disables movement at the manual order boundaries and prevents changes', () => {
+      const { component, queueDraftPatch } = createSortingFacade();
+      component.toggleManualOrderMode();
+      queueDraftPatch.mockClear();
+      component.selectedItem = component.items[1];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.moveSelectedItem(-1);
+
+      component.selectedItem = component.items[2];
+      expect(component.canMoveSelectedItem(-1)).toBe(true);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+      component.moveSelectedItem(1);
+      expect(component.itemOrder).toEqual(['uuid-2', 'uuid-1', 'uuid-3']);
+      expect(queueDraftPatch).not.toHaveBeenCalled();
+    });
+
+    it('handles missing and single-item orders without enabling impossible movement', () => {
+      const { component } = createSortingFacade();
+      component.toggleManualOrderMode();
+      component.selectedItem = component.items[0];
+      component.itemOrder = ['uuid-2'];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+
+      component.itemOrder = [];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(true);
+      component.items = [component.selectedItem];
+      expect(component.canMoveSelectedItem(-1)).toBe(false);
+      expect(component.canMoveSelectedItem(1)).toBe(false);
+    });
   });
 
   it('keeps the task default when shared ui state is empty', () => {
@@ -4676,7 +5337,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).definitionContent = '{"pages":[]}';
     (component as any).playerFrameReady = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_BAD" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_BAD" kommt in der Aufgabendefinition nicht vor.',
     );
 
     const envelope = createExplorerEnvelope();
@@ -4899,7 +5560,7 @@ describe('ItemExplorerFacade', () => {
     component.canEditExplorer = false;
     component.itemExplorerPlayerTargetInfoEnabled = true;
     (component as any).previewCoordinator.markUnavailable(
-      'Das Player-Ziel "VAR_404" kommt in der Unit-Definition nicht vor.',
+      'Das Player-Ziel "VAR_404" kommt in der Aufgabendefinition nicht vor.',
     );
 
     expect(component.previewUnavailableMessage).toBe(
@@ -4990,6 +5651,21 @@ describe('ItemExplorerFacade', () => {
     expect(component.selectedItem?.uuid).toBe('uuid-3');
   });
 
+  it('leaves modified navigation keys to the browser', () => {
+    const component = createFacade();
+    component.filteredItems = [{}] as any;
+    for (const modifiers of [
+      { altKey: true },
+      { shiftKey: true },
+      { ctrlKey: true },
+      { metaKey: true },
+    ]) {
+      const event = new KeyboardEvent('keydown', { key: 'Home', cancelable: true, ...modifiers });
+      component.onTableKeydown(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+  });
+
   it('routes manual ordering shortcuts to moveSelectedItem', () => {
     const component = createFacade();
     component.filteredItems = [
@@ -5014,6 +5690,22 @@ describe('ItemExplorerFacade', () => {
     } as any);
 
     expect(moveSelectedItem).toHaveBeenCalledWith(-1);
+  });
+
+  it('keeps review and discard closed when there are no unpublished changes', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.explorerUiStatus = 'CLEAN';
+    component.latestExplorerState = { status: 'CLEAN' } as any;
+    expect(component.explorerStatusLabel).toBe('Keine unveröffentlichten Änderungen');
+    expect(component.hasPendingDraftChanges()).toBe(false);
+    component.openSavePreviewDialog();
+    component.openDiscardExplorerDraftDialog();
+    expect(component.showSavePreviewDialog).toBe(false);
+    expect(component.showDiscardDraftDialog).toBe(false);
+    const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true });
+    component.handleWindowKeydown(event);
+    expect(component.showSavePreviewDialog).toBe(false);
   });
 
   it('opens the draft save preview with Ctrl/Cmd+S', () => {
@@ -5060,6 +5752,68 @@ describe('ItemExplorerFacade', () => {
     expect(component.showHistoryOverlay).toBe(false);
     expect(event.preventDefault).toHaveBeenCalled();
     expect(event.stopPropagation).toHaveBeenCalled();
+  });
+
+  it('keeps native dialog keyboard events out of the explorer shortcuts', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    dialog.appendChild(input);
+    for (const modifier of ['ctrlKey', 'metaKey']) {
+      const event = new KeyboardEvent('keydown', { key: 's', [modifier]: true, cancelable: true });
+      Object.defineProperty(event, 'target', { value: input });
+      component.handleWindowKeydown(event);
+      expect(event.defaultPrevented).toBe(true);
+    }
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    Object.defineProperty(escape, 'target', { value: input });
+    component.handleWindowKeydown(escape);
+    expect(escape.defaultPrevented).toBe(false);
+    expect(component.showHistoryOverlay).toBe(true);
+    expect(openSave).not.toHaveBeenCalled();
+  });
+
+  it('blocks global shortcuts when a pending native dialog has lost focus', () => {
+    const component = createFacade();
+    component.canPublishExplorer = true;
+    component.showHistoryOverlay = true;
+    const openSave = vi.spyOn(component, 'openSavePreviewDialog').mockImplementation(() => {});
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('open', '');
+    const input = document.createElement('input');
+    input.disabled = true;
+    dialog.appendChild(input);
+    document.body.appendChild(dialog);
+    try {
+      for (const modifier of ['ctrlKey', 'metaKey']) {
+        const event = new KeyboardEvent('keydown', {
+          key: 's',
+          [modifier]: true,
+          cancelable: true,
+        });
+        Object.defineProperty(event, 'target', { value: document.body });
+        component.handleWindowKeydown(event);
+        expect(event.defaultPrevented).toBe(true);
+      }
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+      Object.defineProperty(escape, 'target', { value: document.body });
+      component.handleWindowKeydown(escape);
+      expect(escape.defaultPrevented).toBe(false);
+      expect(component.showHistoryOverlay).toBe(true);
+      expect(openSave).not.toHaveBeenCalled();
+      dialog.removeAttribute('open');
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      // The separate history overlay still prevents opening another overlay.
+      component.showHistoryOverlay = false;
+      component.handleWindowKeydown(new KeyboardEvent('keydown', { key: 's', ctrlKey: true }));
+      expect(openSave).toHaveBeenCalledOnce();
+    } finally {
+      dialog.remove();
+    }
   });
 
   it('enters fullscreen on the explorer root and keeps the fullscreen state local', async () => {
@@ -5113,6 +5867,7 @@ describe('ItemExplorerFacade', () => {
         bookletOccurrences: [
           { booklet: 'B1', position: 5 },
           { booklet: 'B2', position: 2 },
+          { booklet: 'B3', position: null },
         ],
       },
     ];
@@ -5133,6 +5888,17 @@ describe('ItemExplorerFacade', () => {
     component.columnFilters['booklet'] = 'B2';
     component.applyFilter(false);
     expect(component.filteredItems).toHaveLength(1);
+
+    component.columnFilters = { booklet: 'B3' };
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+    expect(
+      component.getMetadataColumnDisplayValue(component.items[0], component.allColumns[2]),
+    ).toBe('5 | 2 | ');
+
+    component.columnFilters = { booklet: 'B3', bookletPosition: '1..10' };
+    component.applyFilter(false);
+    expect(component.filteredItems).toEqual([]);
   });
 
   it('calculates combined collection time once per item and unit', () => {
@@ -5810,14 +6576,14 @@ describe('ItemExplorerFacade', () => {
       fields: ['bista', 'infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
-        { booklet: 'B2', position: 5 },
+        { booklet: 'B2', position: null },
       ],
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
       'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Booklet / Position',
     );
-    expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2 / 5');
+    expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2');
     const clearedBooklets = {
       fields: ['booklet', 'position'],
       bookletOccurrences: [],
@@ -5874,7 +6640,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -5888,7 +6654,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: false,
@@ -5900,7 +6666,7 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade({ api: { uploadItemParameters, getFileItemList } });
     component.acpId = 'acp-1';
     component.explorerVersion = 7;
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 
@@ -5978,7 +6744,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -5990,7 +6756,7 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 7;
     vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockReturnValue(reload);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 
@@ -6024,7 +6790,7 @@ describe('ItemExplorerFacade', () => {
           warnings: [
             {
               code: 'BOOKLET_OCCURRENCES_SKIPPED',
-              message: 'Die Spalte "position" fehlt.',
+              message: 'Die Spalte "booklet" fehlt.',
             },
           ],
           requiresConfirmation: true,
@@ -6036,7 +6802,7 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 7;
     vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockResolvedValue(false);
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const file = new File(['item;est;booklet\nI1;0.5;B1'], 'parameters.csv', {
+    const file = new File(['item;est;position\nI1;0.5;4'], 'parameters.csv', {
       type: 'text/csv',
     });
 

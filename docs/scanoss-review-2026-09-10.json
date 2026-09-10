@@ -958,8 +958,8 @@
     {
       "id": 49,
       "path": "frontend/src/app/core/utils/app-settings.util.ts",
-      "status": "Offen: Herkunft näher klären",
-      "assessment": "Erweiterte Gegenprüfung der ganzen Quelldatei: parseHexColor, relativeLuminance und contrastRatio haben ähnliche Zerlegung und Abläufe; Konstanten/Formeln sind durch WCAG erklärbar, konkrete Struktur damit nicht abschließend geklärt. MIT-Lizenz am Tag 0.9.6 geprüft (Copyright elester). Herkunft prüfen; bei bestätigter substanzieller Übernahme MIT-Text und Copyright beifügen. Nicht als Verstoß oder automatisch freigegeben eingestuft.",
+      "status": "Technisch plausibles Standardmuster (vertieft geprüft)",
+      "assessment": "Vertiefte Prüfung von Quellhistorie und vollständigen Dateien: Der Fremdcode ist etwa einen Monat älter, was allein keine Übernahme belegt. Die Ähnlichkeit konzentriert sich auf die von WCAG vorgegebenen Luminanz- und Kontrastformeln sowie übliche TypeScript-Schritte. Lokaler Schwellwert, Namen, Typisierung, Regex, Potenzschreibweise und Farbauswahl unterscheiden sich; vergleichbare Implementierungen existierten schon früher in anderen Projekten. Der gemeldete Fremdbereich reicht zudem über das Dateiende hinaus. Kein hinreichender Beleg für eine substanzielle Übernahme und aktuell kein Anlass für eine MIT-Attribution; bei bestätigtem tatsächlichem Kopieren neu bewerten.",
       "match": "21%",
       "local_lines": "24-53",
       "source_lines": "49-78",

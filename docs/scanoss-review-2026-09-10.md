@@ -2,7 +2,7 @@
 
 ## Ergebnis
 
-57 Treffer erfasst: **49 technisch plausible Standardmuster**, **7 nicht abrufbare Quellen**, **1 vertieft zu klärender Herkunftsfall**. Keine bestätigte Lizenzverletzung festgestellt. Die technische Einordnung ist keine rechtliche Freigabe und kein Beweis unabhängiger Entstehung. Kein Code wird allein zur Senkung eines Matchwerts umgeschrieben; keine unbelegte Fremdurheberschaft wird durch vorsorgliche Attribution behauptet.
+57 Treffer erfasst: **50 technisch plausible Standardmuster** (davon eines vertieft geprüft) und **7 nicht abrufbare Quellen**. Keine bestätigte Lizenzverletzung festgestellt. Die technische Einordnung ist keine rechtliche Freigabe und kein Beweis unabhängiger Entstehung. Kein Code wird allein zur Senkung eines Matchwerts umgeschrieben; keine unbelegte Fremdurheberschaft wird durch vorsorgliche Attribution behauptet.
 
 ## Umfang und Nachvollziehbarkeit
 
@@ -13,17 +13,24 @@
 - Ergebnisse von OpenAI Codex erstellt; keine menschliche oder anwaltliche Freigabe behauptet. Entscheidung und Umfang werden pro Treffer unten dokumentiert.
 - [Maschinenlesbare Prüfliste](scanoss-review-2026-09-10.json) enthält Abrufadressen, Dateihashes, Status und Begründungen. Fremder Quelltext und umfangreiche Rohdaten werden nicht mitveröffentlicht.
 
-## Was noch zu tun ist
+## Verbleibende Schritte
 
-1. **Treffer 49 – Farbkontrastfunktionen:** Herkunft der konkreten Implementierung klären. Der Fremdcode ist am Tag 0.9.6 MIT-lizenziert; bei bestätigter substanzieller Übernahme Copyright und MIT-Lizenztext beifügen. Eine bloße gemeinsame mathematische Formel begründet dies nicht. Die früheste sichtbare Änderung des fremden Dateipfads ist vom 16.06.2026; die lokalen Kontrastfunktionen wurden im Juli 2026 ergänzt. Diese zeitliche Reihenfolge beweist keine Übernahme.
-2. **Treffer 4, 12, 16, 29, 42, 51, 52:** Originalversion aus verlässlicher Quelle beschaffen oder Herkunft anderweitig klären. 404 bedeutet weder rechtsfrei noch rechtswidrig. Besonders Treffer 12 trägt AGPL-Metadaten.
-3. Menschliche Maintainer sollen die technische Standardmuster-Einordnung bestätigen, insbesondere die drei vollständigen Dateitreffer. Kein automatisches Unterdrücken künftiger Treffer durch diese Liste.
+1. **Treffer 4, 12, 16, 29, 42, 51, 52:** Originalversion aus verlässlicher Quelle beschaffen oder Herkunft anderweitig klären. 404 bedeutet weder rechtsfrei noch rechtswidrig. Besonders Treffer 12 trägt AGPL-Metadaten.
+2. Menschliche Maintainer sollen die technische Standardmuster-Einordnung bestätigen, insbesondere die drei vollständigen Dateitreffer. Kein automatisches Unterdrücken künftiger Treffer durch diese Liste.
+
+## Vertiefung zu Treffer 49 – Farbkontrastfunktionen
+
+Der fremde Dateipfad wurde am 16.06.2026 veröffentlicht; die lokalen Funktionen kamen am 15.07.2026 mit [Commit `79d4778`](https://github.com/iqb-berlin/content-pool-next/commit/79d47783ad666a65f693a73e5cced83ddb5e036b) hinzu. Die zeitliche Reihenfolge macht eine Übernahme grundsätzlich möglich, belegt sie aber nicht.
+
+Die gemeinsamen Rechenschritte sind durch WCAG vorgegeben: sRGB-Kanäle werden durch 255 geteilt, linearisiert und mit 0,2126/0,7152/0,0722 gewichtet; der Kontrast ist `(heller + 0,05) / (dunkler + 0,05)`. Die lokale Fassung verwendet den von W3C korrigierten Schwellwert 0,04045, die gemeldete Fremddatei den älteren Wert 0,03928. Funktionsnamen, Typisierung, Regex-Verhalten, Potenzschreibweise und die anschließende Farbauswahl unterscheiden sich. Vergleichbare TypeScript-Implementierungen der Luminanz- und Kontrastfunktionen existierten außerdem bereits vor beiden Dateien, beispielsweise seit dem 28.02.2026 in [Color Thief](https://github.com/lokesh/color-thief/commit/47584118d12cf2c6cc2ebd1cd5dc70fc6ddcbfd5).
+
+Der SCANOSS-Hinweis von 21 % ist deshalb technisch als Standardimplementierung der WCAG-Formel einzuordnen. Zusätzlich reicht der gemeldete Fremdbereich 49–78 über das Ende der 55-zeiligen Fremddatei hinaus, sodass die Bereichsangabe nicht als exakter Kopiernachweis taugt. Es gibt derzeit keinen hinreichenden Beleg für eine substanzielle Übernahme und damit keinen Anlass, Copyright oder MIT-Lizenztext dieses konkreten Fremdprojekts beizufügen. Falls ein Beitragender tatsächliches Kopieren aus dieser Quelle bestätigt, muss die Lizenzfrage neu bewertet und die MIT-Attribution ergänzt werden.
 
 ## Maßstab
 
 Keine Prozentgrenze entscheidet über Urheberrecht. Relevant sind individuelle Ausdrucksform, tatsächliche Übernahme und anwendbare Lizenzbedingungen. Scanner-Lizenzlisten können Repository-/Paketmetadaten oder mehrere fremde Komponenten vermischen; sie sind nicht automatisch die Lizenz des betroffenen Fragments. Technisch plausible Standardmuster bleiben eine begründete Einschätzung, keine pauschale Aussage zur Schutzfähigkeit.
 
-Quellen: [§ 69a UrhG](https://www.gesetze-im-internet.de/urhg/__69a.html), [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0), [Angular-Provider](https://angular.dev/guide/http/setup), [WCAG-Kontrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html), [MIT-Lizenz des Farbprojekts](https://github.com/eeelester/bilibili-fullscreen-sc/blob/0.9.6/LICENSE).
+Quellen: [§ 69a UrhG](https://www.gesetze-im-internet.de/urhg/__69a.html), [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0), [Angular-Provider](https://angular.dev/guide/http/setup), [WCAG-Kontrast](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html), [W3C-Hinweis zum korrigierten Luminanz-Schwellwert](https://www.w3.org/WAI/GL/wiki/Relative_luminance), [MIT-Lizenz des Farbprojekts](https://github.com/eeelester/bilibili-fullscreen-sc/blob/0.9.6/LICENSE).
 
 ## Einzelbewertungen
 
@@ -413,9 +420,9 @@ Imports von ViewsService/ViewsController; andere Entitäten. Übliches Modulger�
 
 ### 49. `frontend/src/app/core/utils/app-settings.util.ts`
 
-**Offen: Herkunft näher klären** — SCANOSS: 21%; lokale Zeilen 24-53; Fremdzeilen 49-78.
+**Technisch plausibles Standardmuster (vertieft geprüft)** — SCANOSS: 21%; lokale Zeilen 24-53; Fremdzeilen 49-78.
 
-Erweiterte Gegenprüfung der ganzen Quelldatei: parseHexColor, relativeLuminance und contrastRatio haben ähnliche Zerlegung und Abläufe; Konstanten/Formeln sind durch WCAG erklärbar, konkrete Struktur damit nicht abschließend geklärt. MIT-Lizenz am Tag 0.9.6 geprüft (Copyright elester). Herkunft prüfen; bei bestätigter substanzieller Übernahme MIT-Text und Copyright beifügen. Nicht als Verstoß oder automatisch freigegeben eingestuft.
+Vertiefte Prüfung von Quellhistorie und vollständigen Dateien: Der Fremdcode ist etwa einen Monat älter, was allein keine Übernahme belegt. Die Ähnlichkeit konzentriert sich auf die von WCAG vorgegebenen Luminanz- und Kontrastformeln sowie übliche TypeScript-Schritte. Lokaler Schwellwert, Namen, Typisierung, Regex, Potenzschreibweise und Farbauswahl unterscheiden sich; vergleichbare Implementierungen existierten schon früher in anderen Projekten. Der gemeldete Fremdbereich reicht zudem über das Dateiende hinaus. Kein hinreichender Beleg für eine substanzielle Übernahme und aktuell kein Anlass für eine MIT-Attribution; bei bestätigtem tatsächlichem Kopieren neu bewerten.
 
 [Gemeldete/aufgelöste Quelldatei](https://raw.githubusercontent.com/eeelester/bilibili-fullscreen-sc/0.9.6/utils/color.ts); Version `0.9.6`. Scanner-Lizenzangaben: MIT.
 

@@ -245,6 +245,24 @@ describe("FilesController", () => {
     expect(res.send).toHaveBeenCalled();
   });
 
+  it("forwards explicit booklet downloads without changing the legacy download route", async () => {
+    const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+    await controller.findAll(
+      "acp-1",
+      "zip",
+      undefined,
+      "seq-1",
+      { acpAccessLevel: "MANAGER", query: { kind: "booklet" } },
+      res,
+    );
+    expect(filesService.createSequenceZip).toHaveBeenCalledWith(
+      "acp-1",
+      "seq-1",
+      "booklet",
+    );
+    expect(res.send).toHaveBeenCalled();
+  });
+
   it("streams sequence ZIP downloads", async () => {
     const res = { setHeader: jest.fn(), send: jest.fn() } as any;
 

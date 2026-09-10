@@ -30,9 +30,14 @@ export function registerBooklets(
     const byFile = current.filter(
       (entry: any) => entry.definitionId === upload.definitionId,
     );
+    const byId = current.filter((entry: any) => entry.id === upload.id);
+    const canReconnect =
+      byId.length === 1 && !byId[0].definitionId && byFile.length === 0;
     const conflictingId = current.some(
       (entry: any) =>
-        entry.id === upload.id && entry.definitionId !== upload.definitionId,
+        entry.id === upload.id &&
+        entry.definitionId !== upload.definitionId &&
+        !canReconnect,
     );
     if (
       conflictingId ||
@@ -41,6 +46,11 @@ export function registerBooklets(
       warnings.add(
         `Booklet-ID-Konflikt bei ${upload.definitionId} (${upload.id}); bestehende Verknüpfungen bleiben erhalten.`,
       );
+      continue;
+    }
+    if (canReconnect) {
+      byId[0].definitionId = upload.definitionId;
+      if (!byId[0].name) byId[0].name = upload.label;
       continue;
     }
     if (byFile.length) {

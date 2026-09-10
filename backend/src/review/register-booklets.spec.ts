@@ -2,6 +2,25 @@ import { registerBooklets } from "./register-booklets";
 
 describe("registerBooklets", () => {
   it.each([
+    { references: [{ id: "b" }, { id: "b" }] },
+    { references: [{ id: "b" }, { id: "b", definitionId: "other.xml" }] },
+    { references: [{ id: "b" }, { definitionId: "b.xml" }] },
+  ])("does not reconnect ambiguous orphan references: %j", ({ references }) => {
+    const parts = [{ instruments: [{ testcenterBooklet: references }] }];
+    const before = JSON.stringify(parts);
+    const warnings = new Set<string>();
+    registerBooklets(
+      parts,
+      [{ id: "b", label: "Testheft", definitionId: "b.xml" }],
+      warnings,
+    );
+    expect(JSON.stringify(parts)).toBe(before);
+    expect([...warnings]).toEqual([
+      expect.stringContaining("Booklet-ID-Konflikt"),
+    ]);
+  });
+
+  it.each([
     { id: "existing", label: "Upload", definitionId: "other.xml" },
     { id: "changed", label: "Upload", definitionId: "existing.xml" },
   ])(

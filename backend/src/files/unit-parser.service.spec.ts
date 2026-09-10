@@ -204,6 +204,45 @@ describe("UnitParserService", () => {
     service = module.get<UnitParserService>(UnitParserService);
   });
 
+  it("reconnects a test booklet after upload, deletion and reupload without duplicating it", async () => {
+    const file = { originalName: "review.xml", filePath: "/tmp/review.xml" };
+    const xml =
+      "<Booklet><Metadata><Id>b1</Id><Label>Testheft</Label></Metadata><Units/></Booklet>";
+    fileRepo.find.mockResolvedValue([file]);
+    (fs.readFile as jest.Mock).mockResolvedValue(xml);
+    await service.syncIndexFromFiles("acp-1");
+    const acp = acpRepo.save.mock.calls[0][0];
+    acpRepo.findOne.mockResolvedValue(acp);
+    acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0].name =
+      "Manueller Name";
+
+    fileRepo.find.mockResolvedValue([]);
+    const cleanup = await service.pruneMissingDependencies("acp-1");
+    expect(cleanup.bookletDefinitionsRemoved).toBe(1);
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0]
+        .definitionId,
+    ).toBeUndefined();
+
+    fileRepo.find.mockResolvedValue([file]);
+    acpRepo.save.mockClear();
+    const report = await service.syncIndexFromFiles("acp-1");
+    expect(report.warnings).toEqual([]);
+    expect(acpRepo.save).toHaveBeenCalledTimes(1);
+    expect(acp.acpIndex.assessmentParts[0].instruments).toHaveLength(1);
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet,
+    ).toEqual([
+      { id: "b1", name: "Manueller Name", definitionId: "review.xml" },
+    ]);
+    const manifest = buildReviewManifest(
+      acp.acpIndex,
+      new Map([["review.xml", xml]]),
+    );
+    expect(manifest.issues).toEqual([]);
+    expect(manifest.booklets.map((booklet) => booklet.id)).toEqual(["b1"]);
+  });
+
   it("registers uploaded Booklet XMLs automatically and keeps repeated synchronization idempotent", async () => {
     const bookletXml =
       '<Booklet><Metadata><Id>b1</Id><Label>Review</Label></Metadata><Units><Unit id="u1"/><Unit id="u1" alias="repeat"/></Units></Booklet>';

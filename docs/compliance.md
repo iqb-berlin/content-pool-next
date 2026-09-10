@@ -16,26 +16,38 @@ Apache-2.0 license text and package declarations remain consistent.
 
 The separate `External code provenance` workflow runs on pull requests changing
 application source, tests, Keycloak extensions, scripts, nginx configuration or
-the scan configuration. It also runs every Monday and can be started manually.
-It scans a clean archive of those tracked directories, including tests; it does
-not scan the entire repository or untracked working files. SCANOSS's default
-file-type and directory exclusions still apply. Dependency inventories and
-ScanCode cover different concerns and remain in place.
+the scan configuration. On pull requests it scans the complete contents of only
+the added, changed, copied or renamed files in that scope. Every Monday and on
+manual runs it scans a clean archive of all tracked files in those directories,
+including tests. It does not scan the entire repository or untracked working
+files. SCANOSS's default file-type and directory exclusions still apply.
+Dependency inventories and ScanCode cover different concerns and remain in
+place.
 
 The pinned Python client uses the free public `https://api.osskb.org` API without
 an API key. Fingerprints and file metadata (including paths) leave the runner;
 raw source text is not uploaded. The public service may have availability or
-throughput limits. API failures, invalid responses and timeouts fail the job,
-so an unavailable scan is not presented as a clean result.
+throughput limits. A recognised temporary API or rate-limit failure on a pull
+request produces an explicit warning and an incomplete status without blocking
+the pull request. Unexpected client errors, invalid reports and report-validation
+errors still fail. API failures also fail weekly and manual full scans. An
+unavailable scan is never presented as a clean result.
 
-The `scanoss-code-provenance` artifact retains raw JSON, a summary, the scanned
-Git revision and tool version for 30 days. On pull requests the revision is the
-checked-out test merge commit. Findings are advisory: reviewers must examine
-source URLs, actual licenses and attribution requirements before merging. A
-match can be legitimate reuse, common code or the project's own public code.
-Document the review decision in the pull request. There is no automatic license
-allowlist or legal approval gate; a green job only means the scan completed.
-No matches do not establish originality or rights clearance.
+For a dedicated or self-hosted endpoint, set the repository variable
+`SCANOSS_API_URL`. If that endpoint requires authentication, store the token in
+the `SCANOSS_API_KEY` Actions secret. The workflow passes the secret only through
+the client's `--key` option and continues to use the public endpoint when the
+variable is absent.
+
+The `scanoss-code-provenance` artifact retains raw JSON when available, a
+summary, status, scan log, scanned-file list, Git revision and tool version for
+30 days. On pull requests the revision is the checked-out test merge commit.
+Findings are advisory: reviewers must examine source URLs, actual licenses and
+attribution requirements before merging. A match can be legitimate reuse,
+common code or the project's own public code. Document the review decision in
+the pull request. The job summary and `status.txt` distinguish a completed scan
+from an unavailable advisory scan. No matches do not establish originality or
+rights clearance.
 
 For a local check, install `compliance/scanoss-requirements.txt` in a virtual
 environment, then run:

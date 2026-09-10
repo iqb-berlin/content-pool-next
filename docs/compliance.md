@@ -79,3 +79,8 @@ The pipeline uses open source tools with pinned versions:
 Generated reports describe the scanned revision only. A human review remains
 necessary for unclear license expressions, missing metadata, copied source,
 and project-specific exceptions.
+
+## Review of the first SCANOSS baseline
+
+The [57-finding technical review](scanoss-review-2026-09-10.md) records source
+comparisons and unresolved cases. It is not a license allowlist or legal sign-off.

@@ -94,3 +94,5 @@ Several operational documents already exist at the repository root and remain us
 The files in `docs/` are intended to be the main navigable knowledge base for the
 application. The root-level documents are still helpful as focused runbooks for
 deployment, identity provider setup, and release readiness.
+
+- [SCANOSS baseline review, 2026-09-10](scanoss-review-2026-09-10.md) — technical findings and unresolved provenance.

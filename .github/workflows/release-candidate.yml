@@ -292,6 +292,10 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Syft
+        uses: anchore/sbom-action/download-syft@v0.24.2
+        with:
+          syft-version: v1.51.1
       - name: Build runtime bundle and manifest
         env:
           RELEASE: ${{ needs.validate.outputs.release }}
@@ -318,7 +322,22 @@ jobs:
             --required-configuration CONTENT_POOL_BACKEND_IMAGE \
             --required-configuration CONTENT_POOL_FRONTEND_IMAGE \
             --output dist/release-manifest.json
-          (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+          for platform in linux/amd64 linux/arm64; do
+            platform_name="${platform//\//-}"
+            syft scan "${BACKEND_IMAGE}@${BACKEND_DIGEST}" \
+              --platform "$platform" \
+              --output "cyclonedx-json=dist/backend-${platform_name}.cdx.json"
+            syft scan "${FRONTEND_IMAGE}@${FRONTEND_DIGEST}" \
+              --platform "$platform" \
+              --output "cyclonedx-json=dist/frontend-${platform_name}.cdx.json"
+          done
+          checksums="$(mktemp)"
+          (
+            cd dist
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
+              | sort -z | xargs -0 sha256sum
+          ) > "$checksums"
+          mv "$checksums" dist/SHA256SUMS
       - name: Publish verified image tags
         env:
           RELEASE: ${{ needs.validate.outputs.release }}

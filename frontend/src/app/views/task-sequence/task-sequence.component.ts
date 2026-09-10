@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, Inject, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { TaskSequence } from '../../core/models/api.models';
@@ -48,6 +48,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           <span class="nav-info">
             Aufgabe {{ currentIndex + 1 }} / {{ sequence.units.length }}:
             <strong>{{ currentUnit.name || currentUnit.id }}</strong>
+            @if (currentUnit.blockPath?.length) {
+              <small> · {{ currentUnit.blockPath?.join(' / ') }}</small>
+            }
           </span>
         } @else {
           <span class="nav-info"><strong>Keine Aufgabe in dieser Aufgabenfolge</strong></span>
@@ -99,7 +102,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               <h3>Aufgaben in dieser Folge</h3>
               <button class="btn btn-outline btn-sm" (click)="unitListOpen = false">✕</button>
             </div>
-            @for (unit of sequence.units; track unit.id; let i = $index) {
+            @for (unit of sequence.units; track unit.occurrenceId || $index; let i = $index) {
               <button
                 class="unit-list-item"
                 [class.active]="i === currentIndex"
@@ -107,7 +110,15 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
                 (click)="jumpTo(i)"
               >
                 <span class="unit-num">{{ i + 1 }}</span>
-                <span>{{ unit.name || unit.id }}</span>
+                <span>
+                  @if (unit.blockPath?.length) {
+                    <small>{{ unit.blockPath?.join(' / ') }} · </small>
+                  }
+                  {{ unit.name || unit.id }}
+                  @if (unit.alias) {
+                    ({{ unit.alias }})
+                  }
+                </span>
               </button>
             }
           </div>
@@ -251,6 +262,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 export class TaskSequenceComponent implements OnInit {
   acpId = '';
   sequenceId = '';
+  sequenceKind?: 'booklet';
   sequence: TaskSequence | null = null;
   currentIndex = 0;
   breadcrumbs: BreadcrumbItem[] = [];
@@ -262,14 +274,16 @@ export class TaskSequenceComponent implements OnInit {
   showUnitListBtn = true;
 
   constructor(
-    private route: ActivatedRoute,
-    private router: Router,
-    private api: ApiService,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(Router) private router: Router,
+    @Inject(ApiService) private api: ApiService,
   ) {}
 
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.sequenceId = this.route.snapshot.paramMap.get('sequenceId') || '';
+    this.sequenceKind =
+      this.route.snapshot.queryParamMap?.get('kind') === 'booklet' ? 'booklet' : undefined;
 
     this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
@@ -279,7 +293,7 @@ export class TaskSequenceComponent implements OnInit {
       this.showUnitListBtn = fc.enableSequenceNavigation !== false;
     });
 
-    this.api.getViewSequence(this.acpId, this.sequenceId).subscribe((s) => {
+    this.api.getViewSequence(this.acpId, this.sequenceId, this.sequenceKind).subscribe((s) => {
       this.sequence = this.normalizeSequence(s);
       this.currentIndex = 0;
       this.unitListOpen = false;
@@ -295,7 +309,7 @@ export class TaskSequenceComponent implements OnInit {
     return !!this.sequence?.units?.length;
   }
 
-  get currentUnit(): { id: string; name: string } | null {
+  get currentUnit(): TaskSequence['units'][number] | null {
     if (!this.sequence?.units?.length) return null;
     return this.sequence.units[this.currentIndex] || null;
   }
@@ -346,7 +360,7 @@ export class TaskSequenceComponent implements OnInit {
   downloadSequence() {
     if (!this.hasUnits) return;
     // Download all units in the sequence as ZIP
-    const url = `/api/acp/${this.acpId}/files?sequenceId=${this.sequenceId}&format=zip`;
+    const url = `/api/acp/${this.acpId}/files?sequenceId=${encodeURIComponent(this.sequenceId)}&format=zip${this.sequenceKind === 'booklet' ? '&kind=booklet' : ''}`;
     window.open(this.api.appendAuthToken(url), '_blank');
   }
 
@@ -355,6 +369,9 @@ export class TaskSequenceComponent implements OnInit {
       .filter((unit: any) => typeof unit?.id === 'string' && unit.id.trim().length > 0)
       .map((unit: any) => ({
         id: unit.id.trim(),
+        occurrenceId: unit.occurrenceId,
+        alias: unit.alias,
+        blockPath: unit.blockPath,
         name:
           typeof unit?.name === 'string' && unit.name.trim().length > 0
             ? unit.name

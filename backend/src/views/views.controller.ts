@@ -748,6 +748,8 @@ export class ViewsController {
       );
     }
 
+    if (req?.query?.kind === "booklet")
+      return this.viewsService.getTaskSequence(acpId, sequenceId, "booklet");
     return this.viewsService.getTaskSequence(acpId, sequenceId);
   }
 

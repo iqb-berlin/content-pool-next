@@ -608,7 +608,13 @@ export interface ItemExplorerChangeLogEntry {
 export interface TaskSequence {
   id: string;
   name: any;
-  units: { id: string; name: string }[];
+  units: {
+    id: string;
+    name: string;
+    occurrenceId?: string;
+    alias?: string;
+    blockPath?: string[];
+  }[];
 }
 
 export interface OidcConfig {

@@ -1,3 +1,5 @@
+import { buildReviewManifest } from "../review/review-manifest";
+import { ReviewManifestService } from "../review/review-manifest.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
@@ -14,6 +16,7 @@ import {
 
 describe("ViewsService", () => {
   let service: ViewsService;
+  let manifestService: ReviewManifestService;
   let acpRepository: { findOne: jest.Mock };
   let accessConfigRepository: { findOne: jest.Mock; find: jest.Mock };
   let fileRepository: { find: jest.Mock; findOne: jest.Mock };
@@ -77,6 +80,14 @@ describe("ViewsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewsService,
+        {
+          provide: ReviewManifestService,
+          useValue: {
+            getManifest: jest
+              .fn()
+              .mockResolvedValue({ booklets: [], units: [], issues: [] }),
+          },
+        },
         { provide: getRepositoryToken(Acp), useValue: acpRepository },
         {
           provide: getRepositoryToken(AcpAccessConfig),
@@ -100,6 +111,83 @@ describe("ViewsService", () => {
     }).compile();
 
     service = module.get<ViewsService>(ViewsService);
+    manifestService = module.get(ReviewManifestService);
+  });
+
+  it("lists canonical booklets and returns their complete navigation", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      name: "ACP",
+      acpIndex: {},
+    });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+    const booklet = {
+      id: "b1",
+      name: "Booklet",
+      definitionId: "b.xml",
+      children: [],
+      units: [
+        {
+          id: "u1",
+          name: "Unit",
+          occurrenceId: "b1:path",
+          blockPath: ["Block"],
+        },
+      ],
+    };
+    jest
+      .mocked(manifestService.getManifest)
+      .mockResolvedValue({ booklets: [booklet], units: [], issues: [] });
+    expect((await service.getAcpStartPage("acp-1")).sequences).toEqual([
+      {
+        id: "b1",
+        name: "Booklet",
+        bookletDefinitionId: "b.xml",
+        kind: "booklet",
+      },
+    ]);
+    expect(await service.getTaskSequence("acp-1", "b1", "booklet")).toEqual(
+      booklet,
+    );
+  });
+
+  it("keeps same-ID legacy module links distinct from explicit booklet links", async () => {
+    const index = {
+      assessmentParts: [
+        {
+          units: [{ id: "old" }, { id: "new" }],
+          bookletModules: [
+            { id: "same", name: "Module", units: [{ id: "old" }] },
+          ],
+          instruments: [{ testcenterBooklet: [{ definitionId: "b.xml" }] }],
+        },
+      ],
+    };
+    const xml =
+      '<Booklet><Metadata><Id>same</Id></Metadata><Units><Unit id="new"/></Units></Booklet>';
+    const manifest = buildReviewManifest(index, new Map([["b.xml", xml]]));
+    expect(manifest.issues).toEqual([]);
+    acpRepository.findOne.mockResolvedValue({ id: "acp-1", acpIndex: index });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+    jest.mocked(manifestService.getManifest).mockResolvedValue(manifest);
+    expect(
+      (await service.getTaskSequence("acp-1", "same")).units.map(
+        (unit: any) => unit.id,
+      ),
+    ).toEqual(["old"]);
+    expect(
+      (await service.getTaskSequence("acp-1", "same", "booklet")).units.map(
+        (unit: any) => unit.id,
+      ),
+    ).toEqual(["new"]);
+    const sequences = (await service.getAcpStartPage("acp-1")).sequences;
+    expect(sequences).toHaveLength(2);
+    expect(sequences[0]).toMatchObject({ id: "same", kind: "booklet" });
+    expect(sequences[1]).toMatchObject({ id: "same" });
+    expect(sequences[1].kind).toBeUndefined();
+    expect(
+      await service.getTaskSequence("acp-1", "unknown", "booklet"),
+    ).toBeNull();
   });
 
   it("uses bookletModule IDs as sequence IDs on ACP start page", async () => {

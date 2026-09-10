@@ -83,8 +83,12 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               contentData.sequences?.length &&
               contentData.featureConfig?.enableSequenceNavigation !== false
             ) {
-              @for (sequence of contentData.sequences; track sequence.id) {
-                <a [routerLink]="['/view', acp.id, 'sequence', sequence.id]" class="card link-card">
+              @for (sequence of contentData.sequences; track sequence.kind + ':' + sequence.id) {
+                <a
+                  [queryParams]="sequence.kind === 'booklet' ? { kind: 'booklet' } : {}"
+                  [routerLink]="['/view', acp.id, 'sequence', sequence.id]"
+                  class="card link-card"
+                >
                   <span class="tile-icon" aria-hidden="true">📋</span>
                   <div>
                     <h3>Aufgabenfolge</h3>

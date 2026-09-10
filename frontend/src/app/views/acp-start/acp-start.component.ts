@@ -56,8 +56,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             <div class="section-icon">📋</div>
             <h3>Aufgabenfolgen</h3>
             <div class="seq-list">
-              @for (seq of data.sequences; track seq.id) {
-                <a [routerLink]="['/view', acpId, 'sequence', seq.id]" class="seq-link">
+              @for (seq of data.sequences; track seq.kind + ':' + seq.id) {
+                <a
+                  [queryParams]="seq.kind === 'booklet' ? { kind: 'booklet' } : {}"
+                  [routerLink]="['/view', acpId, 'sequence', seq.id]"
+                  class="seq-link"
+                >
                   {{ sequenceLabel(seq) }}
                 </a>
               }

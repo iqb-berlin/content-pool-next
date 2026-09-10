@@ -549,8 +549,10 @@ export class ApiService {
   getViewSequences(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`);
   }
-  getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
-    return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);
+  getViewSequence(acpId: string, seqId: string, kind?: 'booklet'): Observable<TaskSequence> {
+    return this.http.get<TaskSequence>(
+      `${this.API}/view/acp/${acpId}/sequences/${encodeURIComponent(seqId)}${kind === 'booklet' ? '?kind=booklet' : ''}`,
+    );
   }
   getViewIndex(acpId: string): Observable<any> {
     return this.http.get(`${this.API}/view/acp/${acpId}/index`);

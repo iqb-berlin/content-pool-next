@@ -33,6 +33,15 @@ describe('ApiService', () => {
     expect(service).toBeTruthy();
   });
 
+  it('distinguishes booklet requests from legacy module requests with the same ID', () => {
+    service.getViewSequence('acp-1', 'same');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith('/api/view/acp/acp-1/sequences/same');
+    service.getViewSequence('acp-1', 'same', 'booklet');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith(
+      '/api/view/acp/acp-1/sequences/same?kind=booklet',
+    );
+  });
+
   describe('Users', () => {
     it('should get users', () => {
       const mockUsers: User[] = [

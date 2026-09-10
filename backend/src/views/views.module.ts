@@ -1,3 +1,4 @@
+import { ReviewManifestModule } from "../review/review-manifest.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { ViewsService } from "./views.service";
@@ -25,6 +26,7 @@ import { ItemCollectionsModule } from "../item-collections/item-collections.modu
       AcpUserRole,
       AcpItemPreference,
     ]),
+    ReviewManifestModule,
     AuthModule,
     ItemExplorerModule,
     FilesModule,

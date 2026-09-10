@@ -1,3 +1,4 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { ValidationService } from "./validation.service";
@@ -10,6 +11,7 @@ jest.mock("fs/promises", () => ({
 
 describe("ValidationService", () => {
   let service: ValidationService;
+  let manifestService: ReviewManifestService;
   let fileRepo: any;
   let acpRepo: any;
 
@@ -25,12 +27,49 @@ describe("ValidationService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ValidationService,
+        {
+          provide: ReviewManifestService,
+          useValue: {
+            getManifest: jest
+              .fn()
+              .mockResolvedValue({ booklets: [], units: [], issues: [] }),
+          },
+        },
         { provide: getRepositoryToken(AcpFile), useValue: fileRepo },
         { provide: getRepositoryToken(Acp), useValue: acpRepo },
       ],
     }).compile();
 
     service = module.get<ValidationService>(ValidationService);
+    manifestService = module.get(ReviewManifestService);
+  });
+
+  it("includes Booklet reference errors in upload consistency validation", async () => {
+    acpRepo.findOne.mockResolvedValue({ acpIndex: {} });
+    fileRepo.find.mockResolvedValue([]);
+    const issue = {
+      severity: "error" as const,
+      path: "review.xml/Booklet/Units/Unit[0]",
+      message: "Unbekannte Unit: missing",
+    };
+    jest
+      .mocked(manifestService.getManifest)
+      .mockResolvedValue({ booklets: [], units: [], issues: [issue] });
+    const result = await service.validateAcpConsistency("acp-1");
+    expect(result.valid).toBe(false);
+    expect(result.issues).toContainEqual(issue);
+  });
+
+  it("validates malformed Booklet navigation on upload", async () => {
+    const result = await service.validateFile(
+      { originalName: "b.xml" } as AcpFile,
+      Buffer.from(
+        "<Booklet><Metadata><Id>b</Id></Metadata><Units><ProgressEnd/></Units></Booklet>",
+      ),
+      false,
+    );
+    expect(result.valid).toBe(false);
+    expect(result.issues[0].path).toContain("ProgressEnd");
   });
 
   describe("validateFile", () => {

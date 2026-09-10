@@ -1,3 +1,8 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
+import {
+  parseBookletXml,
+  BookletStructureError,
+} from "../review/booklet-parser";
 import { Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -44,6 +49,7 @@ export class ValidationService {
     private readonly fileRepository: Repository<AcpFile>,
     @InjectRepository(Acp)
     private readonly acpRepository: Repository<Acp>,
+    private readonly reviewManifestService: ReviewManifestService,
   ) {}
 
   /**
@@ -76,6 +82,19 @@ export class ValidationService {
     } else if (name.endsWith(".xml")) {
       // Basic XML well-formedness check
       const content = buffer.toString("utf-8");
+      if (/<Booklet(?:\s|>)/.test(content)) {
+        try {
+          parseBookletXml(content, file.originalName);
+        } catch (e) {
+          if (!(e instanceof BookletStructureError)) throw e;
+          issues.push({
+            severity: "error",
+            scope: "schema",
+            message: e.message,
+            path: e.path,
+          });
+        }
+      }
       if (!content.trim().startsWith("<")) {
         issues.push({
           severity: "error",
@@ -407,6 +426,9 @@ export class ValidationService {
         }
       }
     }
+
+    const manifest = await this.reviewManifestService.getManifest(acpId);
+    issues.push(...manifest.issues);
 
     const knownItemIds = this.collectKnownItemIds(units);
 

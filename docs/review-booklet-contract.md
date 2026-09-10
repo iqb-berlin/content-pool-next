@@ -4,6 +4,23 @@ Diese Implementierung wurde auf ausdrücklichen Wunsch vor der fachlichen
 Abstimmung gebaut. Die Testfixture ist technisch geprüft, **nicht fachlich
 bestätigt**. #60 und die weiteren Review-Tickets sind nicht Teil dieser Änderung.
 
+## Upload und Auffindbarkeit
+
+Die bestehende Upload-Nachverarbeitung erkennt Booklet-XMLs und trägt ihre
+Metadaten-ID sowie den Dateinamen automatisch im ACP-Index ein. Neue Booklets
+werden im ersten Assessment-Part in einem eigenen Instrument registriert.
+Vorhandene Dateiverknüpfungen werden an ihrer bisherigen Position ergänzt;
+manuelle Namen, Modulzuordnungen und andere Instrumente bleiben erhalten.
+Wiederholtes Synchronisieren erzeugt keine doppelten Einträge. ID-Konflikte,
+mehrere Dateien mit derselben Booklet-ID und ungültige Booklet-Dateien werden
+als Warnungen gemeldet und nicht stillschweigend neu zugeordnet.
+
+Nach abgeschlossener Upload-Verarbeitung erscheinen Booklets in der
+ACP-Übersicht als „Testheft“ beziehungsweise unter „Testhefte und Aufgabenfolgen“.
+Ein erneuter Upload stößt die Synchronisierung auch für bereits vorhandene
+Booklet-Dateien an; alternativ steht die bestehende Synchronisierungs-API zur Verfügung. Aufgaben und Player-Dateien müssen
+weiterhin vorhanden sein; fehlende Unit-Referenzen meldet die Validierung.
+
 ## Unterstützte Eingaben
 
 - Referenzen unter `assessmentParts[].instruments[].testcenterBooklet[]`.

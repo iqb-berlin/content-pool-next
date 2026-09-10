@@ -1,3 +1,5 @@
+import { parseBookletXml } from "../review/booklet-parser";
+import { registerBooklets, UploadedBooklet } from "../review/register-booklets";
 import {
   ConflictException,
   Injectable,
@@ -270,6 +272,9 @@ export class UnitParserService {
     const normalizedIndex = normalizeIndexForStorage(acp.acpIndex || {});
     const parts = getAssessmentParts(normalizedIndex).map((part: any) => ({
       ...part,
+      ...(Array.isArray(part?.instruments)
+        ? { instruments: structuredClone(part.instruments) }
+        : {}),
       units: Array.isArray(part?.units) ? [...part.units] : [],
     }));
 
@@ -299,18 +304,17 @@ export class UnitParserService {
       }
     }
 
-    const xmlFiles = allFiles.filter(
-      (f) =>
-        f.originalName.toLowerCase().endsWith(".xml") &&
-        !f.originalName.toLowerCase().startsWith("booklet") &&
-        !f.originalName.toLowerCase().startsWith("testtaker"),
+    const xmlFiles = allFiles.filter((f) =>
+      f.originalName.toLowerCase().endsWith(".xml"),
     );
+
+    const uploadedBooklets: UploadedBooklet[] = [];
 
     await progress?.startPhase("sync-index", xmlFiles.length, {
       message:
         xmlFiles.length > 0
-          ? "Unit-XML-Dateien werden in den ACP-Index eingelesen."
-          : "Keine Unit-XML-Dateien fuer die Synchronisierung gefunden.",
+          ? "Unit- und Booklet-XML-Dateien werden in den ACP-Index eingelesen."
+          : "Keine XML-Dateien fuer die Synchronisierung gefunden.",
     });
 
     for (const xmlFile of xmlFiles) {
@@ -326,7 +330,27 @@ export class UnitParserService {
         continue;
       }
 
-      if (!xmlContent.includes("<Unit")) {
+      if (/<Booklet(?:\s|>)/.test(xmlContent)) {
+        try {
+          const booklet = parseBookletXml(xmlContent, xmlFile.originalName);
+          uploadedBooklets.push({
+            id: booklet.id,
+            label: booklet.label,
+            definitionId: xmlFile.originalName,
+          });
+        } catch (error) {
+          warningSet.add(
+            `Booklet ${xmlFile.originalName} konnte nicht verknüpft werden: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        await progress?.advance({ message: xmlFile.originalName });
+        continue;
+      }
+
+      if (
+        xmlFile.originalName.toLowerCase().startsWith("testtaker") ||
+        !xmlContent.includes("<Unit")
+      ) {
         await progress?.advance({ message: xmlFile.originalName });
         continue;
       }
@@ -462,6 +486,7 @@ export class UnitParserService {
       await progress?.advance({ message: xmlFile.originalName });
     }
 
+    registerBooklets(parts, uploadedBooklets, warningSet);
     this.pruneMissingReferencesFromParts(parts, fileNameSet);
 
     const nextIndex = normalizeIndexForStorage({

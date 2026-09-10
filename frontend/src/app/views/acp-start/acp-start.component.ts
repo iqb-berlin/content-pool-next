@@ -54,7 +54,7 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         @if (data.sequences?.length && fc.enableSequenceNavigation !== false) {
           <div class="card section-card sequences-card">
             <div class="section-icon">📋</div>
-            <h3>Aufgabenfolgen</h3>
+            <h3>Testhefte und Aufgabenfolgen</h3>
             <div class="seq-list">
               @for (seq of data.sequences; track seq.kind + ':' + seq.id) {
                 <a

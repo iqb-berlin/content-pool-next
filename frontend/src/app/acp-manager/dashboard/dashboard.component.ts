@@ -91,7 +91,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                 >
                   <span class="tile-icon" aria-hidden="true">📋</span>
                   <div>
-                    <h3>Aufgabenfolge</h3>
+                    <h3>{{ sequence.kind === 'booklet' ? 'Testheft' : 'Aufgabenfolge' }}</h3>
                     <p>{{ sequenceLabel(sequence) }}</p>
                   </div>
                   <span class="tile-arrow" aria-hidden="true">›</span>

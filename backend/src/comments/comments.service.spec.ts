@@ -12,6 +12,7 @@ describe("CommentsService", () => {
   let service: CommentsService;
   let commentRepository: {
     manager?: any;
+    query: jest.Mock;
     find: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -36,6 +37,7 @@ describe("CommentsService", () => {
       execute: jest.fn(),
     };
     commentRepository = {
+      query: jest.fn().mockResolvedValue([]),
       find: jest.fn(),
       create: jest
         .fn()
@@ -1044,6 +1046,8 @@ describe("CommentsService", () => {
 
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
+      {},
+      commentRepository.manager,
     );
     expect(commentRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1273,7 +1277,8 @@ describe("CommentsService", () => {
         expect.objectContaining({ unitId: "unit-1", itemId: "item-1" }),
       );
     }
-    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledTimes(1);
+    // Each transaction keeps its own catalog promises; the pure file parser remains cached.
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledTimes(2);
   });
 
   it("prefers an exact item ID over another item's colliding legacy alias", async () => {

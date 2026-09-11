@@ -5,15 +5,31 @@ import { DataSource } from "typeorm";
 import * as request from "supertest";
 import {
   Acp,
+  AcpFile,
+  AcpItemRowNumber,
+  CommentTargetType,
   AcpAccessConfig,
   AcpUserRole,
   AcpCredential,
   User,
   Comment,
 } from "../src/database/entities";
+import { CommentVotes1789500000000 } from "../src/database/migrations/1789500000000-CommentVotes";
 import { ReviewVisibilityGroups1789400000000 } from "../src/database/migrations/1789400000000-ReviewVisibilityGroups";
 import { ReviewManifestService } from "../src/review/review-manifest.service";
 import { UnitParserService } from "../src/files/unit-parser.service";
+
+import { mkdtemp, writeFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
+import { CommentsService } from "../src/comments/comments.service";
+import { ReviewPolicyService } from "../src/comments/review-policy.service";
+import { FileCatalogCache } from "../src/files/file-catalog.cache";
+import { ItemRowNumberingService } from "../src/files/item-row-numbering.service";
+import { ItemListParser } from "../src/files/item-list.parser";
+import { NumberedItemListCache } from "../src/files/numbered-item-list.cache";
+import { UnitViewResolver } from "../src/files/unit-view.resolver";
+import { ItemExplorerStateService } from "../src/item-explorer/item-explorer-state.service";
 
 describe("Review visibility, groups and synchronization API", () => {
   jest.setTimeout(60000);
@@ -136,6 +152,7 @@ describe("Review visibility, groups and synchronization API", () => {
     }
     const triggerRunner = db.createQueryRunner();
     try {
+      await new CommentVotes1789500000000().installTriggers(triggerRunner);
       await new ReviewVisibilityGroups1789400000000().installRevisionTrigger(
         triggerRunner,
       );
@@ -617,5 +634,569 @@ describe("Review visibility, groups and synchronization API", () => {
       .get(`/api/view/acp/${acpId}/review`)
       .set(headers(manager))
       .expect(200);
+  });
+  it("supports concurrent votes, stable identities, ETags and mode boundaries", async () => {
+    await saveConfig({
+      enableReview: true,
+      visibilityMode: "SHARED",
+      confirmExistingComments: true,
+    });
+    const owner = actors[0],
+      voter = actors[1],
+      credential = actors[2];
+    const created = await request(server)
+      .post(api())
+      .set(headers(owner.token))
+      .send({ ...item, commentText: "Vote target" })
+      .expect(201);
+    const id = created.body.id;
+    const voteApi = `${api()}/${id}/vote`;
+    const thread = (token: string) =>
+      request(server).get(api()).query(item).set(headers(token));
+    const before = await thread(voter.token).expect(200);
+    await request(server)
+      .put(voteApi)
+      .set(headers(owner.token))
+      .send({ value: "UP" })
+      .expect(403);
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "INVALID" })
+      .expect(400);
+    await request(server)
+      .put(`${api()}/10000000-0000-4000-8000-000000000001/vote`)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(404);
+    const otherAcp = await db
+      .getRepository(Acp)
+      .save({ packageId: `vote-other-${Date.now()}`, name: "Other" });
+    const foreign = await db.getRepository(Comment).save({
+      acpId: otherAcp.id,
+      targetType: "ITEM" as any,
+      targetId: "I",
+      commentText: "Other ACP",
+    });
+    await request(server)
+      .put(`${api()}/${foreign.id}/vote`)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(404);
+    const revisions = async () =>
+      (
+        await db.query(
+          `SELECT review_revision FROM acp_access_configs WHERE acp_id = $1`,
+          [acpId],
+        )
+      )[0].review_revision;
+    const revisionBefore = await revisions();
+    await Promise.all(
+      Array.from({ length: 8 }, () =>
+        request(server)
+          .put(voteApi)
+          .set(headers(voter.token))
+          .send({ value: "UP" })
+          .expect(200),
+      ),
+    );
+    expect(Number(await revisions()) - Number(revisionBefore)).toBe(1);
+    await request(server)
+      .put(voteApi)
+      .set(headers(credential.token))
+      .send({ value: "DOWN" })
+      .expect(200);
+    const after = await thread(voter.token)
+      .set("If-None-Match", before.headers.etag)
+      .expect(200);
+    expect(after.body.comments.find((c: any) => c.id === id)).toMatchObject({
+      upvotes: 1,
+      downvotes: 1,
+      myVote: "UP",
+      canVote: true,
+    });
+    await thread(voter.token)
+      .set("If-None-Match", after.headers.etag)
+      .expect(304);
+    expect(
+      (await thread(owner.token)).body.comments.find((c: any) => c.id === id),
+    ).toMatchObject({ canVote: false, upvotes: 1 });
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "DOWN" })
+      .expect(200)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({
+          upvotes: 0,
+          downvotes: 2,
+          myVote: "DOWN",
+        }),
+      );
+    await request(server).delete(voteApi).set(headers(voter.token)).expect(200);
+    const removedRevision = await revisions();
+    await request(server).delete(voteApi).set(headers(voter.token)).expect(200);
+    expect(await revisions()).toBe(removedRevision);
+    expect(
+      (await thread(credential.token)).body.comments.find(
+        (c: any) => c.id === id,
+      ),
+    ).toMatchObject({ upvotes: 0, downvotes: 1, myVote: "DOWN" });
+    await db
+      .getRepository(AcpCredential)
+      .update(credential.id, { username: "renamed-voter" });
+    expect(
+      (await thread(credential.token)).body.comments.find(
+        (c: any) => c.id === id,
+      ).myVote,
+    ).toBe("DOWN");
+    await db
+      .getRepository(AcpUserRole)
+      .update({ acpId, userId: voter.id }, { capabilities: ["review:manage"] });
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(403);
+    expect(
+      (await thread(voter.token)).body.comments.find((c: any) => c.id === id)
+        .canVote,
+    ).toBe(false);
+    await db
+      .getRepository(AcpUserRole)
+      .update(
+        { acpId, userId: voter.id },
+        { capabilities: ["review:participate"] },
+      );
+    await saveConfig({ visibilityMode: "PRIVATE" });
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(404);
+    expect(
+      (await thread(voter.token)).body.comments.some((c: any) => c.id === id),
+    ).toBe(false);
+    expect(
+      (await thread(owner.token)).body.comments.find((c: any) => c.id === id),
+    ).toMatchObject({ upvotes: 0, downvotes: 0, myVote: null, canVote: false });
+    await saveConfig({
+      visibilityMode: "SHARED",
+      confirmExistingComments: true,
+    });
+    await saveConfig({ visibilityMode: "GROUP" });
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(403);
+    await request(server)
+      .delete(voteApi)
+      .set(headers(credential.token))
+      .expect(403);
+    expect(
+      (await thread(credential.token)).body.comments.find(
+        (c: any) => c.id === id,
+      ),
+    ).toMatchObject({ downvotes: 0, myVote: null, canVote: false });
+    await saveConfig({
+      visibilityMode: "SHARED",
+      confirmExistingComments: true,
+      enableReview: false,
+    });
+    await request(server)
+      .put(voteApi)
+      .set(headers(manager))
+      .send({ value: "UP" })
+      .expect(403);
+    await saveConfig({ enableReview: true });
+    expect(
+      (await thread(credential.token)).body.comments.find(
+        (c: any) => c.id === id,
+      ).downvotes,
+    ).toBe(1);
+    await request(server)
+      .delete(`${api()}/${id}`)
+      .query({ version: 1 })
+      .set(headers(owner.token))
+      .expect(200);
+    expect(
+      await db.query(`SELECT * FROM comment_votes WHERE comment_id = $1`, [id]),
+    ).toHaveLength(0);
+    await request(server)
+      .put(voteApi)
+      .set(headers(voter.token))
+      .send({ value: "UP" })
+      .expect(404);
+  });
+
+  it.each([
+    { targetType: "ITEM", unitId: "U", itemId: "I" },
+    { targetType: "CODING", unitId: "U", itemId: "I" },
+    { targetType: "UNIT", unitId: "U" },
+    { targetType: "BOOKLET", bookletId: "B" },
+  ])(
+    "applies voting to $targetType roots and replies with target feature checks",
+    async (target) => {
+      await saveConfig({
+        enableReview: true,
+        visibilityMode: "SHARED",
+        confirmExistingComments: true,
+      });
+      const root = (
+        await request(server)
+          .post(api())
+          .set(headers(actors[0].token))
+          .send({ ...target, commentText: "Root" })
+          .expect(201)
+      ).body;
+      const reply = (
+        await request(server)
+          .post(api())
+          .set(headers(actors[0].token))
+          .send({ ...target, parentCommentId: root.id, commentText: "Reply" })
+          .expect(201)
+      ).body;
+      for (const comment of [root, reply]) {
+        await Promise.all(
+          [actors[1], actors[2]].map((actor) =>
+            request(server)
+              .put(`${api()}/${comment.id}/vote`)
+              .set(headers(actor.token))
+              .send({ value: "UP" })
+              .expect(200),
+          ),
+        );
+      }
+      const snapshot = (
+        await request(server)
+          .get(api())
+          .query(target)
+          .set(headers(actors[1].token))
+          .expect(200)
+      ).body;
+      for (const comment of [root, reply]) {
+        expect(
+          snapshot.comments.find((c: any) => c.id === comment.id),
+        ).toMatchObject({
+          upvotes: 2,
+          downvotes: 0,
+          myVote: "UP",
+          canVote: true,
+        });
+      }
+      const overview = (
+        await request(server)
+          .get(`${api()}/visible`)
+          .set(headers(actors[1].token))
+          .expect(200)
+      ).body;
+      expect(overview.find((c: any) => c.id === root.id)).toMatchObject({
+        upvotes: 2,
+        myVote: "UP",
+        canVote: true,
+      });
+      await request(server)
+        .patch(`${api()}/${root.id}`)
+        .set(headers(actors[0].token))
+        .send({ commentText: "Edited root", version: 1 })
+        .expect(200)
+        .expect(({ body }) =>
+          expect(body).toMatchObject({ upvotes: 2, canVote: false }),
+        );
+      await request(server)
+        .patch(`${api()}/${root.id}`)
+        .set(headers(actors[0].token))
+        .send({ commentText: "Stale edit", version: 1 })
+        .expect(409)
+        .expect(({ body }) =>
+          expect(body.current).toMatchObject({ upvotes: 2, canVote: false }),
+        );
+      const row = await db
+        .getRepository(AcpAccessConfig)
+        .findOneByOrFail({ acpId });
+      await db.getRepository(AcpAccessConfig).update(
+        { acpId },
+        {
+          featureConfig: {
+            ...row.featureConfig,
+            commentTargets: ["ITEM", "UNIT", "BOOKLET", "CODING"].filter(
+              (t) => t !== target.targetType,
+            ),
+          },
+        },
+      );
+      await request(server)
+        .put(`${api()}/${root.id}/vote`)
+        .set(headers(manager))
+        .send({ value: "UP" })
+        .expect(403);
+      await db.getRepository(AcpAccessConfig).save(row);
+    },
+  );
+
+  it.each([1, 2, 10])(
+    "completes concurrent real catalog reads and votes with a pool of %i",
+    async (poolSize) => {
+      if (db.options.type !== "postgres")
+        throw new Error("PostgreSQL required");
+      const limited = new DataSource({
+        ...db.options,
+        synchronize: false,
+        migrationsRun: false,
+        poolSize,
+        extra: { max: poolSize, connectionTimeoutMillis: 1500 },
+      });
+      await limited.initialize();
+      const directory = await mkdtemp(join(tmpdir(), "review-pool-"));
+      try {
+        const acp = await limited.getRepository(Acp).save({
+          packageId: `pool-${poolSize}-${Date.now()}`,
+          name: "Real catalog",
+          acpIndex: { units: [{ id: "U", items: [{ id: "I" }] }] },
+        });
+        await limited.getRepository(AcpAccessConfig).save({
+          acpId: acp.id,
+          accessModel: "REGISTERED" as any,
+          featureConfig: {
+            enableReview: true,
+            enableCommenting: true,
+            commentVisibilityMode: "SHARED",
+            commentTargets: ["UNIT", "ITEM", "CODING"],
+          },
+        });
+        const files = {
+          "U.xml":
+            "<Unit><Id>U</Id><Reference>U.vomd</Reference><CodingSchemeRef>U.vocs</CodingSchemeRef></Unit>",
+          "U.vomd": JSON.stringify({
+            profiles: [],
+            items: [{ id: "I", variableId: "I", profiles: [] }],
+          }),
+          "U.vocs": "{}",
+        };
+        for (const [originalName, content] of Object.entries(files)) {
+          const filePath = join(directory, originalName);
+          await writeFile(filePath, content);
+          await limited.getRepository(AcpFile).save({
+            acpId: acp.id,
+            originalName,
+            filePath,
+            fileSize: content.length,
+          });
+        }
+        // All sources are real services. Their default repositories use the same
+        // constrained pool, so any escaped transaction query fails this test.
+        const catalog = new FileCatalogCache(limited.getRepository(AcpFile));
+        const parser = new UnitParserService(
+          limited.getRepository(AcpFile),
+          limited.getRepository(Acp),
+          limited.getRepository(AcpAccessConfig),
+          new ItemRowNumberingService(limited.getRepository(AcpItemRowNumber)),
+          app.get(ItemExplorerStateService),
+          catalog,
+          new ItemListParser(),
+          new NumberedItemListCache(),
+          app.get(UnitViewResolver),
+        );
+        const service = new CommentsService(
+          limited.getRepository(Comment),
+          new ReviewPolicyService(limited.getRepository(AcpAccessConfig)),
+          parser,
+          catalog,
+          limited.getRepository(Acp),
+          new ReviewManifestService(
+            limited.getRepository(Acp),
+            limited.getRepository(AcpFile),
+          ),
+        );
+        const actor = () => ({
+          userId: actors[1].id,
+          authorLabel: "Voter",
+          isManager: false,
+          canParticipate: true,
+        });
+        for (const targetType of [
+          CommentTargetType.UNIT,
+          CommentTargetType.ITEM,
+          CommentTargetType.CODING,
+        ]) {
+          const target = {
+            targetType,
+            unitId: "U",
+            ...(targetType !== CommentTargetType.UNIT ? { itemId: "I" } : {}),
+          };
+          const results = await Promise.all(
+            Array.from({ length: Math.max(2, poolSize) }, () =>
+              service.getReviewThread(acp.id, target, actor()),
+            ),
+          );
+          expect(
+            results.every((result) => result.target.targetType === targetType),
+          ).toBe(true);
+          const comment = await service.createReviewComment(
+            acp.id,
+            { ...target, commentText: "Root" },
+            {
+              userId: actors[0].id,
+              authorLabel: "Owner",
+              isManager: false,
+              canParticipate: true,
+            },
+          );
+          const states = await Promise.all(
+            Array.from({ length: Math.max(2, poolSize) }, () =>
+              service.setVote(acp.id, comment.id, "UP", actor()),
+            ),
+          );
+          expect(
+            states.every(
+              (state) => state.upvotes === 1 && state.myVote === "UP",
+            ),
+          ).toBe(true);
+        }
+        // Review reads and votes must never create persistent row numbers.
+        expect(
+          await limited
+            .getRepository(AcpItemRowNumber)
+            .count({ where: { acpId: acp.id } }),
+        ).toBe(0);
+        if (poolSize === 2) {
+          // Hold the ACP lock taken by Explorer publication. A review must still
+          // finish while holding its configuration lock, even with no row numbers.
+          const publishing = limited.createQueryRunner();
+          await publishing.connect();
+          await publishing.startTransaction();
+          let reading: Promise<unknown> | undefined;
+          let deadline: ReturnType<typeof setTimeout> | undefined;
+          try {
+            await publishing.manager.findOne(Acp, {
+              where: { id: acp.id },
+              lock: { mode: "pessimistic_write" },
+            });
+            reading = service.getReviewThread(
+              acp.id,
+              { targetType: CommentTargetType.ITEM, unitId: "U", itemId: "I" },
+              actor(),
+            );
+            await Promise.race([
+              reading,
+              new Promise((_, reject) => {
+                deadline = setTimeout(
+                  () => reject(new Error("Review waits for Explorer ACP lock")),
+                  2000,
+                );
+              }),
+            ]);
+            await (
+              app.get(ItemExplorerStateService) as any
+            ).applyPublishedStateToDomain(
+              acp.id,
+              {
+                itemProperties: { I: { note: "Published concurrently" } },
+                metadataColumns: {
+                  configured: true,
+                  visible: ["note"],
+                  order: ["note"],
+                  widths: {},
+                },
+              },
+              {
+                acpRepository: publishing.manager.getRepository(Acp),
+                accessConfigRepository:
+                  publishing.manager.getRepository(AcpAccessConfig),
+              },
+            );
+            await publishing.commitTransaction();
+            expect(
+              (await limited.getRepository(Acp).findOneByOrFail({ id: acp.id }))
+                .itemProperties,
+            ).toEqual({ I: { note: "Published concurrently" } });
+          } finally {
+            if (deadline) clearTimeout(deadline);
+            if (publishing.isTransactionActive)
+              await publishing.rollbackTransaction();
+            await publishing.release();
+            await reading?.catch(() => undefined);
+          }
+        }
+        // The normal Explorer parser still persists missing numbers. Review
+        // queries then reuse those numbers without changing them.
+        await parser.getItemListFromFiles(acp.id);
+        const persisted = await limited
+          .getRepository(AcpItemRowNumber)
+          .find({ where: { acpId: acp.id } });
+        expect(persisted.length).toBeGreaterThan(0);
+        await service.getReviewThread(
+          acp.id,
+          { targetType: CommentTargetType.ITEM, unitId: "U", itemId: "I" },
+          actor(),
+        );
+        expect(
+          await limited
+            .getRepository(AcpItemRowNumber)
+            .find({ where: { acpId: acp.id } }),
+        ).toEqual(persisted);
+      } finally {
+        await limited.destroy();
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("migrates votes with constraints, transactional revisions and loss-safe rollback", async () => {
+    const q = db.createQueryRunner();
+    await q.connect();
+    const schema = `vote_migration_${Date.now()}`;
+    const acp = "10000000-0000-4000-8000-000000000001",
+      comment = "10000000-0000-4000-8000-000000000002";
+    try {
+      await q.query(`CREATE SCHEMA "${schema}"`);
+      await q.query(`SET search_path TO "${schema}"`);
+      await q.query(
+        `CREATE TABLE acp_access_configs (acp_id uuid PRIMARY KEY, review_revision bigint NOT NULL DEFAULT 0)`,
+      );
+      await q.query(
+        `CREATE TABLE comments (id uuid PRIMARY KEY, acp_id uuid, deleted_at timestamptz)`,
+      );
+      await q.query(`INSERT INTO acp_access_configs(acp_id) VALUES ($1)`, [
+        acp,
+      ]);
+      await q.query(`INSERT INTO comments(id, acp_id) VALUES ($1, $2)`, [
+        comment,
+        acp,
+      ]);
+      const migration = new CommentVotes1789500000000();
+      await migration.up(q);
+      const insert = `INSERT INTO comment_votes(comment_id, user_id, value) VALUES ($1, $2, 'UP')`;
+      await q.startTransaction();
+      await q.query(insert, [comment, acp]);
+      expect(
+        (await q.query(`SELECT review_revision FROM acp_access_configs`))[0]
+          .review_revision,
+      ).toBe("1");
+      await q.rollbackTransaction();
+      expect(await q.query(`SELECT * FROM comment_votes`)).toHaveLength(0);
+      expect(
+        (await q.query(`SELECT review_revision FROM acp_access_configs`))[0]
+          .review_revision,
+      ).toBe("0");
+      await expect(q.query(insert, [comment, null])).rejects.toThrow();
+      await q.query(insert, [comment, acp]);
+      await expect(q.query(insert, [comment, acp])).rejects.toThrow();
+      await expect(
+        q.query(`UPDATE comment_votes SET credential_id = $1`, [acp]),
+      ).rejects.toThrow();
+      await expect(
+        q.query(`UPDATE comment_votes SET value = 'INVALID'`),
+      ).rejects.toThrow();
+      await expect(migration.down(q)).rejects.toThrow("Votes exist");
+      await q.query(`DELETE FROM comments`);
+      expect(await q.query(`SELECT * FROM comment_votes`)).toHaveLength(0);
+      await migration.down(q);
+    } finally {
+      await q.query(`SET search_path TO public`);
+      await q.query(`DROP SCHEMA "${schema}" CASCADE`);
+      await q.release();
+    }
   });
 });

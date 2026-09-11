@@ -22,6 +22,9 @@ export interface CommentActor {
   credentialUsername?: string;
   authorLabel: string;
   isManager: boolean;
+  canParticipate?: boolean;
+  votingEnabled?: boolean;
+  votingTargets?: string[];
   groups?: ReviewGroup[];
   ungroupedShared?: boolean;
 }
@@ -43,6 +46,9 @@ export class ReviewPolicyService {
       authorLabel:
         String(req.user?.username || "Unbekannt").trim() || "Unbekannt",
       isManager: this.isManagerRequest(req),
+      canParticipate: Boolean(
+        req.user?.sub && req.acpCapabilities?.includes("review:participate"),
+      ),
     };
   }
 
@@ -173,6 +179,19 @@ export class ReviewPolicyService {
     return false;
   }
 
+  canVote(actor: CommentActor, comment: Comment): boolean {
+    return (
+      actor.canParticipate === true &&
+      actor.votingEnabled === true &&
+      Boolean(actor.userId) !== Boolean(actor.credentialId) &&
+      this.isTargetEnabled(actor.votingTargets || [], comment.targetType) &&
+      !comment.deletedAt &&
+      !comment.legacyReadOnly &&
+      comment.targetType !== CommentTargetType.TASK_SEQUENCE &&
+      !this.isOwnedBy(comment, actor)
+    );
+  }
+
   private async getFeatureConfig(
     acpId: string,
     actor?: CommentActor,
@@ -181,6 +200,11 @@ export class ReviewPolicyService {
       where: { acpId },
     });
     if (actor) {
+      actor.votingTargets = this.commentTargets(config?.featureConfig || {});
+      actor.votingEnabled =
+        config?.featureConfig?.enableReview === true &&
+        config?.featureConfig?.enableCommenting === true &&
+        config?.featureConfig?.commentVisibilityMode === "SHARED";
       if (config?.featureConfig?.enableReview !== true && !actor.isManager) {
         throw new ForbiddenException("Review ist deaktiviert");
       }

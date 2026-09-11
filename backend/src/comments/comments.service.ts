@@ -6,7 +6,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { FindOptionsWhere, In, IsNull, Repository } from "typeorm";
+import {
+  EntityManager,
+  FindOptionsWhere,
+  In,
+  IsNull,
+  Repository,
+} from "typeorm";
 import { createHash } from "crypto";
 import {
   Acp,
@@ -27,7 +33,14 @@ import {
 
 export { CommentActor, CommentVisibilityMode } from "./review-policy.service";
 
-export interface CommentView {
+export interface CommentVoteState {
+  upvotes: number;
+  downvotes: number;
+  myVote: "UP" | "DOWN" | null;
+  canVote: boolean;
+}
+
+export interface CommentView extends CommentVoteState {
   id: string;
   acpId: string;
   targetType: CommentTargetType;
@@ -134,6 +147,7 @@ interface ReviewExportTarget {
 @Injectable()
 export class CommentsService {
   private inTransaction = false;
+  private transactionManager?: EntityManager;
 
   private async transaction<T>(
     acpId: string,
@@ -153,6 +167,8 @@ export class CommentsService {
         this.reviewManifestService,
       );
       scoped.inTransaction = true;
+      scoped.transactionManager = manager;
+
       return operation(scoped);
     });
   }
@@ -180,6 +196,23 @@ export class CommentsService {
     return comments.filter((comment) =>
       this.reviewPolicy.canViewComment(mode, actor, comment),
     );
+  }
+
+  async findVisibleViews(
+    acpId: string,
+    actor: CommentActor,
+  ): Promise<CommentView[]> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.findVisibleViews(acpId, actor),
+      );
+    const comments = await this.findVisible(acpId, actor);
+    const votes = await this.getVoteStates(acpId, comments, actor);
+    const ids = new Set(comments.map((comment) => comment.id));
+    return comments.map((comment) => ({
+      ...this.toCommentView(comment, actor, ids),
+      ...votes.get(comment.id),
+    }));
   }
 
   async findByAcp(acpId: string): Promise<Comment[]> {
@@ -278,6 +311,10 @@ export class CommentsService {
     input: ReviewCommentTarget,
     actor: CommentActor,
   ): Promise<CommentThreadSnapshot> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.getReviewThread(acpId, input, actor),
+      );
     const visibilityMode = await this.reviewPolicy.assertCommentAccess(
       acpId,
       actor,
@@ -321,6 +358,11 @@ export class CommentsService {
         ? actor.groups[0].id
         : null;
 
+    const votes = await this.getVoteStates(acpId, responseComments, actor);
+    const views = responseComments.map((comment) => ({
+      ...this.toCommentView(comment, actor, responseIds),
+      ...votes.get(comment.id),
+    }));
     return {
       target: {
         targetType: target.targetType,
@@ -333,9 +375,7 @@ export class CommentsService {
           JSON.stringify([
             visibilityMode,
             defaultGroupId,
-            responseComments.map((comment) =>
-              this.toCommentView(comment, actor, responseIds),
-            ),
+            views,
             (actor.groups || []).map(({ id, name, archived }) => ({
               id,
               name,
@@ -351,10 +391,105 @@ export class CommentsService {
         name,
         archived,
       })),
-      comments: responseComments.map((comment) =>
-        this.toCommentView(comment, actor, responseIds),
-      ),
+      comments: views,
     };
+  }
+
+  private async getVoteStates(
+    acpId: string,
+    comments: Comment[],
+    actor: CommentActor,
+  ): Promise<Map<string, CommentVoteState>> {
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    const states = new Map<string, CommentVoteState>(
+      comments.map((comment) => [
+        comment.id,
+        { upvotes: 0, downvotes: 0, myVote: null, canVote: false },
+      ]),
+    );
+    const visible = comments.filter(
+      (comment) =>
+        !comment.deletedAt &&
+        comment.acpId === acpId &&
+        this.reviewPolicy.canViewComment(mode, actor, comment),
+    );
+    if (mode !== "SHARED" || !visible.length) return states;
+    const rows = await this.commentRepository.query(
+      `SELECT comment_id,
+      COUNT(*) FILTER (WHERE value = 'UP')::int AS upvotes,
+      COUNT(*) FILTER (WHERE value = 'DOWN')::int AS downvotes,
+      MAX(value) FILTER (WHERE user_id = $2::uuid OR credential_id = $3::uuid) AS my_vote
+      FROM comment_votes WHERE comment_id = ANY($1::uuid[]) GROUP BY comment_id`,
+      [
+        visible.map((comment) => comment.id),
+        actor.userId || null,
+        actor.credentialId || null,
+      ],
+    );
+    const byId = new Map<
+      string,
+      { upvotes: number; downvotes: number; my_vote: "UP" | "DOWN" | null }
+    >(rows.map((row: any) => [row.comment_id, row]));
+    for (const comment of visible) {
+      const row = byId.get(comment.id);
+      states.set(comment.id, {
+        upvotes: row?.upvotes || 0,
+        downvotes: row?.downvotes || 0,
+        myVote: row?.my_vote || null,
+        canVote: this.reviewPolicy.canVote(actor, comment),
+      });
+    }
+    return states;
+  }
+
+  async setVote(
+    acpId: string,
+    commentId: string,
+    value: "UP" | "DOWN" | null,
+    actor: CommentActor,
+  ): Promise<CommentVoteState> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.setVote(acpId, commentId, value, actor),
+      );
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    const comment = await this.commentRepository.findOne({
+      where: { id: commentId, acpId },
+    });
+    if (
+      !comment ||
+      comment.deletedAt ||
+      !this.reviewPolicy.canViewComment(mode, actor, comment)
+    )
+      throw new NotFoundException("Comment not found");
+    if (!this.reviewPolicy.canVote(actor, comment))
+      throw new ForbiddenException(
+        "Nur fremde Kommentare im aktiven geteilten Review können bewertet werden",
+      );
+    await this.reviewPolicy.assertCommentAccess(
+      acpId,
+      actor,
+      comment.targetType,
+    );
+    await this.assertStoredTargetExists(acpId, comment);
+    if (value !== null && value !== "UP" && value !== "DOWN")
+      throw new BadRequestException("Vote must be UP or DOWN");
+    const column = actor.userId ? "user_id" : "credential_id";
+    const identity = actor.userId || actor.credentialId;
+    if (value === null) {
+      await this.commentRepository.query(
+        `DELETE FROM comment_votes WHERE comment_id = $1 AND ${column} = $2`,
+        [commentId, identity],
+      );
+    } else {
+      await this.commentRepository.query(
+        `INSERT INTO comment_votes (comment_id, ${column}, value) VALUES ($1, $2, $3)
+        ON CONFLICT (comment_id, ${column}) WHERE ${column} IS NOT NULL
+        DO UPDATE SET value = EXCLUDED.value, updated_at = now() WHERE comment_votes.value IS DISTINCT FROM EXCLUDED.value`,
+        [commentId, identity, value],
+      );
+    }
+    return (await this.getVoteStates(acpId, [comment], actor)).get(commentId)!;
   }
 
   async getItemCommentCounts(
@@ -603,7 +738,7 @@ export class CommentsService {
     );
     const normalizedCommentText = this.normalizeCommentText(commentText);
     if (current.version !== version) {
-      throw this.versionConflict(current, actor);
+      throw await this.versionConflict(current, actor);
     }
     await this.assertStoredTargetExists(acpId, current);
 
@@ -622,19 +757,23 @@ export class CommentsService {
         relations: ["user"],
       });
       if (!latest) throw new NotFoundException("Comment not found");
-      throw this.versionConflict(latest, actor);
+      throw await this.versionConflict(latest, actor);
     }
 
-    return this.toCommentView(
-      {
-        ...current,
-        commentText: normalizedCommentText,
-        updatedAt,
-        version: version + 1,
-      },
-      actor,
-      new Set([commentId]),
-    );
+    const votes = await this.getVoteStates(acpId, [current], actor);
+    return {
+      ...this.toCommentView(
+        {
+          ...current,
+          commentText: normalizedCommentText,
+          updatedAt,
+          version: version + 1,
+        },
+        actor,
+        new Set([commentId]),
+      ),
+      ...votes.get(commentId),
+    };
   }
 
   async deleteOwnComment(
@@ -654,7 +793,7 @@ export class CommentsService {
       current.targetType,
     );
     if (current.version !== version) {
-      throw this.versionConflict(current, actor);
+      throw await this.versionConflict(current, actor);
     }
     await this.assertStoredTargetExists(acpId, current);
     const result = await this.commentRepository.update(
@@ -671,7 +810,7 @@ export class CommentsService {
         where: { id: commentId, acpId },
       });
       if (!latest) throw new NotFoundException("Comment not found");
-      throw this.versionConflict(latest, actor);
+      throw await this.versionConflict(latest, actor);
     }
   }
 
@@ -840,7 +979,7 @@ export class CommentsService {
       commentsPromise,
       this.getItemCatalog(acpId),
       this.acpRepository.findOne({ where: { id: acpId } }),
-      this.reviewManifestService.getManifest(acpId),
+      this.reviewManifestService.getManifest(acpId, this.transactionManager),
     ]);
     const bookletCatalog = this.buildReviewBookletCatalog(acp?.acpIndex);
     manifest.booklets.forEach((booklet, bookletOrder) => {
@@ -1026,7 +1165,10 @@ export class CommentsService {
     if (input.targetType === CommentTargetType.BOOKLET) {
       const bookletId = String(input.bookletId || "").trim();
       if (!bookletId) throw new BadRequestException("bookletId is required");
-      const manifest = await this.reviewManifestService.getManifest(acpId);
+      const manifest = await this.reviewManifestService.getManifest(
+        acpId,
+        this.transactionManager,
+      );
       const booklet = manifest.booklets.find(
         (entry) => entry.id === bookletId && !entry.legacy,
       );
@@ -1043,7 +1185,10 @@ export class CommentsService {
     if (input.targetType === CommentTargetType.UNIT) {
       const unitId = String(input.unitId || "").trim();
       if (!unitId) throw new BadRequestException("unitId is required");
-      const manifest = await this.reviewManifestService.getManifest(acpId);
+      const manifest = await this.reviewManifestService.getManifest(
+        acpId,
+        this.transactionManager,
+      );
       if (!manifest.units.some((entry) => entry.id === unitId)) {
         throw new NotFoundException("Unit not found in this ACP");
       }
@@ -1067,7 +1212,11 @@ export class CommentsService {
     }
     const itemTarget = await this.resolveItemTarget(acpId, unitId, itemId);
     if (input.targetType === CommentTargetType.CODING) {
-      const itemList = await this.unitParserService.getItemListFromFiles(acpId);
+      const itemList = await this.unitParserService.getItemListFromFiles(
+        acpId,
+        {},
+        this.transactionManager,
+      );
       if (!itemList.codingSchemes?.[itemTarget.unitId]) {
         throw new NotFoundException(
           "Coding scheme not found for this item in this ACP",
@@ -1197,7 +1346,7 @@ export class CommentsService {
 
   private async getItemCatalog(acpId: string): Promise<ItemCatalogEntry[]> {
     const [fileCatalog, acp] = await Promise.all([
-      this.fileCatalogCache.get(acpId),
+      this.fileCatalogCache.get(acpId, this.transactionManager),
       this.acpRepository.findOne({ where: { id: acpId } }),
     ]);
     const cacheKey = `${acpId}:${fileCatalog.signature}:${
@@ -1229,7 +1378,11 @@ export class CommentsService {
     acpId: string,
     acp: Acp | null,
   ): Promise<ItemCatalogEntry[]> {
-    const itemList = await this.unitParserService.getItemListFromFiles(acpId);
+    const itemList = await this.unitParserService.getItemListFromFiles(
+      acpId,
+      {},
+      this.transactionManager,
+    );
     const indexEntries: ItemCatalogEntry[] = [];
     const indexUnits = getIndexUnits(acp?.acpIndex);
     for (const [unitOrder, unit] of indexUnits.entries()) {
@@ -1601,6 +1754,10 @@ export class CommentsService {
         this.reviewPolicy.isOwnedBy(comment, actor),
       isDeleted: deleted,
       legacyReadOnly: Boolean(comment.legacyReadOnly),
+      upvotes: 0,
+      downvotes: 0,
+      myVote: null,
+      canVote: false,
     };
   }
 
@@ -1628,15 +1785,19 @@ export class CommentsService {
     return normalized;
   }
 
-  private versionConflict(
+  private async versionConflict(
     comment: Comment,
     actor: CommentActor,
-  ): ConflictException {
+  ): Promise<ConflictException> {
+    const votes = await this.getVoteStates(comment.acpId, [comment], actor);
     return new ConflictException({
       code: "COMMENT_VERSION_CONFLICT",
       message:
         "Der Kommentar wurde zwischenzeitlich geändert. Der aktuelle Stand wurde neu geladen.",
-      current: this.toCommentView(comment, actor, new Set([comment.id])),
+      current: {
+        ...this.toCommentView(comment, actor, new Set([comment.id])),
+        ...votes.get(comment.id),
+      },
     });
   }
 }

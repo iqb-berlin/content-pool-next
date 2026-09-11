@@ -24,6 +24,7 @@ describe("ReviewPolicyService", () => {
       credentialUsername: undefined,
       authorLabel: "AB",
       isManager: false,
+      canParticipate: true,
     });
     expect(
       policy.resolveActor({

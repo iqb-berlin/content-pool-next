@@ -24,6 +24,7 @@ function createComponent() {
     createItemComment: vi.fn().mockReturnValue(of({ id: 'created' })),
     createReviewComment: vi.fn().mockReturnValue(of({ id: 'coding-created' })),
     updateItemComment: vi.fn().mockReturnValue(of({ id: 'updated' })),
+    setCommentVote: vi.fn().mockReturnValue(of({})),
     deleteItemComment: vi.fn().mockReturnValue(of({ success: true })),
   } as any;
   const component = new ItemCommentThreadComponent(api);
@@ -35,6 +36,59 @@ function createComponent() {
 }
 
 describe('ItemCommentThreadComponent', () => {
+  it('sets, switches and removes votes while retaining drafts and refreshing the snapshot', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    component.newCommentText = 'Ungespeichert';
+    const comment = { id: 'foreign', canVote: true, myVote: null } as any;
+    component.vote(comment, 'UP');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', 'UP');
+    component.vote({ ...comment, myVote: 'UP' }, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', 'DOWN');
+    component.vote({ ...comment, myVote: 'DOWN' }, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', null);
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(4);
+    expect(component.newCommentText).toBe('Ungespeichert');
+    component.ngOnDestroy();
+  });
+
+  it('blocks disabled votes and ignores responses after switching sessions', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    const comment = { id: 'foreign', canVote: true } as any;
+    component.vote({ ...comment, canVote: false }, 'UP');
+    component.snapshot!.visibilityMode = 'GROUP';
+    component.vote(comment, 'UP');
+    expect(api.setCommentVote).not.toHaveBeenCalled();
+    component.snapshot!.visibilityMode = 'SHARED';
+    const response = new Subject();
+    api.setCommentVote.mockReturnValue(response);
+    component.vote(comment, 'UP');
+    component.vote(comment, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenCalledTimes(1);
+    component.ngOnChanges({ sessionToken: { firstChange: false } as any });
+    const loads = api.getItemCommentThread.mock.calls.length;
+    response.next({});
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(loads);
+    expect(component.busy).toBe(false);
+    component.ngOnDestroy();
+  });
+
+  it('preserves vote failures while refreshing revoked access', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    component.newCommentText = 'Entwurf';
+    api.setCommentVote.mockReturnValue(
+      throwError(() => ({ status: 403, error: { message: 'Review deaktiviert' } })),
+    );
+    component.vote({ id: 'foreign', canVote: true } as any, 'UP');
+    expect(component.error).toBe('Review deaktiviert');
+    expect(component.busy).toBe(false);
+    expect(component.newCommentText).toBe('Entwurf');
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  });
+
   it('requires a new group choice after membership changes without moving a draft automatically', () => {
     const { component, api } = createComponent();
     component.selectedGroupId = 'A';

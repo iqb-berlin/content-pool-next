@@ -7,6 +7,7 @@ import {
   Get,
   Patch,
   Post,
+  Put,
   Query,
   Request,
   Res,
@@ -78,6 +79,12 @@ class CreateItemReviewCommentDto {
   parentCommentId?: string;
 }
 
+class VoteDto {
+  @ApiProperty({ enum: ["UP", "DOWN"] })
+  @IsEnum({ UP: "UP", DOWN: "DOWN" })
+  value!: "UP" | "DOWN";
+}
+
 class UpdateReviewCommentDto {
   @ApiProperty()
   @IsString()
@@ -132,19 +139,7 @@ export class ReviewCommentsController {
   @Get("visible")
   async visible(@UuidParam("acpId") acpId: string, @Request() req: any) {
     const actor = this.reviewPolicy.resolveActor(req);
-    const comments = await this.commentsService.findVisible(acpId, actor);
-    return comments.map((comment) => ({
-      id: comment.id,
-      targetType: comment.targetType,
-      targetId: comment.targetId,
-      commentText: comment.commentText,
-      groupId: comment.groupId || null,
-      groupName:
-        actor.groups?.find((group) => group.id === comment.groupId)?.name ||
-        null,
-      authorLabel: comment.authorLabel,
-      updatedAt: comment.updatedAt,
-    }));
+    return this.commentsService.findVisibleViews(acpId, actor);
   }
 
   @Get("export/visible.xlsx")
@@ -271,6 +266,37 @@ export class ReviewCommentsController {
         parentCommentId: dto.parentCommentId,
         groupId: dto.groupId,
       },
+      this.reviewPolicy.resolveActor(req),
+    );
+  }
+
+  @Put(":commentId/vote")
+  async vote(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("commentId") commentId: string,
+    @Body() dto: VoteDto,
+    @Request() req: any,
+  ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
+    return this.commentsService.setVote(
+      acpId,
+      commentId,
+      dto.value,
+      this.reviewPolicy.resolveActor(req),
+    );
+  }
+
+  @Delete(":commentId/vote")
+  async removeVote(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("commentId") commentId: string,
+    @Request() req: any,
+  ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
+    return this.commentsService.setVote(
+      acpId,
+      commentId,
+      null,
       this.reviewPolicy.resolveActor(req),
     );
   }

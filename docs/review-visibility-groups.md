@@ -70,8 +70,55 @@ Unveränderte Antworten auf `If-None-Match` liefern HTTP 304. Dieser sichtbare
 Fingerabdruck ersetzt die in #64 ursprünglich vorgeschlagene öffentliche monotone
 ACP-Revision, um die strengere Isolationsanforderung aus #161 zu erfüllen.
 
-Ein Vote-Modul besteht derzeit nicht. Künftige Votes müssen dieselbe Sichtbarkeit
-und Transaktionsgrenze sowie den Revisionsmechanismus verwenden.
+## Up- und Downvotes (#65)
+
+Bewertungen sind ausschließlich im aktiven Modus `SHARED` erlaubt. Auch im
+Gruppenmodus sind sie deaktiviert, einschließlich sichtbarer Bestandskommentare
+und der Management-Ansicht. Beim Wechsel zu `PRIVATE` oder `GROUP` bleiben
+vorhandene Stimmen gespeichert; die API liefert neutrale Bewertungsfelder
+(`upvotes: 0`, `downvotes: 0`, `myVote: null`, `canVote: false`) und die Oberfläche
+blendet Bewertungen aus. Nach Rückkehr zu `SHARED` werden gespeicherte Stimmen
+wieder angezeigt. Dies gilt unabhängig von Gruppenmitgliedschaft und Archivierung;
+SHARED teilt gemäß obiger Konfigurationsregel sämtliche Kommentare.
+
+Nur `review:participate` berechtigt zur Bewertung fremder, sichtbarer und nicht
+gelöschter Kommentare auf aktivierten Kommentarzielen. `review:manage` allein
+reicht nicht aus; eigene und schreibgeschützte Legacy-Kommentare sind ausgeschlossen.
+Die Regel gilt für Booklet-, Unit-, Item- und Kodierungskommentare sowie Antworten.
+Eigene Kommentare zeigen die beiden Zähler ohne Bewertungsaktionen.
+
+`PUT /acp/:acpId/review/comments/:commentId/vote` mit `{ "value": "UP" }` oder
+`{ "value": "DOWN" }` setzt oder wechselt die eigene Stimme. `DELETE` auf demselben
+Pfad entfernt sie. Ein erneuter Klick auf die aktive Bewertung entfernt diese.
+Beide Operationen sind idempotent und erfordern dieselben Rechte. Unsichtbare,
+ACP-fremde und gelöschte Kommentare liefern wie nicht vorhandene IDs HTTP 404.
+
+Migration `1789500000000-CommentVotes` ergänzt eine eigene Tabelle mit genau einer
+stabilen Nutzer- oder Credential-ID je Stimme, partiellen Unique-Indizes,
+Wertprüfung und Zeitstempeln. Stimmenänderung und interne Revision erfolgen in
+derselben Transaktion unter der ACP-Konfigurationssperre. Ein unveränderter Vote
+ändert auch die Revision nicht. Physisches und logisches Löschen eines Kommentars
+entfernt seine Stimmen. Der Migrationsrollback verweigert Datenverlust, solange
+Stimmen existieren.
+
+Thread- und Übersichtsantworten enthalten getrennte Zähler, die eigene Stimme
+und `canVote`, ohne fremde Voter-Identitäten offenzulegen. Die Thread-ETags umfassen
+diese sichtbaren Felder. Das bestehende Polling aktualisiert die Zähler alle acht
+Sekunden; nach eigener Bewertung wird sofort neu geladen. Entwürfe bleiben erhalten.
+Snapshot-Lesevorgänge verwenden dieselbe Konfigurationssperre, damit ein gleichzeitiger
+Moduswechsel nicht verschiedene Sichtbarkeitsstände in einer Antwort vermischt.
+Manifest, Dateikatalog, Item-Parser und Zeilennummerierung verwenden dabei denselben
+Transaktionsmanager. Review-Lesevorgänge und Bewertungen übernehmen vorhandene
+Zeilennummern und ergänzen fehlende Nummern nur vorläufig in der Antwort. Sie
+persistieren keine Nummern und fordern daher keine zusätzliche ACP-Schreibsperre
+an. Das vermeidet eine umgekehrte Sperrreihenfolge gegenüber dem Speichern im Item
+Explorer. Dessen regulärer Nummerierungsweg bleibt unverändert.
+Datenbankabhängige Cache-Aufrufe bleiben innerhalb der
+jeweiligen Transaktion; nur der reine Datei-Parser teilt seinen Cache. Parallele
+Thread-Anfragen benötigen dadurch keine zusätzlichen Pool-Verbindungen, während
+sie die ACP-Sperre halten. Regressionstests verwenden reale Katalogdienste mit
+Poolgrößen 1, 2 und 10. Die zugänglichen Namen beider Bewertungsbuttons enthalten
+neben der Aktion auch den aktuellen Zählerstand.
 
 ## Oberfläche, API und Exporte
 

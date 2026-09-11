@@ -10,7 +10,12 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, Repository } from "typeorm";
 import * as fs from "fs/promises";
 import { performance } from "perf_hooks";
-import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
+import {
+  AcpFile,
+  Acp,
+  AcpAccessConfig,
+  AcpItemRowNumber,
+} from "../database/entities";
 import {
   getAssessmentParts,
   normalizeIndexForStorage,
@@ -102,6 +107,7 @@ export class UnitParserService {
   private readonly logger = new Logger(UnitParserService.name);
   private readonly itemRowKeyCache = new Map<string, ItemRowKeyCacheEntry>();
   private readonly maxItemRowKeyCacheEntries = 100;
+  private readOnlyRowNumbers = false;
 
   constructor(
     @InjectRepository(AcpFile)
@@ -564,7 +570,27 @@ export class UnitParserService {
       publishedStateSignature?: string;
       onDiagnostics?: (diagnostics: ItemExplorerLoadDiagnostics) => void;
     } = {},
+    manager?: EntityManager,
   ): Promise<ItemListResult> {
+    if (manager) {
+      // Share only the pure file parser. Database-backed in-flight caches must
+      // not wait for another transaction while this one holds the ACP lock.
+      const scoped = new UnitParserService(
+        manager.getRepository(AcpFile),
+        manager.getRepository(Acp),
+        manager.getRepository(AcpAccessConfig),
+        new ItemRowNumberingService(manager.getRepository(AcpItemRowNumber)),
+        this.itemExplorerStateService,
+        new FileCatalogCache(manager.getRepository(AcpFile)),
+        this.itemListParser,
+        new NumberedItemListCache(),
+        this.unitViewResolver,
+      );
+      // Review transactions already hold the configuration lock. Persisting
+      // missing numbers would also lock ACP and invert the Explorer save order.
+      scoped.readOnlyRowNumbers = true;
+      return scoped.getItemListFromFiles(acpId, options);
+    }
     const totalStartedAt = performance.now();
     const rowRevisionStartedAt = performance.now();
     const rowRevisionPromise = this.itemRowNumberingService
@@ -607,6 +633,29 @@ export class UnitParserService {
         ),
         parseMs: activeParse.parseMs + publishedParse.parseMs,
       };
+    }
+
+    if (this.readOnlyRowNumbers) {
+      const { rowNumberRevisionMs } = await rowRevisionPromise;
+      const rowNumberingStartedAt = performance.now();
+      const result = await this.applyItemRowNumbers(
+        acpId,
+        activeParse.itemList,
+        {
+          persistMissingRowNumbers: false,
+        },
+      );
+      options.onDiagnostics?.({
+        cacheStatus: parseDiagnostics.cacheStatus,
+        rowCacheStatus: "miss",
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+        rowNumberRevisionMs,
+        parseMs: parseDiagnostics.parseMs,
+        rowNumberingMs: performance.now() - rowNumberingStartedAt,
+        totalMs: performance.now() - totalStartedAt,
+      });
+      return result;
     }
 
     if (

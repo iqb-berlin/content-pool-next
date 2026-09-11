@@ -162,4 +162,33 @@ describe("ReviewPolicyService", () => {
       policy.isCommentingEnabled("acp-1", CommentTargetType.UNIT),
     ).resolves.toBe(false);
   });
+
+  it("requires explicit opt-in for new booklet and coding targets", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { enableCommenting: true, commentTargets: [] },
+    });
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
+    ).resolves.toBe(true);
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.CODING),
+    ).resolves.toBe(false);
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.BOOKLET),
+    ).resolves.toBe(false);
+
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableCommenting: true,
+        commentTargets: [CommentTargetType.BOOKLET, CommentTargetType.CODING],
+      },
+    });
+    await expect(
+      policy.assertCommentAccess(
+        "acp-1",
+        { credentialId: "credential-1", authorLabel: "CR", isManager: false },
+        CommentTargetType.CODING,
+      ),
+    ).resolves.toBe("PRIVATE");
+  });
 });

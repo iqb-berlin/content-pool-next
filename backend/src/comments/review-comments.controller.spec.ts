@@ -9,7 +9,9 @@ describe("ReviewCommentsController", () => {
   beforeEach(() => {
     commentsService = {
       getItemThread: jest.fn().mockResolvedValue({ comments: [] }),
+      getReviewThread: jest.fn().mockResolvedValue({ comments: [] }),
       createItemComment: jest.fn().mockResolvedValue({ id: "c-1" }),
+      createReviewComment: jest.fn().mockResolvedValue({ id: "c-2" }),
       updateOwnComment: jest.fn().mockResolvedValue({ id: "c-1", version: 2 }),
       deleteOwnComment: jest.fn().mockResolvedValue(undefined),
       getItemCommentCounts: jest.fn().mockResolvedValue({ counts: [] }),
@@ -128,6 +130,48 @@ describe("ReviewCommentsController", () => {
       "acp-1",
       "00000000-0000-4000-8000-000000000001",
       2,
+      expect.objectContaining({ userId: "user-1" }),
+    );
+  });
+
+  it("normalizes booklet and coding targets for the shared lifecycle", async () => {
+    const req = {
+      user: { type: "oidc", sub: "user-1", username: "u1" },
+      acpAccessLevel: "READ_ONLY",
+    };
+    await controller.getItemThread(
+      "acp-1",
+      " unit-1 ",
+      " item-1 ",
+      req,
+      "CODING",
+    );
+    expect(commentsService.getReviewThread).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        targetType: "CODING",
+        unitId: "unit-1",
+        itemId: "item-1",
+      },
+      expect.objectContaining({ userId: "user-1" }),
+    );
+
+    await controller.createItemComment(
+      "acp-1",
+      {
+        targetType: "BOOKLET" as any,
+        bookletId: " booklet-1 ",
+        commentText: "Booklet prüfen",
+      },
+      req,
+    );
+    expect(commentsService.createReviewComment).toHaveBeenCalledWith(
+      "acp-1",
+      expect.objectContaining({
+        targetType: "BOOKLET",
+        bookletId: "booklet-1",
+        commentText: "Booklet prüfen",
+      }),
       expect.objectContaining({ userId: "user-1" }),
     );
   });

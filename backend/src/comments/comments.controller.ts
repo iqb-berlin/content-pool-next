@@ -80,37 +80,23 @@ export class CommentsController {
       throw new BadRequestException("Comment target ID must not be the ACP ID");
     }
 
-    const isManager = this.reviewPolicy.isManagerRequest(req);
-    if (!isManager) {
-      const enabled = await this.commentsService.isCommentingEnabled(
-        acpId,
-        dto.targetType,
-      );
-      if (!enabled) {
-        throw new ForbiddenException(
-          "Commenting is not enabled for this ACP or target type",
-        );
-      }
-    }
-
-    return this.commentsService.create({
+    return this.commentsService.createLegacyCompatibleComment(
       acpId,
-      userId: req.user.type === "oidc" ? req.user.sub : undefined,
-      credentialId: req.user.type === "credential" ? req.user.sub : undefined,
-      credentialUsername:
-        req.user.type === "credential" ? req.user.username : undefined,
-      authorLabel: req.user.username,
-      targetType: dto.targetType,
-      targetId: dto.targetId,
-      commentText: dto.commentText,
-    });
+      {
+        targetType: dto.targetType,
+        targetId: dto.targetId,
+        commentText: dto.commentText,
+      },
+      this.reviewPolicy.resolveActor(req),
+    );
   }
 
   @Delete()
   @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: "Delete unreferenced legacy comments for an ACP (Manager only)",
+    summary:
+      "Delete unresolved legacy task-sequence comments for an ACP (Manager only)",
   })
   async deleteLegacyComments(
     @UuidParam("acpId") acpId: string,
@@ -122,7 +108,7 @@ export class CommentsController {
     return {
       message: `${result.deletedCount} legacy comments deleted; ${result.retainedCount} comments retained`,
       ...result,
-      scope: "UNREFERENCED_LEGACY_NON_ITEM",
+      scope: "UNRESOLVED_LEGACY_TASK_SEQUENCE",
     };
   }
 

@@ -433,6 +433,21 @@ describe("ContentPool API (e2e)", () => {
       })
       .expect(200);
 
+    const reviewConfig = await request(server)
+      .get(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    await request(server)
+      .put(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        enableReview: true,
+        visibilityMode: "SHARED",
+        configVersion: reviewConfig.body.configVersion,
+        confirmExistingComments: true,
+      })
+      .expect(200);
+
     const credentialRes = await request(server)
       .post(`/api/acp/${acpId}/access/credentials/single`)
       .set("Authorization", `Bearer ${authToken}`)

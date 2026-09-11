@@ -259,6 +259,18 @@ describe("AcpController", () => {
     );
   });
 
+  it("keeps group memberships and global review revisions out of general access responses", async () => {
+    acpService.getAccessConfig.mockResolvedValue({
+      accessModel: "PUBLIC",
+      reviewGroups: [{ id: "hidden" }],
+      reviewRevision: "42",
+      reviewConfigVersion: 7,
+    });
+    expect(await controller.getAccessConfig("acp-1")).toEqual({
+      accessModel: "PUBLIC",
+    });
+  });
+
   it("handles access config and credential endpoints", async () => {
     await expect(controller.getAccessConfig("acp-1")).resolves.toEqual({
       accessModel: "PUBLIC",

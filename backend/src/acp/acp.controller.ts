@@ -334,7 +334,9 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get access configuration for ACP" })
   async getAccessConfig(@UuidParam("id") id: string) {
-    return this.acpService.getAccessConfig(id);
+    return this.withoutReviewInternals(
+      await this.acpService.getAccessConfig(id),
+    );
   }
 
   @Put(":id/access")
@@ -364,7 +366,9 @@ export class AcpController {
         await this.capabilities.assert(req, "review:manage");
       }
     }
-    return this.acpService.updateAccessConfig(id, dto);
+    return this.withoutReviewInternals(
+      await this.acpService.updateAccessConfig(id, dto),
+    );
   }
 
   @Post(":id/access/credentials")
@@ -507,7 +511,7 @@ export class AcpController {
     try {
       const result = await this.acpService.updateMetadataColumns(id, dto);
       this.logger.log(`Successfully updated metadata columns for ACP ${id}`);
-      return result;
+      return this.withoutReviewInternals(result);
     } catch (error) {
       this.logger.error(
         `Failed to update metadata columns for ACP ${id}: ${error.message}`,
@@ -583,5 +587,20 @@ export class AcpController {
       id,
       Number.isNaN(parsedLimit) ? 100 : parsedLimit,
     );
+  }
+  private withoutReviewInternals<T extends Record<string, unknown> | object>(
+    config: T,
+  ) {
+    const {
+      reviewGroups: _groups,
+      reviewRevision: _revision,
+      reviewConfigVersion: _version,
+      ...visible
+    } = config as T & {
+      reviewGroups?: unknown;
+      reviewRevision?: unknown;
+      reviewConfigVersion?: unknown;
+    };
+    return visible;
   }
 }

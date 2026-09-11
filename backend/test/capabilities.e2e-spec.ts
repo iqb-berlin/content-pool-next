@@ -145,7 +145,15 @@ describe("Capability and import API integration", () => {
         await request(server)
           .put(`/api/view/acp/${acpId}/review/config`)
           .set("Authorization", "Bearer " + token)
-          .send({ enableReview: true })
+          .send({
+            enableReview: true,
+            visibilityMode: "PRIVATE",
+            configVersion: (
+              await db
+                .getRepository(AcpAccessConfig)
+                .findOneByOrFail({ id: configId })
+            ).reviewConfigVersion,
+          })
           .expect(grants.includes("review:manage") ? 200 : 403);
         await request(server)
           .put(`/api/acp/${acpId}/items/tags`)

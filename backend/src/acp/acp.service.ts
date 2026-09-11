@@ -268,24 +268,32 @@ export class AcpService {
   async getAccessConfig(acpId: string): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
-    const existingConfig = await this.accessConfigRepository.findOne({
-      where: { acpId },
-      relations: ["credentials"],
+    return this.accessConfigRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(AcpAccessConfig);
+      const existingConfig = await repository.findOne({
+        lock: { mode: "pessimistic_write", tables: ["acp_access_configs"] },
+        where: { acpId },
+        relations: ["credentials"],
+      });
+      const config = await this.ensureAccessConfig(
+        acpId,
+        existingConfig,
+        repository,
+      );
+
+      const normalizedFeatureConfig = normalizeFeatureConfig(
+        config.featureConfig || {},
+      );
+      if (
+        JSON.stringify(config.featureConfig || {}) !==
+        JSON.stringify(normalizedFeatureConfig)
+      ) {
+        config.featureConfig = normalizedFeatureConfig;
+        return repository.save(config);
+      }
+
+      return config;
     });
-    const config = await this.ensureAccessConfig(acpId, existingConfig);
-
-    const normalizedFeatureConfig = normalizeFeatureConfig(
-      config.featureConfig || {},
-    );
-    if (
-      JSON.stringify(config.featureConfig || {}) !==
-      JSON.stringify(normalizedFeatureConfig)
-    ) {
-      config.featureConfig = normalizedFeatureConfig;
-      return this.accessConfigRepository.save(config);
-    }
-
-    return config;
   }
 
   async updateAccessConfig(
@@ -294,79 +302,94 @@ export class AcpService {
   ): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
-    let config = await this.accessConfigRepository.findOne({
-      where: { acpId },
-    });
-    const canRetainCredentialValidity =
-      config?.accessModel === AccessModel.CREDENTIALS_LIST &&
-      dto.accessModel === AccessModel.CREDENTIALS_LIST;
-    const existingValidFrom = canRetainCredentialValidity
-      ? config?.validFrom
-      : undefined;
-    const existingValidUntil = canRetainCredentialValidity
-      ? config?.validUntil
-      : undefined;
-    const validFrom = dto.validFrom
-      ? new Date(dto.validFrom)
-      : existingValidFrom;
-    const validUntil = dto.validUntil
-      ? new Date(dto.validUntil)
-      : existingValidUntil;
-
-    // Validate time limit for CREDENTIALS_LIST
-    if (dto.accessModel === "CREDENTIALS_LIST") {
-      if (!validFrom || !validUntil) {
-        throw new BadRequestException(
-          "Credential-based access requires validFrom and validUntil",
-        );
-      }
-
-      if (
-        Number.isNaN(validFrom.getTime()) ||
-        Number.isNaN(validUntil.getTime())
-      ) {
-        throw new BadRequestException(
-          "validFrom and validUntil must be valid ISO date strings",
-        );
-      }
-      if (validUntil <= validFrom) {
-        throw new BadRequestException("validUntil must be after validFrom");
-      }
-
-      const maxEnd = new Date(validFrom);
-      maxEnd.setMonth(maxEnd.getMonth() + 3);
-      if (validUntil > maxEnd) {
-        throw new BadRequestException(
-          "Credential-based access is limited to 3 months",
-        );
-      }
-    }
-
-    if (config) {
-      config.accessModel = dto.accessModel as AccessModel;
-      if (dto.allowRegistered !== undefined)
-        config.allowRegistered = dto.allowRegistered;
-      if (dto.featureConfig)
-        config.featureConfig = normalizeFeatureConfig(dto.featureConfig);
-      config.validFrom =
-        dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null;
-      config.validUntil =
-        dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null;
-    } else {
-      config = this.accessConfigRepository.create({
-        acpId,
-        accessModel: dto.accessModel as AccessModel,
-        allowRegistered: dto.allowRegistered || false,
-        featureConfig: normalizeFeatureConfig({
-          [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: false,
-          ...(dto.featureConfig || {}),
-        }),
-        validFrom: dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null,
-        validUntil: dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null,
+    return this.accessConfigRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(AcpAccessConfig);
+      let config = await repository.findOne({
+        where: { acpId },
+        lock: { mode: "pessimistic_write" },
       });
-    }
+      const canRetainCredentialValidity =
+        config?.accessModel === AccessModel.CREDENTIALS_LIST &&
+        dto.accessModel === AccessModel.CREDENTIALS_LIST;
+      const existingValidFrom = canRetainCredentialValidity
+        ? config?.validFrom
+        : undefined;
+      const existingValidUntil = canRetainCredentialValidity
+        ? config?.validUntil
+        : undefined;
+      const validFrom = dto.validFrom
+        ? new Date(dto.validFrom)
+        : existingValidFrom;
+      const validUntil = dto.validUntil
+        ? new Date(dto.validUntil)
+        : existingValidUntil;
 
-    return this.accessConfigRepository.save(config);
+      // Validate time limit for CREDENTIALS_LIST
+      if (dto.accessModel === "CREDENTIALS_LIST") {
+        if (!validFrom || !validUntil) {
+          throw new BadRequestException(
+            "Credential-based access requires validFrom and validUntil",
+          );
+        }
+
+        if (
+          Number.isNaN(validFrom.getTime()) ||
+          Number.isNaN(validUntil.getTime())
+        ) {
+          throw new BadRequestException(
+            "validFrom and validUntil must be valid ISO date strings",
+          );
+        }
+        if (validUntil <= validFrom) {
+          throw new BadRequestException("validUntil must be after validFrom");
+        }
+
+        const maxEnd = new Date(validFrom);
+        maxEnd.setMonth(maxEnd.getMonth() + 3);
+        if (validUntil > maxEnd) {
+          throw new BadRequestException(
+            "Credential-based access is limited to 3 months",
+          );
+        }
+      }
+
+      if (config) {
+        config.accessModel = dto.accessModel as AccessModel;
+        if (dto.allowRegistered !== undefined)
+          config.allowRegistered = dto.allowRegistered;
+        if (dto.featureConfig)
+          config.featureConfig = normalizeFeatureConfig({
+            ...dto.featureConfig,
+            enableReview: config.featureConfig.enableReview === true,
+            commentVisibilityMode:
+              config.featureConfig.commentVisibilityMode || "PRIVATE",
+            ungroupedVisibilityMode:
+              config.featureConfig.ungroupedVisibilityMode || "PRIVATE",
+          });
+        config.validFrom =
+          dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null;
+        config.validUntil =
+          dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null;
+      } else {
+        config = repository.create({
+          acpId,
+          accessModel: dto.accessModel as AccessModel,
+          allowRegistered: dto.allowRegistered || false,
+          featureConfig: normalizeFeatureConfig({
+            [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: false,
+            ...(dto.featureConfig || {}),
+            enableReview: false,
+            commentVisibilityMode: "PRIVATE",
+            ungroupedVisibilityMode: "PRIVATE",
+          }),
+          validFrom: dto.accessModel === "CREDENTIALS_LIST" ? validFrom : null,
+          validUntil:
+            dto.accessModel === "CREDENTIALS_LIST" ? validUntil : null,
+        });
+      }
+
+      return repository.save(config);
+    });
   }
 
   async updateMetadataColumns(
@@ -375,28 +398,36 @@ export class AcpService {
   ): Promise<AcpAccessConfig> {
     await this.findById(acpId);
 
-    const existingConfig = await this.accessConfigRepository.findOne({
-      where: { acpId },
+    return this.accessConfigRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(AcpAccessConfig);
+      const existingConfig = await repository.findOne({
+        lock: { mode: "pessimistic_write", tables: ["acp_access_configs"] },
+        where: { acpId },
+      });
+      const config = await this.ensureAccessConfig(
+        acpId,
+        existingConfig,
+        repository,
+      );
+
+      const currentConfig = config.featureConfig || {};
+      const normalizedConfig = normalizeFeatureConfig(currentConfig);
+      const currentMetadataColumns =
+        normalizedConfig.metadataColumns &&
+        typeof normalizedConfig.metadataColumns === "object" &&
+        !Array.isArray(normalizedConfig.metadataColumns)
+          ? (normalizedConfig.metadataColumns as Record<string, unknown>)
+          : {};
+      normalizedConfig.metadataColumns = {
+        ...currentMetadataColumns,
+        visible: dto.visibleColumns,
+        order: dto.columnOrder || dto.visibleColumns,
+        configured: true,
+      };
+
+      config.featureConfig = normalizedConfig;
+      return repository.save(config);
     });
-    const config = await this.ensureAccessConfig(acpId, existingConfig);
-
-    const currentConfig = config.featureConfig || {};
-    const normalizedConfig = normalizeFeatureConfig(currentConfig);
-    const currentMetadataColumns =
-      normalizedConfig.metadataColumns &&
-      typeof normalizedConfig.metadataColumns === "object" &&
-      !Array.isArray(normalizedConfig.metadataColumns)
-        ? (normalizedConfig.metadataColumns as Record<string, unknown>)
-        : {};
-    normalizedConfig.metadataColumns = {
-      ...currentMetadataColumns,
-      visible: dto.visibleColumns,
-      order: dto.columnOrder || dto.visibleColumns,
-      configured: true,
-    };
-
-    config.featureConfig = normalizedConfig;
-    return this.accessConfigRepository.save(config);
   }
 
   async uploadCredentials(
@@ -690,19 +721,21 @@ export class AcpService {
   private async ensureAccessConfig(
     acpId: string,
     existingConfig: AcpAccessConfig | null,
+    repository = this.accessConfigRepository,
   ): Promise<AcpAccessConfig> {
     if (existingConfig) {
       return existingConfig;
     }
 
-    return this.createDefaultAccessConfig(acpId, false);
+    return this.createDefaultAccessConfig(acpId, false, repository);
   }
 
   private async createDefaultAccessConfig(
     acpId: string,
     enablePlayerFocusHighlight: boolean,
+    repository = this.accessConfigRepository,
   ): Promise<AcpAccessConfig> {
-    const config = this.accessConfigRepository.create({
+    const config = repository.create({
       acpId,
       accessModel: AccessModel.PRIVATE,
       allowRegistered: false,
@@ -710,7 +743,7 @@ export class AcpService {
         [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: enablePlayerFocusHighlight,
       }),
     });
-    return this.accessConfigRepository.save(config);
+    return repository.save(config);
   }
 
   private prepareIndexForSave(

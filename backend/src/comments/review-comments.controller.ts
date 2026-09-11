@@ -11,7 +11,9 @@ import {
   Request,
   Res,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { ReviewSnapshotInterceptor } from "./review-snapshot.interceptor";
 import { Response } from "express";
 import {
   ApiBearerAuth,
@@ -66,6 +68,10 @@ class CreateItemReviewCommentDto {
   @MaxLength(10_000)
   commentText!: string;
 
+  @IsOptional()
+  @IsUUID()
+  groupId?: string;
+
   @ApiProperty({ required: false })
   @IsOptional()
   @IsUUID()
@@ -88,6 +94,7 @@ class UpdateReviewCommentDto {
 @ApiTags("Review Comments")
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, ReviewAccessGuard)
+@UseInterceptors(ReviewSnapshotInterceptor)
 @Controller("acp/:acpId/review/comments")
 export class ReviewCommentsController {
   constructor(
@@ -122,6 +129,42 @@ export class ReviewCommentsController {
     );
   }
 
+  @Get("visible")
+  async visible(@UuidParam("acpId") acpId: string, @Request() req: any) {
+    const actor = this.reviewPolicy.resolveActor(req);
+    const comments = await this.commentsService.findVisible(acpId, actor);
+    return comments.map((comment) => ({
+      id: comment.id,
+      targetType: comment.targetType,
+      targetId: comment.targetId,
+      commentText: comment.commentText,
+      groupId: comment.groupId || null,
+      groupName:
+        actor.groups?.find((group) => group.id === comment.groupId)?.name ||
+        null,
+      authorLabel: comment.authorLabel,
+      updatedAt: comment.updatedAt,
+    }));
+  }
+
+  @Get("export/visible.xlsx")
+  async exportVisible(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
+      ...this.reviewPolicy.resolveActor(req),
+      visible: true,
+    });
+    this.sendExport(
+      res,
+      buffer,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      `comments-${acpId}-visible.xlsx`,
+    );
+  }
+
   @Get("counts")
   @ApiOperation({ summary: "Get visible comment counts for all ACP items" })
   async getItemCommentCounts(
@@ -143,8 +186,7 @@ export class ReviewCommentsController {
   ) {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsCsv(acpId, {
-      userId: actor.userId,
-      credentialId: actor.credentialId,
+      ...actor,
     });
     this.sendExport(
       res,
@@ -163,8 +205,7 @@ export class ReviewCommentsController {
   ) {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
-      userId: actor.userId,
-      credentialId: actor.credentialId,
+      ...actor,
     });
     this.sendExport(
       res,
@@ -216,6 +257,7 @@ export class ReviewCommentsController {
           ),
           commentText: dto.commentText,
           parentCommentId: dto.parentCommentId,
+          groupId: dto.groupId,
         },
         this.reviewPolicy.resolveActor(req),
       );
@@ -227,6 +269,7 @@ export class ReviewCommentsController {
         ...target,
         commentText: dto.commentText,
         parentCommentId: dto.parentCommentId,
+        groupId: dto.groupId,
       },
       this.reviewPolicy.resolveActor(req),
     );

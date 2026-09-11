@@ -5,12 +5,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { CommentsService } from "./comments.service";
-import { CommentTargetType } from "../database/entities";
+import { Acp, Comment, CommentTargetType } from "../database/entities";
 import { ReviewPolicyService } from "./review-policy.service";
 
 describe("CommentsService", () => {
   let service: CommentsService;
   let commentRepository: {
+    manager?: any;
     find: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -47,7 +48,12 @@ describe("CommentsService", () => {
     };
 
     accessConfigRepository = {
-      findOne: jest.fn(),
+      findOne: jest.fn().mockResolvedValue({
+        featureConfig: {
+          enableReview: true,
+          commentVisibilityMode: "PRIVATE",
+        },
+      }),
     };
     unitParserService = {
       getItemListFromFiles: jest.fn().mockResolvedValue({
@@ -71,6 +77,17 @@ describe("CommentsService", () => {
       }),
     };
 
+    const manager = {
+      findOne: jest.fn(),
+      getRepository: (entity: any) =>
+        entity === Comment
+          ? commentRepository
+          : entity === Acp
+            ? acpRepository
+            : accessConfigRepository,
+      transaction: async (fn: any): Promise<any> => fn(manager),
+    };
+    commentRepository.manager = manager;
     service = new CommentsService(
       commentRepository as any,
       new ReviewPolicyService(accessConfigRepository as any),
@@ -282,18 +299,14 @@ describe("CommentsService", () => {
 
   it("checks comment feature flags per target type", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: {
-        enableCommenting: false,
-      },
+      featureConfig: { enableReview: true, enableCommenting: false },
     });
     await expect(
       service.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
     ).resolves.toBe(false);
 
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: {
-        enableCommenting: true,
-      },
+      featureConfig: { enableReview: true, enableCommenting: true },
     });
     await expect(
       service.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
@@ -301,6 +314,7 @@ describe("CommentsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.UNIT],
       },
@@ -343,6 +357,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([root, reply]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -365,6 +380,7 @@ describe("CommentsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -398,6 +414,7 @@ describe("CommentsService", () => {
       });
       accessConfigRepository.findOne.mockResolvedValue({
         featureConfig: {
+          enableReview: true,
           enableCommenting: true,
           commentVisibilityMode: "SHARED",
         },
@@ -481,6 +498,7 @@ describe("CommentsService", () => {
     ]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -542,6 +560,139 @@ describe("CommentsService", () => {
       ForbiddenException,
     );
   });
+
+  it.each([
+    {
+      mode: "SHARED",
+      deleted: false,
+      expected: true,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: false,
+      expected: true,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: true,
+      visible: true,
+      manager: false,
+    },
+    {
+      mode: "PRIVATE",
+      deleted: true,
+      expected: true,
+      visible: true,
+      manager: false,
+    },
+    {
+      mode: "PRIVATE",
+      deleted: false,
+      expected: false,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: false,
+      visible: true,
+      manager: false,
+      foreignGroup: true,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: true,
+      visible: false,
+      manager: true,
+    },
+  ])(
+    "preserves only permitted export thread references: %j",
+    async (scenario) => {
+      const date = new Date("2026-01-01T10:00:00.000Z");
+      const root = {
+        id: "root",
+        acpId: "acp-1",
+        userId: "other",
+        groupId: scenario.foreignGroup ? "foreign" : "group",
+        deletedAt: scenario.deleted ? date : null,
+        commentText: "Root text must not be exported",
+        authorLabel: "Other author",
+      };
+      const replies = ["reply-1", "reply-2"].map((id) => ({
+        id,
+        acpId: "acp-1",
+        userId: "me",
+        groupId: "group",
+        parentCommentId: "root",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+        commentText: id,
+        authorLabel: "ME",
+        createdAt: date,
+        updatedAt: date,
+      }));
+      accessConfigRepository.findOne.mockResolvedValue({
+        featureConfig: {
+          enableReview: true,
+          commentVisibilityMode: scenario.mode,
+        },
+        reviewGroups: [
+          {
+            id: "group",
+            name: "Group",
+            archived: false,
+            members: [{ kind: "user", id: "me" }],
+          },
+        ],
+      });
+      commentRepository.find.mockImplementation(async ({ where }) =>
+        where.id ? [root] : replies,
+      );
+      const actor = scenario.manager
+        ? undefined
+        : { userId: "me", visible: scenario.visible };
+      const csv = (
+        await service.exportReviewCommentsCsv(
+          "acp-1",
+          actor || { userId: "me", isManager: true },
+        )
+      ).toString("utf8");
+      expect(csv).not.toContain(root.commentText);
+      expect(csv).not.toContain(root.authorLabel);
+      if (scenario.expected) expect(csv.match(/"root"/g)).toHaveLength(4);
+      else expect(csv).not.toContain('"root"');
+
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheet = workbook.getWorksheet("Kommentare")!;
+      const headers = sheet.getRow(1).values as unknown[];
+      const threadColumn = headers.indexOf("Thread-ID");
+      const parentColumn = headers.indexOf("Antwort auf");
+      expect(threadColumn).toBeGreaterThan(0);
+      expect(parentColumn).toBeGreaterThan(0);
+      expect(sheet.rowCount).toBe(3);
+      for (let row = 2; row <= 3; row++) {
+        expect(sheet.getRow(row).getCell(threadColumn).value).toBe(
+          scenario.expected ? "root" : replies[row - 2].id,
+        );
+        expect(sheet.getRow(row).getCell(parentColumn).value || "").toBe(
+          scenario.expected ? "root" : "",
+        );
+      }
+    },
+  );
 
   it("uses ACP labels and content order for the shared CSV and XLSX projection", async () => {
     const date = new Date("2026-01-01T10:00:00.000Z");
@@ -703,6 +854,7 @@ describe("CommentsService", () => {
     ]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -723,6 +875,7 @@ describe("CommentsService", () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -778,6 +931,7 @@ describe("CommentsService", () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -824,6 +978,7 @@ describe("CommentsService", () => {
   it("rejects replies to a foreign comment after switching to private visibility", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -851,7 +1006,7 @@ describe("CommentsService", () => {
         },
         { userId: "me", authorLabel: "ME", isManager: false },
       ),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toThrow(NotFoundException);
     expect(commentRepository.save).not.toHaveBeenCalled();
   });
 
@@ -879,6 +1034,7 @@ describe("CommentsService", () => {
     };
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -920,6 +1076,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -953,6 +1110,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -998,6 +1156,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1021,6 +1180,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1047,6 +1207,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1068,6 +1229,7 @@ describe("CommentsService", () => {
   it("keeps canonical targets distinct even when only one has a parsed row", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentVisibilityMode: "SHARED",
       },
@@ -1127,6 +1289,7 @@ describe("CommentsService", () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1196,6 +1359,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([root, reply]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -1228,7 +1392,11 @@ describe("CommentsService", () => {
   it("prevents foreign edits and reports stale own edits as conflicts", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue({
       id: "c-1",
@@ -1277,7 +1445,11 @@ describe("CommentsService", () => {
   it("checks target configuration before mutating another comment target", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue({
       id: "unit-comment",
@@ -1318,7 +1490,11 @@ describe("CommentsService", () => {
       version: 1,
     } as any;
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue(ownComment);
     commentRepository.update.mockResolvedValue({ affected: 1 });
@@ -1355,7 +1531,11 @@ describe("CommentsService", () => {
       version: 1,
     } as any;
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue(ownComment);
     commentRepository.update.mockResolvedValue({ affected: 1 });
@@ -1378,7 +1558,11 @@ describe("CommentsService", () => {
   it("revalidates a stored target before updating it", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["UNIT"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["UNIT"],
+      },
     });
     reviewManifestService.getManifest.mockResolvedValue({
       booklets: [],
@@ -1411,7 +1595,11 @@ describe("CommentsService", () => {
   it("creates coding comments on the whole item coding context", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["CODING"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["CODING"],
+      },
     });
     unitParserService.getItemListFromFiles.mockResolvedValue({
       items: [{ unitId: "unit-1", itemId: "item-1" }],
@@ -1455,6 +1643,7 @@ describe("CommentsService", () => {
   it("keeps item and coding counts separate", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: ["ITEM", "CODING"],
       },
@@ -1489,7 +1678,11 @@ describe("CommentsService", () => {
 
   it("accepts canonical booklets and rejects legacy-only booklet identities", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["BOOKLET"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["BOOKLET"],
+      },
     });
     reviewManifestService.getManifest.mockResolvedValue({
       booklets: [

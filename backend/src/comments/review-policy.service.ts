@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+  Injectable,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import {
@@ -7,7 +12,9 @@ import {
   CommentTargetType,
 } from "../database/entities";
 
-export type CommentVisibilityMode = "PRIVATE" | "SHARED";
+import { ReviewGroup } from "../database/entities/acp-access-config.entity";
+
+export type CommentVisibilityMode = "PRIVATE" | "SHARED" | "GROUP";
 
 export interface CommentActor {
   userId?: string;
@@ -15,13 +22,11 @@ export interface CommentActor {
   credentialUsername?: string;
   authorLabel: string;
   isManager: boolean;
+  groups?: ReviewGroup[];
+  ungroupedShared?: boolean;
 }
 
-/**
- * Temporary policy boundary for the current ACP access model.
- * Ticket #60 can replace these decisions with review capabilities without
- * changing the comment API or persistence service.
- */
+/** Central visibility boundary shared by threads, mutations, counts and exports. */
 @Injectable()
 export class ReviewPolicyService {
   constructor(
@@ -74,19 +79,17 @@ export class ReviewPolicyService {
     if (targetType === CommentTargetType.TASK_SEQUENCE) {
       throw new ForbiddenException("Legacy comments are read-only");
     }
-    const featureConfig = await this.getFeatureConfig(acpId);
+    const featureConfig = await this.getFeatureConfig(acpId, actor);
     const targets = this.commentTargets(featureConfig);
     if (
-      !featureConfig.enableCommenting ||
+      (!featureConfig.enableCommenting && !actor.isManager) ||
       !this.isTargetEnabled(targets, targetType)
     ) {
       throw new ForbiddenException(
         `${targetType} comments are not enabled for this ACP`,
       );
     }
-    return featureConfig.commentVisibilityMode === "SHARED"
-      ? "SHARED"
-      : "PRIVATE";
+    return this.visibilityMode(featureConfig);
   }
 
   async assertItemAndCodingCountAccess(
@@ -99,7 +102,7 @@ export class ReviewPolicyService {
     if (!actor.userId && !actor.credentialId) {
       throw new ForbiddenException("Authenticated review access required");
     }
-    const featureConfig = await this.getFeatureConfig(acpId);
+    const featureConfig = await this.getFeatureConfig(acpId, actor);
     const configured = this.commentTargets(featureConfig);
     const targetTypes = [
       CommentTargetType.ITEM,
@@ -111,8 +114,7 @@ export class ReviewPolicyService {
       );
     }
     return {
-      visibilityMode:
-        featureConfig.commentVisibilityMode === "SHARED" ? "SHARED" : "PRIVATE",
+      visibilityMode: this.visibilityMode(featureConfig),
       targetTypes,
     };
   }
@@ -132,9 +134,17 @@ export class ReviewPolicyService {
     actor: CommentActor,
     comment: Comment,
   ): boolean {
+    if (actor.isManager) return true;
+    if (visibilityMode === "GROUP" && comment.groupId) {
+      return Boolean(
+        actor.groups?.some((group) => group.id === comment.groupId),
+      );
+    }
     return (
       visibilityMode === "SHARED" ||
-      actor.isManager ||
+      (visibilityMode === "GROUP" &&
+        !comment.groupId &&
+        actor.ungroupedShared === true) ||
       this.isOwnedBy(comment, actor)
     );
   }
@@ -145,9 +155,7 @@ export class ReviewPolicyService {
     parent: Comment,
   ): void {
     if (!this.canViewComment(visibilityMode, actor, parent)) {
-      throw new ForbiddenException(
-        "Replies are only allowed for visible comments",
-      );
+      throw new NotFoundException("Reply target not found for this context");
     }
   }
 
@@ -167,11 +175,70 @@ export class ReviewPolicyService {
 
   private async getFeatureConfig(
     acpId: string,
+    actor?: CommentActor,
   ): Promise<Record<string, unknown>> {
     const config = await this.accessConfigRepository.findOne({
       where: { acpId },
     });
+    if (actor) {
+      if (config?.featureConfig?.enableReview !== true && !actor.isManager) {
+        throw new ForbiddenException("Review ist deaktiviert");
+      }
+      actor.ungroupedShared =
+        config?.featureConfig?.ungroupedVisibilityMode === "SHARED";
+      actor.groups = (config?.reviewGroups || []).filter(
+        (group) =>
+          actor.isManager ||
+          (!group.archived &&
+            group.members.some((member) =>
+              member.kind === "user"
+                ? member.id === actor.userId
+                : member.id === actor.credentialId,
+            )),
+      );
+    }
     return (config?.featureConfig || {}) as Record<string, unknown>;
+  }
+
+  async prepareVisibility(
+    acpId: string,
+    actor: CommentActor,
+  ): Promise<CommentVisibilityMode> {
+    return this.visibilityMode(await this.getFeatureConfig(acpId, actor));
+  }
+
+  private visibilityMode(
+    config: Record<string, unknown>,
+  ): CommentVisibilityMode {
+    return config.commentVisibilityMode === "GROUP"
+      ? "GROUP"
+      : config.commentVisibilityMode === "SHARED"
+        ? "SHARED"
+        : "PRIVATE";
+  }
+
+  selectGroup(
+    mode: CommentVisibilityMode,
+    actor: CommentActor,
+    requested?: string,
+  ): string | undefined {
+    if (mode !== "GROUP") {
+      if (requested)
+        throw new BadRequestException(
+          "Gruppen sind nur im Gruppenmodus wählbar",
+        );
+      return undefined;
+    }
+    const groups = (actor.groups || []).filter((group) => !group.archived);
+    const id =
+      requested ||
+      (!actor.isManager && groups.length === 1 ? groups[0].id : undefined);
+    if (!id || !groups.some((group) => group.id === id)) {
+      throw new BadRequestException(
+        "Bitte eine verfügbare Review-Gruppe wählen",
+      );
+    }
+    return id;
   }
 
   private commentTargets(featureConfig: Record<string, unknown>): string[] {

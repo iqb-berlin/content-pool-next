@@ -61,9 +61,17 @@ export class CommentsController {
   @ApiOperation({ summary: "List my comments for an ACP" })
   async findMine(@UuidParam("acpId") acpId: string, @Request() req: any) {
     if (req.user.type === "credential") {
-      return this.commentsService.findByCredential(acpId, req.user.sub);
+      return this.commentsService.findByCredential(
+        acpId,
+        req.user.sub,
+        this.reviewPolicy.resolveActor(req),
+      );
     }
-    return this.commentsService.findByUser(acpId, req.user.sub);
+    return this.commentsService.findByUser(
+      acpId,
+      req.user.sub,
+      this.reviewPolicy.resolveActor(req),
+    );
   }
 
   @Post()

@@ -6,9 +6,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { FindOptionsWhere, IsNull, Repository } from "typeorm";
+import { FindOptionsWhere, In, IsNull, Repository } from "typeorm";
 import { createHash } from "crypto";
-import { Acp, Comment, CommentTargetType } from "../database/entities";
+import {
+  Acp,
+  AcpAccessConfig,
+  Comment,
+  CommentTargetType,
+} from "../database/entities";
 import { UnitParserService } from "../files/unit-parser.service";
 import { FileCatalogCache } from "../files/file-catalog.cache";
 import { getAssessmentParts, getIndexUnits } from "../acp/acp-index.utils";
@@ -32,6 +37,8 @@ export interface CommentView {
   itemId: string | null;
   parentCommentId: string | null;
   parentVisible: boolean;
+  groupId: string | null;
+  groupName: string | null;
   commentText: string;
   authorLabel: string;
   createdAt: string;
@@ -47,6 +54,8 @@ export interface CommentThreadSnapshot {
   revision: string;
   visibilityMode: CommentVisibilityMode;
   comments: CommentView[];
+  groups: { id: string; name: string; archived: boolean }[];
+  defaultGroupId: string | null;
 }
 
 export interface ItemCommentCount {
@@ -62,6 +71,9 @@ export interface ItemCommentCountsSnapshot {
 }
 
 export interface ReviewCommentExportActor {
+  visible?: boolean;
+  isManager?: boolean;
+  authorLabel?: string;
   userId?: string;
   credentialId?: string;
 }
@@ -121,6 +133,30 @@ interface ReviewExportTarget {
 
 @Injectable()
 export class CommentsService {
+  private inTransaction = false;
+
+  private async transaction<T>(
+    acpId: string,
+    operation: (service: CommentsService) => Promise<T>,
+  ): Promise<T> {
+    return this.commentRepository.manager.transaction(async (manager) => {
+      await manager.findOne(AcpAccessConfig, {
+        where: { acpId },
+        lock: { mode: "pessimistic_write" },
+      });
+      const scoped = new CommentsService(
+        manager.getRepository(Comment),
+        new ReviewPolicyService(manager.getRepository(AcpAccessConfig)),
+        this.unitParserService,
+        this.fileCatalogCache,
+        manager.getRepository(Acp),
+        this.reviewManifestService,
+      );
+      scoped.inTransaction = true;
+      return operation(scoped);
+    });
+  }
+
   private readonly itemCatalogCache = new Map<
     string,
     Promise<ItemCatalogEntry[]>
@@ -138,6 +174,14 @@ export class CommentsService {
     private readonly reviewManifestService: ReviewManifestService,
   ) {}
 
+  async findVisible(acpId: string, actor: CommentActor): Promise<Comment[]> {
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    const comments = await this.findByAcp(acpId);
+    return comments.filter((comment) =>
+      this.reviewPolicy.canViewComment(mode, actor, comment),
+    );
+  }
+
   async findByAcp(acpId: string): Promise<Comment[]> {
     return this.commentRepository.find({
       where: { acpId, deletedAt: IsNull() },
@@ -146,23 +190,50 @@ export class CommentsService {
     });
   }
 
-  async findByUser(acpId: string, userId: string): Promise<Comment[]> {
-    return this.commentRepository.find({
+  async findByUser(
+    acpId: string,
+    userId: string,
+    requestActor?: CommentActor,
+  ): Promise<Comment[]> {
+    const actor: CommentActor = requestActor || {
+      userId,
+      isManager: false,
+      authorLabel: "",
+    };
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    const comments = await this.commentRepository.find({
       where: { acpId, userId, deletedAt: IsNull() },
       relations: ["user"],
       order: { createdAt: "DESC" },
     });
+    return comments.filter(
+      (comment) =>
+        mode !== "GROUP" ||
+        this.reviewPolicy.canViewComment(mode, actor, comment),
+    );
   }
 
   async findByCredential(
     acpId: string,
     credentialId: string,
+    requestActor?: CommentActor,
   ): Promise<Comment[]> {
-    return this.commentRepository.find({
+    const actor: CommentActor = requestActor || {
+      credentialId,
+      isManager: false,
+      authorLabel: "",
+    };
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    const comments = await this.commentRepository.find({
       where: { acpId, credentialId, deletedAt: IsNull() },
       relations: ["user"],
       order: { createdAt: "DESC" },
     });
+    return comments.filter(
+      (comment) =>
+        mode !== "GROUP" ||
+        this.reviewPolicy.canViewComment(mode, actor, comment),
+    );
   }
 
   async create(data: {
@@ -177,6 +248,7 @@ export class CommentsService {
     unitId?: string;
     itemId?: string;
     parentCommentId?: string;
+    groupId?: string;
     commentText: string;
   }): Promise<Comment> {
     const commentText = this.normalizeCommentText(data.commentText);
@@ -230,7 +302,10 @@ export class CommentsService {
     );
     const deletedParents = comments.filter(
       (comment) =>
-        Boolean(comment.deletedAt) && requiredDeletedParentIds.has(comment.id),
+        Boolean(comment.deletedAt) &&
+        requiredDeletedParentIds.has(comment.id) &&
+        (visibilityMode !== "GROUP" ||
+          this.reviewPolicy.canViewComment(visibilityMode, actor, comment)),
     );
     const responseComments = [...visibleComments, ...deletedParents].sort(
       (left, right) =>
@@ -238,6 +313,13 @@ export class CommentsService {
         left.id.localeCompare(right.id),
     );
     const responseIds = new Set(responseComments.map((comment) => comment.id));
+    const defaultGroupId =
+      visibilityMode === "GROUP" &&
+      !actor.isManager &&
+      actor.groups?.length === 1 &&
+      !actor.groups[0].archived
+        ? actor.groups[0].id
+        : null;
 
     return {
       target: {
@@ -246,8 +328,29 @@ export class CommentsService {
         ...(target.unitId ? { unitId: target.unitId } : {}),
         ...(target.itemId ? { itemId: target.itemId } : {}),
       },
-      revision: this.buildRevision(responseComments, visibilityMode),
+      revision: createHash("sha256")
+        .update(
+          JSON.stringify([
+            visibilityMode,
+            defaultGroupId,
+            responseComments.map((comment) =>
+              this.toCommentView(comment, actor, responseIds),
+            ),
+            (actor.groups || []).map(({ id, name, archived }) => ({
+              id,
+              name,
+              archived,
+            })),
+          ]),
+        )
+        .digest("hex"),
       visibilityMode,
+      defaultGroupId,
+      groups: (actor.groups || []).map(({ id, name, archived }) => ({
+        id,
+        name,
+        archived,
+      })),
       comments: responseComments.map((comment) =>
         this.toCommentView(comment, actor, responseIds),
       ),
@@ -338,6 +441,7 @@ export class CommentsService {
       itemId: string;
       commentText: string;
       parentCommentId?: string;
+      groupId?: string;
     },
     actor: CommentActor,
   ): Promise<CommentView> {
@@ -353,9 +457,14 @@ export class CommentsService {
     input: ReviewCommentTarget & {
       commentText: string;
       parentCommentId?: string;
+      groupId?: string;
     },
     actor: CommentActor,
   ): Promise<CommentView> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.createReviewComment(acpId, input, actor),
+      );
     const visibilityMode = await this.reviewPolicy.assertCommentAccess(
       acpId,
       actor,
@@ -364,6 +473,7 @@ export class CommentsService {
     const target = await this.resolveReviewTarget(acpId, input);
 
     let parentCommentId: string | undefined;
+    let groupId: string | undefined;
     if (input.parentCommentId) {
       const parent = await this.commentRepository.findOne({
         where: { id: input.parentCommentId, acpId },
@@ -373,9 +483,25 @@ export class CommentsService {
       }
       this.reviewPolicy.assertCanReply(visibilityMode, actor, parent);
       parentCommentId = parent.parentCommentId || parent.id;
+      groupId = parent.groupId || undefined;
+      if (input.groupId && input.groupId !== groupId)
+        throw new BadRequestException("Antworten behalten die Thread-Gruppe");
+      if (
+        groupId &&
+        actor.groups?.some((group) => group.id === groupId && group.archived)
+      )
+        throw new BadRequestException("Diese Review-Gruppe ist archiviert");
     }
 
+    if (!parentCommentId)
+      groupId = this.reviewPolicy.selectGroup(
+        visibilityMode,
+        actor,
+        input.groupId,
+      );
+
     const comment = await this.create({
+      groupId,
       acpId,
       userId: actor.userId,
       credentialId: actor.credentialId,
@@ -465,6 +591,10 @@ export class CommentsService {
     version: number,
     actor: CommentActor,
   ): Promise<CommentView> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.updateOwnComment(acpId, commentId, commentText, version, actor),
+      );
     const current = await this.findMutableComment(acpId, commentId, actor);
     await this.reviewPolicy.assertCommentAccess(
       acpId,
@@ -513,6 +643,10 @@ export class CommentsService {
     version: number,
     actor: CommentActor,
   ): Promise<void> {
+    if (!this.inTransaction)
+      return this.transaction(acpId, (service) =>
+        service.deleteOwnComment(acpId, commentId, version, actor),
+      );
     const current = await this.findMutableComment(acpId, commentId, actor);
     await this.reviewPolicy.assertCommentAccess(
       acpId,
@@ -615,7 +749,7 @@ export class CommentsService {
     actor?: ReviewCommentExportActor,
   ): Promise<Buffer> {
     const data = await this.getReviewExportRows(acpId, actor);
-    return this.buildReviewXlsxBuffer(data, !actor);
+    return this.buildReviewXlsxBuffer(data, !actor || actor.visible === true);
   }
 
   private toExportRow(
@@ -623,6 +757,7 @@ export class CommentsService {
     preferCredential = false,
   ): Record<string, unknown> {
     return {
+      groupId: comment.groupId || "",
       targetType: comment.targetType,
       targetId: comment.targetId,
       unitId: comment.unitId || "",
@@ -648,6 +783,7 @@ export class CommentsService {
     workbook.created = new Date();
     const sheet = workbook.addWorksheet("Kommentare");
     sheet.columns = [
+      { header: "Review-Gruppe (ID)", key: "groupId", width: 38 },
       { header: "Zieltyp", key: "targetType", width: 18 },
       { header: "Ziel-ID", key: "targetId", width: 25 },
       { header: "Unit-ID", key: "unitId", width: 22 },
@@ -682,11 +818,24 @@ export class CommentsService {
     if (actor && !actor.userId && !actor.credentialId) {
       throw new ForbiddenException("A stable review identity is required");
     }
-    const commentsPromise = actor?.credentialId
-      ? this.findByCredential(acpId, actor.credentialId)
-      : actor?.userId
-        ? this.findByUser(acpId, actor.userId)
-        : this.findByAcp(acpId);
+    const requestActor = actor
+      ? {
+          ...actor,
+          isManager: actor.isManager === true,
+          authorLabel: actor.authorLabel || "",
+        }
+      : undefined;
+    const commentsPromise = actor?.visible
+      ? this.findVisible(acpId, {
+          ...actor,
+          isManager: actor.isManager === true,
+          authorLabel: actor.authorLabel || "",
+        })
+      : actor?.credentialId
+        ? this.findByCredential(acpId, actor.credentialId, requestActor)
+        : actor?.userId
+          ? this.findByUser(acpId, actor.userId, requestActor)
+          : this.findByAcp(acpId);
     const [comments, itemCatalog, acp, manifest] = await Promise.all([
       commentsPromise,
       this.getItemCatalog(acpId),
@@ -721,7 +870,38 @@ export class CommentsService {
         left.comment.id.localeCompare(right.comment.id)
       );
     });
+    const visibleIds = new Set(comments.map((comment) => comment.id));
+    const missingParentIds = [
+      ...new Set(
+        comments
+          .map((comment) => comment.parentCommentId)
+          .filter(
+            (id): id is string => typeof id === "string" && !visibleIds.has(id),
+          ),
+      ),
+    ];
+    if (missingParentIds.length) {
+      // Personal exports omit foreign roots; all exports omit deleted roots.
+      // Resolve references separately without exporting their text or authors.
+      const parents = await this.commentRepository.find({
+        where: { acpId, id: In(missingParentIds) },
+        select: ["id", "userId", "credentialId", "groupId", "deletedAt"],
+      });
+      const mode = requestActor
+        ? await this.reviewPolicy.prepareVisibility(acpId, requestActor)
+        : "SHARED";
+      for (const parent of parents) {
+        if (
+          !requestActor ||
+          this.reviewPolicy.canViewComment(mode, requestActor, parent) ||
+          // Match the neutral tombstones exposed by the thread endpoint.
+          (parent.deletedAt && mode !== "GROUP")
+        )
+          visibleIds.add(parent.id);
+      }
+    }
     return sorted.map(({ comment, target }) => ({
+      groupId: comment.groupId || "",
       level: target.level,
       bookletId: target.bookletId,
       bookletLabel: target.bookletLabel,
@@ -729,8 +909,14 @@ export class CommentsService {
       unitLabel: target.unitLabel,
       itemId: target.itemId,
       itemLabel: target.itemLabel,
-      threadId: comment.parentCommentId || comment.id,
-      parentCommentId: comment.parentCommentId || "",
+      threadId:
+        comment.parentCommentId && visibleIds.has(comment.parentCommentId)
+          ? comment.parentCommentId
+          : comment.id,
+      parentCommentId:
+        comment.parentCommentId && visibleIds.has(comment.parentCommentId)
+          ? comment.parentCommentId
+          : "",
       comment: comment.commentText,
       author: this.resolveAuthorLabel(comment),
       createdAt: comment.createdAt.toISOString(),
@@ -741,6 +927,7 @@ export class CommentsService {
 
   private reviewExportHeaders(includeAuthor: boolean) {
     const headers = [
+      { key: "groupId", label: "Review-Gruppe (ID)", width: 38 },
       { key: "level", label: "Ebene", width: 18 },
       { key: "bookletId", label: "Booklet-ID", width: 24 },
       { key: "bookletLabel", label: "Booklet-Bezeichnung", width: 32 },
@@ -1301,7 +1488,12 @@ export class CommentsService {
       where: { id: commentId, acpId },
       relations: ["user"],
     });
-    if (!comment || comment.deletedAt) {
+    const mode = await this.reviewPolicy.prepareVisibility(acpId, actor);
+    if (
+      !comment ||
+      comment.deletedAt ||
+      !this.reviewPolicy.canViewComment(mode, actor, comment)
+    ) {
       throw new NotFoundException("Comment not found");
     }
     if (
@@ -1384,6 +1576,10 @@ export class CommentsService {
       unitId: comment.unitId || null,
       itemId: comment.itemId || null,
       parentCommentId: comment.parentCommentId || null,
+      groupId: comment.groupId || null,
+      groupName:
+        actor.groups?.find((group) => group.id === comment.groupId)?.name ||
+        null,
       parentVisible:
         !comment.parentCommentId || visibleIds.has(comment.parentCommentId),
       commentText: deleted ? "" : comment.commentText,
@@ -1409,22 +1605,6 @@ export class CommentsService {
       comment.credentialUsername ||
       "Unknown"
     );
-  }
-
-  private buildRevision(
-    comments: Comment[],
-    visibilityMode: CommentVisibilityMode,
-  ): string {
-    const projection = comments
-      .map(
-        (comment) =>
-          `${comment.id}:${comment.version || 1}:${comment.deletedAt?.toISOString() || ""}`,
-      )
-      .sort()
-      .join("|");
-    return createHash("sha256")
-      .update(`${visibilityMode}|${projection}`, "utf8")
-      .digest("hex");
   }
 
   private normalizeCommentText(commentText: string): string {

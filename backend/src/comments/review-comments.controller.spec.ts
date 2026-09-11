@@ -198,7 +198,11 @@ describe("ReviewCommentsController", () => {
     await controller.exportMineXlsx("acp-1", managerRequest, response() as any);
     expect(commentsService.exportReviewCommentsXlsx).toHaveBeenCalledWith(
       "acp-1",
-      { userId: "manager-1", credentialId: undefined },
+      expect.objectContaining({
+        userId: "manager-1",
+        credentialId: undefined,
+        isManager: true,
+      }),
     );
 
     await controller.exportAllXlsx("acp-1", managerRequest, response() as any);

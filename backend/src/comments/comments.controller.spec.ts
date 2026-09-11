@@ -79,6 +79,7 @@ describe("CommentsController", () => {
     expect(commentsService.findByCredential).toHaveBeenCalledWith(
       "acp-1",
       "credential-1",
+      expect.objectContaining({ credentialId: "credential-1" }),
     );
     expect(commentsService.findByUser).not.toHaveBeenCalled();
   });
@@ -88,7 +89,11 @@ describe("CommentsController", () => {
     const result = await controller.findMine("acp-1", req);
 
     expect(result).toEqual([{ id: "c-user" }]);
-    expect(commentsService.findByUser).toHaveBeenCalledWith("acp-1", "u-1");
+    expect(commentsService.findByUser).toHaveBeenCalledWith(
+      "acp-1",
+      "u-1",
+      expect.objectContaining({ userId: "u-1" }),
+    );
   });
 
   it("creates comment directly for managers", async () => {

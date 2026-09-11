@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CommentTargetType } from "../database/entities";
 import { ReviewPolicyService } from "./review-policy.service";
 
@@ -85,7 +85,7 @@ describe("ReviewPolicyService", () => {
     ).rejects.toThrow(ForbiddenException);
 
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: false },
+      featureConfig: { enableReview: true, enableCommenting: false },
     });
     await expect(
       policy.assertItemCommentAccess("acp-1", {
@@ -134,7 +134,7 @@ describe("ReviewPolicyService", () => {
     expect(policy.canViewComment("SHARED", actor, foreignComment)).toBe(true);
     expect(() =>
       policy.assertCanReply("PRIVATE", actor, foreignComment),
-    ).toThrow(ForbiddenException);
+    ).toThrow(NotFoundException);
     expect(() => policy.assertCanMutate(actor, foreignComment)).toThrow(
       ForbiddenException,
     );
@@ -146,6 +146,7 @@ describe("ReviewPolicyService", () => {
   it("keeps target feature checks behind the policy boundary", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -165,7 +166,11 @@ describe("ReviewPolicyService", () => {
 
   it("requires explicit opt-in for new booklet and coding targets", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: [] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: [],
+      },
     });
     await expect(
       policy.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
@@ -179,6 +184,7 @@ describe("ReviewPolicyService", () => {
 
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.BOOKLET, CommentTargetType.CODING],
       },

@@ -117,6 +117,19 @@ describe('ItemCommentThreadComponent', () => {
     expect(template).not.toContain('btn-state-indicator');
   });
 
+  it('keeps the established Item labels while naming other comment contexts explicitly', () => {
+    const { component } = createComponent();
+
+    expect(component.panelAriaLabel).toBe('Kommentare zum ausgewählten Item');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zu diesem Item …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare zu diesem Item.');
+
+    component.targetType = 'CODING';
+    expect(component.panelAriaLabel).toBe('Kommentare zur Kodierung unit-1 · item-1');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zur Kodierung unit-1 · item-1 …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare in diesem Kontext.');
+  });
+
   it('loads only the selected item and ignores a superseded response', () => {
     const { component, api } = createComponent();
     const first = new Subject<any>();

@@ -132,8 +132,34 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   get contextLabel(): string {
     if (this.targetType === 'BOOKLET') return `Booklet ${this.bookletId}`;
     if (this.targetType === 'UNIT') return `Unit ${this.unitId}`;
-    if (this.targetType === 'CODING') return `Kodierung zu ${this.unitId} · ${this.itemId}`;
+    if (this.targetType === 'CODING') return `Kodierung ${this.unitId} · ${this.itemId}`;
     return `Item ${this.unitId} · ${this.itemId}`;
+  }
+
+  get commentHeading(): string {
+    if (this.targetType === 'BOOKLET') return `Kommentare zum Booklet ${this.bookletId}`;
+    if (this.targetType === 'UNIT') return `Kommentare zur Unit ${this.unitId}`;
+    if (this.targetType === 'CODING') {
+      return `Kommentare zur Kodierung ${this.unitId} · ${this.itemId}`;
+    }
+    return `Kommentare zu ${this.contextLabel}`;
+  }
+
+  get panelAriaLabel(): string {
+    return this.targetType === 'ITEM' ? 'Kommentare zum ausgewählten Item' : this.commentHeading;
+  }
+
+  get newCommentPlaceholder(): string {
+    if (this.targetType === 'ITEM') return 'Kommentar zu diesem Item …';
+    if (this.targetType === 'BOOKLET') return `Kommentar zum Booklet ${this.bookletId} …`;
+    if (this.targetType === 'UNIT') return `Kommentar zur Unit ${this.unitId} …`;
+    return `Kommentar zur Kodierung ${this.unitId} · ${this.itemId} …`;
+  }
+
+  get emptyStateText(): string {
+    return this.targetType === 'ITEM'
+      ? 'Noch keine Kommentare zu diesem Item.'
+      : 'Noch keine Kommentare in diesem Kontext.';
   }
 
   get commentCount(): number {

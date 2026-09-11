@@ -17,11 +17,11 @@
         [id]="panelId"
         class="comment-panel card"
         role="region"
-        [attr.aria-label]="'Kommentare zu ' + contextLabel"
+        [attr.aria-label]="panelAriaLabel"
       >
         <div class="comment-panel-header">
           <div>
-            <strong>Kommentare zu {{ contextLabel }}</strong>
+            <strong>{{ commentHeading }}</strong>
             <span class="visibility-badge">{{ visibilityLabel }}</span>
           </div>
           @if (error) {
@@ -41,7 +41,7 @@
           <textarea
             rows="3"
             maxlength="10000"
-            [placeholder]="'Kommentar zu ' + contextLabel + ' …'"
+            [placeholder]="newCommentPlaceholder"
             [(ngModel)]="newCommentText"
           ></textarea>
           <button
@@ -60,7 +60,7 @@
         @if (loading && !snapshot) {
           <p class="comment-status">Kommentare werden geladen …</p>
         } @else if (threadGroups.length === 0) {
-          <p class="comment-status">Noch keine Kommentare in diesem Kontext.</p>
+          <p class="comment-status">{{ emptyStateText }}</p>
         } @else {
           <div class="thread-list">
             @for (thread of threadGroups; track thread.id) {

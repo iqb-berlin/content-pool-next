@@ -1,3 +1,4 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
 import {
   BadRequestException,
   Injectable,
@@ -67,6 +68,7 @@ export class ViewsService {
     private readonly itemPreferenceRepository: Repository<AcpItemPreference>,
     private readonly itemExplorerStateService: ItemExplorerStateService,
     private readonly unitParserService: UnitParserService,
+    private readonly reviewManifestService: ReviewManifestService,
   ) {}
 
   /**
@@ -232,7 +234,27 @@ export class ViewsService {
         }
       }
     }
-    const sequences = Array.from(sequenceMap.values());
+    const manifest = await this.reviewManifestService.getManifest(acpId);
+    const booklets = manifest.booklets.filter((booklet) => !booklet.legacy);
+    const definitions = new Set(
+      booklets.map((booklet) => booklet.definitionId).filter(Boolean),
+    );
+    const assignedModuleIds = new Set(
+      booklets.flatMap((booklet) => booklet.moduleIds || []),
+    );
+    const sequences = [
+      ...booklets.map(({ id, name, definitionId }) => ({
+        id,
+        name,
+        bookletDefinitionId: definitionId,
+        kind: "booklet",
+      })),
+      ...Array.from(sequenceMap.values()).filter(
+        (sequence) =>
+          !definitions.has(sequence.bookletDefinitionId) &&
+          !assignedModuleIds.has(sequence.id),
+      ),
+    ];
 
     return {
       id: acp.id,
@@ -351,7 +373,19 @@ export class ViewsService {
   /**
    * Get task sequence (ordered list of units from a booklet module).
    */
-  async getTaskSequence(acpId: string, sequenceId: string): Promise<any> {
+  async getTaskSequence(
+    acpId: string,
+    sequenceId: string,
+    kind?: "booklet",
+  ): Promise<any> {
+    if (kind === "booklet") {
+      const manifest = await this.reviewManifestService.getManifest(acpId);
+      return (
+        manifest.booklets.find(
+          (entry) => !entry.legacy && entry.id === sequenceId,
+        ) || null
+      );
+    }
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
 
@@ -362,7 +396,7 @@ export class ViewsService {
     for (const part of parts) {
       for (const module of part.bookletModules || []) {
         if (module.id === sequenceId) {
-          const unitIds = (module.units || [])
+          const unitIds = [...(module.units || [])]
             .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
             .map((u: any) => u.id);
 

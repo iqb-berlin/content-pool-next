@@ -834,6 +834,18 @@ describe("ViewsController", () => {
     ).resolves.toEqual([{ id: "seq-2" }]);
   });
 
+  it("forwards explicit booklet navigation separately from module navigation", async () => {
+    await controller.getSequence("acp-1", "same", {
+      acpAccessLevel: "MANAGER",
+      query: { kind: "booklet" },
+    });
+    expect(viewsService.getTaskSequence).toHaveBeenCalledWith(
+      "acp-1",
+      "same",
+      "booklet",
+    );
+  });
+
   it("blocks sequence navigation when disabled", async () => {
     viewsService.getAcpStartPage.mockResolvedValue({
       featureConfig: { enableSequenceNavigation: false },

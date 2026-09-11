@@ -88,7 +88,13 @@ export class FilesController {
 
       const archive = unitId
         ? await this.filesService.createUnitZip(acpId, unitId)
-        : await this.filesService.createSequenceZip(acpId, sequenceId!);
+        : req?.query?.kind === "booklet"
+          ? await this.filesService.createSequenceZip(
+              acpId,
+              sequenceId!,
+              "booklet",
+            )
+          : await this.filesService.createSequenceZip(acpId, sequenceId!);
 
       res?.setHeader("Content-Type", "application/zip");
       res?.setHeader(

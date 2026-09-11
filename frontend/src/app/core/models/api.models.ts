@@ -415,14 +415,24 @@ export interface FeatureConfig {
   persistUserPreferences?: boolean;
 }
 
+export type CommentTargetType = 'BOOKLET' | 'UNIT' | 'ITEM' | 'CODING' | 'TASK_SEQUENCE';
+
+export interface ReviewCommentTarget {
+  targetType: Exclude<CommentTargetType, 'TASK_SEQUENCE'>;
+  bookletId?: string;
+  unitId?: string;
+  itemId?: string;
+}
+
 export interface Comment {
   id: string;
   acpId: string;
   userId?: string;
   credentialUsername?: string;
   credentialId?: string;
-  targetType: 'UNIT' | 'ITEM' | 'TASK_SEQUENCE';
+  targetType: CommentTargetType;
   targetId: string;
+  bookletId?: string | null;
   unitId?: string | null;
   itemId?: string | null;
   parentCommentId?: string | null;
@@ -434,10 +444,11 @@ export interface Comment {
   version?: number;
   isOwn?: boolean;
   isDeleted?: boolean;
+  legacyReadOnly?: boolean;
 }
 
 export interface CommentThreadSnapshot {
-  target: { unitId: string; itemId: string };
+  target: ReviewCommentTarget;
   revision: string;
   visibilityMode: 'PRIVATE' | 'SHARED';
   comments: Comment[];
@@ -445,7 +456,7 @@ export interface CommentThreadSnapshot {
 
 export interface ItemCommentCountsSnapshot {
   revision: string;
-  counts: Array<{ unitId: string; itemId: string; count: number }>;
+  counts: Array<{ unitId: string; itemId: string; count: number; codingCount: number }>;
 }
 
 export interface AppSettings {

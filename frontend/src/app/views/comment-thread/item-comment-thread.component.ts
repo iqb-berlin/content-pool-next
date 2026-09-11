@@ -11,7 +11,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil, timeout } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { Comment, CommentThreadSnapshot } from '../../core/models/api.models';
+import { Comment, CommentThreadSnapshot, ReviewCommentTarget } from '../../core/models/api.models';
 
 interface CommentThreadGroup {
   id: string;
@@ -28,6 +28,8 @@ interface CommentThreadGroup {
 })
 export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() acpId = '';
+  @Input() targetType: ReviewCommentTarget['targetType'] = 'ITEM';
+  @Input() bookletId = '';
   @Input() unitId = '';
   @Input() itemId = '';
   @Input() enabled = false;
@@ -36,6 +38,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() initiallyOpen = false;
   @Input() hideToggle = false;
   @Output() countChanged = new EventEmitter<{
+    targetType?: ReviewCommentTarget['targetType'];
     unitId: string;
     itemId: string;
     count: number;
@@ -74,7 +77,12 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
 
   ngOnChanges(changes: SimpleChanges): void {
     const targetChanged =
-      changes['acpId'] || changes['unitId'] || changes['itemId'] || changes['enabled'];
+      changes['acpId'] ||
+      changes['targetType'] ||
+      changes['bookletId'] ||
+      changes['unitId'] ||
+      changes['itemId'] ||
+      changes['enabled'];
     const sessionChanged = changes['sessionToken'];
     if (sessionChanged) {
       this.sessionChanged$.next();
@@ -111,7 +119,21 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get hasTarget(): boolean {
-    return Boolean(this.enabled && this.acpId && this.unitId && this.itemId);
+    if (!this.enabled || !this.acpId) return false;
+    if (this.targetType === 'BOOKLET') return Boolean(this.bookletId);
+    if (this.targetType === 'UNIT') return Boolean(this.unitId);
+    return Boolean(this.unitId && this.itemId);
+  }
+
+  get panelId(): string {
+    return `${this.targetType.toLowerCase()}-comment-panel`;
+  }
+
+  get contextLabel(): string {
+    if (this.targetType === 'BOOKLET') return `Booklet ${this.bookletId}`;
+    if (this.targetType === 'UNIT') return `Unit ${this.unitId}`;
+    if (this.targetType === 'CODING') return `Kodierung zu ${this.unitId} · ${this.itemId}`;
+    return `Item ${this.unitId} · ${this.itemId}`;
   }
 
   get commentCount(): number {
@@ -179,73 +201,74 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     const token = ++this.requestToken;
     const refreshToken = this.refreshToken;
     this.loading = true;
-    this.threadRequest = this.api
-      .getItemCommentThread(this.acpId, this.unitId, this.itemId)
-      .pipe(timeout(10_000), takeUntil(this.destroy$))
-      .subscribe({
-        next: (snapshot) => {
-          if (token !== this.requestToken) return;
-          this.snapshot = snapshot;
-          this.countChanged.emit({
-            unitId: snapshot.target.unitId,
-            itemId: snapshot.target.itemId,
-            count: this.commentCount,
-            refreshToken,
-          });
-          this.loading = false;
-          this.threadRequest = null;
-          if (!preserveError) this.operationError = '';
-          this.threadLoadError = '';
-        },
-        error: (error) => {
-          if (token !== this.requestToken) return;
-          this.loading = false;
-          this.threadRequest = null;
-          this.threadLoadError = this.errorMessage(
-            error,
-            'Kommentare konnten nicht geladen werden.',
-          );
-          if (!preserveError) this.operationError = '';
-        },
-      });
+    const request =
+      this.targetType === 'ITEM'
+        ? this.api.getItemCommentThread(this.acpId, this.unitId, this.itemId)
+        : this.api.getReviewCommentThread(this.acpId, this.target);
+    this.threadRequest = request.pipe(timeout(10_000), takeUntil(this.destroy$)).subscribe({
+      next: (snapshot) => {
+        if (token !== this.requestToken) return;
+        this.snapshot = snapshot;
+        this.countChanged.emit({
+          ...(this.targetType === 'ITEM' ? {} : { targetType: this.targetType }),
+          unitId: snapshot.target.unitId || '',
+          itemId: snapshot.target.itemId || '',
+          count: this.commentCount,
+          refreshToken,
+        });
+        this.loading = false;
+        this.threadRequest = null;
+        if (!preserveError) this.operationError = '';
+        this.threadLoadError = '';
+      },
+      error: (error) => {
+        if (token !== this.requestToken) return;
+        this.loading = false;
+        this.threadRequest = null;
+        this.threadLoadError = this.errorMessage(error, 'Kommentare konnten nicht geladen werden.');
+        if (!preserveError) this.operationError = '';
+      },
+    });
   }
 
   submitComment(parentCommentId?: string): void {
     const targetKey = this.targetKey;
     const acpId = this.acpId;
-    const unitId = this.unitId;
-    const itemId = this.itemId;
     const replyDraftKey = parentCommentId ? this.replyDraftKey(parentCommentId, targetKey) : '';
     const text = parentCommentId ? this.replyDrafts.get(replyDraftKey) || '' : this.newCommentText;
     if (!text.trim() || this.busy) return;
     this.busy = true;
-    this.api
-      .createItemComment(acpId, {
-        unitId,
-        itemId,
-        commentText: text.trim(),
-        ...(parentCommentId ? { parentCommentId } : {}),
-      })
-      .pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
-      .subscribe({
-        next: () => {
-          if (parentCommentId) {
-            this.replyDrafts.delete(replyDraftKey);
-            this.expandedThreadsFor(targetKey).add(parentCommentId);
-            if (targetKey === this.targetKey) this.replyingTo = null;
-          } else {
-            this.newDrafts.delete(targetKey);
-          }
-          this.busy = false;
-          if (targetKey === this.targetKey) this.loadThread();
-        },
-        error: (error) => {
-          this.busy = false;
-          if (targetKey === this.targetKey) {
-            this.error = this.errorMessage(error, 'Kommentar konnte nicht gespeichert werden.');
-          }
-        },
-      });
+    const input = {
+      commentText: text.trim(),
+      ...(parentCommentId ? { parentCommentId } : {}),
+    };
+    const request =
+      this.targetType === 'ITEM'
+        ? this.api.createItemComment(acpId, {
+            unitId: this.unitId,
+            itemId: this.itemId,
+            ...input,
+          })
+        : this.api.createReviewComment(acpId, { ...this.target, ...input });
+    request.pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$)).subscribe({
+      next: () => {
+        if (parentCommentId) {
+          this.replyDrafts.delete(replyDraftKey);
+          this.expandedThreadsFor(targetKey).add(parentCommentId);
+          if (targetKey === this.targetKey) this.replyingTo = null;
+        } else {
+          this.newDrafts.delete(targetKey);
+        }
+        this.busy = false;
+        if (targetKey === this.targetKey) this.loadThread();
+      },
+      error: (error) => {
+        this.busy = false;
+        if (targetKey === this.targetKey) {
+          this.error = this.errorMessage(error, 'Kommentar konnte nicht gespeichert werden.');
+        }
+      },
+    });
   }
 
   startReply(rootId: string): void {
@@ -353,7 +376,17 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   private get targetKey(): string {
-    return `${this.acpId}\u0000${this.unitId}\u0000${this.itemId}`;
+    return `${this.acpId}\u0000${this.targetType}\u0000${this.bookletId}\u0000${this.unitId}\u0000${this.itemId}`;
+  }
+
+  private get target(): ReviewCommentTarget {
+    if (this.targetType === 'BOOKLET') {
+      return { targetType: this.targetType, bookletId: this.bookletId };
+    }
+    if (this.targetType === 'UNIT') {
+      return { targetType: this.targetType, unitId: this.unitId };
+    }
+    return { targetType: this.targetType, unitId: this.unitId, itemId: this.itemId };
   }
 
   private get expandedThreads(): Set<string> {

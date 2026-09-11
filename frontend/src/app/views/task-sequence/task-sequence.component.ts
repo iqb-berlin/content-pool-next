@@ -3,12 +3,12 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { TaskSequence } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
+import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
 
 @Component({
   selector: 'app-task-sequence',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, CommentDialogComponent],
+  imports: [RouterLink, BreadcrumbComponent, ItemCommentThreadComponent],
   template: `
     @if (sequence) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -26,9 +26,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               📋 Aufgabenliste
             </button>
           }
-          @if (showCommentBtn) {
-            <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
-          }
           @if (showDownloadBtn) {
             <button
               class="btn btn-outline btn-sm"
@@ -40,6 +37,15 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           }
         </div>
       </div>
+
+      @if (showCommentBtn) {
+        <app-item-comment-thread
+          [acpId]="acpId"
+          [targetType]="'BOOKLET'"
+          [bookletId]="sequenceId"
+          [enabled]="showCommentBtn"
+        />
+      }
 
       <!-- Navigation bar -->
       <div class="nav-bar">
@@ -127,16 +133,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     } @else {
       <div class="empty-state"><h3>Lade Aufgabenfolge...</h3></div>
     }
-
-    <!-- Comment dialog -->
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'TASK_SEQUENCE'"
-      [targetId]="sequenceId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -268,7 +264,6 @@ export class TaskSequenceComponent implements OnInit {
   breadcrumbs: BreadcrumbItem[] = [];
 
   unitListOpen = false;
-  commentOpen = false;
   showCommentBtn = false;
   showDownloadBtn = false;
   showUnitListBtn = true;
@@ -288,7 +283,11 @@ export class TaskSequenceComponent implements OnInit {
     this.api.getAcpStartPage(this.acpId).subscribe((data) => {
       const fc = data?.featureConfig || {};
       const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
-      this.showCommentBtn = !!(fc.enableCommenting && commentTargets.includes('TASK_SEQUENCE'));
+      this.showCommentBtn = !!(
+        this.sequenceKind === 'booklet' &&
+        fc.enableCommenting &&
+        commentTargets.includes('BOOKLET')
+      );
       this.showDownloadBtn = !!fc.allowUnitDownload;
       this.showUnitListBtn = fc.enableSequenceNavigation !== false;
     });
@@ -343,18 +342,6 @@ export class TaskSequenceComponent implements OnInit {
   toggleUnitList() {
     if (!this.hasUnits) return;
     this.unitListOpen = !this.unitListOpen;
-  }
-
-  openComment() {
-    this.commentOpen = true;
-  }
-
-  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-      },
-    });
   }
 
   downloadSequence() {

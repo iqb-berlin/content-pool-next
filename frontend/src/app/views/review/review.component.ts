@@ -35,6 +35,9 @@ import { ApiService } from '../../core/services/api.service';
         @for (comment of comments; track comment.id) {
           <article class="card">
             <strong>{{ comment.targetType }} · {{ comment.targetId }}</strong>
+            @if (comment.legacyReadOnly) {
+              <span class="badge badge-info">Legacy · schreibgeschützt</span>
+            }
             <p style="white-space: pre-wrap">{{ comment.commentText }}</p>
           </article>
         } @empty {

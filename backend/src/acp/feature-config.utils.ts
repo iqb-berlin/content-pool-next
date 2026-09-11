@@ -189,7 +189,11 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
   const normalized: UnknownRecord = { ...source };
 
   normalized.commentVisibilityMode =
-    source.commentVisibilityMode === "SHARED" ? "SHARED" : "PRIVATE";
+    source.commentVisibilityMode === "GROUP"
+      ? "GROUP"
+      : source.commentVisibilityMode === "SHARED"
+        ? "SHARED"
+        : "PRIVATE";
 
   normalized.enablePlayerFocusHighlight =
     source.enablePlayerFocusHighlight === true;

@@ -64,6 +64,10 @@ describe("AcpService", () => {
       create: jest.fn().mockImplementation((dto) => dto),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
+    accessConfigRepo.manager = {
+      transaction: async (fn: any) =>
+        fn({ getRepository: () => accessConfigRepo }),
+    };
     credentialRepo = {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
       create: jest.fn().mockImplementation((dto) => dto),

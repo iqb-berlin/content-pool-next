@@ -1388,7 +1388,7 @@ export class ItemExplorerFacade implements OnDestroy {
     // Load item list from .vomd files
     this.api
       .getFileItemList(this.acpId, {
-        perspective: this.getPerspectiveForViewerRequests(),
+        perspective: this.getPerspectiveForViewerRequests(expectedExplorerState),
       })
       .pipe(takeUntil(this.destroy$), finalize(settle))
       .subscribe({
@@ -5196,8 +5196,11 @@ export class ItemExplorerFacade implements OnDestroy {
     return {};
   }
 
-  private getPerspectiveForViewerRequests(): ItemExplorerPerspective {
-    return this.isReadOnlyPreview || !this.hasExplorerEditPermission ? 'read-only' : 'editor';
+  private getPerspectiveForViewerRequests(
+    envelope?: ItemExplorerStateEnvelope,
+  ): ItemExplorerPerspective {
+    const canEdit = envelope?.canEdit ?? this.hasExplorerEditPermission;
+    return this.isReadOnlyPreview || !canEdit ? 'read-only' : 'editor';
   }
 
   private getItemListAccessMessage(): string {

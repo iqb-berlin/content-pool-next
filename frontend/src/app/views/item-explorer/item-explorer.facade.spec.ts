@@ -704,6 +704,40 @@ describe('ItemExplorerFacade', () => {
     consoleError.mockRestore();
   });
 
+  it.each([
+    { canEdit: true, perspective: 'editor', expected: 'editor' },
+    { canEdit: true, perspective: 'read-only', expected: 'read-only' },
+    { canEdit: false, perspective: 'editor', expected: 'read-only' },
+  ] as const)(
+    'loads the initial list using freshly resolved permissions: $canEdit/$perspective',
+    async ({ canEdit, perspective, expected }) => {
+      const envelope = createExplorerEnvelope({ canEdit });
+      const getFileItemList = vi.fn((_id, options) =>
+        of({
+          itemExplorerStateVersion:
+            options.perspective === 'editor' ? envelope.version : envelope.publishedVersion,
+          columns: [],
+          items: [],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      );
+      const component = createFacade({
+        api: {
+          getItemExplorerState: vi.fn().mockReturnValue(of(envelope)),
+          getFileItemList,
+        },
+      });
+      component.acpId = 'acp-1';
+      component.latestExplorerState = null;
+      component.hasExplorerEditPermission = false;
+      component.viewPerspective = perspective;
+      expect(await (component as any).reloadSharedExplorerStateAndItems()).toBe(true);
+      expect(getFileItemList).toHaveBeenCalledExactlyOnceWith('acp-1', { perspective: expected });
+      expect(component.itemListError).toBe('');
+    },
+  );
+
   it('rejects an item list from another explorer-state version and reloads a consistent pair', async () => {
     const firstEnvelope = createExplorerEnvelope();
     const secondEnvelope = { ...createExplorerEnvelope(), version: 4 };

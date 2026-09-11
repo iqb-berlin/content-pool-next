@@ -851,6 +851,17 @@ export class CommentsService {
       });
     });
     const unitCatalog = this.buildReviewUnitCatalog(acp?.acpIndex, itemCatalog);
+    // ACP-wide targets occur only once, ordered by their first booklet use.
+    const orderedUnitIds = new Set<string>();
+    for (const booklet of manifest.booklets) {
+      for (const unit of booklet.units) orderedUnitIds.add(unit.id);
+    }
+    for (const unitId of unitCatalog.keys()) orderedUnitIds.add(unitId);
+    let unitOrder = 0;
+    for (const unitId of orderedUnitIds) {
+      const unit = unitCatalog.get(unitId);
+      if (unit) unit.unitOrder = unitOrder++;
+    }
     const resolved = comments.map((comment) => ({
       comment,
       target: this.resolveReviewExportTarget(
@@ -862,6 +873,8 @@ export class CommentsService {
     }));
     const sorted = resolved.sort((left, right) => {
       return (
+        Number(Boolean(left.comment.legacyReadOnly)) -
+          Number(Boolean(right.comment.legacyReadOnly)) ||
         left.target.levelOrder - right.target.levelOrder ||
         left.target.bookletOrder - right.target.bookletOrder ||
         left.target.unitOrder - right.target.unitOrder ||
@@ -1438,12 +1451,7 @@ export class CommentsService {
           : comment.targetType === CommentTargetType.CODING
             ? "Kodierung"
             : "Item",
-      levelOrder:
-        comment.targetType === CommentTargetType.UNIT
-          ? 1
-          : comment.targetType === CommentTargetType.ITEM
-            ? 2
-            : 3,
+      levelOrder: 1,
       bookletId: "",
       bookletLabel: "",
       bookletOrder: fallbackOrder,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { of, Subject } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ReviewComponent } from './review.component';
 
 function setup() {
@@ -10,6 +10,9 @@ function setup() {
     getReviewConfig: vi.fn(),
     getReviewMembers: vi.fn().mockReturnValue(of([])),
     configureReview: vi.fn(),
+    exportMyReviewCommentsCsv: vi.fn().mockReturnValue(new Subject()),
+    exportMyReviewCommentsXlsx: vi.fn().mockReturnValue(new Subject()),
+    exportVisibleReviewComments: vi.fn().mockReturnValue(new Subject()),
   };
   const component = new ReviewComponent(
     { snapshot: { paramMap: { get: () => 'acp' } } } as any,
@@ -26,6 +29,29 @@ function setup() {
 }
 
 describe('Review configuration', () => {
+  it('keeps both personal formats separate from the manager export', () => {
+    const { component, api } = setup();
+    component.access = { canManageReview: true, canReview: true } as any;
+    component.exportComments('csv');
+    expect(api.exportMyReviewCommentsCsv).toHaveBeenCalledWith('acp');
+    component.exportComments('xlsx');
+    expect(api.exportMyReviewCommentsXlsx).toHaveBeenCalledWith('acp');
+    expect(api.exportVisibleReviewComments).not.toHaveBeenCalled();
+    component.exportComments();
+    expect(api.exportVisibleReviewComments).toHaveBeenCalledWith('acp');
+    component.ngOnDestroy();
+  });
+
+  it('reports personal export errors and clears them on retry', () => {
+    const { component, api } = setup();
+    api.exportMyReviewCommentsCsv.mockReturnValue(throwError(() => new Error('offline')));
+    component.exportComments('csv');
+    expect(component.commentsError).toBe('Export konnte nicht erstellt werden.');
+    component.exportComments('xlsx');
+    expect(component.commentsError).toBe('');
+    component.ngOnDestroy();
+  });
+
   it('leaves private visibility unchanged when sharing is not confirmed', () => {
     const { component, api } = setup();
     vi.spyOn(window, 'confirm').mockReturnValue(false);

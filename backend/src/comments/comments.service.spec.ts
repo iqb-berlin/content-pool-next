@@ -694,6 +694,136 @@ describe("CommentsService", () => {
     },
   );
 
+  it.each([
+    { userId: "manager", isManager: true },
+    { credentialId: "credential-1", isManager: true },
+  ])(
+    "exports identical personal data in manifest order for %j",
+    async (actor) => {
+      const units = ["unused", "second", "first"].map((id) => ({
+        id,
+        name: `Unit ${id}`,
+        items: [
+          { id: "z", name: "Zuerst" },
+          { id: "a", name: "Danach" },
+        ],
+      }));
+      acpRepository.findOne.mockResolvedValue({
+        acpIndex: { assessmentParts: [{ units }] },
+      });
+      unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
+      reviewManifestService.getManifest.mockResolvedValue({
+        units,
+        booklets: [
+          {
+            id: "b2",
+            name: "Zweites",
+            units: [{ id: "first" }, { id: "second" }],
+          },
+          { id: "b1", name: "Erstes", units: [{ id: "first" }] },
+        ],
+      });
+      const comment = (
+        id: string,
+        unitId: string,
+        itemId = "",
+        extra = {},
+      ) => ({
+        id,
+        acpId: "acp-1",
+        userId: actor.userId,
+        credentialId: actor.credentialId,
+        targetType: itemId ? CommentTargetType.ITEM : CommentTargetType.UNIT,
+        targetId: itemId || unitId,
+        unitId,
+        itemId,
+        commentText: id,
+        createdAt: new Date("2026-01-01"),
+        updatedAt: new Date("2026-01-02"),
+        ...extra,
+      });
+      commentRepository.find.mockResolvedValue([
+        comment("unused", "unused"),
+        comment("second", "second"),
+        comment("a", "first", "a"),
+        comment("z-later", "first", "z", { createdAt: new Date("2026-01-02") }),
+        comment("z-2", "first", "z"),
+        comment("z-1", "first", "z", {
+          commentText: 'Ä; "Zitat"\r\nNeue Zeile 📝',
+        }),
+        comment("first", "first"),
+        comment("legacy", "first", "", { legacyReadOnly: true }),
+        comment("b1", "", "", {
+          targetType: CommentTargetType.BOOKLET,
+          bookletId: "b1",
+        }),
+        comment("b2", "", "", {
+          targetType: CommentTargetType.BOOKLET,
+          bookletId: "b2",
+        }),
+      ]);
+      const csv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheet = workbook.getWorksheet("Kommentare")!;
+      const rows: string[][] = [];
+      sheet.eachRow((row) =>
+        rows.push(
+          Array.from({ length: sheet.columnCount }, (_, i) =>
+            String(row.getCell(i + 1).value ?? ""),
+          ),
+        ),
+      );
+      // Parse quoted CSV fields including embedded separators, quotes and newlines.
+      const fields = [...csv.matchAll(/"((?:[^"]|"")*)"/g)].map((match) =>
+        match[1].replace(/""/g, '"'),
+      );
+      expect(fields.map((field) => field.replace(/\r\n/g, "\n"))).toEqual(
+        rows.flat(),
+      );
+      const column = rows[0].indexOf("Kommentar");
+      expect(rows.slice(1).map((row) => row[column])).toEqual([
+        "b2",
+        "b1",
+        "first",
+        'Ä; "Zitat"\nNeue Zeile 📝',
+        "z-2",
+        "z-later",
+        "a",
+        "second",
+        "unused",
+        "legacy",
+      ]);
+      expect(rows[0]).not.toContain("Autor");
+      expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: 1 });
+      expect(sheet.autoFilter).toBeTruthy();
+      expect(sheet.getRow(2).getCell(column + 1).alignment.wrapText).toBe(true);
+      expect(commentRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining(
+            actor.userId
+              ? { userId: actor.userId }
+              : { credentialId: actor.credentialId },
+          ),
+        }),
+      );
+      commentRepository.find.mockResolvedValue([]);
+      const emptyCsv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      expect(emptyCsv.split("\r\n")).toHaveLength(2);
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      expect(workbook.getWorksheet("Kommentare")!.rowCount).toBe(1);
+    },
+  );
+
   it("uses ACP labels and content order for the shared CSV and XLSX projection", async () => {
     const date = new Date("2026-01-01T10:00:00.000Z");
     acpRepository.findOne.mockResolvedValue({

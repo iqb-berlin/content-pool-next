@@ -151,6 +151,12 @@ interface ReviewConfig {
     @if (access?.canReview) {
       <h2>Kommentare</h2>
       <button class="btn btn-outline" (click)="loadComments()">Kommentare aktualisieren</button>
+      <button class="btn btn-outline" (click)="exportComments('csv')">
+        Eigene Kommentare (CSV)
+      </button>
+      <button class="btn btn-outline" (click)="exportComments('xlsx')">
+        Eigene Kommentare (XLSX)
+      </button>
       <button class="btn btn-outline" (click)="exportComments()">
         {{
           access?.canManageReview
@@ -348,14 +354,22 @@ export class ReviewComponent implements OnInit, OnDestroy {
         }),
     );
   }
-  exportComments() {
+  exportComments(format?: 'csv' | 'xlsx') {
+    this.commentsError = '';
+    const personal = format !== undefined;
+    const download =
+      format === 'csv'
+        ? this.api.exportMyReviewCommentsCsv(this.acpId)
+        : format === 'xlsx'
+          ? this.api.exportMyReviewCommentsXlsx(this.acpId)
+          : this.api.exportVisibleReviewComments(this.acpId);
     this.requests.add(
-      this.api.exportVisibleReviewComments(this.acpId).subscribe({
+      download.subscribe({
         next: (blob) => {
           const url = URL.createObjectURL(blob);
           const link = document.createElement('a');
           link.href = url;
-          link.download = `review-${this.acpId}.xlsx`;
+          link.download = `review-${this.acpId}${personal ? '-mine' : ''}.${format || 'xlsx'}`;
           link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         },

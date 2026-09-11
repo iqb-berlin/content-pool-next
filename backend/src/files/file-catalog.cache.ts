@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { EntityManager, Repository } from "typeorm";
 import { performance } from "perf_hooks";
 import { AcpFile } from "../database/entities";
 import { AsyncCacheStatus, AsyncLruCache } from "./async-lru-cache";
@@ -29,7 +29,13 @@ export class FileCatalogCache {
     return this.cache.size;
   }
 
-  async get(acpId: string): Promise<FileCatalogResult> {
+  async get(
+    acpId: string,
+    manager?: EntityManager,
+  ): Promise<FileCatalogResult> {
+    // Keep in-flight database reads local to the transaction that owns them.
+    if (manager)
+      return new FileCatalogCache(manager.getRepository(AcpFile)).get(acpId);
     const totalStartedAt = performance.now();
     const signatureStartedAt = performance.now();
     const revision = await this.loadRevision(acpId);

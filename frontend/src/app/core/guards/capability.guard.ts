@@ -3,7 +3,7 @@ import { CanActivateFn, Router } from '@angular/router';
 import { catchError, map, of } from 'rxjs';
 import { ApiService } from '../services/api.service';
 
-export const explorerCapabilityGuard: CanActivateFn = (route) => {
+export const explorerCapabilityGuard = ((route) => {
   const api = inject(ApiService);
   const router = inject(Router);
   const id = route.paramMap.get('acpId') || route.parent?.paramMap.get('acpId') || '';
@@ -11,4 +11,4 @@ export const explorerCapabilityGuard: CanActivateFn = (route) => {
     map((access) => (access.canViewExplorer ? true : router.createUrlTree(['/view', id]))),
     catchError(() => of(router.createUrlTree(['/view', id]))),
   );
-};
+}) satisfies CanActivateFn;

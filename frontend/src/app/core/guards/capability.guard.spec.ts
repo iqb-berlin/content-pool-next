@@ -16,7 +16,7 @@ describe('Explorer route access', () => {
       ],
     });
     const result = TestBed.runInInjectionContext(() =>
-      explorerCapabilityGuard({ paramMap: { get: () => 'acp' } } as any, {} as any),
+      explorerCapabilityGuard({ paramMap: { get: () => 'acp' } } as any),
     );
     expect(await firstValueFrom(result as any)).toBe(canViewExplorer ? true : redirect);
     TestBed.resetTestingModule();
@@ -30,7 +30,7 @@ describe('Explorer route access', () => {
       ],
     });
     const result = TestBed.runInInjectionContext(() =>
-      explorerCapabilityGuard({ paramMap: { get: () => 'acp' } } as any, {} as any),
+      explorerCapabilityGuard({ paramMap: { get: () => 'acp' } } as any),
     );
     expect(await firstValueFrom(result as any)).toBe(redirect);
     TestBed.resetTestingModule();

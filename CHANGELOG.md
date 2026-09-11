@@ -8,23 +8,33 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 ### Changes
 
-- None.
+- Separate Review and Item Explorer permissions for credentials and signed-in users.
+- Import CSV credential lists with permission profiles, preview and atomic validation.
+- Add a Review entry point for all ACP booklets and management controls.
 
 ### Breaking changes
 
-- None.
+- New credentials and role assignments start without Review or Explorer grants.
+  Assign the required capabilities explicitly; general ACP management roles remain unchanged.
 
 ### Configuration
 
-- None.
+- Activate the new Review entry point explicitly for existing ACPs.
+- See `docs/review-capabilities.md` for capability assignment and migration defaults.
 
 ### Database migrations
 
-- Classification: `none`
+- Classification: `backward-compatible`
+- `1789200000000-AcpCapabilityGrants` adds capability arrays to ACP roles and
+  credentials, migrates existing access and disables the new Review entry point
+  until explicitly activated. Back up the database and rehearse the migration
+  before deployment.
 
 ### Rollback
 
-- No special instructions.
+- Restore the previous application version with its matching database backup if
+  necessary. Older application versions ignore capability grants and use the
+  broader role model; reverting the migration is not a safe way to revoke access.
 
 ## [0.5.0] - 2026-09-10
 

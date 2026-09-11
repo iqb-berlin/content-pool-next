@@ -213,20 +213,15 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    // Preserve every comment in the legacy schema. The previous backend has no
-    // dedicated booklet or coding target, so use its closest compatible types.
-    await queryRunner.query(`
-      UPDATE "comments"
-         SET "target_type" = 'TASK_SEQUENCE',
-             "target_id" = COALESCE(NULLIF("booklet_id", ''), "target_id")
-       WHERE "target_type" = 'BOOKLET'
-    `);
-    await queryRunner.query(`
-      UPDATE "comments"
-         SET "target_type" = 'ITEM'
-       WHERE "target_type" = 'CODING'
-    `);
-
+    // The previous schema cannot preserve target types and legacy protection.
+    const comments = await queryRunner.query(
+      `SELECT "id" FROM "comments" LIMIT 1`,
+    );
+    if (comments.length) {
+      throw new Error(
+        "Cannot revert CompleteCommentLifecycle while comments exist: stable targets and legacy protection would be lost. Roll back the application without reverting the database.",
+      );
+    }
     await queryRunner.query(
       `ALTER TYPE "comments_target_type_enum" RENAME TO "comments_target_type_enum_new"`,
     );

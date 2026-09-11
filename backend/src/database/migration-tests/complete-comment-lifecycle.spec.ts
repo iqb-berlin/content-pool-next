@@ -204,22 +204,35 @@ describe("CompleteCommentLifecycle migration", () => {
     );
   });
 
-  it("reverts new targets to their closest legacy representation", async () => {
-    const queryRunner = { query: jest.fn().mockResolvedValue(undefined) };
-
+  it("allows rollback on an empty comment table", async () => {
+    const queryRunner = { query: jest.fn().mockResolvedValue([]) };
     await migration.down(queryRunner);
-
-    const queries = queryRunner.query.mock.calls.map(([query]) => query);
-    expect(queries).toHaveLength(9);
-    expect(queries[0]).toContain(`"target_type" = 'TASK_SEQUENCE'`);
-    expect(queries[0]).toContain(`WHERE "target_type" = 'BOOKLET'`);
-    expect(queries[1]).toContain(`"target_type" = 'ITEM'`);
-    expect(queries[1]).toContain(`WHERE "target_type" = 'CODING'`);
-    expect(queries[3]).toContain(`('UNIT', 'ITEM', 'TASK_SEQUENCE')`);
-    expect(queries[6]).toContain(`DROP INDEX IF EXISTS`);
-    expect(queries[7]).toContain(`DROP COLUMN IF EXISTS "booklet_id"`);
-    expect(queries[8]).toContain(`target <> '"BOOKLET"'::jsonb`);
+    expect(queryRunner.query.mock.calls[0][0]).toContain('SELECT "id"');
+    expect(
+      queryRunner.query.mock.calls.some(([sql]) => sql.includes("DROP COLUMN")),
+    ).toBe(true);
+    expect(
+      queryRunner.query.mock.calls.some(([sql]) =>
+        sql.includes('UPDATE "comments"'),
+      ),
+    ).toBe(false);
   });
+
+  it.each(["ITEM", "CODING", "BOOKLET", "TASK_SEQUENCE"])(
+    "blocks rollback before changes when %s comments exist",
+    async (targetType) => {
+      const queryRunner = {
+        query: jest
+          .fn()
+          .mockResolvedValue([{ id: "existing", target_type: targetType }]),
+      };
+      await expect(migration.down(queryRunner)).rejects.toThrow(
+        "while comments exist",
+      );
+      expect(queryRunner.query).toHaveBeenCalledTimes(1);
+      expect(queryRunner.query.mock.calls[0][0]).toContain('SELECT "id"');
+    },
+  );
 
   it("keeps cross-source aliases ambiguous and file-only targets editable", () => {
     const catalog = migration.collectTargets(

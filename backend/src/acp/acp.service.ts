@@ -1,3 +1,4 @@
+import { normalizeGrants } from "../auth/capabilities/acp-capabilities";
 import {
   Injectable,
   NotFoundException,
@@ -185,6 +186,19 @@ export class AcpService {
   }
 
   // Role management
+  async updateRoleCapabilities(
+    acpId: string,
+    userId: string,
+    capabilities: string[],
+  ) {
+    const role = await this.acpUserRoleRepository.findOne({
+      where: { acpId, userId },
+    });
+    if (!role) throw new NotFoundException("ACP-Zuordnung nicht gefunden");
+    role.capabilities = normalizeGrants(capabilities);
+    return this.acpUserRoleRepository.save(role);
+  }
+
   async assignRole(acpId: string, dto: AssignRoleDto): Promise<AcpUserRole> {
     await this.findById(acpId);
     const targetUser = await this.userRepository.findOne({
@@ -212,6 +226,8 @@ export class AcpService {
         }
       }
       existing.role = targetRole;
+      if (dto.capabilities !== undefined)
+        existing.capabilities = normalizeGrants(dto.capabilities);
       return this.acpUserRoleRepository.save(existing);
     }
 
@@ -219,6 +235,7 @@ export class AcpService {
       userId: dto.userId,
       acpId,
       role: targetRole,
+      capabilities: normalizeGrants(dto.capabilities ?? []),
     });
     return this.acpUserRoleRepository.save(role);
   }
@@ -386,6 +403,7 @@ export class AcpService {
     acpId: string,
     credentials: CredentialEntryDto[],
     mode: "replace" | "append" | "upsert" = "replace",
+    grants?: string[],
   ): Promise<{
     added: number;
     updated: number;
@@ -401,6 +419,10 @@ export class AcpService {
       );
     }
 
+    if (!["replace", "append", "upsert"].includes(mode))
+      throw new BadRequestException("Ungültiger Importmodus");
+    const capabilities =
+      grants === undefined ? undefined : normalizeGrants(grants);
     const duplicates: string[] = [];
     const seenInUpload = new Set<string>();
     const uniqueCredentials = credentials.filter((cred) => {
@@ -431,6 +453,10 @@ export class AcpService {
     const passwordHashes = await this.hashCredentials(credentialsToHash);
 
     return this.credentialRepository.manager.transaction(async (manager) => {
+      await manager.query(
+        "SELECT id FROM acp_access_configs WHERE id = $1 FOR UPDATE",
+        [config.id],
+      );
       const credentialRepository = manager.getRepository(AcpCredential);
       const existingCredentials = await credentialRepository.find({
         where: { accessConfigId: config.id },
@@ -463,6 +489,7 @@ export class AcpService {
 
         if (existing) {
           existing.passwordHash = passwordHash;
+          if (capabilities !== undefined) existing.capabilities = capabilities;
           credentialsToSave.push(existing);
           updated += 1;
           continue;
@@ -473,6 +500,7 @@ export class AcpService {
             accessConfigId: config.id,
             username: credential.username,
             passwordHash,
+            capabilities: capabilities ?? [],
           }),
         );
         added += 1;
@@ -531,9 +559,13 @@ export class AcpService {
     }
     const credentials = await this.credentialRepository.find({
       where: { accessConfigId: config.id },
-      select: ["id", "username"],
+      select: ["id", "username", "capabilities"],
     });
-    return credentials.map((c) => ({ id: c.id, username: c.username }));
+    return credentials.map((c) => ({
+      id: c.id,
+      username: c.username,
+      capabilities: c.capabilities,
+    }));
   }
 
   async getAssignableUsers(
@@ -541,7 +573,6 @@ export class AcpService {
   ): Promise<Pick<User, "id" | "username" | "displayName">[]> {
     await this.findById(acpId);
     return this.userRepository.find({
-      where: { isAppAdmin: false },
       select: ["id", "username", "displayName"],
       order: { username: "ASC" },
     });
@@ -589,10 +620,15 @@ export class AcpService {
       accessConfigId: config.id,
       username: dto.username,
       passwordHash,
+      capabilities: normalizeGrants(dto.capabilities ?? []),
     });
 
     const saved = await this.credentialRepository.save(credential);
-    return { id: saved.id, username: saved.username };
+    return {
+      id: saved.id,
+      username: saved.username,
+      capabilities: saved.capabilities,
+    };
   }
 
   async updateCredential(
@@ -629,13 +665,20 @@ export class AcpService {
       credential.username = dto.username;
     }
 
+    if (dto.capabilities !== undefined)
+      credential.capabilities = normalizeGrants(dto.capabilities);
+
     // Update password if provided
     if (dto.password) {
       credential.passwordHash = await bcrypt.hash(dto.password, 12);
     }
 
     const saved = await this.credentialRepository.save(credential);
-    return { id: saved.id, username: saved.username };
+    return {
+      id: saved.id,
+      username: saved.username,
+      capabilities: saved.capabilities,
+    };
   }
 
   private async countAcpManagers(acpId: string): Promise<number> {

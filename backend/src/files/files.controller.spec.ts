@@ -172,6 +172,7 @@ describe("FilesController", () => {
       validationService,
       fileProcessingJobsService,
       itemExplorerStateService,
+      { resolve: jest.fn(async (req) => req.acpCapabilities || []) } as any,
     );
   });
 
@@ -182,7 +183,7 @@ describe("FilesController", () => {
         "zip",
         "unit-1",
         "seq-1",
-        { acpAccessLevel: "MANAGER" },
+        { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
         {} as any,
       ),
     ).rejects.toThrow(BadRequestException);
@@ -195,7 +196,7 @@ describe("FilesController", () => {
         "zip",
         undefined,
         undefined,
-        { acpAccessLevel: "MANAGER" },
+        { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
         {} as any,
       ),
     ).rejects.toThrow(BadRequestException);
@@ -229,7 +230,7 @@ describe("FilesController", () => {
       "zip",
       "unit-1",
       undefined,
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       res,
     );
 
@@ -252,7 +253,11 @@ describe("FilesController", () => {
       "zip",
       undefined,
       "seq-1",
-      { acpAccessLevel: "MANAGER", query: { kind: "booklet" } },
+      {
+        acpAccessLevel: "MANAGER",
+        acpCapabilities: ["item-explorer:edit"],
+        query: { kind: "booklet" },
+      },
       res,
     );
     expect(filesService.createSequenceZip).toHaveBeenCalledWith(
@@ -271,7 +276,7 @@ describe("FilesController", () => {
       "zip",
       undefined,
       "seq-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       res,
     );
 
@@ -308,7 +313,7 @@ describe("FilesController", () => {
       undefined,
       undefined,
       undefined,
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       {} as any,
     );
 
@@ -462,6 +467,7 @@ describe("FilesController", () => {
       "acp-1",
       {
         acpAccessLevel: "MANAGER",
+        acpCapabilities: ["item-explorer:edit"],
       },
       undefined,
     );
@@ -503,7 +509,7 @@ describe("FilesController", () => {
 
     await controller.getItemList(
       "acp-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       undefined,
       res,
     );
@@ -528,7 +534,7 @@ describe("FilesController", () => {
 
     await controller.getItemList(
       "acp-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       undefined,
     );
 
@@ -556,7 +562,7 @@ describe("FilesController", () => {
 
     const result = await controller.getItemList(
       "acp-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       "read-only",
     );
 
@@ -565,6 +571,68 @@ describe("FilesController", () => {
       itemExplorerStateService.getItemListStateProjection,
     ).toHaveBeenCalledWith("acp-1", false);
   });
+
+  it.each(["READ_ONLY", "CREDENTIAL"])(
+    "uses draft data for explicit %s editors and published data in read-only perspective",
+    async (level) => {
+      itemExplorerStateService.getItemListStateProjection.mockImplementation(
+        async (_id: string, editor: boolean) => ({
+          activeItemProperties: editor ? { draft: true } : { published: true },
+          publishedItemProperties: { published: true },
+          activeVersion: editor ? 4 : 3,
+          publishedVersion: 3,
+        }),
+      );
+      const req = {
+        acpAccessLevel: level,
+        acpCapabilities: ["item-explorer:edit"],
+      };
+      expect(
+        (await controller.getItemList("acp-1", req)).itemExplorerStateVersion,
+      ).toBe(4);
+      expect(
+        (await controller.getItemList("acp-1", req, "read-only"))
+          .itemExplorerStateVersion,
+      ).toBe(3);
+      expect(filesService.getFeatureConfig).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["review:participate", "review:manage"])(
+    "allows active %s player access without exposing drafts or arbitrary files",
+    async (grant) => {
+      const req = { acpAccessLevel: "READ_ONLY", acpCapabilities: [grant] };
+      filesService.getFeatureConfig.mockResolvedValue({
+        enableReview: true,
+        enableUnitView: false,
+        allowFileDownload: false,
+      });
+      await controller.getUnitView("acp-1", "unit-1", req);
+      expect(
+        itemExplorerStateService.getStateVersionForViewer,
+      ).toHaveBeenCalledWith("acp-1", false);
+      filesService.isUnitDependencyFile.mockResolvedValue(true);
+      const res = { setHeader: jest.fn(), send: jest.fn() } as any;
+      await controller.download("acp-1", "file-1", undefined, req, res);
+      expect(res.send).toHaveBeenCalledWith(Buffer.from("file-body"));
+      filesService.isUnitDependencyFile.mockResolvedValue(false);
+      await expect(
+        controller.download("acp-1", "file-1", undefined, req, res),
+      ).rejects.toThrow(ForbiddenException);
+      filesService.getFeatureConfig.mockResolvedValue({
+        enableReview: false,
+        enableUnitView: false,
+        allowFileDownload: false,
+      });
+      filesService.isUnitDependencyFile.mockResolvedValue(true);
+      await expect(
+        controller.getUnitView("acp-1", "unit-1", req),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.download("acp-1", "file-1", undefined, req, res),
+      ).rejects.toThrow(ForbiddenException);
+    },
+  );
 
   it("delegates row-number recalculation to the published item-list workflow", async () => {
     const result = await controller.recalculateItemRowNumbers("acp-1");
@@ -587,7 +655,7 @@ describe("FilesController", () => {
     expect(unitParserService.getItemListFromFiles).not.toHaveBeenCalled();
   });
 
-  it("applies read-only perspective checks for managers in item list", async () => {
+  it("retains explicit explorer access in read-only perspective", async () => {
     filesService.getFeatureConfig.mockResolvedValueOnce({
       allowUnitDownload: true,
       allowFileDownload: true,
@@ -598,10 +666,10 @@ describe("FilesController", () => {
     await expect(
       controller.getItemList(
         "acp-1",
-        { acpAccessLevel: "MANAGER" },
+        { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
         "read-only",
       ),
-    ).rejects.toThrow(ForbiddenException);
+    ).resolves.toBeDefined();
   });
 
   it("blocks unit view when feature is disabled for non-managers", async () => {
@@ -651,7 +719,7 @@ describe("FilesController", () => {
     await controller.getUnitView(
       "acp-1",
       "unit-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       undefined,
     );
 
@@ -677,7 +745,7 @@ describe("FilesController", () => {
       controller.getUnitView(
         "acp-1",
         "unit-1",
-        { acpAccessLevel: "MANAGER" },
+        { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
         "read-only",
       ),
     ).rejects.toThrow(ForbiddenException);
@@ -777,7 +845,10 @@ describe("FilesController", () => {
 
   it("returns preview data for managers", async () => {
     await expect(
-      controller.getPreview("acp-1", "file-1", { acpAccessLevel: "MANAGER" }),
+      controller.getPreview("acp-1", "file-1", {
+        acpAccessLevel: "MANAGER",
+        acpCapabilities: ["item-explorer:edit"],
+      }),
     ).resolves.toEqual(
       expect.objectContaining({
         fileId: "file-1",
@@ -880,7 +951,7 @@ describe("FilesController", () => {
       "acp-1",
       "file-1",
       undefined,
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       res,
     );
 
@@ -902,6 +973,7 @@ describe("FilesController", () => {
       undefined,
       {
         acpAccessLevel: "MANAGER",
+        acpCapabilities: ["item-explorer:edit"],
         headers: { "if-none-match": '"file-1-123-"' },
       },
       res,
@@ -928,6 +1000,7 @@ describe("FilesController", () => {
         undefined,
         {
           acpAccessLevel: "MANAGER",
+          acpCapabilities: ["item-explorer:edit"],
           headers: { "if-none-match": ifNoneMatch },
         },
         res,
@@ -946,7 +1019,7 @@ describe("FilesController", () => {
       "acp-1",
       "file-1",
       "inline",
-      { acpAccessLevel: "MANAGER" },
+      { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
       res,
     );
 
@@ -962,7 +1035,7 @@ describe("FilesController", () => {
         "acp-1",
         "file-1",
         "sideways",
-        { acpAccessLevel: "MANAGER" },
+        { acpAccessLevel: "MANAGER", acpCapabilities: ["item-explorer:edit"] },
         { setHeader: jest.fn(), send: jest.fn() } as any,
       ),
     ).rejects.toThrow(BadRequestException);

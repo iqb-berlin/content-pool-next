@@ -534,6 +534,8 @@ export class ItemExplorerStateService {
     let role = "READ_ONLY";
     if (user?.isAppAdmin) {
       role = "APP_ADMIN";
+    } else if (user?.type === "credential") {
+      role = "CREDENTIAL";
     } else if (Array.isArray(user?.acpRoles)) {
       const acpRole = user.acpRoles.find(
         (entry: any) => entry?.acpId === acpId,
@@ -541,13 +543,11 @@ export class ItemExplorerStateService {
       if (acpRole?.role === "ACP_MANAGER") {
         role = "ACP_MANAGER";
       }
-    } else if (user?.type === "credential") {
-      role = "CREDENTIAL";
     }
 
     const sub = typeof user?.sub === "string" ? user.sub : undefined;
     return {
-      userId: sub,
+      userId: user?.type === "credential" ? undefined : sub,
       username,
       role,
     };

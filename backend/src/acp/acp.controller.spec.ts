@@ -71,6 +71,7 @@ describe("AcpController", () => {
       acpService,
       itemExplorerStateService,
       adminService,
+      { assert: jest.fn() } as any,
     );
     jest
       .spyOn((controller as any).logger, "log")
@@ -263,7 +264,9 @@ describe("AcpController", () => {
       accessModel: "PUBLIC",
     });
     await expect(
-      controller.updateAccessConfig("acp-1", { accessModel: "PUBLIC" } as any),
+      controller.updateAccessConfig("acp-1", { accessModel: "PUBLIC" } as any, {
+        params: { id: "acp-1" },
+      }),
     ).resolves.toEqual({ accessModel: "PUBLIC" });
 
     const uploadResult = await controller.uploadCredentials("acp-1", "append", {

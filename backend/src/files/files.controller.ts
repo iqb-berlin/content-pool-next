@@ -38,6 +38,12 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
+import { hasCapability } from "../auth/capabilities/acp-capabilities";
+import {
+  ExplorerReadGuard,
+  ExplorerEditGuard,
+} from "../auth/capabilities/explorer-access.guard";
 import { UuidParam } from "../common/uuid-param";
 
 @ApiTags("ACP Files")
@@ -51,6 +57,7 @@ export class FilesController {
     private readonly validationService: ValidationService,
     private readonly fileProcessingJobsService: FileProcessingJobsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
+    private readonly capabilities: AcpCapabilitiesService,
   ) {}
 
   @Get()
@@ -148,7 +155,7 @@ export class FilesController {
   }
 
   @Get("item-list")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Extract item list with metadata from .vomd files" })
   async getItemList(
     @UuidParam("acpId") acpId: string,
@@ -158,7 +165,7 @@ export class FilesController {
   ) {
     const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
-    if (!isManager) {
+    if (!hasCapability(req.acpCapabilities || [], "item-explorer:view")) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
       if (featureConfig.enableItemList === false) {
         throw new ForbiddenException("Item list is not enabled for this ACP");
@@ -197,8 +204,7 @@ export class FilesController {
   }
 
   @Post("item-list/renumber")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Recalculate stable Item Explorer row numbers",
@@ -219,11 +225,15 @@ export class FilesController {
     @Query("perspective") perspective?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    await this.capabilities.resolve(req);
     const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
-      if (featureConfig.enableUnitView === false) {
+      if (
+        featureConfig.enableUnitView === false &&
+        !this.canUseReview(req, featureConfig)
+      ) {
         throw new ForbiddenException("Unit view is not enabled for this ACP");
       }
     }
@@ -574,18 +584,28 @@ export class FilesController {
       acpId,
       originalName,
     );
+    await this.capabilities.resolve(req);
     const canDownloadForView =
-      featureConfig.enableUnitView !== false && isDependency;
+      isDependency &&
+      (featureConfig.enableUnitView !== false ||
+        this.canUseReview(req, featureConfig));
 
     if (!featureConfig.allowFileDownload && !canDownloadForView) {
       throw new ForbiddenException("File download is not enabled for this ACP");
     }
   }
 
+  private canUseReview(req: any, config: Record<string, any>): boolean {
+    const grants = req?.acpCapabilities || [];
+    return (
+      config.enableReview === true &&
+      (hasCapability(grants, "review:participate") ||
+        hasCapability(grants, "review:manage"))
+    );
+  }
+
   private isManagerViewContext(req: any, perspective?: string): boolean {
-    const isManager =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
-    if (!isManager) {
+    if (!hasCapability(req?.acpCapabilities || [], "item-explorer:edit")) {
       return false;
     }
 

@@ -28,6 +28,7 @@ describe("CommentsController", () => {
     };
 
     reviewPolicy = {
+      assertCanParticipateRequest: jest.fn(),
       isManagerRequest: jest.fn(
         (req) =>
           Boolean(req.user?.isAppAdmin) ||

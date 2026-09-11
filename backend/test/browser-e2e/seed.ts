@@ -101,6 +101,12 @@ async function seed(): Promise<void> {
         userId: manager.id,
         acpId: acp.id,
         role: AcpRole.ACP_MANAGER,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
       }),
     );
 
@@ -124,6 +130,7 @@ async function seed(): Promise<void> {
         accessConfigId: accessConfig.id,
         username: CREDENTIAL_USERNAME,
         passwordHash: await bcrypt.hash(CREDENTIAL_PASSWORD, 4),
+        capabilities: ["review:participate", "item-explorer:view"],
       }),
     );
 
@@ -274,6 +281,12 @@ async function seed(): Promise<void> {
         userId: manager.id,
         acpId: regressionAcp.id,
         role: AcpRole.ACP_MANAGER,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
       }),
     );
     await dataSource.getRepository(AcpAccessConfig).save(
@@ -569,6 +582,12 @@ async function seed(): Promise<void> {
         userId: manager.id,
         acpId: bistaAcp.id,
         role: AcpRole.ACP_MANAGER,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
       }),
     );
     await dataSource.getRepository(AcpUserRole).save(
@@ -576,6 +595,7 @@ async function seed(): Promise<void> {
         userId: VIEWER_ID,
         acpId: bistaAcp.id,
         role: AcpRole.READ_ONLY,
+        capabilities: ["review:participate", "item-explorer:view"],
       }),
     );
     await dataSource.getRepository(AcpAccessConfig).save(

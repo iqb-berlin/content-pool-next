@@ -6,6 +6,7 @@ import { Repository } from "typeorm";
 import * as request from "supertest";
 import {
   AcpFile,
+  AcpUserRole,
   AcpItemPreference,
   AcpItemRowNumber,
   User,
@@ -186,6 +187,20 @@ describe("ContentPool API (e2e)", () => {
       .expect(201);
 
     acpId = createRes.body.id;
+    const adminId = app.get(JwtService).decode(authToken).sub;
+    await app
+      .get<Repository<AcpUserRole>>(getRepositoryToken(AcpUserRole))
+      .save({
+        acpId,
+        userId: adminId,
+        role: "ACP_MANAGER" as any,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
+      });
     expect(createRes.body.packageId).toBe(testPackageId);
 
     const accessConfigRes = await request(server)
@@ -424,6 +439,7 @@ describe("ContentPool API (e2e)", () => {
       .send({
         username: credentialUsername,
         password: credentialPassword,
+        capabilities: ["review:participate", "item-explorer:view"],
       })
       .expect(201);
     credentialId = credentialRes.body.id;

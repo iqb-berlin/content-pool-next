@@ -19,6 +19,7 @@ function createRouteStub(acpId = 'acp-1') {
 
 function createApiStub() {
   return {
+    getCapabilities: vi.fn().mockReturnValue(of({ canViewExplorer: true })),
     getAcpStartPage: vi.fn().mockReturnValue(
       of({
         name: 'ACP 1',
@@ -83,6 +84,7 @@ describe('AcpStartComponent', () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
+      getCapabilities: vi.fn().mockReturnValue(of({ canViewExplorer: true })),
       getAcpStartPage: vi.fn().mockReturnValue(
         of({
           name: 'ACP 1',
@@ -104,6 +106,7 @@ describe('AcpStartComponent', () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
+      getCapabilities: vi.fn().mockReturnValue(of({ canViewExplorer: true })),
       getAcpStartPage: vi.fn().mockReturnValue(
         of({
           name: 'ACP 1',
@@ -125,6 +128,7 @@ describe('AcpStartComponent', () => {
     const route = createRouteStub();
     const api = {
       ...createApiStub(),
+      getCapabilities: vi.fn().mockReturnValue(of({ canViewExplorer: true })),
       getAcpStartPage: vi.fn().mockReturnValue(
         of({
           name: 'ACP 1',

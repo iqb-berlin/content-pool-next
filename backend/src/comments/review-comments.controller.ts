@@ -177,6 +177,7 @@ export class ReviewCommentsController {
     @Body() dto: CreateItemReviewCommentDto,
     @Request() req: any,
   ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
     const target = this.normalizeTarget(dto.unitId, dto.itemId);
     return this.commentsService.createItemComment(
       acpId,
@@ -197,6 +198,7 @@ export class ReviewCommentsController {
     @Body() dto: UpdateReviewCommentDto,
     @Request() req: any,
   ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
     return this.commentsService.updateOwnComment(
       acpId,
       commentId,
@@ -214,6 +216,7 @@ export class ReviewCommentsController {
     @Query("version") rawVersion: string,
     @Request() req: any,
   ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
     const version = Number(rawVersion);
     if (!Number.isInteger(version) || version < 1) {
       throw new BadRequestException("A valid comment version is required");

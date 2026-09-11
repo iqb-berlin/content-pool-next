@@ -1388,7 +1388,7 @@ export class ItemExplorerFacade implements OnDestroy {
     // Load item list from .vomd files
     this.api
       .getFileItemList(this.acpId, {
-        perspective: this.getPerspectiveForViewerRequests(),
+        perspective: this.getPerspectiveForViewerRequests(expectedExplorerState),
       })
       .pipe(takeUntil(this.destroy$), finalize(settle))
       .subscribe({
@@ -5123,14 +5123,14 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Metadata Column Management ---
   checkUserRole() {
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
-    this.hasExplorerEditPermission = this.isAcpManager || this.authService.isAdmin;
+    this.hasExplorerEditPermission = this.latestExplorerState?.canEdit ?? false;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
     this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
     const oidcProfileStillLoading =
       this.authService.isLoggedIn &&
       this.authService.isOidcUser &&
       this.authService.currentUser === null;
-    if (!this.hasExplorerEditPermission && !oidcProfileStillLoading) {
+    if (this.latestExplorerState && !this.hasExplorerEditPermission && !oidcProfileStillLoading) {
       this.viewPerspective = 'read-only';
     }
     this.syncEffectiveExplorerPermissions();
@@ -5196,8 +5196,11 @@ export class ItemExplorerFacade implements OnDestroy {
     return {};
   }
 
-  private getPerspectiveForViewerRequests(): ItemExplorerPerspective {
-    return this.isReadOnlyPreview || !this.hasExplorerEditPermission ? 'read-only' : 'editor';
+  private getPerspectiveForViewerRequests(
+    envelope?: ItemExplorerStateEnvelope,
+  ): ItemExplorerPerspective {
+    const canEdit = envelope?.canEdit ?? this.hasExplorerEditPermission;
+    return this.isReadOnlyPreview || !canEdit ? 'read-only' : 'editor';
   }
 
   private getItemListAccessMessage(): string {

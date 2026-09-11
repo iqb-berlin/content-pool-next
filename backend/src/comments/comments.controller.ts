@@ -1,3 +1,4 @@
+import { ReviewAccessGuard } from "./review-access.guard";
 import {
   Controller,
   Get,
@@ -14,7 +15,6 @@ import { Response } from "express";
 import { ApiBearerAuth, ApiTags, ApiOperation } from "@nestjs/swagger";
 import { CommentsService } from "./comments.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { CommentTargetType } from "../database/entities";
 import { IsString, IsNotEmpty, IsEnum, MaxLength } from "class-validator";
 import { ApiProperty } from "@nestjs/swagger";
@@ -47,7 +47,7 @@ export class CommentsController {
   ) {}
 
   @Get()
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List all comments for an ACP (Manager only)" })
   async findAll(@UuidParam("acpId") acpId: string, @Request() req: any) {
@@ -56,7 +56,7 @@ export class CommentsController {
   }
 
   @Get("mine")
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List my comments for an ACP" })
   async findMine(@UuidParam("acpId") acpId: string, @Request() req: any) {
@@ -67,7 +67,7 @@ export class CommentsController {
   }
 
   @Post()
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Create a comment" })
   async create(
@@ -75,6 +75,7 @@ export class CommentsController {
     @Body() dto: CreateCommentDto,
     @Request() req: any,
   ) {
+    this.reviewPolicy.assertCanParticipateRequest(req);
     if (dto.targetId === acpId) {
       throw new BadRequestException("Comment target ID must not be the ACP ID");
     }
@@ -106,7 +107,7 @@ export class CommentsController {
   }
 
   @Delete()
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Delete unreferenced legacy comments for an ACP (Manager only)",
@@ -126,7 +127,7 @@ export class CommentsController {
   }
 
   @Get("export")
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Export comments as JSON" })
   async exportComments(@UuidParam("acpId") acpId: string, @Request() req: any) {
@@ -143,7 +144,7 @@ export class CommentsController {
   }
 
   @Get("export.xlsx")
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ReviewAccessGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Export comments as XLSX" })
   async exportCommentsXlsx(

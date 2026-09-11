@@ -16,6 +16,7 @@ describe("ReviewPolicyService", () => {
       policy.resolveActor({
         user: { type: "oidc", sub: "user-1", username: "AB" },
         acpAccessLevel: "READ_ONLY",
+        acpCapabilities: ["review:participate"],
       }),
     ).toEqual({
       userId: "user-1",
@@ -44,6 +45,7 @@ describe("ReviewPolicyService", () => {
       policy.isManagerRequest({
         user: { isAppAdmin: false },
         acpAccessLevel: "ADMIN",
+        acpCapabilities: ["review:manage"],
       }),
     ).toBe(true);
   });
@@ -53,12 +55,14 @@ describe("ReviewPolicyService", () => {
       policy.assertCanParticipateRequest({
         user: { sub: "user-1" },
         acpAccessLevel: "READ_ONLY",
+        acpCapabilities: ["review:participate"],
       }),
     ).not.toThrow();
     expect(() =>
       policy.assertCanParticipateRequest({
         user: { sub: "user-1" },
         acpAccessLevel: "PUBLIC",
+        acpCapabilities: ["review:participate"],
       }),
     ).not.toThrow();
     expect(() =>

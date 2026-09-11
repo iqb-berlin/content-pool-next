@@ -19,6 +19,7 @@ describe("ReviewCommentsController", () => {
         .mockResolvedValue(Buffer.from("xlsx")),
     };
     reviewPolicy = {
+      assertCanParticipateRequest: jest.fn(),
       resolveActor: jest.fn((req) => {
         const credential = req.user?.type === "credential";
         return {

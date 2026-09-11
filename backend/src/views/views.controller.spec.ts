@@ -96,6 +96,7 @@ describe("ViewsController", () => {
       viewsService,
       itemExplorerStateService,
       itemCollectionsService,
+      { resolve: jest.fn().mockResolvedValue([]) } as any,
     );
   });
 
@@ -109,9 +110,9 @@ describe("ViewsController", () => {
   });
 
   it("returns ACP start page and ACP index", async () => {
-    await expect(controller.getAcpStartPage("acp-1")).resolves.toEqual(
-      expect.objectContaining({ units: [{ id: "unit-1" }] }),
-    );
+    await expect(
+      controller.getAcpStartPage("acp-1", { params: { acpId: "acp-1" } }),
+    ).resolves.toEqual(expect.objectContaining({ units: [{ id: "unit-1" }] }));
     await expect(controller.getAcpIndex("acp-1")).resolves.toEqual({
       packageId: "pkg-1",
     });
@@ -122,7 +123,7 @@ describe("ViewsController", () => {
 
     await controller.exportAcpIndex(
       "acp-1",
-      { acpAccessLevel: "MANAGER" },
+      { acpCapabilities: ["item-explorer:edit"], acpAccessLevel: "MANAGER" },
       res,
     );
 
@@ -186,7 +187,10 @@ describe("ViewsController", () => {
     });
 
     await expect(
-      controller.getUnit("acp-1", "unit-1", { acpAccessLevel: "MANAGER" }),
+      controller.getUnit("acp-1", "unit-1", {
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      }),
     ).resolves.toEqual({ unitId: "unit-1" });
   });
 
@@ -200,7 +204,10 @@ describe("ViewsController", () => {
   });
 
   it("uses the active Item Explorer state for manager item lists", async () => {
-    await controller.getItems("acp-1", { acpAccessLevel: "MANAGER" });
+    await controller.getItems("acp-1", {
+      acpCapabilities: ["item-explorer:edit"],
+      acpAccessLevel: "MANAGER",
+    });
 
     expect(viewsService.getItemList).toHaveBeenCalledWith("acp-1", true);
   });
@@ -217,6 +224,7 @@ describe("ViewsController", () => {
 
   it("returns item explorer state with edit flag derived from access level", async () => {
     await controller.getItemExplorerState("acp-1", {
+      acpCapabilities: ["item-explorer:edit"],
       acpAccessLevel: "MANAGER",
     });
     expect(itemExplorerStateService.getStateForViewer).toHaveBeenCalledWith(
@@ -345,7 +353,11 @@ describe("ViewsController", () => {
         rowData: { note: "mine" },
         perspective: "editor",
       },
-      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+      {
+        user: { sub: "u-1" },
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      },
     );
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
@@ -370,7 +382,11 @@ describe("ViewsController", () => {
         rowData: { note: "mine" },
         perspective: "read-only",
       },
-      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+      {
+        user: { sub: "u-1" },
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      },
     );
 
     expect(viewsService.patchPersonalItemPreferenceRow).toHaveBeenCalledWith(
@@ -428,7 +444,11 @@ describe("ViewsController", () => {
         rowKeys: ["uuid-2::1", "uuid-1::1"],
         perspective: "editor",
       },
-      { user: { sub: "u-1" }, acpAccessLevel: "MANAGER" },
+      {
+        user: { sub: "u-1" },
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      },
       res,
     );
 
@@ -499,7 +519,11 @@ describe("ViewsController", () => {
     await controller.exportPersonalItemDataXlsx(
       "acp-1",
       { rowKeys: ["uuid::1"] },
-      { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+      {
+        user: { sub: "manager-1" },
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      },
       res,
     );
 
@@ -517,7 +541,7 @@ describe("ViewsController", () => {
     await controller.exportAllPersonalItemDataCsv(
       "acp-1",
       { perspective: "editor" },
-      { acpAccessLevel: "MANAGER" },
+      { acpCapabilities: ["item-explorer:edit"], acpAccessLevel: "MANAGER" },
       res,
     );
 
@@ -542,7 +566,11 @@ describe("ViewsController", () => {
     await controller.exportAllPersonalItemDataCsv(
       "acp-1",
       { collectionId: "collection-1" },
-      { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+      {
+        user: { sub: "manager-1" },
+        acpCapabilities: ["item-explorer:edit"],
+        acpAccessLevel: "MANAGER",
+      },
       res,
     );
     expect(
@@ -571,7 +599,11 @@ describe("ViewsController", () => {
       controller.exportAllPersonalItemDataCsv(
         "acp-1",
         { collectionId: "removed" },
-        { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+        {
+          user: { sub: "manager-1" },
+          acpCapabilities: ["item-explorer:edit"],
+          acpAccessLevel: "MANAGER",
+        },
         {} as any,
       ),
     ).rejects.toThrow("Item collection not found");
@@ -604,7 +636,11 @@ describe("ViewsController", () => {
       controller.exportAllPersonalItemDataCsv(
         "acp-1",
         { collectionId: "collection-1" },
-        { user: { sub: "manager-1" }, acpAccessLevel: "MANAGER" },
+        {
+          user: { sub: "manager-1" },
+          acpCapabilities: ["item-explorer:edit"],
+          acpAccessLevel: "MANAGER",
+        },
         {} as any,
       ),
     ).rejects.toThrow(ForbiddenException);
@@ -614,6 +650,7 @@ describe("ViewsController", () => {
   it("routes personal collection reads, updates and exports to the caller identity", async () => {
     const request = {
       user: { sub: "user-1" },
+      acpCapabilities: ["item-explorer:edit"],
       acpAccessLevel: "MANAGER",
     };
     await controller.getItemCollections("acp-1", "editor", request);
@@ -728,6 +765,7 @@ describe("ViewsController", () => {
     });
     const request = {
       user: { sub: "manager-1" },
+      acpCapabilities: ["item-explorer:edit"],
       acpAccessLevel: "MANAGER",
     };
 
@@ -764,7 +802,7 @@ describe("ViewsController", () => {
       controller.exportAllPersonalItemDataCsv(
         "acp-1",
         {},
-        { acpAccessLevel: "ADMIN" },
+        { acpCapabilities: ["item-explorer:edit"], acpAccessLevel: "ADMIN" },
         {} as any,
       ),
     ).rejects.toThrow(ForbiddenException);
@@ -836,6 +874,7 @@ describe("ViewsController", () => {
 
   it("forwards explicit booklet navigation separately from module navigation", async () => {
     await controller.getSequence("acp-1", "same", {
+      acpCapabilities: ["item-explorer:edit"],
       acpAccessLevel: "MANAGER",
       query: { kind: "booklet" },
     });

@@ -1,3 +1,4 @@
+import { CapabilitiesComponent } from '../../shared/capabilities/capabilities.component';
 import { sequenceLabel } from '../../shared/sequence-label';
 import { Component, ElementRef, ViewChild, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -12,7 +13,14 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [FormsModule, RouterLink, JsonPipe, AcpManagerContextComponent, ConfirmDialogComponent],
+  imports: [
+    CapabilitiesComponent,
+    FormsModule,
+    RouterLink,
+    JsonPipe,
+    AcpManagerContextComponent,
+    ConfirmDialogComponent,
+  ],
   template: `
     @if (acp) {
       <app-acp-manager-context />
@@ -50,7 +58,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         <h2 id="content-heading">Inhalte</h2>
         @if (contentData) {
           <div class="grid content-grid">
-            @if (contentData.featureConfig?.enableItemList !== false) {
+            @if (
+              contentData.capabilities?.includes('item-explorer:view') ||
+              contentData.capabilities?.includes('item-explorer:edit')
+            ) {
               <a
                 [routerLink]="['/view', acp.id, 'item-explorer']"
                 class="card link-card primary-content"
@@ -214,6 +225,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                     </select>
                   </td>
                   <td>
+                    <app-capabilities
+                      [value]="role.capabilities || []"
+                      [disabled]="roleBusy"
+                      (valueChange)="saveCapabilities(role, $event)"
+                    />
                     <div class="role-actions">
                       <button
                         class="btn btn-primary btn-sm"
@@ -246,6 +262,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         </div>
         <div class="add-person">
           <h4>Person hinzufügen</h4>
+          <app-capabilities [(value)]="newCapabilities" [disabled]="roleBusy" />
           @if (availableUsers.length) {
             <div class="add-person-fields">
               <div class="add-person-field">
@@ -288,6 +305,13 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         </div>
       </section>
 
+      @if (
+        contentData?.capabilities?.includes('review:manage') ||
+        (contentData?.featureConfig?.enableReview &&
+          contentData?.capabilities?.includes('review:participate'))
+      ) {
+        <p><a [routerLink]="['/view', acp.id, 'review']">Review öffnen / konfigurieren</a></p>
+      }
       <app-confirm-dialog
         [open]="showDeleteIndexDialog"
         title="ACP-Index zurücksetzen"
@@ -648,6 +672,21 @@ export class DashboardComponent implements OnInit {
     this.persistRole(this.selectedUserId, this.selectedRole);
   }
 
+  newCapabilities: string[] = [];
+  saveCapabilities(role: any, capabilities: string[]) {
+    if (!this.acp || this.roleBusy) return;
+    this.roleBusy = true;
+    this.api.updateRoleCapabilities(this.acp.id, role.userId, capabilities).subscribe({
+      next: (result) => {
+        role.capabilities = result.capabilities;
+        this.roleBusy = false;
+      },
+      error: (err) => {
+        this.roleError = err.error?.message || 'Berechtigungen konnten nicht gespeichert werden';
+        this.roleBusy = false;
+      },
+    });
+  }
   saveRole(userId: string) {
     const assignment = this.roles.find((role) => role.userId === userId);
     const nextRole = this.roleEdits[userId];
@@ -660,30 +699,38 @@ export class DashboardComponent implements OnInit {
     this.roleBusy = true;
     this.roleError = '';
     this.roleStatus = '';
-    this.api.assignAcpRole(this.acp.id, { userId, role }).subscribe({
-      next: (saved) => {
-        const existing = this.roles.find((entry) => entry.userId === userId);
-        const updated = {
-          ...existing,
-          ...saved,
-          userId,
-          role,
-          user: existing?.user || this.allUsers.find((user) => user.id === userId),
-        };
-        this.roles = existing
-          ? this.roles.map((entry) => (entry.userId === userId ? updated : entry))
-          : [...this.roles, updated];
-        delete this.roleEdits[userId];
-        if (this.selectedUserId === userId) this.selectedUserId = '';
-        if (this.auth.currentUser?.id === userId) this.myRole = role;
-        this.roleBusy = false;
-        this.roleStatus = existing ? 'Rolle gespeichert.' : 'Person hinzugefügt.';
-      },
-      error: (err) => {
-        this.roleBusy = false;
-        this.roleError = this.mapRoleError(err, 'Die Rolle konnte nicht gespeichert werden.');
-      },
-    });
+    this.api
+      .assignAcpRole(this.acp.id, {
+        userId,
+        role,
+        ...(this.roles.some((r) => r.userId === userId)
+          ? {}
+          : { capabilities: this.newCapabilities }),
+      })
+      .subscribe({
+        next: (saved) => {
+          const existing = this.roles.find((entry) => entry.userId === userId);
+          const updated = {
+            ...existing,
+            ...saved,
+            userId,
+            role,
+            user: existing?.user || this.allUsers.find((user) => user.id === userId),
+          };
+          this.roles = existing
+            ? this.roles.map((entry) => (entry.userId === userId ? updated : entry))
+            : [...this.roles, updated];
+          delete this.roleEdits[userId];
+          if (this.selectedUserId === userId) this.selectedUserId = '';
+          if (this.auth.currentUser?.id === userId) this.myRole = role;
+          this.roleBusy = false;
+          this.roleStatus = existing ? 'Rolle gespeichert.' : 'Person hinzugefügt.';
+        },
+        error: (err) => {
+          this.roleBusy = false;
+          this.roleError = this.mapRoleError(err, 'Die Rolle konnte nicht gespeichert werden.');
+        },
+      });
   }
 
   removeRole(userId: string) {

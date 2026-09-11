@@ -199,6 +199,38 @@ export class ApiService {
     return this.http.get<User[]>(`${this.API}/acp/${acpId}/assignable-users`);
   }
 
+  updateRoleCapabilities(acpId: string, userId: string, capabilities: string[]): Observable<any> {
+    return this.http.patch(`${this.API}/acp/${acpId}/roles/${userId}/capabilities`, {
+      capabilities,
+    });
+  }
+  getCapabilities(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/capabilities`);
+  }
+  getReview(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review`);
+  }
+  configureReview(acpId: string, enableReview: boolean): Observable<any> {
+    return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, { enableReview });
+  }
+  importCredentialFile(
+    acpId: string,
+    file: File,
+    mode: string,
+    profile: string,
+    capabilities: string[],
+    preview = false,
+  ): Observable<any> {
+    const body = new FormData();
+    body.append('file', file);
+    body.append('profile', profile);
+    body.append('capabilities', JSON.stringify(capabilities));
+    return this.http.post(
+      `${this.API}/acp/${acpId}/access/credentials/file?mode=${mode}&preview=${preview}`,
+      body,
+    );
+  }
+
   // ACP Access
   getAccessConfig(id: string): Observable<AccessConfig> {
     return this.http.get<AccessConfig>(`${this.API}/acp/${id}/access`);
@@ -216,16 +248,22 @@ export class ApiService {
   getCredentials(id: string): Observable<Credential[]> {
     return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
   }
-  createCredential(acpId: string, username: string, password: string): Observable<Credential> {
+  createCredential(
+    acpId: string,
+    username: string,
+    password: string,
+    capabilities: string[] = [],
+  ): Observable<Credential> {
     return this.http.post<Credential>(`${this.API}/acp/${acpId}/access/credentials/single`, {
       username,
       password,
+      capabilities,
     });
   }
   updateCredential(
     acpId: string,
     credentialId: string,
-    data: { username?: string; password?: string },
+    data: { username?: string; password?: string; capabilities?: string[] },
   ): Observable<Credential> {
     return this.http.patch<Credential>(
       `${this.API}/acp/${acpId}/access/credentials/${credentialId}`,

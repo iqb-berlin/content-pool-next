@@ -29,8 +29,14 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
       </div>
 
       <div class="sections-grid">
+        @if (capabilityAccess?.canReview || capabilityAccess?.canManageReview) {
+          <a [routerLink]="['/view', acpId, 'review']" class="card section-card"
+            ><h3>Review</h3>
+            <p>Booklets prüfen</p></a
+          >
+        }
         <!-- Item Explorer — only if enableItemList -->
-        @if (fc.enableItemList !== false) {
+        @if (capabilityAccess?.canViewExplorer) {
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
             <div class="section-icon">🔭</div>
             <h3>Item-Explorer</h3>
@@ -206,8 +212,13 @@ export class AcpStartComponent implements OnInit, OnDestroy {
     @Inject(AuthService) private auth: AuthService,
   ) {}
 
+  capabilityAccess: any;
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
+    this.api
+      .getCapabilities(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((a) => (this.capabilityAccess = a));
     this.updateManagerState();
     this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(() => {
       this.updateManagerState();

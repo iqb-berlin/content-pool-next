@@ -43,25 +43,16 @@ export class ReviewPolicyService {
 
   isManagerRequest(req: any): boolean {
     return Boolean(
-      req.user?.isAppAdmin ||
-      req.acpAccessLevel === "MANAGER" ||
-      req.acpAccessLevel === "ADMIN",
+      req.user?.isAppAdmin || req.acpCapabilities?.includes("review:manage"),
     );
   }
 
   assertCanParticipateRequest(req: any): void {
-    const currentAccessLevels = new Set([
-      "ADMIN",
-      "MANAGER",
-      "READ_ONLY",
-      "CREDENTIAL",
-      "PUBLIC",
-    ]);
     if (
       !req.user?.sub ||
-      !currentAccessLevels.has(String(req.acpAccessLevel || ""))
+      !req.acpCapabilities?.includes("review:participate")
     ) {
-      throw new ForbiddenException("Authenticated review access required");
+      throw new ForbiddenException("Review-Teilnahme ist nicht erlaubt");
     }
   }
 

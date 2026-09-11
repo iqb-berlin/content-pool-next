@@ -1,3 +1,7 @@
+import {
+  CapabilitiesComponent,
+  capabilityLabels,
+} from '../../shared/capabilities/capabilities.component';
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -8,7 +12,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 @Component({
   selector: 'app-access-config',
   standalone: true,
-  imports: [FormsModule, AcpManagerContextComponent],
+  imports: [CapabilitiesComponent, FormsModule, AcpManagerContextComponent],
   template: `
     <app-acp-manager-context />
 
@@ -136,6 +140,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                 />
               </div>
             </div>
+            <app-capabilities [(value)]="newCapabilities" />
             @if (addError) {
               <div class="alert alert-error" style="margin-top: 8px;">{{ addError }}</div>
             }
@@ -159,34 +164,67 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <div class="form-group" style="margin-bottom: 12px;">
               <label>Import-Modus</label>
               <select
+                [disabled]="importBusy"
                 [(ngModel)]="csvMode"
+                (ngModelChange)="cancelCSVPreview()"
                 style="width: 100%; padding: 6px; border: 1px solid var(--color-border); border-radius: var(--radius);"
               >
-                <option value="replace">Liste ersetzen (bestehende löschen)</option>
+                <option value="replace">Liste ersetzen (nicht enthaltene Zugänge löschen)</option>
                 <option value="append">Nur neue hinzufügen (Duplikate überspringen)</option>
                 <option value="upsert">
-                  Aktualisieren (bestehende Passwörter ändern, neue hinzufügen)
+                  Aktualisieren (Passwörter und Rechte ersetzen, neue hinzufügen)
                 </option>
               </select>
               <span class="help-text" style="margin-top: 4px;">
                 {{
                   csvMode === 'replace'
-                    ? 'Alle bestehenden Zugangsdaten werden gelöscht und durch die CSV ersetzt.'
+                    ? 'Nicht enthaltene Zugänge werden gelöscht. Enthaltene Zugänge behalten ihre IDs und erhalten Passwort und Rechte aus dem Import.'
                     : csvMode === 'append'
                       ? 'Nur neue Benutzernamen werden hinzugefügt. Bereits existierende werden übersprungen.'
-                      : 'Bereits existierende Benutzernamen werden mit neuen Passwörtern aktualisiert. Neue werden hinzugefügt.'
+                      : 'Bereits existierende Benutzernamen erhalten neue Passwörter und das ausgewählte Berechtigungsprofil. Neue werden hinzugefügt.'
                 }}
               </span>
             </div>
+            <label
+              >Importprofil
+              <select
+                [disabled]="importBusy"
+                [(ngModel)]="importProfile"
+                (ngModelChange)="cancelCSVPreview()"
+              >
+                <option value="REVIEW_ONLY">Nur Review (Teilnahme)</option>
+                <option value="ITEM_EXPLORER_ONLY">Nur Item Explorer (Lesen)</option>
+                <option value="BOTH">Beides (Teilnahme und Lesen)</option>
+                <option value="CUSTOM">Benutzerdefiniert</option>
+              </select>
+            </label>
+            @if (importProfile === 'CUSTOM') {
+              <app-capabilities
+                [disabled]="importBusy"
+                [(value)]="importCapabilities"
+                (valueChange)="cancelCSVPreview()"
+              />
+            }
             <div style="display: flex; gap: 12px; align-items: center;">
               <label class="btn btn-accent">
                 CSV hochladen
-                <input type="file" accept=".csv" (change)="previewCSV($event)" hidden />
+                <input
+                  type="file"
+                  [disabled]="importBusy"
+                  accept=".csv,.tsv,.txt"
+                  (change)="previewCSV($event)"
+                  hidden
+                />
               </label>
-              <span class="help-text">Format: Benutzername, Kennwort pro Zeile</span>
+              <span class="help-text"
+                >UTF-8; Komma, Semikolon oder Tab; optional mit Kopfzeile</span
+              >
             </div>
           </div>
 
+          @if (importError) {
+            <div class="alert alert-error" style="white-space: pre-line">{{ importError }}</div>
+          }
           <!-- CSV Preview Modal -->
           @if (csvPreview) {
             <div
@@ -255,9 +293,32 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                   <strong>Bereits existierend:</strong> {{ csvPreview.conflicts.join(', ') }}
                 </div>
               }
+              @for (change of importChanges; track change.username) {
+                <p>
+                  <strong>{{ change.username }}</strong
+                  >: {{ importActionLabels[change.action] }}<br />
+                  Rechte: {{ capabilityLabels(change.before) }} →
+                  {{ capabilityLabels(change.after) }}
+                </p>
+              }
+              @if (importRemoved.length) {
+                <p>Zu löschen: {{ importRemoved.join(', ') }}</p>
+              }
               <div style="display: flex; gap: 12px;">
-                <button class="btn btn-primary" (click)="confirmCSVUpload()">Importieren</button>
-                <button class="btn btn-outline" (click)="cancelCSVPreview()">Abbrechen</button>
+                <button
+                  class="btn btn-primary"
+                  [disabled]="importBusy"
+                  (click)="confirmCSVUpload()"
+                >
+                  Importieren
+                </button>
+                <button
+                  class="btn btn-outline"
+                  [disabled]="importBusy"
+                  (click)="cancelCSVPreview()"
+                >
+                  Abbrechen
+                </button>
               </div>
             </div>
           }
@@ -693,6 +754,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                   />
                 </div>
               }
+              <app-capabilities [(value)]="editCapabilities" />
               @if (editError) {
                 <div class="alert alert-error" style="margin-top: 12px;">{{ editError }}</div>
               }
@@ -906,6 +968,12 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
   ],
 })
 export class AccessConfigComponent implements OnInit {
+  readonly capabilityLabels = capabilityLabels;
+  readonly importActionLabels: Record<string, string> = {
+    add: 'Hinzufügen',
+    update: 'Aktualisieren',
+    skip: 'Unverändert lassen',
+  };
   private readonly strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
   private readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
@@ -946,6 +1014,16 @@ export class AccessConfigComponent implements OnInit {
   credentials: Credential[] = [];
 
   // Manual add form
+  newCapabilities: string[] = [];
+  editCapabilities: string[] = [];
+  importCapabilities: string[] = [];
+  importProfile = 'REVIEW_ONLY';
+  private importPreviewVersion = 0;
+  importError = '';
+  importBusy = false;
+  importFile: File | null = null;
+  importChanges: any[] = [];
+  importRemoved: string[] = [];
   newUsername = '';
   newPassword = '';
   addError = '';
@@ -1299,7 +1377,7 @@ export class AccessConfigComponent implements OnInit {
   addCredential() {
     this.addError = '';
     const username = this.newUsername.trim();
-    const password = this.newPassword.trim();
+    const password = this.newPassword;
 
     if (!username || !password) {
       this.addError = 'Benutzername und Kennwort sind erforderlich.';
@@ -1314,7 +1392,7 @@ export class AccessConfigComponent implements OnInit {
       return;
     }
 
-    this.api.createCredential(this.acpId, username, password).subscribe({
+    this.api.createCredential(this.acpId, username, password, this.newCapabilities).subscribe({
       next: (cred) => {
         this.credentials.push(cred);
         this.newUsername = '';
@@ -1330,114 +1408,90 @@ export class AccessConfigComponent implements OnInit {
   // CSV Upload with preview
   previewCSV(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const lines = (reader.result as string).split('\n').filter((l) => l.trim());
-      const parsed = lines
-        .map((line) => {
-          const [username, password] = line.split(',').map((s) => s.trim());
-          return { username, password };
-        })
-        .filter((c) => c.username && c.password);
-
-      // Check for duplicates within CSV
-      const seenInCSV = new Set<string>();
-      const duplicates: string[] = [];
-      for (const cred of parsed) {
-        if (seenInCSV.has(cred.username)) {
-          if (!duplicates.includes(cred.username)) {
-            duplicates.push(cred.username);
-          }
-        } else {
-          seenInCSV.add(cred.username);
-        }
-      }
-
-      // Calculate what will happen based on mode
-      let toAdd = 0;
-      let toUpdate = 0;
-      let toSkip = 0;
-      const conflicts: string[] = [];
-
-      for (const cred of parsed) {
-        if (duplicates.includes(cred.username)) continue;
-
-        const existing = this.credentials.find((c) => c.username === cred.username);
-
-        if (this.csvMode === 'replace') {
-          toAdd++;
-        } else if (this.csvMode === 'append') {
-          if (existing) {
-            toSkip++;
-            conflicts.push(cred.username);
-          } else {
-            toAdd++;
-          }
-        } else if (this.csvMode === 'upsert') {
-          if (existing) {
-            toUpdate++;
-            conflicts.push(cred.username);
-          } else {
-            toAdd++;
-          }
-        }
-      }
-
-      this.csvPreview = {
-        filename: file.name,
-        total: parsed.length,
-        toAdd,
-        toUpdate,
-        toSkip,
-        duplicates,
-        conflicts: [...new Set(conflicts)],
-        credentials: parsed,
-      };
-      this.pendingCSVUpload = parsed;
-    };
-    reader.readAsText(file);
-    // Reset file input
     (event.target as HTMLInputElement).value = '';
+    if (!file) return;
+    this.cancelCSVPreview();
+    this.importError = '';
+    const version = this.importPreviewVersion;
+    this.importBusy = true;
+    this.api
+      .importCredentialFile(
+        this.acpId,
+        file,
+        this.csvMode,
+        this.importProfile,
+        this.importCapabilities,
+        true,
+      )
+      .subscribe({
+        next: (result) => {
+          if (version !== this.importPreviewVersion) return;
+          this.importFile = file;
+          this.importChanges = result.changes;
+          this.importRemoved = result.removed;
+          this.csvPreview = {
+            filename: file.name,
+            total: result.changes.length,
+            toAdd: result.changes.filter((c: any) => c.action === 'add').length,
+            toUpdate: result.changes.filter((c: any) => c.action === 'update').length,
+            toSkip: result.changes.filter((c: any) => c.action === 'skip').length,
+            duplicates: [],
+            conflicts: [],
+            credentials: [],
+          };
+          this.importBusy = false;
+        },
+        error: (err) => {
+          if (version !== this.importPreviewVersion) return;
+          this.importBusy = false;
+          this.showImportError(err);
+        },
+      });
   }
-
   cancelCSVPreview() {
+    this.importPreviewVersion++;
+    this.importBusy = false;
     this.csvPreview = null;
+    this.importFile = null;
+    this.importChanges = [];
+    this.importRemoved = [];
     this.pendingCSVUpload = [];
   }
-
   confirmCSVUpload() {
-    if (!this.csvPreview || this.pendingCSVUpload.length === 0) return;
-
-    const validCreds = this.pendingCSVUpload.filter(
-      (c) => !this.csvPreview!.duplicates.includes(c.username),
-    );
-
-    this.api.uploadCredentials(this.acpId, validCreds, this.csvMode).subscribe({
-      next: (res: any) => {
-        this.csvPreview = null;
-        this.pendingCSVUpload = [];
-        this.credentialCount =
-          res.added +
-          this.credentials.length -
-          (this.csvMode === 'replace' ? this.credentials.length : 0);
-        this.loadCredentials();
-
-        // Show success message
-        const msg = `Importiert: ${res.added} hinzugefügt${res.updated > 0 ? ', ' + res.updated + ' aktualisiert' : ''}${res.skipped > 0 ? ', ' + res.skipped + ' übersprungen' : ''}`;
-        alert(msg);
-      },
-      error: (err) => {
-        alert('Fehler beim Import: ' + (err.error?.message || 'Unbekannter Fehler'));
-      },
-    });
+    if (!this.importFile || !this.csvPreview || this.importBusy) return;
+    this.importBusy = true;
+    this.api
+      .importCredentialFile(
+        this.acpId,
+        this.importFile,
+        this.csvMode,
+        this.importProfile,
+        this.importCapabilities,
+      )
+      .subscribe({
+        next: () => {
+          this.importBusy = false;
+          this.cancelCSVPreview();
+          this.loadCredentials();
+        },
+        error: (err) => {
+          this.importBusy = false;
+          this.showImportError(err);
+        },
+      });
+  }
+  private showImportError(err: any) {
+    this.importError =
+      err.error?.errors?.map((e: any) => `Zeile ${e.line}: ${e.message}`).join('\n') ||
+      err.error?.message ||
+      'Import fehlgeschlagen';
   }
 
   // Edit dialog
   openEditDialog(cred: Credential) {
     this.editingCredential = cred;
     this.editUsername = cred.username;
+    this.editCapabilities = [...(cred.capabilities || [])];
     this.editChangePassword = false;
     this.editPassword = '';
     this.editError = '';
@@ -1472,7 +1526,9 @@ export class AccessConfigComponent implements OnInit {
       }
     }
 
-    const data: { username?: string; password?: string } = {};
+    const data: { username?: string; password?: string; capabilities?: string[] } = {
+      capabilities: this.editCapabilities,
+    };
     if (username !== this.editingCredential.username) {
       data.username = username;
     }

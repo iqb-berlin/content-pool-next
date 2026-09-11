@@ -15,6 +15,9 @@ export enum AcpRole {
 
 @Entity("acp_user_roles")
 export class AcpUserRole {
+  @Column({ type: "jsonb", default: [] })
+  capabilities!: string[];
+
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 

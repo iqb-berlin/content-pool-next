@@ -3,7 +3,12 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { AcpAccessGuard } from "./acp-access.guard";
-import { AcpAccessConfig, AcpRole, AcpUserRole } from "../../database/entities";
+import {
+  AcpCredential,
+  AcpAccessConfig,
+  AcpRole,
+  AcpUserRole,
+} from "../../database/entities";
 import { User } from "../../database/entities/user.entity";
 
 describe("AcpAccessGuard", () => {
@@ -38,6 +43,14 @@ describe("AcpAccessGuard", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AcpAccessGuard,
+        {
+          provide: getRepositoryToken(AcpCredential),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({
+              accessConfig: { acpId, accessModel: "CREDENTIALS_LIST" },
+            }),
+          },
+        },
         {
           provide: getRepositoryToken(AcpUserRole),
           useValue: acpUserRoleRepository,

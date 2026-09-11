@@ -13,6 +13,9 @@ import { AcpAccessConfig } from "./acp-access-config.entity";
   unique: true,
 })
 export class AcpCredential {
+  @Column({ type: "jsonb", default: [] })
+  capabilities!: string[];
+
   @PrimaryGeneratedColumn("uuid")
   id!: string;
 

@@ -1,3 +1,4 @@
+import { ReviewController } from "../review/review.controller";
 import { ReviewManifestModule } from "../review/review-manifest.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -32,7 +33,7 @@ import { ItemCollectionsModule } from "../item-collections/item-collections.modu
     FilesModule,
     ItemCollectionsModule,
   ],
-  controllers: [ViewsController],
+  controllers: [ViewsController, ReviewController],
   providers: [ViewsService],
   exports: [ViewsService],
 })

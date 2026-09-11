@@ -37,6 +37,9 @@
           }
         </div>
 
+        @if (snapshot?.visibilityMode === 'GROUP') {
+          <p class="comment-status">Bewertungen sind nur im geteilten Modus verfügbar.</p>
+        }
         <div class="new-comment-form">
           @if (snapshot?.visibilityMode === 'GROUP') {
             <label
@@ -215,6 +218,44 @@
       </div>
     } @else {
       <p class="comment-text">{{ comment.commentText }}</p>
+      @if (snapshot?.visibilityMode === 'SHARED' && !comment.legacyReadOnly) {
+        <div class="comment-votes" role="group" aria-label="Kommentarbewertung">
+          @if (comment.canVote) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'UP'"
+              [attr.aria-label]="
+                'Upvotes ' +
+                (comment.upvotes || 0) +
+                (comment.myVote === 'UP' ? ': Upvote entfernen' : ': Upvote geben')
+              "
+              (click)="vote(comment, 'UP')"
+            >
+              ↑ Upvotes {{ comment.upvotes || 0 }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'DOWN'"
+              [attr.aria-label]="
+                'Downvotes ' +
+                (comment.downvotes || 0) +
+                (comment.myVote === 'DOWN' ? ': Downvote entfernen' : ': Downvote geben')
+              "
+              (click)="vote(comment, 'DOWN')"
+            >
+              ↓ Downvotes {{ comment.downvotes || 0 }}
+            </button>
+          } @else {
+            <span
+              >↑ Upvotes {{ comment.upvotes || 0 }} · ↓ Downvotes {{ comment.downvotes || 0 }}</span
+            >
+          }
+        </div>
+      }
       @if (comment.isOwn) {
         <div class="own-comment-actions">
           <button type="button" class="link-button" (click)="startEdit(comment)">Bearbeiten</button>

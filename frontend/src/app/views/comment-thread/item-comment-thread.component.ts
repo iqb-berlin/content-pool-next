@@ -419,6 +419,28 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       });
   }
 
+  vote(comment: Comment, value: 'UP' | 'DOWN'): void {
+    if (this.busy || !comment.canVote || this.snapshot?.visibilityMode !== 'SHARED') return;
+    const targetKey = this.targetKey;
+    this.busy = true;
+    this.api
+      .setCommentVote(this.acpId, comment.id, comment.myVote === value ? null : value)
+      .pipe(timeout(10_000), takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
+      .subscribe({
+        next: () => {
+          this.busy = false;
+          if (targetKey === this.targetKey) this.loadThread();
+        },
+        error: (error) => {
+          this.busy = false;
+          if (targetKey === this.targetKey) {
+            this.error = this.errorMessage(error, 'Bewertung konnte nicht gespeichert werden.');
+            this.loadThread(true);
+          }
+        },
+      });
+  }
+
   toggleReplies(threadId: string): void {
     const expanded = this.expandedThreads;
     if (expanded.has(threadId)) expanded.delete(threadId);

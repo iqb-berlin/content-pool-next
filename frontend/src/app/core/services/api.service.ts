@@ -552,6 +552,15 @@ export class ApiService {
   exportCommentsXlsx(acpId: string): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/comments/export.xlsx`, { responseType: 'blob' });
   }
+  setCommentVote(
+    acpId: string,
+    commentId: string,
+    value: 'UP' | 'DOWN' | null,
+  ): Observable<unknown> {
+    const url = `${this.API}/acp/${acpId}/review/comments/${commentId}/vote`;
+    return value === null ? this.http.delete(url) : this.http.put(url, { value });
+  }
+
   exportMyReviewCommentsCsv(acpId: string): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.csv`, {
       responseType: 'blob',

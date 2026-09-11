@@ -447,6 +447,10 @@ export interface Comment {
   isOwn?: boolean;
   isDeleted?: boolean;
   legacyReadOnly?: boolean;
+  upvotes?: number;
+  downvotes?: number;
+  myVote?: 'UP' | 'DOWN' | null;
+  canVote?: boolean;
 }
 
 export interface CommentThreadSnapshot {

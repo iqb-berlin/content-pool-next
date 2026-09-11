@@ -11,7 +11,7 @@ import {
 } from '../../core/utils/geogebra-player-html.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { MetadataPanelComponent } from '../metadata-panel/metadata-panel.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
+import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
 
 @Component({
   selector: 'app-item-view',
@@ -21,7 +21,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     BreadcrumbComponent,
     MetadataPanelComponent,
     FormsModule,
-    CommentDialogComponent,
+    ItemCommentThreadComponent,
   ],
   template: `
     @if (unit && item) {
@@ -39,14 +39,21 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             <option value="on">Print: Ein</option>
             <option value="on-with-ids">Print: Ein + IDs</option>
           </select>
-          @if (showCommentBtn) {
-            <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
-          }
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="btn btn-outline btn-sm"
             >← Zum Item-Explorer</a
           >
         </div>
       </div>
+
+      @if (showCommentBtn) {
+        <app-item-comment-thread
+          [acpId]="acpId"
+          [targetType]="'ITEM'"
+          [unitId]="item.unitId"
+          [itemId]="item.itemId || item.id || itemId"
+          [enabled]="showCommentBtn"
+        />
+      }
 
       <div class="item-layout">
         <div class="player-area">
@@ -109,15 +116,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     } @else if (!loading) {
       <div class="empty-state"><h3>Item nicht gefunden</h3></div>
     }
-
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'ITEM'"
-      [targetId]="item?.itemId || item?.id || itemId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -210,7 +208,6 @@ export class ItemViewComponent implements OnInit, OnDestroy {
   playerHeight = '100%';
   printMode: 'off' | 'on' | 'on-with-ids' = 'off';
   showCommentBtn = false;
-  commentOpen = false;
   highlightItemId = '';
   highlightApplied = false;
   playerFocusHighlightEnabled = false;
@@ -335,18 +332,6 @@ export class ItemViewComponent implements OnInit, OnDestroy {
 
   private sendToPlayer(msg: any) {
     this.playerFrame?.nativeElement?.contentWindow?.postMessage(msg, '*');
-  }
-
-  openComment() {
-    this.commentOpen = true;
-  }
-
-  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-      },
-    });
   }
 
   private currentlyLoadingUnit() {

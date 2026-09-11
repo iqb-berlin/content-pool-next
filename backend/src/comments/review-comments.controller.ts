@@ -21,6 +21,7 @@ import {
 } from "@nestjs/swagger";
 import {
   IsInt,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
@@ -33,17 +34,31 @@ import { UuidParam } from "../common/uuid-param";
 import { CommentsService } from "./comments.service";
 import { ReviewPolicyService } from "./review-policy.service";
 import { ReviewAccessGuard } from "./review-access.guard";
+import { CommentTargetType } from "../database/entities";
 
 class CreateItemReviewCommentDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  unitId!: string;
+  @ApiProperty({ enum: CommentTargetType, required: false })
+  @IsOptional()
+  @IsEnum(CommentTargetType)
+  targetType?: CommentTargetType;
 
-  @ApiProperty()
+  @ApiProperty({ required: false })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
-  itemId!: string;
+  bookletId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  unitId?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  itemId?: string;
 
   @ApiProperty()
   @IsString()
@@ -87,8 +102,18 @@ export class ReviewCommentsController {
     @Query("unitId") unitId: string,
     @Query("itemId") itemId: string,
     @Request() req: any,
+    @Query("targetType") rawTargetType?: string,
+    @Query("bookletId") bookletId?: string,
   ) {
-    const target = this.normalizeTarget(unitId, itemId);
+    const targetType = this.normalizeTargetType(rawTargetType);
+    if (targetType !== CommentTargetType.ITEM) {
+      return this.commentsService.getReviewThread(
+        acpId,
+        this.normalizeReviewTarget(targetType, bookletId, unitId, itemId),
+        this.reviewPolicy.resolveActor(req),
+      );
+    }
+    const target = this.normalizeItemTarget(unitId, itemId);
     return this.commentsService.getItemThread(
       acpId,
       target.unitId,
@@ -178,7 +203,24 @@ export class ReviewCommentsController {
     @Request() req: any,
   ) {
     this.reviewPolicy.assertCanParticipateRequest(req);
-    const target = this.normalizeTarget(dto.unitId, dto.itemId);
+    const targetType = this.normalizeTargetType(dto.targetType);
+    if (targetType !== CommentTargetType.ITEM) {
+      return this.commentsService.createReviewComment(
+        acpId,
+        {
+          ...this.normalizeReviewTarget(
+            targetType,
+            dto.bookletId,
+            dto.unitId,
+            dto.itemId,
+          ),
+          commentText: dto.commentText,
+          parentCommentId: dto.parentCommentId,
+        },
+        this.reviewPolicy.resolveActor(req),
+      );
+    }
+    const target = this.normalizeItemTarget(dto.unitId, dto.itemId);
     return this.commentsService.createItemComment(
       acpId,
       {
@@ -230,7 +272,45 @@ export class ReviewCommentsController {
     return { success: true };
   }
 
-  private normalizeTarget(unitId: unknown, itemId: unknown) {
+  private normalizeTargetType(value: unknown): CommentTargetType {
+    const targetType = String(value || CommentTargetType.ITEM).trim();
+    if (
+      ![
+        CommentTargetType.BOOKLET,
+        CommentTargetType.UNIT,
+        CommentTargetType.ITEM,
+        CommentTargetType.CODING,
+      ].includes(targetType as CommentTargetType)
+    ) {
+      throw new BadRequestException("Unsupported review comment target type");
+    }
+    return targetType as CommentTargetType;
+  }
+
+  private normalizeReviewTarget(
+    targetType: CommentTargetType,
+    bookletId: unknown,
+    unitId: unknown,
+    itemId: unknown,
+  ) {
+    if (targetType === CommentTargetType.BOOKLET) {
+      const normalizedBookletId = String(bookletId || "").trim();
+      if (!normalizedBookletId) {
+        throw new BadRequestException("bookletId is required");
+      }
+      return { targetType, bookletId: normalizedBookletId };
+    }
+    if (targetType === CommentTargetType.UNIT) {
+      const normalizedUnitId = String(unitId || "").trim();
+      if (!normalizedUnitId) {
+        throw new BadRequestException("unitId is required");
+      }
+      return { targetType, unitId: normalizedUnitId };
+    }
+    return { targetType, ...this.normalizeItemTarget(unitId, itemId) };
+  }
+
+  private normalizeItemTarget(unitId: unknown, itemId: unknown) {
     const normalizedUnitId = String(unitId || "").trim();
     const normalizedItemId = String(itemId || "").trim();
     if (!normalizedUnitId || !normalizedItemId) {

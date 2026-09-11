@@ -24,6 +24,7 @@ describe("CommentsService", () => {
   let unitParserService: { getItemListFromFiles: jest.Mock };
   let fileCatalogCache: { get: jest.Mock };
   let acpRepository: { findOne: jest.Mock };
+  let reviewManifestService: { getManifest: jest.Mock };
 
   beforeEach(() => {
     deleteQueryBuilder = {
@@ -62,6 +63,13 @@ describe("CommentsService", () => {
         updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       }),
     };
+    reviewManifestService = {
+      getManifest: jest.fn().mockResolvedValue({
+        booklets: [],
+        units: [{ id: "unit-1", name: "Unit 1", items: [{ id: "item-1" }] }],
+        issues: [],
+      }),
+    };
 
     service = new CommentsService(
       commentRepository as any,
@@ -69,6 +77,7 @@ describe("CommentsService", () => {
       unitParserService as any,
       fileCatalogCache as any,
       acpRepository as any,
+      reviewManifestService as any,
     );
   });
 
@@ -133,7 +142,7 @@ describe("CommentsService", () => {
     expect(commentRepository.save).not.toHaveBeenCalled();
   });
 
-  it("deletes only unreferenced legacy non-item comments by ACP", async () => {
+  it("deletes only unresolved legacy task-sequence comments by ACP", async () => {
     deleteQueryBuilder.execute.mockResolvedValueOnce({ affected: 4 });
     commentRepository.count.mockResolvedValueOnce(7);
     await expect(
@@ -144,14 +153,11 @@ describe("CommentsService", () => {
       acpId: "acp-1",
     });
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"target_type" <> :itemTargetType',
-      { itemTargetType: CommentTargetType.ITEM },
+      '"target_type" = :legacyTargetType',
+      { legacyTargetType: CommentTargetType.TASK_SEQUENCE },
     );
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"unit_id" IS NULL',
-    );
-    expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"item_id" IS NULL',
+      '"legacy_read_only" = true',
     );
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
       '"parent_comment_id" IS NULL',
@@ -488,15 +494,17 @@ describe("CommentsService", () => {
     });
 
     expect(snapshot.counts).toEqual([
-      { unitId: "unit-1", itemId: "item-1", count: 1 },
-      { unitId: "unit-1", itemId: "item-2", count: 1 },
+      { unitId: "unit-1", itemId: "item-1", count: 1, codingCount: 0 },
+      { unitId: "unit-1", itemId: "item-2", count: 1, codingCount: 0 },
     ]);
     expect(commentRepository.find).toHaveBeenCalledTimes(1);
     expect(commentRepository.find).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        acpId: "acp-1",
-        targetType: CommentTargetType.ITEM,
-      }),
+      where: expect.arrayContaining([
+        expect.objectContaining({
+          acpId: "acp-1",
+          targetType: CommentTargetType.ITEM,
+        }),
+      ]),
     });
   });
 
@@ -766,6 +774,53 @@ describe("CommentsService", () => {
     expect(result).toMatchObject({ isOwn: true, parentCommentId: "root-1" });
   });
 
+  it("allows replies to a uniquely resolved legacy item comment", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableCommenting: true,
+        commentTargets: [CommentTargetType.ITEM],
+        commentVisibilityMode: "SHARED",
+      },
+    });
+    commentRepository.findOne.mockResolvedValue({
+      id: "legacy-root",
+      acpId: "acp-1",
+      targetType: CommentTargetType.ITEM,
+      targetId: "unit-1_item-1",
+      unitId: null,
+      itemId: null,
+      legacyReadOnly: true,
+      parentCommentId: null,
+    });
+    commentRepository.save.mockImplementation(async (value) => ({
+      ...value,
+      createdAt: date,
+      updatedAt: date,
+    }));
+
+    await expect(
+      service.createItemComment(
+        "acp-1",
+        {
+          unitId: "unit-1",
+          itemId: "item-1",
+          parentCommentId: "legacy-root",
+          commentText: "Antwort auf Altkommentar",
+        },
+        { userId: "me", authorLabel: "ME", isManager: false },
+      ),
+    ).resolves.toMatchObject({ parentCommentId: "legacy-root" });
+    expect(commentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: CommentTargetType.ITEM,
+        unitId: "unit-1",
+        itemId: "item-1",
+        parentCommentId: "legacy-root",
+      }),
+    );
+  });
+
   it("rejects replies to a foreign comment after switching to private visibility", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
@@ -920,6 +975,7 @@ describe("CommentsService", () => {
       },
     );
     expect(aliasedThread.target).toEqual({
+      targetType: CommentTargetType.ITEM,
       unitId: "unit-1",
       itemId: "item-1",
     });
@@ -1044,8 +1100,8 @@ describe("CommentsService", () => {
     const actor = { userId: "me", authorLabel: "ME", isManager: false };
     expect((await service.getItemCommentCounts("acp-1", actor)).counts).toEqual(
       [
-        { unitId: "unit-1", itemId: "item-1", count: 1 },
-        { unitId: "unit-1", itemId: "unit-1_item-1", count: 0 },
+        { unitId: "unit-1", itemId: "item-1", count: 1, codingCount: 0 },
+        { unitId: "unit-1", itemId: "unit-1_item-1", count: 0, codingCount: 0 },
       ],
     );
     commentRepository.find.mockResolvedValue([]);
@@ -1057,6 +1113,7 @@ describe("CommentsService", () => {
     );
     expect(thread.comments).toEqual([]);
     expect(thread.target).toEqual({
+      targetType: CommentTargetType.ITEM,
       unitId: "unit-1",
       itemId: "unit-1_item-1",
     });
@@ -1179,6 +1236,8 @@ describe("CommentsService", () => {
       userId: "other",
       targetType: CommentTargetType.ITEM,
       targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
       commentText: "Text",
       authorLabel: "OT",
       createdAt: date,
@@ -1215,7 +1274,7 @@ describe("CommentsService", () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it("does not let the item-thread endpoint mutate another comment target", async () => {
+  it("checks target configuration before mutating another comment target", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
@@ -1238,7 +1297,7 @@ describe("CommentsService", () => {
         authorLabel: "ME",
         isManager: false,
       }),
-    ).rejects.toThrow(NotFoundException);
+    ).rejects.toThrow(ForbiddenException);
     expect(commentRepository.update).not.toHaveBeenCalled();
   });
 
@@ -1250,6 +1309,8 @@ describe("CommentsService", () => {
       userId: "me",
       targetType: CommentTargetType.ITEM,
       targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
       commentText: "Text",
       authorLabel: "ME",
       createdAt: date,
@@ -1274,5 +1335,211 @@ describe("CommentsService", () => {
       expect.objectContaining({ id: "c-1", acpId: "acp-1", version: 1 }),
       expect.objectContaining({ commentText: "", version: 2 }),
     );
+  });
+
+  it("updates and deletes by stable credential ownership", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    const ownComment = {
+      id: "credential-comment",
+      acpId: "acp-1",
+      credentialId: "credential-1",
+      credentialUsername: "reviewer",
+      targetType: CommentTargetType.ITEM,
+      targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
+      commentText: "Text",
+      authorLabel: "RE",
+      createdAt: date,
+      updatedAt: date,
+      version: 1,
+    } as any;
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+    });
+    commentRepository.findOne.mockResolvedValue(ownComment);
+    commentRepository.update.mockResolvedValue({ affected: 1 });
+    const actor = {
+      credentialId: "credential-1",
+      credentialUsername: "reviewer",
+      authorLabel: "RE",
+      isManager: false,
+    };
+
+    await expect(
+      service.updateOwnComment("acp-1", "credential-comment", "Neu", 1, actor),
+    ).resolves.toMatchObject({ commentText: "Neu", version: 2, isOwn: true });
+    await expect(
+      service.deleteOwnComment("acp-1", "credential-comment", 1, actor),
+    ).resolves.toBeUndefined();
+    expect(commentRepository.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates a stored target before updating it", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { enableCommenting: true, commentTargets: ["UNIT"] },
+    });
+    reviewManifestService.getManifest.mockResolvedValue({
+      booklets: [],
+      units: [],
+      issues: [],
+    });
+    commentRepository.findOne.mockResolvedValue({
+      id: "removed-unit-comment",
+      acpId: "acp-1",
+      userId: "me",
+      targetType: CommentTargetType.UNIT,
+      targetId: "removed-unit",
+      unitId: "removed-unit",
+      commentText: "Text",
+      createdAt: date,
+      updatedAt: date,
+      version: 1,
+    });
+
+    await expect(
+      service.updateOwnComment("acp-1", "removed-unit-comment", "Neu", 1, {
+        userId: "me",
+        authorLabel: "ME",
+        isManager: false,
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(commentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it("creates coding comments on the whole item coding context", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { enableCommenting: true, commentTargets: ["CODING"] },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [{ unitId: "unit-1", itemId: "item-1" }],
+      codingSchemes: { "unit-1": { variableCodings: [] } },
+    });
+    commentRepository.create.mockImplementationOnce((value) => ({
+      id: "coding-1",
+      createdAt: date,
+      updatedAt: date,
+      legacyReadOnly: false,
+      ...value,
+    }));
+
+    await expect(
+      service.createReviewComment(
+        "acp-1",
+        {
+          targetType: CommentTargetType.CODING,
+          unitId: "unit-1",
+          itemId: "item-1",
+          commentText: "Kodierschema prüfen",
+        },
+        { userId: "me", authorLabel: "ME", isManager: false },
+      ),
+    ).resolves.toMatchObject({
+      targetType: CommentTargetType.CODING,
+      unitId: "unit-1",
+      itemId: "item-1",
+      commentText: "Kodierschema prüfen",
+    });
+    expect(commentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: CommentTargetType.CODING,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+      }),
+    );
+  });
+
+  it("keeps item and coding counts separate", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableCommenting: true,
+        commentTargets: ["ITEM", "CODING"],
+      },
+    });
+    commentRepository.find.mockResolvedValue([
+      {
+        targetType: CommentTargetType.ITEM,
+        unitId: "unit-1",
+        itemId: "item-1",
+        userId: "me",
+      },
+      {
+        targetType: CommentTargetType.CODING,
+        unitId: "unit-1",
+        itemId: "item-1",
+        userId: "me",
+      },
+    ]);
+
+    const snapshot = await service.getItemCommentCounts("acp-1", {
+      userId: "me",
+      authorLabel: "ME",
+      isManager: false,
+    });
+    expect(snapshot.counts).toContainEqual({
+      unitId: "unit-1",
+      itemId: "item-1",
+      count: 1,
+      codingCount: 1,
+    });
+  });
+
+  it("accepts canonical booklets and rejects legacy-only booklet identities", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { enableCommenting: true, commentTargets: ["BOOKLET"] },
+    });
+    reviewManifestService.getManifest.mockResolvedValue({
+      booklets: [
+        { id: "booklet-1", name: "Booklet 1", legacy: false },
+        { id: "module-1", name: "Legacy", legacy: true },
+      ],
+      units: [],
+      issues: [],
+    });
+    commentRepository.find.mockResolvedValue([]);
+    const actor = { userId: "me", authorLabel: "ME", isManager: false };
+
+    await expect(
+      service.getReviewThread(
+        "acp-1",
+        { targetType: CommentTargetType.BOOKLET, bookletId: "booklet-1" },
+        actor,
+      ),
+    ).resolves.toMatchObject({
+      target: {
+        targetType: CommentTargetType.BOOKLET,
+        bookletId: "booklet-1",
+      },
+    });
+    await expect(
+      service.getReviewThread(
+        "acp-1",
+        { targetType: CommentTargetType.BOOKLET, bookletId: "module-1" },
+        actor,
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("keeps unresolved legacy comments read-only", async () => {
+    commentRepository.findOne.mockResolvedValue({
+      id: "legacy-1",
+      acpId: "acp-1",
+      userId: "me",
+      targetType: CommentTargetType.TASK_SEQUENCE,
+      targetId: "ambiguous-module",
+      legacyReadOnly: true,
+      version: 1,
+    });
+    await expect(
+      service.updateOwnComment("acp-1", "legacy-1", "Neu", 1, {
+        userId: "me",
+        authorLabel: "ME",
+        isManager: false,
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(commentRepository.update).not.toHaveBeenCalled();
   });
 });

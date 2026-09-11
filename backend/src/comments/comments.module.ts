@@ -8,12 +8,14 @@ import { AuthModule } from "../auth/auth.module";
 import { FilesModule } from "../files/files.module";
 import { ReviewPolicyService } from "./review-policy.service";
 import { ReviewAccessGuard } from "./review-access.guard";
+import { ReviewManifestModule } from "../review/review-manifest.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Acp, Comment, AcpAccessConfig]),
     AuthModule,
     FilesModule,
+    ReviewManifestModule,
   ],
   controllers: [CommentsController, ReviewCommentsController],
   providers: [CommentsService, ReviewPolicyService, ReviewAccessGuard],

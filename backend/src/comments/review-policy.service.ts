@@ -60,22 +60,61 @@ export class ReviewPolicyService {
     acpId: string,
     actor: CommentActor,
   ): Promise<CommentVisibilityMode> {
+    return this.assertCommentAccess(acpId, actor, CommentTargetType.ITEM);
+  }
+
+  async assertCommentAccess(
+    acpId: string,
+    actor: CommentActor,
+    targetType: CommentTargetType,
+  ): Promise<CommentVisibilityMode> {
     if (!actor.userId && !actor.credentialId) {
       throw new ForbiddenException("Authenticated review access required");
+    }
+    if (targetType === CommentTargetType.TASK_SEQUENCE) {
+      throw new ForbiddenException("Legacy comments are read-only");
     }
     const featureConfig = await this.getFeatureConfig(acpId);
     const targets = this.commentTargets(featureConfig);
     if (
       !featureConfig.enableCommenting ||
-      (targets.length > 0 && !targets.includes(CommentTargetType.ITEM))
+      !this.isTargetEnabled(targets, targetType)
     ) {
       throw new ForbiddenException(
-        "Item comments are not enabled for this ACP",
+        `${targetType} comments are not enabled for this ACP`,
       );
     }
     return featureConfig.commentVisibilityMode === "SHARED"
       ? "SHARED"
       : "PRIVATE";
+  }
+
+  async assertItemAndCodingCountAccess(
+    acpId: string,
+    actor: CommentActor,
+  ): Promise<{
+    visibilityMode: CommentVisibilityMode;
+    targetTypes: CommentTargetType[];
+  }> {
+    if (!actor.userId && !actor.credentialId) {
+      throw new ForbiddenException("Authenticated review access required");
+    }
+    const featureConfig = await this.getFeatureConfig(acpId);
+    const configured = this.commentTargets(featureConfig);
+    const targetTypes = [
+      CommentTargetType.ITEM,
+      CommentTargetType.CODING,
+    ].filter((target) => this.isTargetEnabled(configured, target));
+    if (!featureConfig.enableCommenting || targetTypes.length === 0) {
+      throw new ForbiddenException(
+        "Item and coding comments are not enabled for this ACP",
+      );
+    }
+    return {
+      visibilityMode:
+        featureConfig.commentVisibilityMode === "SHARED" ? "SHARED" : "PRIVATE",
+      targetTypes,
+    };
   }
 
   async isCommentingEnabled(
@@ -85,7 +124,7 @@ export class ReviewPolicyService {
     const featureConfig = await this.getFeatureConfig(acpId);
     if (!featureConfig.enableCommenting) return false;
     const targets = this.commentTargets(featureConfig);
-    return targets.length === 0 || targets.includes(targetType);
+    return this.isTargetEnabled(targets, targetType);
   }
 
   canViewComment(
@@ -139,5 +178,15 @@ export class ReviewPolicyService {
     return Array.isArray(featureConfig.commentTargets)
       ? (featureConfig.commentTargets as string[])
       : [];
+  }
+
+  private isTargetEnabled(
+    targets: string[],
+    targetType: CommentTargetType,
+  ): boolean {
+    if (targets.length > 0) return targets.includes(targetType);
+    return ![CommentTargetType.BOOKLET, CommentTargetType.CODING].includes(
+      targetType,
+    );
   }
 }

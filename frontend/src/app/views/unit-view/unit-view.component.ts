@@ -10,12 +10,12 @@ import {
   rewriteGeoGebraAssetUrls,
 } from '../../core/utils/geogebra-player-html.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
+import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
 
 @Component({
   selector: 'app-unit-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, FormsModule, CommentDialogComponent, CommonModule],
+  imports: [RouterLink, BreadcrumbComponent, FormsModule, ItemCommentThreadComponent, CommonModule],
   template: `
     @if (unit) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -43,9 +43,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               <option value="overlay">Panel: Overlay</option>
             </select>
           }
-          @if (showCommentBtn) {
-            <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
-          }
           @if (showDownloadBtn) {
             <button class="btn btn-outline btn-sm" (click)="downloadUnit()">⬇️ Download</button>
           }
@@ -60,6 +57,15 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           </select>
         </div>
       </div>
+
+      @if (showCommentBtn) {
+        <app-item-comment-thread
+          [acpId]="acpId"
+          [targetType]="'UNIT'"
+          [unitId]="unitId"
+          [enabled]="showCommentBtn"
+        />
+      }
 
       <div class="unit-layout" [class.with-panel]="panelVisible && resolvedPanelMode === 'split'">
         <div class="player-area">
@@ -231,15 +237,6 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     } @else {
       <div class="empty-state"><h3>Lade Aufgabe...</h3></div>
     }
-
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'UNIT'"
-      [targetId]="unitId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -495,7 +492,6 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   showMetadataToggle = false;
   showCommentBtn = false;
   showDownloadBtn = false;
-  commentOpen = false;
 
   private definitionContent: string | null = null;
   private playerFrameReady = false;
@@ -654,18 +650,6 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     if (this.resolvedPanelMode === 'overlay') {
       this.panelVisible = false;
     }
-  }
-
-  openComment() {
-    this.commentOpen = true;
-  }
-
-  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-      },
-    });
   }
 
   downloadUnit() {

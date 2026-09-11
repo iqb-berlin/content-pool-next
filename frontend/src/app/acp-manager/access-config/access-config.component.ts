@@ -439,10 +439,18 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <label class="feature-toggle">
               <input
                 type="checkbox"
-                [checked]="commentTargets.includes('TASK_SEQUENCE')"
-                (change)="toggleCommentTarget('TASK_SEQUENCE')"
+                [checked]="commentTargets.includes('BOOKLET')"
+                (change)="toggleCommentTarget('BOOKLET')"
               />
-              <span>Aufgabenfolgen</span>
+              <span>Booklets</span>
+            </label>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [checked]="commentTargets.includes('CODING')"
+                (change)="toggleCommentTarget('CODING')"
+              />
+              <span>Kodierung</span>
             </label>
             <label class="help-text" for="comment-visibility-mode">Sichtbarkeit:</label>
             <select

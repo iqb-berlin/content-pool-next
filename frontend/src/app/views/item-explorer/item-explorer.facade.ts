@@ -218,7 +218,10 @@ export class ItemExplorerFacade implements OnDestroy {
   itemExplorerPlayerTargetInfoEnabled = false;
   itemCommentsEnabled = false;
   private itemCommentsConfigured = false;
+  codingCommentsEnabled = false;
+  private codingCommentsConfigured = false;
   itemCommentCounts: Record<string, number> = {};
+  codingCommentCounts: Record<string, number> = {};
   itemCommentCountsLoading = false;
   itemCommentCountsAvailable = false;
   itemCommentCountsError = '';
@@ -232,8 +235,13 @@ export class ItemExplorerFacade implements OnDestroy {
   private readonly commentVisibilityListener = () => this.refreshVisibleItemComments();
   private itemCommentCountStateVersion = 0;
   private readonly itemCommentCountChangeVersions = new Map<string, number>();
+  private readonly codingCommentCountChangeVersions = new Map<string, number>();
   private itemCommentCountSessionIdentity: string | null = null;
-  private initialCommentTarget: { unitId: string; itemId: string } | null = null;
+  private initialCommentTarget: {
+    unitId: string;
+    itemId: string;
+    openCoding?: boolean;
+  } | null = null;
   private selectingInitialCommentTarget = false;
   showOnlyItemsWithEmpiricalDifficulty = false;
   itemTags: Record<string, string[]> = {};
@@ -609,7 +617,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get canExportAllComments(): boolean {
-    return this.itemCommentsEnabled && this.hasExplorerEditPermission;
+    return (
+      (this.itemCommentsEnabled || this.codingCommentsEnabled) && this.hasExplorerEditPermission
+    );
   }
 
   getItemCommentCount(item?: ReadonlyExplorerItem | null): number {
@@ -618,12 +628,20 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.itemCommentCounts[key] || 0;
   }
 
+  getCodingCommentCount(item?: ReadonlyExplorerItem | null): number {
+    if (!item) return 0;
+    const key = this.resolveItemCommentCountKey(item.unitId, item.itemId, this.codingCommentCounts);
+    return this.codingCommentCounts[key] || 0;
+  }
+
   updateItemCommentCount(event: {
+    targetType?: 'BOOKLET' | 'UNIT' | 'ITEM' | 'CODING';
     unitId: string;
     itemId: string;
     count: number;
     refreshToken?: number;
   }): void {
+    if (event.targetType && event.targetType !== 'ITEM' && event.targetType !== 'CODING') return;
     if (event.refreshToken !== undefined && event.refreshToken !== this.itemCommentRefreshToken) {
       return;
     }
@@ -631,14 +649,24 @@ export class ItemExplorerFacade implements OnDestroy {
     const count = Math.max(0, Number(event.count) || 0);
     // Even an unchanged count is a newer observation than an in-flight batch.
     this.itemCommentCountStateVersion += 1;
-    this.itemCommentCountChangeVersions.set(key, this.itemCommentCountStateVersion);
-    if (this.itemCommentCounts[key] === count) return;
-    this.itemCommentCounts = { ...this.itemCommentCounts, [key]: count };
+    const changeVersions =
+      event.targetType === 'CODING'
+        ? this.codingCommentCountChangeVersions
+        : this.itemCommentCountChangeVersions;
+    changeVersions.set(key, this.itemCommentCountStateVersion);
+    const targetCounts =
+      event.targetType === 'CODING' ? this.codingCommentCounts : this.itemCommentCounts;
+    if (targetCounts[key] === count) return;
+    if (event.targetType === 'CODING') {
+      this.codingCommentCounts = { ...this.codingCommentCounts, [key]: count };
+    } else {
+      this.itemCommentCounts = { ...this.itemCommentCounts, [key]: count };
+    }
     this.applyFilter(false);
   }
 
   refreshItemComments(refreshSelectedThread = true): void {
-    if (!this.itemCommentsEnabled || !this.acpId) return;
+    if ((!this.itemCommentsEnabled && !this.codingCommentsEnabled) || !this.acpId) return;
     const token = ++this.itemCommentCountsRequestToken;
     const stateVersion = this.itemCommentCountStateVersion;
     if (refreshSelectedThread) this.itemCommentRefreshToken += 1;
@@ -656,6 +684,12 @@ export class ItemExplorerFacade implements OnDestroy {
               entry.count,
             ]),
           );
+          const nextCodingCounts = Object.fromEntries(
+            (snapshot.counts || []).map((entry) => [
+              this.itemCommentTargetKey(entry.unitId, entry.itemId),
+              entry.codingCount || 0,
+            ]),
+          );
           for (const [key, changeVersion] of this.itemCommentCountChangeVersions) {
             if (changeVersion > stateVersion) {
               nextCounts[key] = this.itemCommentCounts[key] || 0;
@@ -663,7 +697,15 @@ export class ItemExplorerFacade implements OnDestroy {
               this.itemCommentCountChangeVersions.delete(key);
             }
           }
+          for (const [key, changeVersion] of this.codingCommentCountChangeVersions) {
+            if (changeVersion > stateVersion) {
+              nextCodingCounts[key] = this.codingCommentCounts[key] || 0;
+            } else {
+              this.codingCommentCountChangeVersions.delete(key);
+            }
+          }
           this.itemCommentCounts = nextCounts;
+          this.codingCommentCounts = nextCodingCounts;
           this.itemCommentCountsAvailable = true;
           this.itemCommentCountsLoading = false;
           this.applyFilter(false);
@@ -1278,7 +1320,15 @@ export class ItemExplorerFacade implements OnDestroy {
     this.uploadItemParameterFile(this.pendingItemParameterUploadFile, true);
   }
 
-  init(acpId: string, initialCommentTarget?: { unitId: string; itemId: string; open?: boolean }) {
+  init(
+    acpId: string,
+    initialCommentTarget?: {
+      unitId: string;
+      itemId: string;
+      open?: boolean;
+      openCoding?: boolean;
+    },
+  ) {
     if (this.initialized || this.destroyed) return;
     this.initialized = true;
     this.acpId = acpId;
@@ -1286,6 +1336,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.initialCommentTarget = {
         unitId: initialCommentTarget.unitId,
         itemId: initialCommentTarget.itemId,
+        openCoding: initialCommentTarget.openCoding === true,
       };
       this.commentThreadInitiallyOpen = initialCommentTarget.open === true;
     }
@@ -1320,6 +1371,10 @@ export class ItemExplorerFacade implements OnDestroy {
             fc.enableCommenting && (commentTargets.length === 0 || commentTargets.includes('ITEM')),
           );
           this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
+          this.codingCommentsConfigured = Boolean(
+            fc.enableCommenting && commentTargets.includes('CODING'),
+          );
+          this.codingCommentsEnabled = this.codingCommentsConfigured && this.authService.isLoggedIn;
           this.enableTags = !!fc.enableItemListTags;
           this.availableTags = fc.availableTags || [];
           this.showAudioVideoCodingVariables = fc.showAudioVideoCodingVariables !== false;
@@ -5126,6 +5181,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.hasExplorerEditPermission = this.latestExplorerState?.canEdit ?? false;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
     this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
+    this.codingCommentsEnabled = this.codingCommentsConfigured && this.authService.isLoggedIn;
     const oidcProfileStillLoading =
       this.authService.isLoggedIn &&
       this.authService.isOidcUser &&
@@ -6936,9 +6992,10 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   private syncItemCommentCountSession(): void {
-    const nextIdentity = this.itemCommentsEnabled
-      ? this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken())
-      : null;
+    const nextIdentity =
+      this.itemCommentsEnabled || this.codingCommentsEnabled
+        ? this.pendingPersonalSessionStorage.resolveIdentityFromToken(this.authService.getToken())
+        : null;
     if (nextIdentity === this.itemCommentCountSessionIdentity) return;
 
     this.stopCommentAutoRefresh();
@@ -6949,9 +7006,11 @@ export class ItemExplorerFacade implements OnDestroy {
     this.itemCommentCountsLoading = false;
     this.itemCommentCountsAvailable = false;
     this.itemCommentCounts = {};
+    this.codingCommentCounts = {};
     this.itemCommentCountsError = '';
     this.itemCommentCountStateVersion += 1;
     this.itemCommentCountChangeVersions.clear();
+    this.codingCommentCountChangeVersions.clear();
     this.applyFilter(false);
 
     if (nextIdentity) {
@@ -6967,7 +7026,7 @@ export class ItemExplorerFacade implements OnDestroy {
     if (
       this.destroyed ||
       document.visibilityState !== 'visible' ||
-      !this.itemCommentsEnabled ||
+      (!this.itemCommentsEnabled && !this.codingCommentsEnabled) ||
       !this.authService.isLoggedIn ||
       !this.itemCommentCountSessionIdentity ||
       this.itemCommentCountsLoading
@@ -6996,6 +7055,7 @@ export class ItemExplorerFacade implements OnDestroy {
     };
     const item = this.items.find(matchesTarget);
     if (!item) return;
+    const openCoding = target.openCoding === true;
     this.initialCommentTarget = null;
     let index = this.filteredItems.findIndex(
       (entry) => this.getStableRowKey(entry) === this.getStableRowKey(item),
@@ -7014,6 +7074,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.selectingInitialCommentTarget = true;
     try {
       this.selectItem(item, index);
+      if (openCoding) this.openCodingOverlay();
     } finally {
       this.selectingInitialCommentTarget = false;
     }

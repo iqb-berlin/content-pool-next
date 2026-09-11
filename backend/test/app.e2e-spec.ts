@@ -861,7 +861,7 @@ describe("ContentPool API (e2e)", () => {
       expect.objectContaining({
         deletedCount: 0,
         retainedCount: expect.any(Number),
-        scope: "UNREFERENCED_LEGACY_NON_ITEM",
+        scope: "UNRESOLVED_LEGACY_TASK_SEQUENCE",
       }),
     );
     expect(legacyDeleteRes.body.retainedCount).toBeGreaterThanOrEqual(3);

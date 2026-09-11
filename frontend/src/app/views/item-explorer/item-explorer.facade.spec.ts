@@ -178,6 +178,24 @@ describe('ItemExplorerFacade role initialization', () => {
     expect(component.viewPerspective).toBe(canEdit ? 'editor' : 'read-only');
     expect(component.canEditExplorer).toBe(canEdit);
   });
+
+  it('synchronizes coding comments with login and logout', () => {
+    const component = createFacade();
+    const authService = (component as any).authService;
+    (component as any).itemCommentsConfigured = false;
+    (component as any).codingCommentsConfigured = true;
+
+    authService.isLoggedIn = true;
+    component.checkUserRole();
+
+    expect(component.itemCommentsEnabled).toBe(false);
+    expect(component.codingCommentsEnabled).toBe(true);
+
+    authService.isLoggedIn = false;
+    component.checkUserRole();
+
+    expect(component.codingCommentsEnabled).toBe(false);
+  });
 });
 
 describe('ItemExplorerFacade automatic comment refresh', () => {

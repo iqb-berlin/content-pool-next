@@ -13,7 +13,16 @@ function createComponent() {
         comments: [],
       }),
     ),
+    getReviewCommentThread: vi.fn().mockReturnValue(
+      of({
+        revision: 'coding-1',
+        target: { targetType: 'CODING', unitId: 'unit-1', itemId: 'item-1' },
+        visibilityMode: 'SHARED',
+        comments: [],
+      }),
+    ),
     createItemComment: vi.fn().mockReturnValue(of({ id: 'created' })),
+    createReviewComment: vi.fn().mockReturnValue(of({ id: 'coding-created' })),
     updateItemComment: vi.fn().mockReturnValue(of({ id: 'updated' })),
     deleteItemComment: vi.fn().mockReturnValue(of({ success: true })),
   } as any;
@@ -103,9 +112,22 @@ describe('ItemCommentThreadComponent', () => {
   it('exposes the comment panel as a stateful disclosure', () => {
     expect(template).toContain('class="btn btn-outline btn-sm btn-state comment-toggle"');
     expect(template).toContain('[attr.aria-expanded]="open"');
-    expect(template).toContain('aria-controls="item-comment-panel"');
-    expect(template).toContain('id="item-comment-panel"');
+    expect(template).toContain('[attr.aria-controls]="panelId"');
+    expect(template).toContain('[id]="panelId"');
     expect(template).not.toContain('btn-state-indicator');
+  });
+
+  it('keeps the established Item labels while naming other comment contexts explicitly', () => {
+    const { component } = createComponent();
+
+    expect(component.panelAriaLabel).toBe('Kommentare zum ausgewählten Item');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zu diesem Item …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare zu diesem Item.');
+
+    component.targetType = 'CODING';
+    expect(component.panelAriaLabel).toBe('Kommentare zur Kodierung unit-1 · item-1');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zur Kodierung unit-1 · item-1 …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare in diesem Kontext.');
   });
 
   it('loads only the selected item and ignores a superseded response', () => {
@@ -376,5 +398,31 @@ describe('ItemCommentThreadComponent', () => {
         updatedAt: '2026-01-01T10:00:05.000Z',
       } as any),
     ).toBe(false);
+  });
+
+  it('uses a separate coding thread for the selected item', () => {
+    const { component, api } = createComponent();
+    component.targetType = 'CODING';
+    const countChanged = vi.fn();
+    component.countChanged.subscribe(countChanged);
+
+    component.loadThread();
+    component.newCommentText = 'Kodierung prüfen';
+    component.submitComment();
+
+    expect(api.getReviewCommentThread).toHaveBeenCalledWith('acp-1', {
+      targetType: 'CODING',
+      unitId: 'unit-1',
+      itemId: 'item-1',
+    });
+    expect(api.createReviewComment).toHaveBeenCalledWith('acp-1', {
+      targetType: 'CODING',
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      commentText: 'Kodierung prüfen',
+    });
+    expect(countChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ targetType: 'CODING', count: 0 }),
+    );
   });
 });

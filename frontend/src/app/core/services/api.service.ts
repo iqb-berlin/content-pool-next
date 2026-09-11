@@ -10,6 +10,7 @@ import {
   Comment,
   CommentThreadSnapshot,
   ItemCommentCountsSnapshot,
+  ReviewCommentTarget,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -465,6 +466,14 @@ export class ApiService {
       params: { unitId, itemId },
     });
   }
+  getReviewCommentThread(
+    acpId: string,
+    target: ReviewCommentTarget,
+  ): Observable<CommentThreadSnapshot> {
+    return this.http.get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+      params: { ...target },
+    });
+  }
   getItemCommentCounts(acpId: string): Observable<ItemCommentCountsSnapshot> {
     return this.http.get<ItemCommentCountsSnapshot>(
       `${this.API}/acp/${acpId}/review/comments/counts`,
@@ -473,6 +482,12 @@ export class ApiService {
   createItemComment(
     acpId: string,
     data: { unitId: string; itemId: string; commentText: string; parentCommentId?: string },
+  ): Observable<Comment> {
+    return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
+  }
+  createReviewComment(
+    acpId: string,
+    data: ReviewCommentTarget & { commentText: string; parentCommentId?: string },
   ): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
   }

@@ -14,13 +14,16 @@ import { User } from "./user.entity";
 import { AcpCredential } from "./acp-credential.entity";
 
 export enum CommentTargetType {
+  BOOKLET = "BOOKLET",
   UNIT = "UNIT",
   ITEM = "ITEM",
+  CODING = "CODING",
   TASK_SEQUENCE = "TASK_SEQUENCE",
 }
 
 @Entity("comments")
 @Index("IDX_comments_item_target", ["acpId", "unitId", "itemId"])
+@Index("IDX_comments_booklet_target", ["acpId", "bookletId"])
 @Index("IDX_comments_parent", ["parentCommentId"])
 export class Comment {
   @PrimaryGeneratedColumn("uuid")
@@ -51,6 +54,9 @@ export class Comment {
   @Column({ name: "target_id" })
   targetId!: string;
 
+  @Column({ name: "booklet_id", type: "varchar", nullable: true })
+  bookletId?: string | null;
+
   @Column({ name: "unit_id", type: "varchar", nullable: true })
   unitId?: string | null;
 
@@ -74,6 +80,9 @@ export class Comment {
 
   @Column({ name: "deleted_at", type: "timestamptz", nullable: true })
   deletedAt?: Date | null;
+
+  @Column({ name: "legacy_read_only", type: "boolean", default: false })
+  legacyReadOnly!: boolean;
 
   @ManyToOne(() => Acp, (acp) => acp.comments, { onDelete: "CASCADE" })
   @JoinColumn({ name: "acp_id" })

@@ -1,4 +1,4 @@
-import { provideZonelessChangeDetection } from '@angular/core';
+import { NO_ERRORS_SCHEMA, provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
@@ -7,12 +7,25 @@ import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { TaskSequenceComponent } from './task-sequence.component';
 
+vi.mock('../comment-thread/item-comment-thread.component', async () => {
+  const { Component } = await import('@angular/core');
+  class ItemCommentThreadStub {}
+  Component({
+    selector: 'app-item-comment-thread',
+    standalone: true,
+    template: '',
+    inputs: ['acpId', 'targetType', 'bookletId', 'enabled'],
+  })(ItemCommentThreadStub);
+  return { ItemCommentThreadComponent: ItemCommentThreadStub };
+});
+
 describe('Booklet navigation', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('renders block paths and selects repeated unit occurrences independently', async () => {
     await TestBed.configureTestingModule({
       imports: [TaskSequenceComponent],
+      schemas: [NO_ERRORS_SCHEMA],
       providers: [
         provideZonelessChangeDetection(),
         provideRouter([]),

@@ -161,7 +161,7 @@ describe('ItemExplorerFacade role initialization', () => {
     expect(component.canEditExplorer).toBe(false);
   });
 
-  it('keeps credential sessions in read-only mode', () => {
+  it.each([false, true])('uses the server edit grant for credential sessions (%s)', (canEdit) => {
     const component = createFacade({
       authService: {
         hasAcpRole: () => false,
@@ -172,9 +172,11 @@ describe('ItemExplorerFacade role initialization', () => {
       },
     });
 
+    (component as any).latestExplorerState = { canEdit };
     component.checkUserRole();
 
-    expect(component.viewPerspective).toBe('read-only');
+    expect(component.viewPerspective).toBe(canEdit ? 'editor' : 'read-only');
+    expect(component.canEditExplorer).toBe(canEdit);
   });
 });
 

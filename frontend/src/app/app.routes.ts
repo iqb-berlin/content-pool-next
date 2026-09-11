@@ -1,3 +1,4 @@
+import { explorerCapabilityGuard } from './core/guards/capability.guard';
 import { Routes } from '@angular/router';
 import { authGuard, adminGuard, acpManagerGuard } from './core/guards/auth.guard';
 import { acpViewGuard } from './core/guards/acp-view.guard';
@@ -129,7 +130,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'review',
+        loadComponent: () =>
+          import('./views/review/review.component').then((m) => m.ReviewComponent),
+      },
+      {
         path: 'item-explorer',
+        canActivate: [explorerCapabilityGuard],
         canDeactivate: [itemExplorerPendingChangesGuard],
         loadComponent: () =>
           import('./views/item-explorer/item-explorer.component').then(
@@ -138,6 +145,7 @@ export const routes: Routes = [
       },
       {
         path: 'item/:itemId',
+        canActivate: [explorerCapabilityGuard],
         loadComponent: () =>
           import('./views/item-view/item-view.component').then((m) => m.ItemViewComponent),
       },

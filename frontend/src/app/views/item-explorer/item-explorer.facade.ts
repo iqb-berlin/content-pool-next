@@ -5123,14 +5123,14 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Metadata Column Management ---
   checkUserRole() {
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
-    this.hasExplorerEditPermission = this.isAcpManager || this.authService.isAdmin;
+    this.hasExplorerEditPermission = this.latestExplorerState?.canEdit ?? false;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
     this.itemCommentsEnabled = this.itemCommentsConfigured && this.authService.isLoggedIn;
     const oidcProfileStillLoading =
       this.authService.isLoggedIn &&
       this.authService.isOidcUser &&
       this.authService.currentUser === null;
-    if (!this.hasExplorerEditPermission && !oidcProfileStillLoading) {
+    if (this.latestExplorerState && !this.hasExplorerEditPermission && !oidcProfileStillLoading) {
       this.viewPerspective = 'read-only';
     }
     this.syncEffectiveExplorerPermissions();

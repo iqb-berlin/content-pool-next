@@ -353,6 +353,7 @@ export interface AccessConfig {
 }
 
 export interface Credential {
+  capabilities?: string[];
   id: string;
   username: string;
 }

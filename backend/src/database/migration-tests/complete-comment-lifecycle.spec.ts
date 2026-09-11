@@ -1,4 +1,4 @@
-import { CompleteCommentLifecycle1789300000000 } from "./1789300000000-CompleteCommentLifecycle";
+import { CompleteCommentLifecycle1789300000000 } from "../migrations/1789300000000-CompleteCommentLifecycle";
 import { join } from "path";
 
 describe("CompleteCommentLifecycle migration", () => {

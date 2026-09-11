@@ -89,6 +89,7 @@ export class ItemExplorerComponent implements OnInit, OnDestroy, ItemExplorerShe
         unitId,
         itemId,
         open: query?.get('comments') === 'open',
+        openCoding: query?.get('coding') === 'open',
       });
     } else {
       this.feature.init(acpId);

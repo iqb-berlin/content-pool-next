@@ -132,6 +132,20 @@
               </div>
             }
           </div>
+          @if (vm.codingCommentsEnabled && vm.selectedItem) {
+            <app-item-comment-thread
+              [acpId]="vm.acpId"
+              [targetType]="'CODING'"
+              [unitId]="vm.selectedItem.unitId"
+              [itemId]="vm.selectedItem.itemId"
+              [enabled]="vm.codingCommentsEnabled"
+              [refreshToken]="vm.itemCommentRefreshToken"
+              [sessionToken]="vm.itemCommentSessionToken"
+              [initiallyOpen]="true"
+              [hideToggle]="true"
+              (countChanged)="vm.updateItemCommentCount($event)"
+            />
+          }
         } @else {
           <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
         }

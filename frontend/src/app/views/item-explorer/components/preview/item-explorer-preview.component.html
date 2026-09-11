@@ -284,6 +284,9 @@
         <svg class="preview-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M4 3h16v18H4ZM8 7h8M8 11h8M8 15h5" /></svg
         >Kodierung
+        @if (vm.codingCommentsEnabled) {
+          ({{ vm.getCodingCommentCount(vm.selectedItem) }})
+        }
       </button>
       <button
         class="btn btn-outline btn-sm btn-state"

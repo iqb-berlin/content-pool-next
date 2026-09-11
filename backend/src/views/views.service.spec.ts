@@ -151,6 +151,45 @@ describe("ViewsService", () => {
     );
   });
 
+  it.each([
+    ["Manual name", "Manual name"],
+    [undefined, "XML name"],
+    ["", "XML name"],
+  ])(
+    "uses the configured booklet name %j with XML fallback",
+    async (name, expected) => {
+      const index = {
+        assessmentParts: [
+          {
+            instruments: [
+              {
+                testcenterBooklet: [{ id: "b1", name, definitionId: "b.xml" }],
+              },
+            ],
+          },
+        ],
+      };
+      const manifest = buildReviewManifest(
+        index,
+        new Map([
+          [
+            "b.xml",
+            "<Booklet><Metadata><Id>b1</Id><Label>XML name</Label></Metadata><Units/></Booklet>",
+          ],
+        ]),
+      );
+      acpRepository.findOne.mockResolvedValue({ id: "acp-1", acpIndex: index });
+      accessConfigRepository.findOne.mockResolvedValue(null);
+      jest.mocked(manifestService.getManifest).mockResolvedValue(manifest);
+      expect((await service.getAcpStartPage("acp-1")).sequences[0].name).toBe(
+        expected,
+      );
+      expect(
+        (await service.getTaskSequence("acp-1", "b1", "booklet")).name,
+      ).toBe(expected);
+    },
+  );
+
   it("keeps same-ID legacy module links distinct from explicit booklet links", async () => {
     const index = {
       assessmentParts: [

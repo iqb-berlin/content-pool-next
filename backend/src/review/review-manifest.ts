@@ -151,7 +151,7 @@ export function buildReviewManifest(
           add(
             {
               id: booklet.id || parsed.id,
-              name: parsed.label,
+              name: booklet.name || parsed.label,
               definitionId,
               moduleIds: list(booklet.modules).map(reference),
               children: parsed.children,

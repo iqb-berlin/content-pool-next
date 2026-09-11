@@ -1,3 +1,8 @@
+import { AcpCapabilitiesService } from "./capabilities/acp-capabilities.service";
+import {
+  ExplorerReadGuard,
+  ExplorerEditGuard,
+} from "./capabilities/explorer-access.guard";
 import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
@@ -40,6 +45,9 @@ import {
   ],
   controllers: [AuthController],
   providers: [
+    AcpCapabilitiesService,
+    ExplorerReadGuard,
+    ExplorerEditGuard,
     AuthService,
     JwtStrategy,
     JwtAuthGuard,
@@ -49,6 +57,9 @@ import {
     OidcAuthGuard,
   ],
   exports: [
+    AcpCapabilitiesService,
+    ExplorerReadGuard,
+    ExplorerEditGuard,
     AuthService,
     JwtAuthGuard,
     RolesGuard,

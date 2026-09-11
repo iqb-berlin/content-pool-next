@@ -154,16 +154,22 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
     const acps: Array<{ id: string; acp_index: unknown }> =
       await queryRunner.query(`SELECT "id", "acp_index" FROM "acp"`);
     for (const acp of acps) {
+      const comments: LegacyComment[] = await queryRunner.query(
+        `SELECT "id", "acp_id", "target_type", "target_id", "booklet_id", "unit_id", "item_id"
+           FROM "comments" WHERE "acp_id" = $1`,
+        [acp.id],
+      );
+      if (!comments.length) continue;
       const definitions = await this.loadBookletDefinitions(
         queryRunner,
         acp.id,
         acp.acp_index,
       );
-      const targets = this.collectTargets(acp.acp_index, definitions);
-      const comments: LegacyComment[] = await queryRunner.query(
-        `SELECT "id", "acp_id", "target_type", "target_id", "booklet_id", "unit_id", "item_id"
-           FROM "comments" WHERE "acp_id" = $1`,
-        [acp.id],
+      const parsedItems = await this.loadItemTargets(queryRunner, acp.id);
+      const targets = this.collectTargets(
+        acp.acp_index,
+        definitions,
+        parsedItems,
       );
       for (const comment of comments) {
         const update = this.resolveLegacyComment(comment, targets);
@@ -267,6 +273,7 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
   private collectTargets(
     rawIndex: unknown,
     definitions: Map<string, string> = new Map(),
+    parsedItems: Array<{ unitId: string; itemId: string }> = [],
   ): TargetCatalog {
     const units = new Map<string, Set<string>>();
     const booklets = new Set<string>();
@@ -288,6 +295,29 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
             .filter(Boolean),
         ),
       );
+    }
+
+    // Frozen runtime catalog alias handling: prefixed file IDs already
+    // represented by index items must not become additional canonical items.
+    const indexAliases = new Set<string>();
+    for (const [unitId, items] of units) {
+      for (const itemId of items) {
+        indexAliases.add(JSON.stringify([unitId, itemId]));
+        indexAliases.add(JSON.stringify([unitId, `${unitId}_${itemId}`]));
+      }
+    }
+    for (const item of parsedItems) {
+      const unitId = item.unitId.trim();
+      const itemId = item.itemId.trim();
+      if (
+        !unitId ||
+        !itemId ||
+        indexAliases.has(JSON.stringify([unitId, itemId]))
+      )
+        continue;
+      const items = units.get(unitId) || new Set<string>();
+      items.add(itemId);
+      units.set(unitId, items);
     }
 
     const addBooklet = (bookletId: string, moduleIds: string[]) => {
@@ -324,6 +354,75 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
       }
     }
     return { units, booklets, moduleOwners };
+  }
+
+  /** Frozen identity-only snapshot of ItemListParser and unit-file-parsing.
+   * Future runtime parser changes must not alter this backfill. Fail closed on
+   * unreadable sources rather than treating a partial catalog as unambiguous.
+   */
+  private async loadItemTargets(
+    queryRunner: QueryRunner,
+    acpId: string,
+  ): Promise<Array<{ unitId: string; itemId: string }>> {
+    const files: Array<{ original_name: string; file_path: string }> =
+      await queryRunner.query(
+        `SELECT "original_name", "file_path" FROM "acp_files" WHERE "acp_id" = $1`,
+        [acpId],
+      );
+    const items: Array<{ unitId: string; itemId: string }> = [];
+    for (const file of files) {
+      const name = file.original_name.toLowerCase();
+      if (
+        !name.endsWith(".xml") ||
+        name.startsWith("booklet") ||
+        name.startsWith("testtaker")
+      )
+        continue;
+      const xml = await readFile(file.file_path, "utf8");
+      if (!xml.includes("<Unit")) continue;
+      const unitId = xml.match(/<Id>([^<]+)<\/Id>/)?.[1]?.trim();
+      if (!unitId) throw new Error(`Invalid unit ID in ${file.original_name}`);
+      const metadataRef = xml
+        .match(/<Reference>([^<]+)<\/Reference>/)?.[1]
+        ?.trim();
+      if (!metadataRef) continue;
+      const metadataFile = files.find(
+        (entry) =>
+          entry.original_name === metadataRef ||
+          entry.original_name === `${metadataRef}.json`,
+      );
+      if (!metadataFile)
+        throw new Error(`Missing item metadata: ${metadataRef}`);
+      const metadata = JSON.parse(
+        await readFile(metadataFile.file_path, "utf8"),
+      );
+      const isRecord = (value: unknown): value is Record<string, any> =>
+        value !== null && typeof value === "object" && !Array.isArray(value);
+      const validProfile = (profile: unknown) =>
+        isRecord(profile) &&
+        (profile.entries === undefined ||
+          (Array.isArray(profile.entries) && profile.entries.every(isRecord)));
+      if (
+        !isRecord(metadata) ||
+        (metadata.profiles !== undefined &&
+          !Array.isArray(metadata.profiles)) ||
+        (metadata.items !== undefined && !Array.isArray(metadata.items))
+      )
+        throw new Error(`Invalid item metadata: ${metadataFile.original_name}`);
+      for (const item of metadata.items || []) {
+        if (
+          !isRecord(item) ||
+          typeof item.id !== "string" ||
+          !item.id.trim() ||
+          (item.profiles !== undefined &&
+            (!Array.isArray(item.profiles) ||
+              !item.profiles.every(validProfile)))
+        )
+          throw new Error(`Invalid item in ${metadataFile.original_name}`);
+        items.push({ unitId, itemId: item.id.trim() });
+      }
+    }
+    return items;
   }
 
   private async loadBookletDefinitions(
@@ -389,12 +488,13 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
       };
     }
     if (comment.target_type === "ITEM" || comment.target_type === "CODING") {
-      if (
-        comment.unit_id &&
-        comment.item_id &&
-        targets.units.has(comment.unit_id)
-      ) {
-        return unchanged;
+      if (comment.unit_id && comment.item_id) {
+        return {
+          ...unchanged,
+          legacyReadOnly: !targets.units
+            .get(comment.unit_id)
+            ?.has(comment.item_id),
+        };
       }
       const matches: Array<{ unitId: string; itemId: string }> = [];
       for (const [unitId, items] of targets.units) {

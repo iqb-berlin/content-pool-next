@@ -1,5 +1,7 @@
 import { CompleteCommentLifecycle1789300000000 } from "../migrations/1789300000000-CompleteCommentLifecycle";
 import { join } from "path";
+import { mkdtemp, writeFile, rm } from "fs/promises";
+import { tmpdir } from "os";
 
 describe("CompleteCommentLifecycle migration", () => {
   const migration = new CompleteCommentLifecycle1789300000000() as any;
@@ -59,7 +61,9 @@ describe("CompleteCommentLifecycle migration", () => {
           unit_id: "unit-1",
           item_id: "item-from-unit-file",
         },
-        targets,
+        migration.collectTargets({}, new Map(), [
+          { unitId: "unit-1", itemId: "item-from-unit-file" },
+        ]),
       ),
     ).toMatchObject({
       unitId: "unit-1",
@@ -217,7 +221,131 @@ describe("CompleteCommentLifecycle migration", () => {
     expect(queries[8]).toContain(`target <> '"BOOKLET"'::jsonb`);
   });
 
+  it("keeps cross-source aliases ambiguous and file-only targets editable", () => {
+    const catalog = migration.collectTargets(
+      { units: [{ id: "u1", items: [{ id: "i1" }] }] },
+      new Map(),
+      [
+        { unitId: "u2", itemId: "i1" },
+        { unitId: "u1", itemId: "u1_i1" },
+      ],
+    );
+    expect(catalog.units.get("u1")).toEqual(new Set(["i1"]));
+    expect(
+      migration.resolveLegacyComment(
+        { ...base, target_type: "ITEM", target_id: "i1" },
+        catalog,
+      ),
+    ).toMatchObject({ unitId: null, itemId: null, legacyReadOnly: true });
+    expect(
+      migration.resolveLegacyComment(
+        { ...base, target_type: "ITEM", target_id: "u2_i1" },
+        catalog,
+      ),
+    ).toMatchObject({ unitId: "u2", itemId: "i1", legacyReadOnly: false });
+    expect(
+      migration.resolveLegacyComment(
+        {
+          ...base,
+          target_type: "ITEM",
+          target_id: "u2_i1",
+          unit_id: "u2",
+          item_id: "i1",
+        },
+        catalog,
+      ),
+    ).toMatchObject({ unitId: "u2", itemId: "i1", legacyReadOnly: false });
+  });
+
+  it("loads file-only identities and refuses incomplete metadata sources", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "comment-migration-"));
+    try {
+      const xmlPath = join(directory, "unit.xml");
+      const metadataPath = join(directory, "metadata.json");
+      await writeFile(
+        xmlPath,
+        "<Unit><Metadata><Id>u2</Id><Reference>metadata</Reference></Metadata></Unit>",
+      );
+      await writeFile(
+        metadataPath,
+        JSON.stringify({ items: [{ id: "i1", profiles: [] }] }),
+      );
+      const files = [
+        { original_name: "unit.xml", file_path: xmlPath },
+        { original_name: "metadata.json", file_path: metadataPath },
+      ];
+      const queryRunner = { query: jest.fn().mockResolvedValue(files) };
+      expect(await migration.loadItemTargets(queryRunner, "acp-1")).toEqual([
+        { unitId: "u2", itemId: "i1" },
+      ]);
+      const backfill = {
+        query: jest.fn(async (sql: string) => {
+          if (sql.includes('FROM "acp"'))
+            return [
+              {
+                id: "acp-1",
+                acp_index: {
+                  units: [{ id: "u1", items: [{ id: "i1" }] }],
+                },
+              },
+            ];
+          if (sql.includes('FROM "acp_files"')) return files;
+          if (sql.includes('FROM "comments"'))
+            return [
+              { ...base, target_type: "ITEM", target_id: "i1" },
+              {
+                ...base,
+                id: "file-comment",
+                target_type: "ITEM",
+                target_id: "u2_i1",
+              },
+            ];
+          return [];
+        }),
+      };
+      await migration.up(backfill);
+      expect(backfill.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE "comments"'),
+        ["comment-1", "ITEM", null, null, null, true],
+      );
+      expect(backfill.query).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE "comments"'),
+        ["file-comment", "ITEM", null, "u2", "i1", false],
+      );
+      queryRunner.query.mockResolvedValueOnce([files[0]]);
+      await expect(
+        migration.loadItemTargets(queryRunner, "acp-1"),
+      ).rejects.toThrow("Missing item metadata");
+      await writeFile(metadataPath, '{"items": "invalid"}');
+      await expect(
+        migration.loadItemTargets(queryRunner, "acp-1"),
+      ).rejects.toThrow("Invalid item metadata");
+      await rm(metadataPath);
+      await expect(
+        migration.loadItemTargets(queryRunner, "acp-1"),
+      ).rejects.toThrow();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("keeps ambiguous or missing legacy targets read-only", () => {
+    expect(
+      migration.resolveLegacyComment(
+        {
+          ...base,
+          target_type: "ITEM",
+          target_id: "unit-1_item-1",
+          unit_id: "unit-1",
+          item_id: "removed-item",
+        },
+        targets,
+      ),
+    ).toMatchObject({
+      unitId: "unit-1",
+      itemId: "removed-item",
+      legacyReadOnly: true,
+    });
     expect(
       migration.resolveLegacyComment(
         {

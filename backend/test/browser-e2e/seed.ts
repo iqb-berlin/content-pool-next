@@ -613,6 +613,7 @@ async function seed(): Promise<void> {
           availableTags: ["Alt", "Neu"],
           persistUserPreferences: true,
           enableItemCollections: true,
+          enableReview: true,
           enableCommenting: true,
           commentTargets: ["ITEM"],
           commentVisibilityMode: "SHARED",

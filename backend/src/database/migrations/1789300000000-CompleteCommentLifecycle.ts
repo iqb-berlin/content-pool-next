@@ -206,10 +206,62 @@ export class CompleteCommentLifecycle1789300000000 implements MigrationInterface
     `);
   }
 
-  public async down(_queryRunner: QueryRunner): Promise<void> {
-    throw new Error(
-      "CompleteCommentLifecycle1789300000000 is irreversible: reverting would lose stable comment target and read-only migration data.",
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // Preserve every comment in the legacy schema. The previous backend has no
+    // dedicated booklet or coding target, so use its closest compatible types.
+    await queryRunner.query(`
+      UPDATE "comments"
+         SET "target_type" = 'TASK_SEQUENCE',
+             "target_id" = COALESCE(NULLIF("booklet_id", ''), "target_id")
+       WHERE "target_type" = 'BOOKLET'
+    `);
+    await queryRunner.query(`
+      UPDATE "comments"
+         SET "target_type" = 'ITEM'
+       WHERE "target_type" = 'CODING'
+    `);
+
+    await queryRunner.query(
+      `ALTER TYPE "comments_target_type_enum" RENAME TO "comments_target_type_enum_new"`,
     );
+    await queryRunner.query(
+      `CREATE TYPE "comments_target_type_enum" AS ENUM ('UNIT', 'ITEM', 'TASK_SEQUENCE')`,
+    );
+    await queryRunner.query(`
+      ALTER TABLE "comments"
+      ALTER COLUMN "target_type" TYPE "comments_target_type_enum"
+      USING "target_type"::text::"comments_target_type_enum"
+    `);
+    await queryRunner.query(`DROP TYPE "comments_target_type_enum_new"`);
+
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_comments_booklet_target"`,
+    );
+    await queryRunner.query(`
+      ALTER TABLE "comments"
+        DROP COLUMN IF EXISTS "legacy_read_only",
+        DROP COLUMN IF EXISTS "booklet_id"
+    `);
+
+    await queryRunner.query(`
+      UPDATE "acp_access_configs"
+         SET "feature_config" = jsonb_set(
+           "feature_config",
+           '{commentTargets}',
+           COALESCE(
+             (
+               SELECT jsonb_agg(target)
+                 FROM jsonb_array_elements("feature_config"->'commentTargets') target
+                WHERE target <> '"BOOKLET"'::jsonb
+             ),
+             '[]'::jsonb
+           ),
+           true
+         )
+       WHERE jsonb_typeof("feature_config"->'commentTargets') = 'array'
+         AND ("feature_config"->'commentTargets') ? 'TASK_SEQUENCE'
+         AND ("feature_config"->'commentTargets') ? 'BOOKLET'
+    `);
   }
 
   private collectTargets(

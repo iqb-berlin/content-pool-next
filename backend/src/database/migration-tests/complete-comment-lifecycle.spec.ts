@@ -200,13 +200,21 @@ describe("CompleteCommentLifecycle migration", () => {
     );
   });
 
-  it("rejects rollback before issuing destructive queries", async () => {
-    const queryRunner = { query: jest.fn() };
+  it("reverts new targets to their closest legacy representation", async () => {
+    const queryRunner = { query: jest.fn().mockResolvedValue(undefined) };
 
-    await expect(migration.down(queryRunner)).rejects.toThrow(
-      "is irreversible",
-    );
-    expect(queryRunner.query).not.toHaveBeenCalled();
+    await migration.down(queryRunner);
+
+    const queries = queryRunner.query.mock.calls.map(([query]) => query);
+    expect(queries).toHaveLength(9);
+    expect(queries[0]).toContain(`"target_type" = 'TASK_SEQUENCE'`);
+    expect(queries[0]).toContain(`WHERE "target_type" = 'BOOKLET'`);
+    expect(queries[1]).toContain(`"target_type" = 'ITEM'`);
+    expect(queries[1]).toContain(`WHERE "target_type" = 'CODING'`);
+    expect(queries[3]).toContain(`('UNIT', 'ITEM', 'TASK_SEQUENCE')`);
+    expect(queries[6]).toContain(`DROP INDEX IF EXISTS`);
+    expect(queries[7]).toContain(`DROP COLUMN IF EXISTS "booklet_id"`);
+    expect(queries[8]).toContain(`target <> '"BOOKLET"'::jsonb`);
   });
 
   it("keeps ambiguous or missing legacy targets read-only", () => {

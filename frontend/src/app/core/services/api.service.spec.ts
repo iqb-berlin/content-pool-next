@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import { Acp, User, AppSettings, AcpFile } from '../models/api.models';
 
@@ -825,6 +825,31 @@ describe('ApiService', () => {
       expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/comments/export.xlsx', {
         responseType: 'blob',
       });
+    });
+
+    it('reuses only the supplied visible snapshot on HTTP 304 and propagates revoked access', () => {
+      const previous: any = {
+        revision: 'visible-a',
+        target: { unitId: 'U', itemId: 'I' },
+        visibilityMode: 'GROUP',
+        comments: [{ id: 'own-group' }],
+      };
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 304 })));
+      let result: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe((snapshot) => (result = snapshot));
+      expect(result).toBe(previous);
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        params: { unitId: 'U', itemId: 'I' },
+        headers: { 'If-None-Match': '"visible-a"' },
+      });
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 403 })));
+      let failure: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe({ error: (error) => (failure = error) });
+      expect(failure.status).toBe(403);
     });
 
     it('should load and mutate item comment threads', () => {

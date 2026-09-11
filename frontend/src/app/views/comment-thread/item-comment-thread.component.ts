@@ -73,6 +73,12 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   private readonly replyDrafts = new Map<string, string>();
   private readonly expandedByTarget = new Map<string, Set<string>>();
 
+  selectedGroupId = '';
+  private accessDenied = false;
+  private readonly poll = setInterval(() => {
+    if (this.hasTarget && !this.loading && !this.busy) this.loadThread(true);
+  }, 8000);
+
   constructor(private readonly api: ApiService) {}
 
   ngOnChanges(changes: SimpleChanges): void {
@@ -97,6 +103,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       this.threadRequest = null;
       this.loading = false;
       this.snapshot = null;
+      this.selectedGroupId = '';
       this.replyingTo = null;
       this.cancelEdit();
       this.error = '';
@@ -112,6 +119,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    clearInterval(this.poll);
     this.threadRequest?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
@@ -167,7 +175,11 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get visibilityLabel(): string {
-    return this.snapshot?.visibilityMode === 'SHARED' ? 'Geteilt' : 'Privat';
+    return this.snapshot?.visibilityMode === 'GROUP'
+      ? 'Review-Gruppen'
+      : this.snapshot?.visibilityMode === 'SHARED'
+        ? 'Geteilt'
+        : 'Privat';
   }
 
   get newCommentText(): string {
@@ -178,10 +190,21 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.newDrafts.set(this.targetKey, value);
   }
 
+  get editAccessLost(): boolean {
+    return (
+      this.accessDenied ||
+      Boolean(
+        this.editingComment?.groupId &&
+        this.snapshot?.visibilityMode === 'GROUP' &&
+        !this.snapshot.groups?.some((group) => group.id === this.editingComment!.groupId),
+      )
+    );
+  }
+
   get threadGroups(): CommentThreadGroup[] {
     const comments = [...(this.snapshot?.comments || [])];
     // Keep the active edit and its original version even when another tab changes it.
-    if (this.editingComment) {
+    if (this.editingComment && !this.editAccessLost) {
       const index = comments.findIndex((comment) => comment.id === this.editingComment!.id);
       if (index >= 0) comments[index] = this.editingComment;
       else comments.push(this.editingComment);
@@ -229,12 +252,22 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.loading = true;
     const request =
       this.targetType === 'ITEM'
-        ? this.api.getItemCommentThread(this.acpId, this.unitId, this.itemId)
-        : this.api.getReviewCommentThread(this.acpId, this.target);
+        ? this.api.getItemCommentThread(this.acpId, this.unitId, this.itemId, this.snapshot)
+        : this.api.getReviewCommentThread(this.acpId, this.target, this.snapshot);
     this.threadRequest = request.pipe(timeout(10_000), takeUntil(this.destroy$)).subscribe({
       next: (snapshot) => {
         if (token !== this.requestToken) return;
         this.snapshot = snapshot;
+        this.accessDenied = false;
+        if (snapshot.visibilityMode !== 'GROUP') this.selectedGroupId = '';
+        if (
+          this.selectedGroupId &&
+          !snapshot.groups?.some((group) => group.id === this.selectedGroupId && !group.archived)
+        )
+          this.selectedGroupId = '';
+        if (!this.selectedGroupId && !this.newCommentText)
+          this.selectedGroupId = snapshot.defaultGroupId || '';
+
         this.countChanged.emit({
           ...(this.targetType === 'ITEM' ? {} : { targetType: this.targetType }),
           unitId: snapshot.target.unitId || '',
@@ -251,6 +284,10 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
         if (token !== this.requestToken) return;
         this.loading = false;
         this.threadRequest = null;
+        if (error?.status === 403 || error?.status === 401) {
+          this.snapshot = null;
+          this.accessDenied = true;
+        }
         this.threadLoadError = this.errorMessage(error, 'Kommentare konnten nicht geladen werden.');
         if (!preserveError) this.operationError = '';
       },
@@ -258,6 +295,10 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   submitComment(parentCommentId?: string): void {
+    if (!parentCommentId && this.snapshot?.visibilityMode === 'GROUP' && !this.selectedGroupId) {
+      this.error = 'Bitte die Review-Gruppe für diesen Entwurf wählen.';
+      return;
+    }
     const targetKey = this.targetKey;
     const acpId = this.acpId;
     const replyDraftKey = parentCommentId ? this.replyDraftKey(parentCommentId, targetKey) : '';
@@ -266,6 +307,9 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.busy = true;
     const input = {
       commentText: text.trim(),
+      ...(!parentCommentId && this.snapshot?.visibilityMode === 'GROUP' && this.selectedGroupId
+        ? { groupId: this.selectedGroupId }
+        : {}),
       ...(parentCommentId ? { parentCommentId } : {}),
     };
     const request =

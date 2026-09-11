@@ -437,6 +437,8 @@ export interface Comment {
   itemId?: string | null;
   parentCommentId?: string | null;
   parentVisible?: boolean;
+  groupId?: string | null;
+  groupName?: string | null;
   commentText: string;
   authorLabel?: string;
   createdAt: string;
@@ -450,7 +452,9 @@ export interface Comment {
 export interface CommentThreadSnapshot {
   target: ReviewCommentTarget;
   revision: string;
-  visibilityMode: 'PRIVATE' | 'SHARED';
+  visibilityMode: 'PRIVATE' | 'SHARED' | 'GROUP';
+  defaultGroupId?: string | null;
+  groups?: { id: string; name: string; archived: boolean }[];
   comments: Comment[];
 }
 

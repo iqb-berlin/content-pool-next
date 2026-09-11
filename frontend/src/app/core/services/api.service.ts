@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpResponse } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, catchError, of, throwError } from 'rxjs';
 import {
   Acp,
   AccessConfig,
@@ -211,8 +211,22 @@ export class ApiService {
   getReview(acpId: string): Observable<any> {
     return this.http.get(`${this.API}/view/acp/${acpId}/review`);
   }
-  configureReview(acpId: string, enableReview: boolean): Observable<any> {
-    return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, { enableReview });
+  getReviewConfig(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review/config`);
+  }
+  getReviewMembers(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/review/members`);
+  }
+  getVisibleReviewComments(acpId: string): Observable<Comment[]> {
+    return this.http.get<Comment[]>(`${this.API}/acp/${acpId}/review/comments/visible`);
+  }
+  exportVisibleReviewComments(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/visible.xlsx`, {
+      responseType: 'blob',
+    });
+  }
+  configureReview(acpId: string, config: any): Observable<any> {
+    return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, config);
   }
   importCredentialFile(
     acpId: string,
@@ -461,18 +475,34 @@ export class ApiService {
     acpId: string,
     unitId: string,
     itemId: string,
+    previous?: CommentThreadSnapshot | null,
   ): Observable<CommentThreadSnapshot> {
-    return this.http.get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
-      params: { unitId, itemId },
-    });
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { unitId, itemId },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
   }
   getReviewCommentThread(
     acpId: string,
     target: ReviewCommentTarget,
+    previous?: CommentThreadSnapshot | null,
   ): Observable<CommentThreadSnapshot> {
-    return this.http.get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
-      params: { ...target },
-    });
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { ...target },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
   }
   getItemCommentCounts(acpId: string): Observable<ItemCommentCountsSnapshot> {
     return this.http.get<ItemCommentCountsSnapshot>(
@@ -481,13 +511,19 @@ export class ApiService {
   }
   createItemComment(
     acpId: string,
-    data: { unitId: string; itemId: string; commentText: string; parentCommentId?: string },
+    data: {
+      unitId: string;
+      itemId: string;
+      commentText: string;
+      parentCommentId?: string;
+      groupId?: string;
+    },
   ): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
   }
   createReviewComment(
     acpId: string,
-    data: ReviewCommentTarget & { commentText: string; parentCommentId?: string },
+    data: ReviewCommentTarget & { commentText: string; parentCommentId?: string; groupId?: string },
   ): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
   }

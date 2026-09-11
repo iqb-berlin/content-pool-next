@@ -38,6 +38,19 @@
         </div>
 
         <div class="new-comment-form">
+          @if (snapshot?.visibilityMode === 'GROUP') {
+            <label
+              >Review-Gruppe
+              <select [(ngModel)]="selectedGroupId">
+                <option value="">Bitte Gruppe wählen</option>
+                @for (group of snapshot?.groups || []; track group.id) {
+                  @if (!group.archived) {
+                    <option [value]="group.id">{{ group.name }}</option>
+                  }
+                }
+              </select>
+            </label>
+          }
           <textarea
             rows="3"
             maxlength="10000"
@@ -47,13 +60,23 @@
           <button
             type="button"
             class="btn btn-primary btn-sm"
-            [disabled]="!newCommentText.trim() || busy"
+            [disabled]="!snapshot || !newCommentText.trim() || busy"
             (click)="submitComment()"
           >
             Kommentieren
           </button>
         </div>
 
+        @if (editingCommentId && editAccessLost) {
+          <label
+            >Ungespeicherter Bearbeitungsentwurf – der Kommentar ist nicht mehr zugänglich.
+            <textarea
+              rows="3"
+              [(ngModel)]="editText"
+              aria-label="Bearbeitungsentwurf ohne Zugriff"
+            ></textarea>
+          </label>
+        }
         @if (error) {
           <div class="alert alert-error">{{ error }}</div>
         }
@@ -66,6 +89,9 @@
             @for (thread of threadGroups; track thread.id) {
               <article class="comment-thread">
                 @if (thread.root; as root) {
+                  @if (root.groupName) {
+                    <span class="visibility-badge">{{ root.groupName }}</span>
+                  }
                   <ng-container
                     *ngTemplateOutlet="commentCard; context: { $implicit: root, isReply: false }"
                   ></ng-container>

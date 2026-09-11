@@ -35,6 +35,70 @@ function createComponent() {
 }
 
 describe('ItemCommentThreadComponent', () => {
+  it('requires a new group choice after membership changes without moving a draft automatically', () => {
+    const { component, api } = createComponent();
+    component.selectedGroupId = 'A';
+    component.newCommentText = 'Entwurf für A';
+    component.startEdit({
+      id: 'old',
+      groupId: 'A',
+      commentText: 'Gespeicherter Text',
+      version: 1,
+    } as any);
+    component.editText = 'Ungespeicherte Änderung';
+    api.getItemCommentThread.mockReturnValue(
+      of({
+        revision: 'new-membership',
+        visibilityMode: 'GROUP',
+        target: { unitId: 'unit-1', itemId: 'item-1' },
+        comments: [],
+        groups: [{ id: 'B', name: 'B', archived: false }],
+        defaultGroupId: 'B',
+      }),
+    );
+    component.loadThread(true);
+    expect(component.selectedGroupId).toBe('');
+    expect(component.newCommentText).toBe('Entwurf für A');
+    expect(component.editText).toBe('Ungespeicherte Änderung');
+    expect(component.editAccessLost).toBe(true);
+    expect(component.threadGroups).toEqual([]);
+    component.submitComment();
+    expect(api.createItemComment).not.toHaveBeenCalled();
+    component.ngOnDestroy();
+  });
+
+  it('polls after eight seconds without changing the target or unsaved input and stops on destroy', () => {
+    vi.useFakeTimers();
+    const { component, api } = createComponent();
+    try {
+      component.loadThread();
+      component.newCommentText = 'Neuer Entwurf';
+      component.setReplyText('root', 'Antwortentwurf');
+      component.startEdit({ id: 'edit', commentText: 'Original', version: 1 } as any);
+      component.editText = 'Bearbeitungsentwurf';
+      api.getItemCommentThread.mockReturnValue(
+        of({
+          revision: '2',
+          visibilityMode: 'SHARED',
+          target: { unitId: 'unit-1', itemId: 'item-1' },
+          comments: [],
+        }),
+      );
+      vi.advanceTimersByTime(8000);
+      expect(component.snapshot?.revision).toBe('2');
+      expect(component.itemId).toBe('item-1');
+      expect(component.newCommentText).toBe('Neuer Entwurf');
+      expect(component.replyText('root')).toBe('Antwortentwurf');
+      expect(component.editText).toBe('Bearbeitungsentwurf');
+      component.ngOnDestroy();
+      vi.advanceTimersByTime(16000);
+      expect(api.getItemCommentThread).toHaveBeenCalledTimes(2);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
   it('clears load errors after distinct failures and a successful poll', () => {
     const { component, api } = createComponent();
     api.getItemCommentThread
@@ -154,8 +218,8 @@ describe('ItemCommentThreadComponent', () => {
     });
 
     expect(component.snapshot?.revision).toBe('new');
-    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(1, 'acp-1', 'unit-1', 'item-1');
-    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(2, 'acp-1', 'unit-1', 'item-2');
+    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(1, 'acp-1', 'unit-1', 'item-1', null);
+    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(2, 'acp-1', 'unit-1', 'item-2', null);
     component.ngOnDestroy();
   });
 
@@ -410,11 +474,15 @@ describe('ItemCommentThreadComponent', () => {
     component.newCommentText = 'Kodierung prüfen';
     component.submitComment();
 
-    expect(api.getReviewCommentThread).toHaveBeenCalledWith('acp-1', {
-      targetType: 'CODING',
-      unitId: 'unit-1',
-      itemId: 'item-1',
-    });
+    expect(api.getReviewCommentThread).toHaveBeenCalledWith(
+      'acp-1',
+      {
+        targetType: 'CODING',
+        unitId: 'unit-1',
+        itemId: 'item-1',
+      },
+      null,
+    );
     expect(api.createReviewComment).toHaveBeenCalledWith('acp-1', {
       targetType: 'CODING',
       unitId: 'unit-1',

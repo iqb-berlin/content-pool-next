@@ -452,20 +452,9 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               />
               <span>Kodierung</span>
             </label>
-            <label class="help-text" for="comment-visibility-mode">Sichtbarkeit:</label>
-            <select
-              id="comment-visibility-mode"
-              class="form-control"
-              [(ngModel)]="featureConfig['commentVisibilityMode']"
-            >
-              <option value="PRIVATE">Privat – Nutzende sehen nur eigene Kommentare</option>
-              <option value="SHARED">Geteilt – alle ACP-Nutzenden sehen alle Kommentare</option>
-            </select>
-            @if (featureConfig['commentVisibilityMode'] === 'SHARED') {
-              <p class="help-text">
-                Auch bereits vorhandene Kommentare werden für andere ACP-Nutzende sichtbar.
-              </p>
-            }
+            <p class="help-text">
+              Sichtbarkeit und Review-Gruppen werden im Review-Einstieg konfiguriert.
+            </p>
           </div>
         }
       </div>
@@ -1295,7 +1284,11 @@ export class AccessConfigComponent implements OnInit {
 
   private applyFeatureConfigDefaults() {
     this.featureConfig['commentVisibilityMode'] =
-      this.featureConfig['commentVisibilityMode'] === 'SHARED' ? 'SHARED' : 'PRIVATE';
+      this.featureConfig['commentVisibilityMode'] === 'GROUP'
+        ? 'GROUP'
+        : this.featureConfig['commentVisibilityMode'] === 'SHARED'
+          ? 'SHARED'
+          : 'PRIVATE';
     const itemSubIdLabel = String(this.featureConfig[this.itemSubIdLabelKey] || '').trim();
     this.featureConfig[this.itemSubIdLabelKey] = itemSubIdLabel || 'Sub-ID';
     this.featureConfig[this.enablePersonalItemDataKey] =

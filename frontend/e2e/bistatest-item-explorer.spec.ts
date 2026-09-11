@@ -51,13 +51,18 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(page.getByRole('button', { name: 'Kommentar hinzufügen' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Kommentare', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Item-Liste', exact: true })).toHaveCount(0);
-  await page
-    .getByRole('link', {
-      name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
-      exact: true,
-    })
-    .click();
-  await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
+  await Promise.all([
+    page.waitForURL(`**/view/${ACP_ID}/item-explorer`),
+    page
+      .getByRole('link', {
+        name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
+        exact: true,
+      })
+      .click(),
+  ]);
+  await expect(
+    page.getByRole('heading', { name: 'Item-Explorer', exact: true, level: 1 }),
+  ).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.locator('tbody tr').first().click();
 

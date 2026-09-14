@@ -660,9 +660,13 @@ export class ApiService {
     return `${this.API}/view/acp/${acpId}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
 
-  getItemExplorerState(acpId: string): Observable<ItemExplorerStateEnvelope> {
+  getItemExplorerState(
+    acpId: string,
+    perspective?: ItemExplorerPerspective,
+  ): Observable<ItemExplorerStateEnvelope> {
     return this.http.get<ItemExplorerStateEnvelope>(
       `${this.API}/view/acp/${acpId}/item-explorer/state`,
+      { params: perspective ? { perspective } : {} },
     );
   }
 

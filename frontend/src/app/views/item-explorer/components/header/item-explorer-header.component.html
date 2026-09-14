@@ -41,7 +41,7 @@
           {{ vm.isReadOnlyPreview ? 'Bearbeitungsansicht' : 'Leseansicht' }}
         </button>
       }
-      @if (vm.canEditExplorer) {
+      @if (vm.latestExplorerState) {
         <button
           title="Sichtbare Tabellenspalten und ihre Reihenfolge festlegen"
           class="btn btn-outline btn-sm"

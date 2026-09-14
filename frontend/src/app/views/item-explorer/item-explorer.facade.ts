@@ -952,6 +952,36 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.codingSortDir === 'asc' ? '↑' : '↓';
   }
 
+  get reviewerColumnsRestricted(): boolean {
+    return (
+      !this.canEditExplorer &&
+      this.latestExplorerState?.publishedState?.metadataColumns
+        ?.restrictReviewerColumnsToManagerSelection === true
+    );
+  }
+
+  isReviewerColumnAllowed(key: string): boolean {
+    if (
+      !this.reviewerColumnsRestricted ||
+      key.startsWith('personal:') ||
+      key === TABLE_COLUMN_KEYS.itemId
+    )
+      return true;
+    return (
+      this.latestExplorerState?.publishedState?.metadataColumns?.layout?.visible?.includes(key) ===
+      true
+    );
+  }
+
+  setRestrictReviewerColumns(value: boolean) {
+    if (!this.canEditExplorer) return;
+    this.ensureExplicitTableLayout();
+    this.metadataSettings.restrictReviewerColumnsToManagerSelection = value;
+    if (value && !this.metadataSettings.layout!.visible.includes(TABLE_COLUMN_KEYS.itemId)) {
+      this.metadataSettings.layout!.visible.unshift(TABLE_COLUMN_KEYS.itemId);
+    }
+  }
+
   get allTableColumns(): ItemExplorerTableColumn[] {
     const columns: ItemExplorerTableColumn[] = [
       {
@@ -1056,7 +1086,7 @@ export class ItemExplorerFacade implements OnDestroy {
         },
       );
     }
-    return columns;
+    return columns.filter((column) => this.isReviewerColumnAllowed(column.key));
   }
 
   get tableColumns(): ItemExplorerTableColumn[] {
@@ -1073,6 +1103,7 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     const availableByKey = new Map(available.map((column) => [column.key, column]));
     const visible = new Set(layout.visible);
+    if (this.reviewerColumnsRestricted) visible.add(TABLE_COLUMN_KEYS.itemId);
     const ordered = layout.order
       .map((key) => availableByKey.get(key))
       .filter((column): column is ItemExplorerTableColumn => column !== undefined)
@@ -1464,9 +1495,15 @@ export class ItemExplorerFacade implements OnDestroy {
           }
           this.items = (result.items || []).map((item: ExplorerItem) => ({
             ...item,
+            unitLabel: item.unitLabel || '',
+            description: item.description || '',
+            metadata: item.metadata || {},
             rowKey: item.rowKey || item.uuid || `${item.unitId}_${item.itemId}`,
             bookletOccurrences: Array.isArray(item.bookletOccurrences)
-              ? item.bookletOccurrences
+              ? item.bookletOccurrences.map((occurrence) => ({
+                  booklet: occurrence.booklet || '',
+                  position: occurrence.position ?? null,
+                }))
               : [],
           }));
           this.allColumns = this.getAvailableMetadataColumns(result.columns || []);
@@ -5264,6 +5301,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   filterVisibleColumns(allColumns: MetadataColumn[]): MetadataColumn[] {
+    allColumns = allColumns.filter((column) =>
+      this.isReviewerColumnAllowed(this.getMetadataTableColumnKey(column.id)),
+    );
     if (!this.metadataSettings.configured) {
       return allColumns.filter((column) => column.visible !== false);
     }
@@ -5291,6 +5331,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   isColumnVisible(column: ItemExplorerTableColumn | MetadataColumn): boolean {
+    const key = 'key' in column ? column.key : this.getMetadataTableColumnKey(column.id);
+    if (!this.isReviewerColumnAllowed(key)) return false;
+    if (key === TABLE_COLUMN_KEYS.itemId && this.reviewerColumnsRestricted) return true;
     if (!('key' in column)) {
       return this.metadataSettings.configured
         ? this.metadataSettings.visible.includes(column.id)
@@ -5482,6 +5525,14 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   toggleColumnVisibility(column: ItemExplorerTableColumn | MetadataColumn) {
+    const key = 'key' in column ? column.key : this.getMetadataTableColumnKey(column.id);
+    if (!this.isReviewerColumnAllowed(key)) return;
+    if (
+      key === TABLE_COLUMN_KEYS.itemId &&
+      (this.reviewerColumnsRestricted ||
+        this.metadataSettings.restrictReviewerColumnsToManagerSelection)
+    )
+      return;
     if (!('key' in column)) {
       this.ensureExplicitMetadataSelection();
       const colIndex = this.metadataSettings.visible.indexOf(column.id);
@@ -5641,6 +5692,8 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   saveMetadataSettings() {
+    if (this.metadataSettings.restrictReviewerColumnsToManagerSelection)
+      this.ensureExplicitTableLayout();
     this.syncLegacyMetadataSettingsFromLayout();
     const layout = this.metadataSettings.layout || {
       visible: [],
@@ -5661,6 +5714,8 @@ export class ItemExplorerFacade implements OnDestroy {
       {
         ui: this.buildUiPreferences(),
         metadataColumns: {
+          restrictReviewerColumnsToManagerSelection:
+            this.metadataSettings.restrictReviewerColumnsToManagerSelection === true,
           visible: [...this.metadataSettings.visible],
           order: [...this.metadataSettings.order],
           configured: this.metadataSettings.configured,
@@ -5680,7 +5735,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   resetToDefault() {
+    const restricted = this.metadataSettings.restrictReviewerColumnsToManagerSelection;
     this.metadataSettings = {
+      restrictReviewerColumnsToManagerSelection: restricted,
       visible: [],
       order: [],
       configured: false,
@@ -5721,6 +5778,8 @@ export class ItemExplorerFacade implements OnDestroy {
       return {
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        restrictReviewerColumnsToManagerSelection:
+          metadataColumns.restrictReviewerColumnsToManagerSelection === true,
         configured: metadataColumns.configured === true || visible.length > 0 || order.length > 0,
         widths: this.normalizeMetadataColumnWidths(metadataColumns.widths),
         referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
@@ -5907,7 +5966,9 @@ export class ItemExplorerFacade implements OnDestroy {
   private async fetchSharedExplorerState(): Promise<ItemExplorerStateEnvelope | null> {
     if (this.destroyed) return null;
     try {
-      const envelope = await firstValueFrom(this.api.getItemExplorerState(this.acpId));
+      const envelope = await firstValueFrom(
+        this.api.getItemExplorerState(this.acpId, this.isReadOnlyPreview ? 'read-only' : 'editor'),
+      );
       return this.destroyed ? null : envelope;
     } catch (error) {
       if (this.destroyed) return null;
@@ -5989,6 +6050,8 @@ export class ItemExplorerFacade implements OnDestroy {
       });
       this.ensureCommentColumnDefault();
       this.columns = this.filterVisibleColumns(this.allColumns);
+      this.clearHiddenTableColumnFilters();
+      this.ensureVisibleSortField();
       this.itemOrder = Array.isArray((activeState as ItemExplorerSharedState).itemOrder)
         ? (activeState as ItemExplorerSharedState).itemOrder!.filter(
             (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0,
@@ -6386,6 +6449,8 @@ export class ItemExplorerFacade implements OnDestroy {
     }
     this.rememberFocusBeforeOverlay();
     this.columnManagerOriginalSettings = {
+      restrictReviewerColumnsToManagerSelection:
+        this.metadataSettings.restrictReviewerColumnsToManagerSelection,
       visible: [...this.metadataSettings.visible],
       order: [...this.metadataSettings.order],
       configured: this.metadataSettings.configured,

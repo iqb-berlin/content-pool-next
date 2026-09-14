@@ -1,4 +1,19 @@
-import { extractVomdTimeSeconds } from "./unit-file-parsing";
+import { extractVomdTimeSeconds, getXmlRootElement } from "./unit-file-parsing";
+
+describe("getXmlRootElement", () => {
+  it("distinguishes a Booklet with nested Unit references from a Unit file", () => {
+    expect(
+      getXmlRootElement(
+        '<?xml version="1.0"?><Booklet><Units><Unit id="u1"/></Units></Booklet>',
+      ),
+    ).toBe("Booklet");
+    expect(getXmlRootElement("<Unit><Id>u1</Id></Unit>")).toBe("Unit");
+  });
+
+  it("returns undefined for malformed XML", () => {
+    expect(getXmlRootElement("<Unit>")).toBeUndefined();
+  });
+});
 
 describe("extractVomdTimeSeconds", () => {
   it("uses the numeric VOMD raw value instead of the formatted display value", () => {

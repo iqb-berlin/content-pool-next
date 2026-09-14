@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
   ConflictException,
@@ -964,6 +965,35 @@ describe("CommentsService", () => {
       "Kommentar Item 1",
       "Kommentar Unit 1",
     ]);
+    for (const released of [false, true]) {
+      const visible = released ? ["metadata:booklet"] : [];
+      const actor = {
+        userId: "manager",
+        columnPolicy: new ReviewerColumnPolicy({
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: { configured: true, visible, order: visible, widths: {} },
+        }),
+      };
+      const restrictedCsv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      const restrictedWorkbook = new ExcelJS.Workbook();
+      await restrictedWorkbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheetData = JSON.stringify(
+        restrictedWorkbook.getWorksheet("Kommentare")!.getSheetValues(),
+      );
+      for (const serialized of [restrictedCsv, sheetData]) {
+        expect(serialized.includes("Booklet-Bezeichnung")).toBe(released);
+        expect(serialized.includes("Booklet-ID")).toBe(released);
+        expect(serialized.includes("Booklet Zwei")).toBe(released);
+        expect(serialized.includes("booklet-2")).toBe(released);
+        expect(serialized).not.toContain("Unit Zwei");
+        expect(serialized).not.toContain("Item Zwei");
+        expect(serialized).toContain("Kommentar Booklet");
+      }
+    }
   });
 
   it("does not transfer comment ownership to a recreated credential with the same username", async () => {

@@ -208,6 +208,7 @@ describe("ReviewCommentsController", () => {
     await controller.exportAllXlsx("acp-1", managerRequest, response() as any);
     expect(commentsService.exportReviewCommentsXlsx).toHaveBeenLastCalledWith(
       "acp-1",
+      undefined,
     );
 
     await expect(

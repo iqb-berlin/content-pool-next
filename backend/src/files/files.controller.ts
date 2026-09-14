@@ -580,10 +580,9 @@ export class FilesController {
     }
 
     const featureConfig = await this.filesService.getFeatureConfig(acpId);
-    const isDependency = await this.filesService.isUnitDependencyFile(
-      acpId,
-      originalName,
-    );
+    const isDependency = req.reviewerColumnPolicy?.restricted
+      ? await this.filesService.isRuntimeDependencyFile(acpId, originalName)
+      : await this.filesService.isUnitDependencyFile(acpId, originalName);
     await this.capabilities.resolve(req);
     const canDownloadForView =
       isDependency &&

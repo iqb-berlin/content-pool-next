@@ -1158,7 +1158,9 @@ describe('ApiService', () => {
         expect((result as any).version).toBe(1);
       });
 
-      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state');
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state', {
+        params: {},
+      });
     });
 
     it('should patch explorer draft', () => {

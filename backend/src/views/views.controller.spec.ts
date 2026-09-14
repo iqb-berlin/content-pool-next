@@ -457,6 +457,7 @@ describe("ViewsController", () => {
       { kind: "user", userId: "u-1" },
       ["uuid-2::1", "uuid-1::1"],
       true,
+      undefined,
     );
     expect(res.setHeader).toHaveBeenCalledWith(
       "Content-Type",
@@ -532,6 +533,7 @@ describe("ViewsController", () => {
       { kind: "user", userId: "manager-1" },
       ["uuid::1"],
       false,
+      undefined,
     );
   });
 
@@ -722,6 +724,7 @@ describe("ViewsController", () => {
       { kind: "user", userId: "user-1" },
       "collection-1",
       true,
+      undefined,
     );
     expect(res.send).toHaveBeenCalledWith(Buffer.from("collection-csv"));
   });

@@ -359,6 +359,7 @@ export interface Credential {
 }
 
 export interface MetadataColumnsConfig {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible?: string[];
   order?: string[];
   configured?: boolean;
@@ -580,6 +581,7 @@ export interface ItemCollectionRowsMutationResult {
 }
 
 export interface ItemExplorerMetadataColumns {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible?: string[];
   order?: string[];
   configured?: boolean;

@@ -2057,6 +2057,53 @@ describe('ItemExplorerFacade', () => {
     expect(component.columns.map((column) => column.id)).toEqual(['second', 'first']);
   });
 
+  it('enforces published reviewer columns against stale layouts and direct toggle calls', () => {
+    const component = createFacade();
+    component.canEditExplorer = false;
+    component.allColumns = [
+      { id: 'secret', label: 'Secret' },
+      { id: 'skill', label: 'Skill' },
+    ];
+    component.enablePersonalItemData = true;
+    (component as any).personalDataSessionIdentity = 'oidc:reader';
+    (component as any).latestExplorerState = {
+      publishedState: {
+        metadataColumns: {
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: { configured: true, visible: ['system:itemId', 'metadata:skill'] },
+        },
+      },
+    };
+    component.metadataSettings.layout = {
+      configured: true,
+      visible: ['metadata:secret', 'metadata:skill'],
+      order: ['metadata:secret', 'metadata:skill'],
+      widths: {},
+    };
+    expect(component.tableColumns.map((c) => c.key)).toEqual(['system:itemId', 'metadata:skill']);
+    expect(component.filteredAllColumns.some((c) => c.key === 'metadata:secret')).toBe(false);
+    expect(component.filteredAllColumns.some((c) => c.key === 'personal:note')).toBe(true);
+    component.toggleColumnVisibility({ id: 'secret', label: 'Secret' });
+    expect(component.isColumnVisible({ id: 'secret', label: 'Secret' })).toBe(false);
+    const skill = component.allTableColumns.find((c) => c.key === 'metadata:skill')!;
+    component.toggleColumnVisibility(skill);
+    expect(component.tableColumns.map((c) => c.key)).toEqual(['system:itemId']);
+    component.resetToDefault();
+    expect(component.tableColumns.some((c) => c.key === 'metadata:secret')).toBe(false);
+  });
+
+  it('materializes the manager selection and cancels restriction changes with the dialog', () => {
+    const component = createFacade();
+    component.canEditExplorer = true;
+    component.openColumnManager();
+    component.setRestrictReviewerColumns(true);
+    expect(component.metadataSettings.restrictReviewerColumnsToManagerSelection).toBe(true);
+    expect(component.metadataSettings.layout?.visible).toContain('system:itemId');
+    expect(component.metadataSettings.layout?.visible).toContain('system:unitLabel');
+    component.closeColumnManager();
+    expect(component.metadataSettings.restrictReviewerColumnsToManagerSelection).not.toBe(true);
+  });
+
   it('offers fixed, configured, and personal columns in one configurable table layout', () => {
     const component = createFacade();
     component.allColumns = [{ id: 'customQuality', label: 'Eigene Qualitätsspalte' }];
@@ -4690,7 +4737,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.isReadOnlyPreview).toBe(true);
     expect(component.canEditExplorer).toBe(false);
     expect(component.filterText).toBe('published');
-    expect(getItemExplorerState).toHaveBeenCalledWith('acp-1');
+    expect(getItemExplorerState).toHaveBeenCalledWith('acp-1', 'read-only');
     expect(getFileItemList).toHaveBeenCalledWith('acp-1', {
       perspective: 'read-only',
     });

@@ -1,3 +1,5 @@
+import { APP_INTERCEPTOR } from "@nestjs/core";
+import { ReviewerColumnsInterceptor } from "./item-explorer/reviewer-columns.interceptor";
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -17,6 +19,9 @@ import { ItemExplorerModule } from "./item-explorer/item-explorer.module";
 import { createApplicationDataSource } from "./database/database-compatibility";
 
 @Module({
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: ReviewerColumnsInterceptor },
+  ],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,

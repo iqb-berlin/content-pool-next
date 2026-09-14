@@ -349,6 +349,9 @@ export type ItemExplorerUploadDialogsViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'canEditExplorer'
+    | 'reviewerColumnsRestricted'
+    | 'setRestrictReviewerColumns'
     | 'allTableColumns'
     | 'canMoveTableColumn'
     | 'canResetMetadataSettings'

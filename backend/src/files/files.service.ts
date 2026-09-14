@@ -637,6 +637,28 @@ export class FilesService {
     >;
   }
 
+  async isRuntimeDependencyFile(
+    acpId: string,
+    fileName: string,
+  ): Promise<boolean> {
+    const units = getIndexUnits(await this.getAcpIndex(acpId));
+    const isRuntime = (dependency: any) =>
+      ["PLAYER", "UNIT_DEFINITION", "CODING_SCHEME"].includes(
+        dependency?.type,
+      ) &&
+      (dependency.id === fileName || dependency.originalName === fileName);
+    for (const unit of units) {
+      if ((unit.dependencies || []).some(isRuntime)) return true;
+      // The uploaded Unit XML can be newer than the stored index dependency list.
+      const view = await this.unitParserService.getUnitViewFromFiles(
+        acpId,
+        unit.id,
+      );
+      if ((view?.dependencies || []).some(isRuntime)) return true;
+    }
+    return false;
+  }
+
   async isUnitDependencyFile(
     acpId: string,
     fileName: string,

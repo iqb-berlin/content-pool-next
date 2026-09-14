@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "./reviewer-column-policy";
 import {
   ConflictException,
   Injectable,
@@ -22,6 +23,7 @@ export interface ExplorerActor {
 }
 
 export interface ExplorerMetadataColumns {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
   configured: boolean;
@@ -112,6 +114,27 @@ export class ItemExplorerStateService {
   ): Promise<ExplorerStateEnvelope> {
     const state = await this.getCachedViewerState(acpId);
     return structuredClone(this.toViewerEnvelope(state, canEdit));
+  }
+
+  async getPublishedColumnPolicy(acpId: string): Promise<ReviewerColumnPolicy> {
+    const state = await this.getCachedViewerState(acpId);
+    return new ReviewerColumnPolicy(
+      state.publishedState.metadataColumns,
+      state.publishedVersion,
+    );
+  }
+
+  async assertColumnPolicyCurrent(
+    acpId: string,
+    policy?: ReviewerColumnPolicy,
+  ): Promise<void> {
+    if (policy?.publishedVersion === undefined) return;
+    const version = await this.getStateVersionForViewer(acpId, false);
+    if (version !== policy.publishedVersion) {
+      throw new ConflictException(
+        "Die veröffentlichte Spaltenfreigabe wurde geändert. Bitte neu laden.",
+      );
+    }
   }
 
   async getItemListStateProjection(
@@ -665,6 +688,9 @@ export class ItemExplorerStateService {
       visible.length > 0 ||
       order.length > 0;
     const metadataColumns: ExplorerMetadataColumns = {
+      ...(rawMetadataColumns.restrictReviewerColumnsToManagerSelection === true
+        ? { restrictReviewerColumnsToManagerSelection: true }
+        : {}),
       visible: visible.length ? visible : order,
       order: order.length ? order : visible,
       configured,
@@ -741,6 +767,7 @@ export class ItemExplorerStateService {
     );
 
     if (
+      state.metadataColumns.restrictReviewerColumnsToManagerSelection ||
       state.metadataColumns.configured ||
       visible.length ||
       order.length ||
@@ -750,6 +777,9 @@ export class ItemExplorerStateService {
       layout
     ) {
       normalizedFeatureConfig.metadataColumns = {
+        ...(state.metadataColumns.restrictReviewerColumnsToManagerSelection
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
         configured: state.metadataColumns.configured === true,
@@ -790,7 +820,7 @@ export class ItemExplorerStateService {
       updatedByRole: state.updatedByRole,
       activeState: canEdit ? state.draftState : state.publishedState,
       publishedState: state.publishedState,
-      draftState: state.draftState,
+      draftState: canEdit ? state.draftState : state.publishedState,
     };
   }
 
@@ -824,6 +854,10 @@ export class ItemExplorerStateService {
       ui: this.asRecord(payload.ui),
       tags: this.normalizeTags(payload.tags),
       metadataColumns: {
+        ...(metadataColumnsRaw.restrictReviewerColumnsToManagerSelection ===
+        true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
         configured,
@@ -846,6 +880,10 @@ export class ItemExplorerStateService {
       ui: { ...current.ui },
       tags: this.normalizeTags(current.tags),
       metadataColumns: {
+        ...(current.metadataColumns
+          .restrictReviewerColumnsToManagerSelection === true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: [...current.metadataColumns.visible],
         order: [...current.metadataColumns.order],
         configured: current.metadataColumns.configured,
@@ -878,6 +916,11 @@ export class ItemExplorerStateService {
         visible.length > 0 ||
         order.length > 0;
       merged.metadataColumns = {
+        ...((patch.metadataColumns.restrictReviewerColumnsToManagerSelection ??
+          current.metadataColumns.restrictReviewerColumnsToManagerSelection) ===
+        true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
         configured,

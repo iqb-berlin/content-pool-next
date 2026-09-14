@@ -68,6 +68,7 @@ export interface ExplorerItem {
 export type ReadonlyExplorerItem = DeepReadonly<ExplorerItem>;
 
 export interface MetadataSettings {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
   configured: boolean;

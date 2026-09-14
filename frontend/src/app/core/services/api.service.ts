@@ -11,6 +11,7 @@ import {
   CommentThreadSnapshot,
   ItemCommentCountsSnapshot,
   ReviewCommentTarget,
+  ReviewReadiness,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -227,6 +228,9 @@ export class ApiService {
   }
   configureReview(acpId: string, config: any): Observable<any> {
     return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, config);
+  }
+  checkReviewReadiness(acpId: string): Observable<ReviewReadiness> {
+    return this.http.post<ReviewReadiness>(`${this.API}/view/acp/${acpId}/review/readiness`, {});
   }
   importCredentialFile(
     acpId: string,

@@ -13,6 +13,7 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
     acpId = '';
     targetType = '';
     unitId = '';
+    bookletId = '';
     enabled = false;
     initiallyOpen = false;
     hideToggle = false;
@@ -21,8 +22,16 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
     selector: 'app-item-comment-thread',
     standalone: true,
     template:
-      '<div class="comment-thread-stub" [attr.data-target-type]="targetType" [attr.data-unit-id]="unitId"></div>',
-    inputs: ['acpId', 'targetType', 'unitId', 'enabled', 'initiallyOpen', 'hideToggle'],
+      '<div class="comment-thread-stub" [attr.data-target-type]="targetType" [attr.data-unit-id]="unitId" [attr.data-booklet-id]="bookletId"></div>',
+    inputs: [
+      'acpId',
+      'targetType',
+      'unitId',
+      'bookletId',
+      'enabled',
+      'initiallyOpen',
+      'hideToggle',
+    ],
   })(ItemCommentThreadStub);
   return { ItemCommentThreadComponent: ItemCommentThreadStub };
 });
@@ -46,6 +55,12 @@ describe('UnitViewComponent', () => {
             originalName: 'u1.vocs',
             downloadUrl: '/coding-u1',
           },
+          {
+            type: 'METADATA',
+            fileId: 'metadata-u1',
+            originalName: 'u1.vomd',
+            downloadUrl: '/metadata-u1',
+          },
         ],
       },
       u2: {
@@ -68,6 +83,21 @@ describe('UnitViewComponent', () => {
       appendAuthToken: vi.fn((url: string) => url),
       getAcpStartPage: vi.fn().mockReturnValue(of({ featureConfig: {} })),
       getViewUnit: vi.fn((_acpId: string, unitId: string) => unitResponses[unitId]),
+      getFilePreview: vi.fn().mockReturnValue(
+        of({
+          fileId: 'metadata-u1',
+          fileName: 'u1.vomd',
+          mode: 'structured',
+          structuredData: {
+            type: 'vomd',
+            itemCount: 1,
+            unitProfileCount: 1,
+            metadataColumns: [],
+            unitProfiles: [{ id: 'subject', label: 'Fach', value: 'Deutsch' }],
+            items: [],
+          },
+        }),
+      ),
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -75,6 +105,7 @@ describe('UnitViewComponent', () => {
         JSON.stringify({
           variableCodings: [
             { id: 'VAR_1', label: 'Variable 1', sourceType: 'BASE', deriveSources: [] },
+            { id: '_audio01', label: 'Audio 1', sourceType: 'BASE', deriveSources: [] },
           ],
         }),
     });
@@ -100,18 +131,22 @@ describe('UnitViewComponent', () => {
     const fixture = TestBed.createComponent(UnitViewComponent);
     fixture.componentRef.setInput('acpId', 'acp-1');
     fixture.componentRef.setInput('unitId', 'u1');
+    fixture.componentRef.setInput('bookletId', 'booklet-1');
     fixture.componentRef.setInput('embedded', true);
     fixture.componentRef.setInput('reviewMode', true);
     fixture.componentRef.setInput('featureConfigOverride', {
       enableCommenting: true,
-      commentTargets: ['UNIT'],
+      commentTargets: ['UNIT', 'BOOKLET'],
       showMetadata: false,
       showCodingScheme: false,
+      showAudioVideoCodingVariables: true,
     });
     fixture.detectChanges();
     unitResponses['u1'].next(units['u1']);
     await fixture.whenStable();
-    await vi.waitFor(() => expect(fixture.componentInstance.codingSchemeAsText).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(fixture.componentInstance.visibleCodingSchemeAsText).toHaveLength(1),
+    );
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
 
@@ -123,6 +158,8 @@ describe('UnitViewComponent', () => {
     expect(component.showMetadata).toBe(true);
     expect(component.showCodingScheme).toBe(true);
     expect(component.showCommentBtn).toBe(true);
+    expect(component.showBookletCommentBtn).toBe(true);
+    expect(api.getFilePreview).toHaveBeenCalledWith('acp-1', 'metadata-u1');
     expect(fetchMock).toHaveBeenCalledWith('/coding-u1', {
       signal: expect.any(AbortSignal),
     });
@@ -137,11 +174,72 @@ describe('UnitViewComponent', () => {
     ).map((button) => button.textContent?.trim());
     expect(tabs).toEqual(['Kommentare', 'Metadaten', 'Kodierschema']);
     expect(component.activeTab).toBe('comments');
+    const commentScope = fixture.nativeElement.querySelector(
+      '.comment-scope-select select',
+    ) as HTMLSelectElement;
+    expect(Array.from(commentScope.options).map((option) => option.value)).toEqual([
+      'unit',
+      'booklet',
+    ]);
+    expect(
+      (fixture.nativeElement.querySelector('.comment-thread-stub') as HTMLElement).dataset[
+        'targetType'
+      ],
+    ).toBe('UNIT');
+    commentScope.value = 'booklet';
+    commentScope.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    const bookletCommentThread = fixture.nativeElement.querySelector(
+      '.comment-thread-stub',
+    ) as HTMLElement;
+    expect(bookletCommentThread.dataset['targetType']).toBe('BOOKLET');
+    expect(bookletCommentThread.dataset['bookletId']).toBe('booklet-1');
+    commentScope.value = 'unit';
+    commentScope.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[1] as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.meta-dl').textContent).toContain('Fach');
+    expect(fixture.nativeElement.querySelector('.meta-dl').textContent).toContain('Deutsch');
+    expect(fixture.nativeElement.textContent).not.toContain('Items (');
+    expect(fixture.nativeElement.textContent).not.toContain('Abhängigkeiten');
     (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[2] as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.coding-variable').textContent).toContain(
       'Variable 1',
     );
+    expect(fixture.nativeElement.textContent).not.toContain('Audio 1');
+
+    const pagingModes = Array.from(
+      fixture.nativeElement.querySelectorAll(
+        'select[aria-label="Seitendarstellung der Aufgabe"] option',
+      ) as NodeListOf<HTMLOptionElement>,
+    ).map((option) => option.value);
+    expect(pagingModes).toEqual([
+      'buttons',
+      'separate',
+      'concat-scroll',
+      'concat-scroll-snap',
+      'view-all',
+      'print-ids',
+    ]);
+    component.pagingMode = 'view-all';
+    expect(component.printMode).toBe('on');
+    component.pagingMode = 'print-ids';
+    expect(component.printMode).toBe('on-with-ids');
+
+    const resizeHandle = fixture.nativeElement.querySelector(
+      '.panel-resize-handle',
+    ) as HTMLButtonElement;
+    resizeHandle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
+    expect(component.reviewPanelWidth).toBe(444);
+    component.toggleReviewPanel();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('#unit-additional-data')).toBeNull();
+    component.toggleReviewPanel();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
 
     fixture.componentRef.setInput('unitId', 'u2');
     fixture.detectChanges();

@@ -22,22 +22,24 @@ import { UnitViewComponent } from '../unit-view/unit-view.component';
     @if (sequence) {
       <app-breadcrumb [items]="breadcrumbs" />
 
-      <div class="seq-header">
-        <h1>{{ sequence.name || sequence.id }}</h1>
-        <div class="seq-actions">
-          @if (showDownloadBtn) {
-            <button
-              class="btn btn-outline btn-sm"
-              (click)="downloadSequence()"
-              [disabled]="!hasUnits"
-            >
-              ⬇️ Download
-            </button>
-          }
+      @if (!isBookletReview) {
+        <div class="seq-header">
+          <h1>{{ sequence.name || sequence.id }}</h1>
+          <div class="seq-actions">
+            @if (showDownloadBtn) {
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="downloadSequence()"
+                [disabled]="!hasUnits"
+              >
+                ⬇️ Download
+              </button>
+            }
+          </div>
         </div>
-      </div>
+      }
 
-      @if (showCommentBtn) {
+      @if (showCommentBtn && !isBookletReview) {
         <app-item-comment-thread
           [acpId]="acpId"
           [targetType]="'BOOKLET'"
@@ -73,6 +75,15 @@ import { UnitViewComponent } from '../unit-view/unit-view.component';
             </button>
           </div>
           <div class="workspace-actions">
+            @if (showDownloadBtn && isBookletReview) {
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="downloadSequence()"
+                [disabled]="!hasUnits"
+              >
+                ⬇️ Download
+              </button>
+            }
             @if (showUnitListBtn) {
               <button
                 class="btn btn-outline btn-sm btn-state"
@@ -95,6 +106,7 @@ import { UnitViewComponent } from '../unit-view/unit-view.component';
             <app-unit-view
               [acpId]="acpId"
               [unitId]="currentUnit.id"
+              [bookletId]="sequenceId"
               [embedded]="true"
               [reviewMode]="isBookletReview"
               [featureConfigOverride]="featureConfig"

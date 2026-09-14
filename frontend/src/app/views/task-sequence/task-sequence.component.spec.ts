@@ -24,6 +24,7 @@ vi.mock('../unit-view/unit-view.component', async () => {
   class UnitViewStub {
     acpId = '';
     unitId = '';
+    bookletId = '';
     embedded = false;
     reviewMode = false;
     featureConfigOverride: unknown = null;
@@ -32,8 +33,8 @@ vi.mock('../unit-view/unit-view.component', async () => {
     selector: 'app-unit-view',
     standalone: true,
     template:
-      '<div class="unit-review-stub" [attr.data-unit-id]="unitId" [attr.data-review-mode]="reviewMode">{{ unitId }}</div>',
-    inputs: ['acpId', 'unitId', 'embedded', 'reviewMode', 'featureConfigOverride'],
+      '<div class="unit-review-stub" [attr.data-unit-id]="unitId" [attr.data-booklet-id]="bookletId" [attr.data-review-mode]="reviewMode">{{ unitId }}</div>',
+    inputs: ['acpId', 'unitId', 'bookletId', 'embedded', 'reviewMode', 'featureConfigOverride'],
   })(UnitViewStub);
   return { UnitViewComponent: UnitViewStub };
 });
@@ -145,8 +146,10 @@ describe('Booklet navigation', () => {
     expect(component.canGoNext).toBe(true);
     const embeddedUnit = fixture.nativeElement.querySelector('.unit-review-stub') as HTMLElement;
     expect(embeddedUnit.dataset['unitId']).toBe('u1');
+    expect(embeddedUnit.dataset['bookletId']).toBe('booklet-1');
     expect(embeddedUnit.dataset['reviewMode']).toBe('true');
     expect(component.showUnitListBtn).toBe(true);
+    expect(fixture.nativeElement.querySelector('.seq-header')).toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Vollansicht');
     expect(fixture.nativeElement.textContent).toContain('Vollbild');
 

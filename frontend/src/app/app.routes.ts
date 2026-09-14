@@ -1,4 +1,4 @@
-import { explorerCapabilityGuard } from './core/guards/capability.guard';
+import { explorerCapabilityGuard, reviewManageGuard } from './core/guards/capability.guard';
 import { Routes } from '@angular/router';
 import { authGuard, adminGuard, acpManagerGuard } from './core/guards/auth.guard';
 import { acpViewGuard } from './core/guards/acp-view.guard';
@@ -130,9 +130,15 @@ export const routes: Routes = [
           ),
       },
       {
-        path: 'review',
+        path: 'review/manage',
+        canActivate: [reviewManageGuard],
         loadComponent: () =>
           import('./views/review/review.component').then((m) => m.ReviewComponent),
+      },
+      {
+        path: 'review',
+        loadComponent: () =>
+          import('./views/review/review-redirect.component').then((m) => m.ReviewRedirectComponent),
       },
       {
         path: 'item-explorer',

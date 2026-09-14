@@ -139,6 +139,27 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               <p>Zugang und Funktionen festlegen</p>
             </div>
           </a>
+          @if (contentData?.capabilities?.includes('review:manage')) {
+            <a
+              [routerLink]="['/view', acp.id, 'review', 'manage']"
+              class="card link-card review-card"
+            >
+              <span class="tile-icon" aria-hidden="true">💬</span>
+              <div>
+                <h3>Review</h3>
+                <p>
+                  <span
+                    class="badge"
+                    [class.badge-success]="contentData?.featureConfig?.enableReview"
+                    [class.badge-warning]="!contentData?.featureConfig?.enableReview"
+                  >
+                    {{ contentData?.featureConfig?.enableReview ? 'Aktiv' : 'Nicht aktiviert' }}
+                  </span>
+                  · Bereitschaft, Freigabe und Kommentare verwalten
+                </p>
+              </div>
+            </a>
+          }
           <a [routerLink]="['/manage', acp.id, 'application-tokens']" class="card link-card">
             <span class="tile-icon" aria-hidden="true">🔑</span>
             <div>
@@ -305,13 +326,6 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         </div>
       </section>
 
-      @if (
-        contentData?.capabilities?.includes('review:manage') ||
-        (contentData?.featureConfig?.enableReview &&
-          contentData?.capabilities?.includes('review:participate'))
-      ) {
-        <p><a [routerLink]="['/view', acp.id, 'review']">Review öffnen / konfigurieren</a></p>
-      }
       <app-confirm-dialog
         [open]="showDeleteIndexDialog"
         title="ACP-Index zurücksetzen"

@@ -13,6 +13,7 @@ import {
 } from "../src/database/entities";
 import { buildPatchPersonalItemPreferenceRowQuery } from "../src/views/personal-item-preferences.query";
 import { ItemRowNumberingService } from "../src/files/item-row-numbering.service";
+import { ReviewReadinessService } from "../src/review/review-readiness.service";
 
 if (!process.env.DB_HOST) process.env.DB_HOST = "localhost";
 if (!process.env.DB_PORT) process.env.DB_PORT = "5433";
@@ -114,7 +115,24 @@ describe("ContentPool API (e2e)", () => {
     const { AppModule } = await import("../src/app.module");
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ReviewReadinessService)
+      .useValue({
+        check: async () => ({
+          status: "READY",
+          checkedAt: new Date().toISOString(),
+          blockers: [],
+          warnings: [],
+          summary: {
+            totalFiles: 0,
+            validFiles: 0,
+            invalidFiles: 0,
+            bookletCount: 1,
+            unitCount: 1,
+          },
+        }),
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(

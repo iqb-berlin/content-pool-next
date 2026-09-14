@@ -77,16 +77,16 @@ describe('stateful button audit', () => {
   });
 
   it.each([
-    ['../acp-manager/files/file-preview-panel.component.ts', 'Vorschauformat'],
-    ['../views/unit-view/unit-view.component.ts', 'Zusatzdaten'],
-  ])('keeps %s as a native button group with exclusive pressed state', (file, label) => {
+    ['../acp-manager/files/file-preview-panel.component.ts', 'Vorschauformat', 3],
+    ['../views/unit-view/unit-view.component.ts', 'Zusatzdaten', 4],
+  ])('keeps %s as a native button group with exclusive pressed state', (file, label, count) => {
     const source = productionSources[file];
     expect(source).toContain(`role="group" aria-label="${label}"`);
     expect(source).not.toMatch(/role="tab(list)?"/);
     const selections = buttons.filter(
       (button) => button.file === file && /\[class\.active\]=/.test(button.block),
     );
-    expect(selections).toHaveLength(3);
+    expect(selections).toHaveLength(count);
     for (const { block } of selections) {
       expect(block).toContain('type="button"');
       expect(block).toMatch(/\[attr\.aria-pressed\]="activeTab === '/);

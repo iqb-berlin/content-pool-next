@@ -19,6 +19,26 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
   return { ItemCommentThreadComponent: ItemCommentThreadStub };
 });
 
+vi.mock('../unit-view/unit-view.component', async () => {
+  const { Component } = await import('@angular/core');
+  class UnitViewStub {
+    acpId = '';
+    unitId = '';
+    bookletId = '';
+    embedded = false;
+    reviewMode = false;
+    featureConfigOverride: unknown = null;
+  }
+  Component({
+    selector: 'app-unit-view',
+    standalone: true,
+    template:
+      '<div class="unit-review-stub" [attr.data-unit-id]="unitId" [attr.data-booklet-id]="bookletId" [attr.data-review-mode]="reviewMode">{{ unitId }}</div>',
+    inputs: ['acpId', 'unitId', 'bookletId', 'embedded', 'reviewMode', 'featureConfigOverride'],
+  })(UnitViewStub);
+  return { UnitViewComponent: UnitViewStub };
+});
+
 describe('Booklet navigation', () => {
   afterEach(() => TestBed.resetTestingModule());
 
@@ -51,7 +71,15 @@ describe('Booklet navigation', () => {
           provide: ApiService,
           useValue: {
             appendAuthToken: vi.fn((url: string) => url),
-            getAcpStartPage: vi.fn().mockReturnValue(of({ featureConfig: {} })),
+            getAcpStartPage: vi.fn().mockReturnValue(
+              of({
+                featureConfig: {
+                  enableSequenceNavigation: false,
+                  enableCommenting: true,
+                  commentTargets: ['BOOKLET', 'UNIT'],
+                },
+              }),
+            ),
             getViewSequence: vi.fn().mockReturnValue(
               of({
                 id: 'booklet-1',
@@ -70,6 +98,12 @@ describe('Booklet navigation', () => {
                     occurrenceId: 'second',
                     alias: 'B',
                     blockPath: ['Mathematik', 'Geometrie'],
+                  },
+                  {
+                    id: 'u2',
+                    name: 'Aufgabe 2',
+                    occurrenceId: 'third',
+                    blockPath: ['Mathematik', 'Zahlen'],
                   },
                 ],
               }),
@@ -99,7 +133,7 @@ describe('Booklet navigation', () => {
     const buttons = fixture.nativeElement.querySelectorAll(
       '.unit-list-item',
     ) as NodeListOf<HTMLButtonElement>;
-    expect(buttons.length).toBe(2);
+    expect(buttons.length).toBe(3);
     expect(buttons[1].textContent).toContain('Mathematik / Geometrie');
     expect(buttons[1].textContent).toContain('(B)');
     buttons[1].click();
@@ -109,7 +143,44 @@ describe('Booklet navigation', () => {
     expect(fixture.nativeElement.querySelector('.nav-info').textContent).toContain(
       'Mathematik / Geometrie',
     );
+    expect(component.canGoNext).toBe(true);
+    const embeddedUnit = fixture.nativeElement.querySelector('.unit-review-stub') as HTMLElement;
+    expect(embeddedUnit.dataset['unitId']).toBe('u1');
+    expect(embeddedUnit.dataset['bookletId']).toBe('booklet-1');
+    expect(embeddedUnit.dataset['reviewMode']).toBe('true');
+    expect(component.showUnitListBtn).toBe(true);
+    expect(fixture.nativeElement.querySelector('.seq-header')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Vollansicht');
+    expect(fixture.nativeElement.textContent).toContain('Vollbild');
+
+    const workspace = fixture.nativeElement.querySelector('.review-workspace') as HTMLElement;
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(workspace, 'requestFullscreen', { value: requestFullscreen });
+    await component.toggleFullscreen();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    requestFullscreen.mockRejectedValueOnce(new Error('fullscreen blocked'));
+    await component.toggleFullscreen();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.isFallbackFullscreen).toBe(true);
+    expect(component.isFullscreen).toBe(true);
+    expect(workspace.classList.contains('fullscreen-fallback')).toBe(true);
+    await component.toggleFullscreen();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.isFullscreen).toBe(false);
+
+    component.next();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.currentUnit?.id).toBe('u2');
     expect(component.canGoNext).toBe(false);
+    expect(
+      (fixture.nativeElement.querySelector('.unit-review-stub') as HTMLElement).dataset['unitId'],
+    ).toBe('u2');
+
+    component.prev();
+    expect(component.currentUnit?.occurrenceId).toBe('second');
     component.prev();
     expect(component.currentUnit?.occurrenceId).toBe('first');
   });

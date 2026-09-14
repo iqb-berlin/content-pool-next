@@ -37,7 +37,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       <div class="unit-header">
         <h1>{{ unit.name }}</h1>
         <div class="unit-actions">
-          @if (showMetadataToggle) {
+          @if (showMetadataToggle && !reviewMode) {
             <button
               class="btn btn-outline btn-sm btn-state"
               (click)="togglePanel()"
@@ -47,7 +47,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
               {{ panelVisible ? 'Zusatzdaten ausblenden' : 'Zusatzdaten anzeigen' }}
             </button>
           }
-          @if (showMetadataToggle && panelVisible) {
+          @if (showMetadataToggle && panelVisible && !reviewMode) {
             <select
               class="btn btn-outline btn-sm panel-mode-select"
               [(ngModel)]="panelMode"
@@ -72,7 +72,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         </div>
       </div>
 
-      @if (showCommentBtn) {
+      @if (showCommentBtn && !reviewMode) {
         <app-item-comment-thread
           [acpId]="acpId"
           [targetType]="'UNIT'"
@@ -81,7 +81,11 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         />
       }
 
-      <div class="unit-layout" [class.with-panel]="panelVisible && resolvedPanelMode === 'split'">
+      <div
+        class="unit-layout"
+        [class.with-panel]="reviewMode || (panelVisible && resolvedPanelMode === 'split')"
+        [class.review-mode]="reviewMode"
+      >
         <div class="player-area">
           <div class="player-container card" [class.print-mode]="printMode !== 'off'">
             @if (playerSrcDoc) {
@@ -124,7 +128,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
             </div>
           }
 
-          @if (panelVisible && resolvedPanelMode === 'overlay') {
+          @if (panelVisible && resolvedPanelMode === 'overlay' && !reviewMode) {
             <div class="panel-overlay-backdrop" (click)="closeOverlayPanel()">
               <div
                 id="unit-additional-data"
@@ -141,7 +145,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
           }
         </div>
 
-        @if (panelVisible && resolvedPanelMode === 'split') {
+        @if (reviewMode || (panelVisible && resolvedPanelMode === 'split')) {
           <div id="unit-additional-data" class="meta-panel card split">
             <ng-container [ngTemplateOutlet]="panelContent"></ng-container>
           </div>
@@ -150,6 +154,17 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
 
       <ng-template #panelContent>
         <div class="panel-tabs" role="group" aria-label="Zusatzdaten">
+          @if (reviewMode) {
+            <button
+              class="tab"
+              type="button"
+              [class.active]="activeTab === 'comments'"
+              [attr.aria-pressed]="activeTab === 'comments'"
+              (click)="activeTab = 'comments'"
+            >
+              Kommentare
+            </button>
+          }
           @if (showMetadata) {
             <button
               class="tab"
@@ -186,6 +201,27 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         </div>
 
         <div class="panel-content">
+          @if (activeTab === 'comments') {
+            @if (showCommentBtn) {
+              <app-item-comment-thread
+                [acpId]="acpId"
+                [targetType]="'UNIT'"
+                [unitId]="unitId"
+                [enabled]="showCommentBtn"
+                [initiallyOpen]="true"
+                [hideToggle]="true"
+              />
+            } @else {
+              <div class="comment-unavailable" role="status">
+                <strong>Kommentare sind für dieses Konto nicht verfügbar.</strong>
+                <p>
+                  Die Kommentarfunktion ist deaktiviert oder es fehlt die ACP-Berechtigung „Review
+                  teilnehmen“.
+                </p>
+              </div>
+            }
+          }
+
           @if (activeTab === 'metadata') {
             <dl class="meta-dl">
               <dt>ID</dt>
@@ -263,7 +299,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
           }
         </div>
 
-        @if (unit.dependencies && unit.dependencies.length) {
+        @if (activeTab === 'metadata' && unit.dependencies && unit.dependencies.length) {
           <div class="deps-section">
             <h4>Abhängigkeiten</h4>
             @for (dep of unit.dependencies; track dep.fileId) {
@@ -309,6 +345,10 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       }
       .unit-layout.with-panel {
         grid-template-columns: 1fr 380px;
+      }
+      .unit-layout.review-mode.with-panel {
+        grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+        align-items: start;
       }
 
       .player-area {
@@ -357,6 +397,11 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       }
       .meta-panel.split {
         max-height: calc(100vh - 180px);
+      }
+      .review-mode .meta-panel.split {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
       }
 
       .panel-overlay-backdrop {
@@ -517,10 +562,24 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         color: var(--color-text-secondary);
         font-size: 0.85rem;
       }
+      .comment-unavailable {
+        padding: 12px;
+        border-left: 3px solid var(--color-warning, #f39c12);
+        background: rgba(243, 156, 18, 0.06);
+      }
+      .comment-unavailable p {
+        margin: 6px 0 0;
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+      }
 
       @media (max-width: 1100px) {
         .unit-layout.with-panel {
           grid-template-columns: 1fr;
+        }
+        .review-mode .meta-panel.split {
+          position: static;
+          max-height: none;
         }
         .panel-mode-select {
           opacity: 0.7;
@@ -568,7 +627,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   // Panel state
   panelVisible = false;
   panelMode: 'split' | 'overlay' = 'split';
-  activeTab: 'metadata' | 'coding' | 'richtext' = 'metadata';
+  activeTab: 'comments' | 'metadata' | 'coding' | 'richtext' = 'metadata';
   isNarrowLayout = false;
 
   // Feature config
@@ -655,7 +714,8 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
     this.showCommentBtn = !!(featureConfig.enableCommenting && commentTargets.includes('UNIT'));
     this.showDownloadBtn = !!featureConfig.allowUnitDownload;
 
-    if (this.showMetadata) this.activeTab = 'metadata';
+    if (this.reviewMode) this.activeTab = 'comments';
+    else if (this.showMetadata) this.activeTab = 'metadata';
     else if (this.showCodingScheme) this.activeTab = 'coding';
     else if (this.showRichText) this.activeTab = 'richtext';
     if (!this.showMetadataToggle) this.panelVisible = false;

@@ -14,13 +14,15 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
     targetType = '';
     unitId = '';
     enabled = false;
+    initiallyOpen = false;
+    hideToggle = false;
   }
   Component({
     selector: 'app-item-comment-thread',
     standalone: true,
     template:
       '<div class="comment-thread-stub" [attr.data-target-type]="targetType" [attr.data-unit-id]="unitId"></div>',
-    inputs: ['acpId', 'targetType', 'unitId', 'enabled'],
+    inputs: ['acpId', 'targetType', 'unitId', 'enabled', 'initiallyOpen', 'hideToggle'],
   })(ItemCommentThreadStub);
   return { ItemCommentThreadComponent: ItemCommentThreadStub };
 });
@@ -130,14 +132,12 @@ describe('UnitViewComponent', () => {
       ],
     ).toBe('u1');
 
-    component.togglePanel();
-    fixture.changeDetectorRef.markForCheck();
-    fixture.detectChanges();
     const tabs = Array.from(
       fixture.nativeElement.querySelectorAll('.panel-tabs .tab') as NodeListOf<HTMLButtonElement>,
     ).map((button) => button.textContent?.trim());
-    expect(tabs).toEqual(['Metadaten', 'Kodierschema']);
-    (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[1] as HTMLButtonElement).click();
+    expect(tabs).toEqual(['Kommentare', 'Metadaten', 'Kodierschema']);
+    expect(component.activeTab).toBe('comments');
+    (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[2] as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.coding-variable').textContent).toContain(
       'Variable 1',
@@ -154,6 +154,8 @@ describe('UnitViewComponent', () => {
     fixture.detectChanges();
     expect(api.getViewUnit).toHaveBeenLastCalledWith('acp-1', 'u2');
     expect(fixture.nativeElement.querySelector('h1').textContent).toContain('Aufgabe 2');
+    (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[0] as HTMLButtonElement).click();
+    fixture.detectChanges();
     expect(
       (fixture.nativeElement.querySelector('.comment-thread-stub') as HTMLElement).dataset[
         'unitId'

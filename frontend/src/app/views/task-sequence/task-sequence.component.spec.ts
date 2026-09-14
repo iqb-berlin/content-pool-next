@@ -147,6 +147,25 @@ describe('Booklet navigation', () => {
     expect(embeddedUnit.dataset['unitId']).toBe('u1');
     expect(embeddedUnit.dataset['reviewMode']).toBe('true');
     expect(component.showUnitListBtn).toBe(true);
+    expect(fixture.nativeElement.textContent).not.toContain('Vollansicht');
+    expect(fixture.nativeElement.textContent).toContain('Vollbild');
+
+    const workspace = fixture.nativeElement.querySelector('.review-workspace') as HTMLElement;
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(workspace, 'requestFullscreen', { value: requestFullscreen });
+    await component.toggleFullscreen();
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+    requestFullscreen.mockRejectedValueOnce(new Error('fullscreen blocked'));
+    await component.toggleFullscreen();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.isFallbackFullscreen).toBe(true);
+    expect(component.isFullscreen).toBe(true);
+    expect(workspace.classList.contains('fullscreen-fallback')).toBe(true);
+    await component.toggleFullscreen();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.isFullscreen).toBe(false);
 
     component.next();
     fixture.changeDetectorRef.markForCheck();

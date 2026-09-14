@@ -169,6 +169,12 @@ describe('UnitViewComponent', () => {
         'unitId'
       ],
     ).toBe('u1');
+    expect(fixture.nativeElement.querySelector('app-item-comment-thread').classList).toContain(
+      'review-comment-thread',
+    );
+    expect(fixture.nativeElement.querySelector('.panel-content').classList).toContain(
+      'comments-active',
+    );
 
     const tabs = Array.from(
       fixture.nativeElement.querySelectorAll('.panel-tabs .tab') as NodeListOf<HTMLButtonElement>,

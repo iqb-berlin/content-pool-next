@@ -239,7 +239,7 @@ type UnitPagingMode =
           }
         </div>
 
-        <div class="panel-content">
+        <div class="panel-content" [class.comments-active]="activeTab === 'comments'">
           @if (activeTab === 'comments') {
             @if (showCommentBtn || showBookletCommentBtn) {
               @if (showCommentBtn && showBookletCommentBtn) {
@@ -253,6 +253,7 @@ type UnitPagingMode =
               }
               @if (commentScope === 'booklet' && showBookletCommentBtn) {
                 <app-item-comment-thread
+                  class="review-comment-thread"
                   [acpId]="acpId"
                   [targetType]="'BOOKLET'"
                   [bookletId]="bookletId"
@@ -262,6 +263,7 @@ type UnitPagingMode =
                 />
               } @else {
                 <app-item-comment-thread
+                  class="review-comment-thread"
                   [acpId]="acpId"
                   [targetType]="'UNIT'"
                   [unitId]="unitId"
@@ -475,6 +477,19 @@ type UnitPagingMode =
         flex: 1;
         min-height: 0;
         overflow-y: auto;
+      }
+      .review-mode .meta-panel.split .panel-content.comments-active {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .review-mode .panel-content.comments-active app-item-comment-thread {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .review-mode .comment-scope-select {
+        flex: none;
       }
       .review-mode .player-container.print-mode {
         height: var(--review-content-height);

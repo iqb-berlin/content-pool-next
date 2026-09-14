@@ -242,6 +242,12 @@ describe('ItemCommentThreadComponent', () => {
     expect(component.newCommentPlaceholder).toBe('Kommentar zu diesem Item …');
     expect(component.emptyStateText).toBe('Noch keine Kommentare zu diesem Item.');
 
+    component.targetType = 'BOOKLET';
+    component.bookletId = 'testheft-1';
+    expect(component.contextLabel).toBe('Testheft testheft-1');
+    expect(component.panelAriaLabel).toBe('Kommentare zum Testheft testheft-1');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zum Testheft testheft-1 …');
+
     component.targetType = 'CODING';
     expect(component.panelAriaLabel).toBe('Kommentare zur Kodierung unit-1 · item-1');
     expect(component.newCommentPlaceholder).toBe('Kommentar zur Kodierung unit-1 · item-1 …');

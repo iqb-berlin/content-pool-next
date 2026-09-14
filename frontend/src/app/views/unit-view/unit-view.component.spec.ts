@@ -104,6 +104,7 @@ describe('UnitViewComponent', () => {
       text: async () =>
         JSON.stringify({
           variableCodings: [
+            { id: 'VAR_2', label: 'Variable 2', sourceType: 'BASE', deriveSources: [] },
             { id: 'VAR_1', label: 'Variable 1', sourceType: 'BASE', deriveSources: [] },
             { id: '_audio01', label: 'Audio 1', sourceType: 'BASE', deriveSources: [] },
           ],
@@ -145,7 +146,7 @@ describe('UnitViewComponent', () => {
     unitResponses['u1'].next(units['u1']);
     await fixture.whenStable();
     await vi.waitFor(() =>
-      expect(fixture.componentInstance.visibleCodingSchemeAsText).toHaveLength(1),
+      expect(fixture.componentInstance.visibleCodingSchemeAsText).toHaveLength(2),
     );
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
@@ -172,7 +173,7 @@ describe('UnitViewComponent', () => {
     const tabs = Array.from(
       fixture.nativeElement.querySelectorAll('.panel-tabs .tab') as NodeListOf<HTMLButtonElement>,
     ).map((button) => button.textContent?.trim());
-    expect(tabs).toEqual(['Kommentare', 'Metadaten', 'Kodierschema']);
+    expect(tabs).toEqual(['Kommentare', 'Metadaten', 'Kodierung']);
     expect(component.activeTab).toBe('comments');
     const commentScope = fixture.nativeElement.querySelector(
       '.comment-scope-select select',
@@ -180,6 +181,10 @@ describe('UnitViewComponent', () => {
     expect(Array.from(commentScope.options).map((option) => option.value)).toEqual([
       'unit',
       'booklet',
+    ]);
+    expect(Array.from(commentScope.options).map((option) => option.textContent)).toEqual([
+      'Aufgabe',
+      'Testheft',
     ]);
     expect(
       (fixture.nativeElement.querySelector('.comment-thread-stub') as HTMLElement).dataset[
@@ -205,10 +210,26 @@ describe('UnitViewComponent', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Abhängigkeiten');
     (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[2] as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.coding-variable').textContent).toContain(
-      'Variable 1',
-    );
+    expect(
+      Array.from(
+        fixture.nativeElement.querySelectorAll('.coding-variable h4') as NodeListOf<HTMLElement>,
+      ).map((heading) => heading.textContent?.trim()),
+    ).toEqual(['Variable 2', 'Variable 1']);
     expect(fixture.nativeElement.textContent).not.toContain('Audio 1');
+    const codingFilter = fixture.nativeElement.querySelector(
+      'input[aria-label="Kodiervariablen filtern"]',
+    ) as HTMLInputElement;
+    codingFilter.value = 'VAR_1';
+    codingFilter.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    expect(
+      Array.from(
+        fixture.nativeElement.querySelectorAll('.coding-variable h4') as NodeListOf<HTMLElement>,
+      ).map((heading) => heading.textContent?.trim()),
+    ).toEqual(['Variable 1']);
+    codingFilter.value = '';
+    codingFilter.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
 
     const pagingModes = Array.from(
       fixture.nativeElement.querySelectorAll(
@@ -225,6 +246,11 @@ describe('UnitViewComponent', () => {
     ]);
     component.pagingMode = 'view-all';
     expect(component.printMode).toBe('on');
+    (component as any).applyPrintModeLayout();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.playerHeight).toBe('100%');
+    expect(fixture.nativeElement.querySelector('.player-area.print-mode')).not.toBeNull();
     component.pagingMode = 'print-ids';
     expect(component.printMode).toBe('on-with-ids');
 
@@ -241,6 +267,7 @@ describe('UnitViewComponent', () => {
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
 
+    component.codingFilterText = 'VAR_1';
     fixture.componentRef.setInput('unitId', 'u2');
     fixture.detectChanges();
     unitResponses['u2'].next(units['u2']);
@@ -250,6 +277,7 @@ describe('UnitViewComponent', () => {
     );
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
+    expect(component.codingFilterText).toBe('');
     expect(api.getViewUnit).toHaveBeenLastCalledWith('acp-1', 'u2');
     expect(fixture.nativeElement.querySelector('h1').textContent).toContain('Aufgabe 2');
     (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[0] as HTMLButtonElement).click();

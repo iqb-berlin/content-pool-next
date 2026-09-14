@@ -113,7 +113,7 @@ type UnitPagingMode =
         [class.review-mode]="reviewMode"
         [style.--review-panel-width.px]="reviewPanelWidth"
       >
-        <div class="player-area">
+        <div class="player-area" [class.print-mode]="printMode !== 'off'">
           <div class="player-container card" [class.print-mode]="printMode !== 'off'">
             @if (playerSrcDoc) {
               <iframe
@@ -223,7 +223,7 @@ type UnitPagingMode =
               [attr.aria-pressed]="activeTab === 'coding'"
               (click)="activeTab = 'coding'"
             >
-              Kodierschema
+              Kodierung
             </button>
           }
           @if (showRichText) {
@@ -247,7 +247,7 @@ type UnitPagingMode =
                   Kommentarziel
                   <select [(ngModel)]="commentScope">
                     <option value="unit">Aufgabe</option>
-                    <option value="booklet">Booklet</option>
+                    <option value="booklet">Testheft</option>
                   </select>
                 </label>
               }
@@ -301,38 +301,51 @@ type UnitPagingMode =
           @if (activeTab === 'coding') {
             <div class="coding-content">
               @if (codingSchemeLoading) {
-                <p class="help-text">Kodierschema wird geladen...</p>
-              } @else if (visibleCodingSchemeAsText.length) {
-                @for (coding of visibleCodingSchemeAsText; track coding.id) {
-                  <section class="coding-variable">
-                    <h4>{{ coding.label || coding.id }}</h4>
-                    @if ($any(coding).manualInstructionText) {
-                      <div class="coding-instruction">
-                        <strong>Variablenanweisung</strong>
-                        <div [innerHTML]="$any(coding).manualInstructionText"></div>
-                      </div>
-                    }
-                    <div class="coding-codes">
-                      @for (code of coding.codes; track code.id) {
-                        <div class="coding-code">
-                          <strong>{{ code.id }}</strong>
-                          <span class="coding-score">({{ code.score }})</span>
-                          <span>{{ code.label }}</span>
+                <p class="help-text">Kodierung wird geladen...</p>
+              } @else if (codingSchemeAsText?.length) {
+                <label class="coding-filter">
+                  <span>Kodiervariablen filtern</span>
+                  <input
+                    type="search"
+                    aria-label="Kodiervariablen filtern"
+                    placeholder="ID, Name oder Code"
+                    [(ngModel)]="codingFilterText"
+                  />
+                </label>
+                @if (visibleCodingSchemeAsText.length) {
+                  @for (coding of visibleCodingSchemeAsText; track coding.id) {
+                    <section class="coding-variable">
+                      <h4>{{ coding.label || coding.id }}</h4>
+                      @if ($any(coding).manualInstructionText) {
+                        <div class="coding-instruction">
+                          <strong>Variablenanweisung</strong>
+                          <div [innerHTML]="$any(coding).manualInstructionText"></div>
                         </div>
-                        @if ($any(code).manualInstructionText) {
-                          <div class="coding-instruction code-instruction">
-                            <strong>Kodieranweisung</strong>
-                            <div [innerHTML]="$any(code).manualInstructionText"></div>
-                          </div>
-                        }
                       }
-                    </div>
-                  </section>
+                      <div class="coding-codes">
+                        @for (code of coding.codes; track code.id) {
+                          <div class="coding-code">
+                            <strong>{{ code.id }}</strong>
+                            <span class="coding-score">({{ code.score }})</span>
+                            <span>{{ code.label }}</span>
+                          </div>
+                          @if ($any(code).manualInstructionText) {
+                            <div class="coding-instruction code-instruction">
+                              <strong>Kodieranweisung</strong>
+                              <div [innerHTML]="$any(code).manualInstructionText"></div>
+                            </div>
+                          }
+                        }
+                      </div>
+                    </section>
+                  }
+                } @else {
+                  <p class="help-text">Keine passende Kodiervariable gefunden.</p>
                 }
               } @else if (codingSchemeError) {
                 <p class="help-text" role="alert">{{ codingSchemeError }}</p>
               } @else {
-                <p class="help-text">Kein Kodierschema verfügbar.</p>
+                <p class="help-text">Keine Kodierung verfügbar.</p>
               }
             </div>
           }
@@ -385,6 +398,9 @@ type UnitPagingMode =
         grid-template-columns: minmax(0, 1fr) var(--review-panel-width, 420px);
         align-items: start;
       }
+      .unit-layout.review-mode {
+        --review-content-height: max(360px, calc(100dvh - 360px));
+      }
 
       .player-area {
         position: relative;
@@ -413,10 +429,16 @@ type UnitPagingMode =
         height: auto;
       }
       .review-mode .player-container {
-        min-height: 0;
+        height: var(--review-content-height);
+        min-height: var(--review-content-height);
+        overflow: auto;
       }
       .review-mode .player-iframe:not(.print-mode) {
-        min-height: max(360px, calc(100dvh - 330px));
+        min-height: 100%;
+      }
+      .review-mode .player-iframe.print-mode {
+        height: 100% !important;
+        min-height: 100%;
       }
 
       .page-nav {
@@ -442,29 +464,32 @@ type UnitPagingMode =
       .review-mode .meta-panel.split {
         position: sticky;
         top: 16px;
-        max-height: max(360px, calc(100dvh - 330px));
-        overflow: visible;
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+        height: var(--review-content-height);
+        max-height: var(--review-content-height);
+        overflow: hidden;
       }
       .review-mode .meta-panel.split .panel-content {
-        max-height: max(290px, calc(100dvh - 408px));
+        flex: 1;
+        min-height: 0;
         overflow-y: auto;
       }
-      :host-context(.review-workspace:fullscreen) .review-mode .player-iframe:not(.print-mode),
-      :host-context(.review-workspace.fullscreen-fallback)
-        .review-mode
-        .player-iframe:not(.print-mode) {
-        min-height: max(360px, calc(100dvh - 190px));
+      .review-mode .player-container.print-mode {
+        height: var(--review-content-height);
+        min-height: var(--review-content-height);
+        max-height: var(--review-content-height);
+        overflow: auto;
       }
-      :host-context(.review-workspace:fullscreen) .review-mode .meta-panel.split,
-      :host-context(.review-workspace.fullscreen-fallback) .review-mode .meta-panel.split {
-        max-height: max(360px, calc(100dvh - 190px));
+      .review-mode .player-area.print-mode {
+        height: var(--review-content-height);
+        min-height: 0;
+        overflow: hidden;
       }
-      :host-context(.review-workspace:fullscreen) .review-mode .meta-panel.split .panel-content,
-      :host-context(.review-workspace.fullscreen-fallback)
-        .review-mode
-        .meta-panel.split
-        .panel-content {
-        max-height: max(290px, calc(100dvh - 268px));
+      :host-context(.review-workspace:fullscreen) .unit-layout.review-mode,
+      :host-context(.review-workspace.fullscreen-fallback) .unit-layout.review-mode {
+        --review-content-height: max(360px, calc(100dvh - 220px));
       }
       .panel-resize-handle {
         position: absolute;
@@ -530,6 +555,7 @@ type UnitPagingMode =
 
       .panel-tabs {
         display: flex;
+        flex: none;
         gap: 0;
         border-bottom: 1px solid var(--color-border);
         margin: -24px -24px 16px;
@@ -578,6 +604,21 @@ type UnitPagingMode =
       .coding-content,
       .richtext-content {
         font-size: 0.9rem;
+      }
+      .coding-filter {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+      .coding-filter input {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        font: inherit;
       }
       .coding-variable {
         padding: 12px;
@@ -653,6 +694,8 @@ type UnitPagingMode =
         }
         .review-mode .meta-panel.split {
           position: static;
+          display: block;
+          height: auto;
           max-height: none;
           overflow: visible;
         }
@@ -724,6 +767,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   showDownloadBtn = false;
   showAudioVideoCodingVariables = true;
   commentScope: 'unit' | 'booklet' = 'unit';
+  codingFilterText = '';
   unitMetadata: FilePreviewVomdData['unitProfiles'] = [];
   metadataLoading = false;
   metadataError = '';
@@ -770,9 +814,27 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   get visibleCodingSchemeAsText(): CodingAsText[] {
     const codings = this.codingSchemeAsText || [];
     const hideAudioVideoVariables = this.reviewMode || !this.showAudioVideoCodingVariables;
-    return hideAudioVideoVariables
+    const visibleCodings = hideAudioVideoVariables
       ? codings.filter((coding) => !this.isAudioVideoCodingVariable(coding))
       : codings;
+    const term = this.codingFilterText.trim().toLowerCase();
+    if (!term) return visibleCodings;
+    return visibleCodings.filter((coding) => {
+      const searchableText = [
+        coding.id,
+        coding.label,
+        (coding as any).manualInstructionText,
+        ...coding.codes.flatMap((code) => [
+          code.id,
+          code.label,
+          (code as any).manualInstructionText,
+        ]),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return searchableText.includes(term);
+    });
   }
 
   get resolvedPanelMode(): 'split' | 'overlay' {
@@ -863,6 +925,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
     this.codingSchemeAsText = null;
     this.codingSchemeLoading = false;
     this.codingSchemeError = '';
+    this.codingFilterText = '';
     this.unitRequest = this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
       if (requestToken !== this.unitLoadToken) return;
       this.unit = u;
@@ -1109,7 +1172,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
       .catch(() => {
         if (token !== this.unitLoadToken) return;
         this.codingSchemeLoading = false;
-        this.codingSchemeError = 'Kodierschema konnte nicht geladen werden.';
+        this.codingSchemeError = 'Kodierung konnte nicht geladen werden.';
       });
   }
 
@@ -1140,7 +1203,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
       this.codingSchemeError = '';
     } catch {
       this.codingSchemeAsText = null;
-      this.codingSchemeError = 'Kodierschema konnte nicht gelesen werden.';
+      this.codingSchemeError = 'Kodierung konnte nicht gelesen werden.';
     } finally {
       this.codingSchemeLoading = false;
     }
@@ -1174,7 +1237,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   private applyPrintModeLayout() {
-    if (this.printMode === 'off') {
+    if (this.printMode === 'off' || this.reviewMode) {
       this.playerHeight = '100%';
       this.stopAutoResize();
       return;

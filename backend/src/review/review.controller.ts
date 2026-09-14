@@ -5,6 +5,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Post,
   Put,
   Request,
   UseGuards,
@@ -36,6 +37,7 @@ import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.se
 import { hasCapability } from "../auth/capabilities/acp-capabilities";
 import { UuidParam } from "../common/uuid-param";
 import { ReviewManifestService } from "./review-manifest.service";
+import { ReviewReadinessService } from "./review-readiness.service";
 
 class ReviewMemberDto {
   @IsIn(["user", "credential"]) kind!: "user" | "credential";
@@ -59,6 +61,7 @@ class ReviewConfigDto {
     | "SHARED"
     | "GROUP";
   @IsOptional() @IsBoolean() confirmExistingComments?: boolean;
+  @IsOptional() @IsBoolean() confirmReadinessWarnings?: boolean;
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(100)
@@ -74,6 +77,7 @@ export class ReviewController {
     private readonly manifest: ReviewManifestService,
     @InjectRepository(AcpAccessConfig)
     private readonly configs: Repository<AcpAccessConfig>,
+    private readonly readiness: ReviewReadinessService,
   ) {}
 
   @Get("capabilities")
@@ -106,6 +110,30 @@ export class ReviewController {
     @Request() req: any,
   ) {
     await this.capabilities.assert(req, "review:manage");
+    const current = await this.configs.findOne({ where: { acpId } });
+    if (!current) throw new ForbiddenException("ACP-Konfiguration fehlt");
+    if (dto.enableReview && current.featureConfig.enableReview !== true) {
+      const readiness = await this.readiness.check(acpId);
+      if (readiness.status === "BLOCKED") {
+        throw new BadRequestException({
+          code: "REVIEW_NOT_READY",
+          message:
+            "Der Review kann wegen technischer Blocker nicht aktiviert werden.",
+          readiness,
+        });
+      }
+      if (
+        readiness.status === "WARNING" &&
+        dto.confirmReadinessWarnings !== true
+      ) {
+        throw new BadRequestException({
+          code: "REVIEW_WARNINGS_REQUIRE_CONFIRMATION",
+          message:
+            "Die Review-Bereitschaft enthält Warnungen, die bestätigt werden müssen.",
+          readiness,
+        });
+      }
+    }
     return this.configs.manager.transaction(async (manager) => {
       const config = await manager.findOne(AcpAccessConfig, {
         where: { acpId },
@@ -189,6 +217,12 @@ export class ReviewController {
       await manager.save(config);
       return this.configView(config);
     });
+  }
+
+  @Post("review/readiness")
+  async checkReadiness(@UuidParam("acpId") acpId: string, @Request() req: any) {
+    await this.capabilities.assert(req, "review:manage");
+    return this.readiness.check(acpId);
   }
 
   @Get("review/config")

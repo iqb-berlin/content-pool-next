@@ -1,3 +1,8 @@
+import {
+  readPreviewDefinition,
+  resolvePreviewVisibility,
+  PreviewStart,
+} from '../../core/services/preview-visibility';
 import { Injectable, OnDestroy, Optional } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
@@ -214,6 +219,65 @@ export class ItemExplorerFacade implements OnDestroy {
   showGeneralCodingInstructions = false;
   preferManualCodingInstructions = true;
   itemExplorerConditionalVisibilityEnabled = false;
+  syntheticPreviewState = false;
+
+  private previewDefinitionSource: string | null | undefined;
+  private previewDefinitionCache: ReturnType<typeof readPreviewDefinition> = null;
+
+  private get previewDefinition() {
+    if (this.previewDefinitionSource !== this.definitionContent) {
+      this.previewDefinitionSource = this.definitionContent;
+      this.previewDefinitionCache = readPreviewDefinition(this.definitionContent || '');
+    }
+    return this.previewDefinitionCache;
+  }
+
+  get previewStateVariables() {
+    return (this.previewDefinition?.stateVariables || []).map((v) => ({
+      id: v.id!,
+      label: v.alias || v.id!,
+      value: this.selectedItem?.previewStart?.values?.[v.id!] ?? '',
+    }));
+  }
+
+  get previewStartPage() {
+    return this.selectedItem?.previewStart?.page ?? '';
+  }
+
+  get previewStartPages() {
+    return (this.previewDefinition?.pages || [])
+      .filter(
+        (p) => p.alwaysVisible !== true && p.alwaysVisible !== 'true' && p.alwaysVisible !== 1,
+      )
+      .map((_, i) => i);
+  }
+
+  setPreviewStartPage(value: string) {
+    this.persistPreviewStart({
+      values: this.selectedItem?.previewStart?.values || {},
+      ...(value === '' ? {} : { page: Number(value) }),
+    });
+  }
+
+  setPreviewStateValue(id: string, value: string) {
+    const values = { ...this.selectedItem?.previewStart?.values };
+    if (value === '') delete values[id];
+    else values[id] = value;
+    this.persistPreviewStart({ ...this.selectedItem?.previewStart, values });
+  }
+
+  private persistPreviewStart(start: PreviewStart) {
+    if (!this.canEditExplorer || !this.selectedItem) return;
+    this.selectedItem.previewStart = start;
+    this.queueItemPropertyPatch(
+      this.selectedItem,
+      'PREVIEW_START_CHANGED',
+      { previewStart: start },
+      true,
+    );
+    this.updatePreviewTargetSelection(this.getStoredPreviewTargetId(this.selectedItem));
+  }
+
   playerFocusHighlightEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = false;
   itemCommentsEnabled = false;
@@ -423,6 +487,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
   // Response State
   currentResponseData: Record<string, any> | null = null;
+  private savedResponseData: Record<string, any> | null = null;
   hasResponseState = false;
   isFallbackState = false;
   showRawDataOverlay = false;
@@ -3038,6 +3103,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
     // Reset response state data
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
     this.currentResponseData = null;
     this.activePlayerSessionId = null;
@@ -3135,7 +3201,8 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private applyResponseStateResult(result: any): void {
     if (result?.state?.responseData && Object.keys(result.state.responseData).length > 0) {
-      this.currentResponseData = result.state.responseData;
+      this.savedResponseData = result.state.responseData;
+      this.currentResponseData = null;
       this.hasResponseState = true;
       this.isFallbackState = !!result.isFallback;
       return;
@@ -3143,6 +3210,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
     this.currentResponseData = null;
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
   }
 
@@ -3170,6 +3238,11 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   confirmSaveResponseState() {
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      return;
+    }
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
@@ -3181,18 +3254,22 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     this.confirmDialogState = 'saving';
+    const responseData = this.currentResponseData;
+    const responseItem = this.selectedItem;
 
     this.api
       .saveResponseState(
         this.acpId,
         this.selectedItem.itemId,
         this.selectedItem.unitId,
-        this.currentResponseData,
+        responseData,
         this.selectedItem.rowKey,
       )
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          if (this.selectedItem !== responseItem) return;
+          this.savedResponseData = responseData;
           this.hasResponseState = true;
           this.isFallbackState = false;
           this.confirmDialogState = 'idle';
@@ -3229,6 +3306,7 @@ export class ItemExplorerFacade implements OnDestroy {
       .subscribe({
         next: () => {
           this.hasResponseState = false;
+          this.savedResponseData = null;
           this.isFallbackState = false;
           this.currentResponseData = null;
           this.confirmDialogState = 'idle';
@@ -3328,6 +3406,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.resetPlayer();
     }
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
     this.currentResponseData = null;
     this.activePlayerSessionId = null;
@@ -3462,20 +3541,43 @@ export class ItemExplorerFacade implements OnDestroy {
       this.playerReadyTiming = null;
       return;
     }
-    const startPage = targetLocation.scrollPageIndex;
+    let startPage = targetLocation.scrollPageIndex;
+    this.syntheticPreviewState = false;
+    let dataParts = this.hasResponseState
+      ? this.currentResponseData || this.savedResponseData || {}
+      : {};
+    if (this.itemExplorerConditionalVisibilityEnabled && !this.hasResponseState) {
+      const resolved = resolvePreviewVisibility(
+        this.definitionContent,
+        previewTarget,
+        selectedItem.previewStart,
+      );
+      if (resolved.kind === 'unavailable') {
+        this.previewCoordinator.markUnavailable(resolved.reason);
+        this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-visibility' });
+        this.playerReadyTiming = null;
+        return;
+      }
+      startPage = resolved.page;
+      this.syntheticPreviewState = resolved.codes.length > 0;
+      dataParts = resolved.codes.length
+        ? { stateVariableCodes: JSON.stringify(resolved.codes) }
+        : {};
+    }
     const sessionId = `explorer-${this.getStableRowKey(selectedItem) || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
     this.activePlayerSessionId = sessionId;
+    // Only notifications carrying this session ID may populate saveable response data.
+    this.currentResponseData = null;
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
       unitDefinition: playerDefinition,
       unitState: {
-        dataParts:
-          this.hasResponseState && this.currentResponseData ? this.currentResponseData : {},
+        dataParts,
       },
       playerConfig: {
         stateReportPolicy: 'none',
@@ -6024,6 +6126,13 @@ export class ItemExplorerFacade implements OnDestroy {
     return Number.isInteger(responseVersion) && responseVersion === expectedVersion;
   }
 
+  private getPreviewStartFingerprint(item: ReadonlyExplorerItem | null): string {
+    return JSON.stringify([
+      item?.previewStart?.page ?? null,
+      Object.entries(item?.previewStart?.values || {}).sort(([a], [b]) => a.localeCompare(b)),
+    ]);
+  }
+
   private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {
     this.lastDraftOperationError = '';
     this.latestExplorerState = envelope;
@@ -6061,6 +6170,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.suppressDraftPatch = false;
     }
 
+    const previousPreviewStart = this.getPreviewStartFingerprint(this.selectedItem);
     const previousPreviewTarget = this.selectedItem
       ? this.getEffectivePlayerTarget(this.selectedItem)
       : '';
@@ -6069,14 +6179,14 @@ export class ItemExplorerFacade implements OnDestroy {
       this.syncPreviewTargetResolution(this.selectedItem);
       const nextPreviewTarget = this.getEffectivePlayerTarget(this.selectedItem);
       if (
-        previousPreviewTarget !== nextPreviewTarget &&
-        this.playerFrameReady &&
+        (previousPreviewTarget !== nextPreviewTarget ||
+          previousPreviewStart !== this.getPreviewStartFingerprint(this.selectedItem)) &&
         this.definitionContent &&
         this.unit
       ) {
         const previewStatus = this.previewCoordinator.status.kind;
         if (previewStatus === 'ready') {
-          this.startPlayerIfReady();
+          if (this.playerFrameReady) this.startPlayerIfReady();
         } else if (previewStatus !== 'loading-unit' && previewStatus !== 'loading-response') {
           this.reloadPreviewAfterTargetChange(this.selectedItem);
         }
@@ -6129,6 +6239,8 @@ export class ItemExplorerFacade implements OnDestroy {
           delete item.empiricalDifficulty;
         }
       }
+
+      item.previewStart = itemProps?.['previewStart'] as PreviewStart | undefined;
 
       const previewTargetId = String(itemProps?.[this.previewTargetItemPropertyKey] || '').trim();
       if (previewTargetId) {
@@ -6693,6 +6805,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.currentCodingSchemeAsText = null;
     this.currentResponseData = null;
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
     this.selectedPreviewTargetId = '';
     this.customPreviewTargetDraft = '';

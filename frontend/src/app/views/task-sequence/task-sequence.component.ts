@@ -1,14 +1,15 @@
 import { Component, Inject, OnInit } from '@angular/core';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
-import { TaskSequence } from '../../core/models/api.models';
+import { FeatureConfig, TaskSequence } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
+import { UnitViewComponent } from '../unit-view/unit-view.component';
 
 @Component({
   selector: 'app-task-sequence',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, ItemCommentThreadComponent],
+  imports: [RouterLink, BreadcrumbComponent, ItemCommentThreadComponent, UnitViewComponent],
   template: `
     @if (sequence) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -64,11 +65,11 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         <button class="btn btn-primary" [disabled]="!canGoNext" (click)="next()">Weiter →</button>
       </div>
 
-      <!-- Current unit → navigate to unit view -->
+      <!-- Current unit review -->
       @if (hasUnits && currentUnit) {
         <div class="unit-embed card">
           <div class="embed-header">
-            <h3>{{ currentUnit.name || currentUnit.id }}</h3>
+            <strong>Aufgabe im Review</strong>
             <a
               [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
               class="btn btn-sm btn-outline"
@@ -76,19 +77,13 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
               Vollansicht ↗
             </a>
           </div>
-          <div class="embed-body">
-            <p class="help-text">
-              Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen
-              Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
-            </p>
-            <a
-              [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
-              class="btn btn-primary"
-              style="margin-top: 12px"
-            >
-              📝 Aufgabe {{ currentUnit.name || currentUnit.id }} öffnen
-            </a>
-          </div>
+          <app-unit-view
+            [acpId]="acpId"
+            [unitId]="currentUnit.id"
+            [embedded]="true"
+            [reviewMode]="isBookletReview"
+            [featureConfigOverride]="featureConfig"
+          />
         </div>
       } @else {
         <div class="unit-embed card">
@@ -166,6 +161,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       }
 
       .unit-embed {
+        padding: 16px;
       }
       .embed-header {
         display: flex;
@@ -173,15 +169,6 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         align-items: center;
         margin-bottom: 12px;
       }
-      .embed-body {
-        padding: 24px;
-        text-align: center;
-      }
-      .help-text {
-        color: var(--color-text-secondary);
-        font-size: 0.9rem;
-      }
-
       .popup-overlay {
         position: fixed;
         inset: 0;
@@ -267,6 +254,7 @@ export class TaskSequenceComponent implements OnInit {
   showCommentBtn = false;
   showDownloadBtn = false;
   showUnitListBtn = true;
+  featureConfig: FeatureConfig | null = null;
 
   constructor(
     @Inject(ActivatedRoute) private route: ActivatedRoute,
@@ -281,7 +269,8 @@ export class TaskSequenceComponent implements OnInit {
       this.route.snapshot.queryParamMap?.get('kind') === 'booklet' ? 'booklet' : undefined;
 
     this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      const fc = data?.featureConfig || {};
+      const fc: FeatureConfig = data?.featureConfig || {};
+      this.featureConfig = fc;
       const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
       this.showCommentBtn = !!(
         this.sequenceKind === 'booklet' &&
@@ -289,7 +278,7 @@ export class TaskSequenceComponent implements OnInit {
         commentTargets.includes('BOOKLET')
       );
       this.showDownloadBtn = !!fc.allowUnitDownload;
-      this.showUnitListBtn = fc.enableSequenceNavigation !== false;
+      this.showUnitListBtn = this.isBookletReview || fc.enableSequenceNavigation !== false;
     });
 
     this.api.getViewSequence(this.acpId, this.sequenceId, this.sequenceKind).subscribe((s) => {
@@ -306,6 +295,10 @@ export class TaskSequenceComponent implements OnInit {
 
   get hasUnits(): boolean {
     return !!this.sequence?.units?.length;
+  }
+
+  get isBookletReview(): boolean {
+    return this.sequenceKind === 'booklet';
   }
 
   get currentUnit(): TaskSequence['units'][number] | null {

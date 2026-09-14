@@ -1,10 +1,22 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import {
+  Component,
+  OnInit,
+  OnDestroy,
+  OnChanges,
+  ElementRef,
+  Inject,
+  Input,
+  SimpleChanges,
+  ViewChild,
+} from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
+import { CodingAsText, CodingSchemeTextFactory } from '@iqb/responses';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { UnitViewData } from '../../core/models/api.models';
+import { FeatureConfig, UnitViewData } from '../../core/models/api.models';
 import {
   GEOGEBRA_PLAYER_RESOURCE_BASE,
   rewriteGeoGebraAssetUrls,
@@ -18,7 +30,9 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
   imports: [RouterLink, BreadcrumbComponent, FormsModule, ItemCommentThreadComponent, CommonModule],
   template: `
     @if (unit) {
-      <app-breadcrumb [items]="breadcrumbs" />
+      @if (!embedded) {
+        <app-breadcrumb [items]="breadcrumbs" />
+      }
 
       <div class="unit-header">
         <h1>{{ unit.name }}</h1>
@@ -136,7 +150,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
 
       <ng-template #panelContent>
         <div class="panel-tabs" role="group" aria-label="Zusatzdaten">
-          @if (featureConfig.showMetadata) {
+          @if (showMetadata) {
             <button
               class="tab"
               type="button"
@@ -147,7 +161,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
               Metadaten
             </button>
           }
-          @if (featureConfig.showCodingScheme) {
+          @if (showCodingScheme) {
             <button
               class="tab"
               type="button"
@@ -158,7 +172,7 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
               Kodierschema
             </button>
           }
-          @if (featureConfig.showRichText) {
+          @if (showRichText) {
             <button
               class="tab"
               type="button"
@@ -201,8 +215,37 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
 
           @if (activeTab === 'coding') {
             <div class="coding-content">
-              @if (unit.codingScheme) {
-                <div [innerHTML]="unit.codingScheme"></div>
+              @if (codingSchemeLoading) {
+                <p class="help-text">Kodierschema wird geladen...</p>
+              } @else if (codingSchemeAsText?.length) {
+                @for (coding of codingSchemeAsText; track coding.id) {
+                  <section class="coding-variable">
+                    <h4>{{ coding.label || coding.id }}</h4>
+                    @if ($any(coding).manualInstructionText) {
+                      <div class="coding-instruction">
+                        <strong>Variablenanweisung</strong>
+                        <div [innerHTML]="$any(coding).manualInstructionText"></div>
+                      </div>
+                    }
+                    <div class="coding-codes">
+                      @for (code of coding.codes; track code.id) {
+                        <div class="coding-code">
+                          <strong>{{ code.id }}</strong>
+                          <span class="coding-score">({{ code.score }})</span>
+                          <span>{{ code.label }}</span>
+                        </div>
+                        @if ($any(code).manualInstructionText) {
+                          <div class="coding-instruction code-instruction">
+                            <strong>Kodieranweisung</strong>
+                            <div [innerHTML]="$any(code).manualInstructionText"></div>
+                          </div>
+                        }
+                      }
+                    </div>
+                  </section>
+                }
+              } @else if (codingSchemeError) {
+                <p class="help-text" role="alert">{{ codingSchemeError }}</p>
               } @else {
                 <p class="help-text">Kein Kodierschema verfügbar.</p>
               }
@@ -429,6 +472,43 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       .richtext-content {
         font-size: 0.9rem;
       }
+      .coding-variable {
+        padding: 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.02);
+      }
+      .coding-variable + .coding-variable {
+        margin-top: 12px;
+      }
+      .coding-variable h4 {
+        margin-top: 0;
+        color: var(--color-primary);
+      }
+      .coding-codes {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .coding-code {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .coding-score {
+        color: var(--color-success);
+        font-weight: 600;
+      }
+      .coding-instruction {
+        margin: 8px 0;
+        padding: 8px;
+        border-left: 3px solid #f39c12;
+        background: rgba(243, 156, 18, 0.06);
+      }
+      .code-instruction {
+        margin: 0 0 6px 24px;
+        font-size: 0.82rem;
+      }
       .coding-content :first-child,
       .richtext-content :first-child {
         margin-top: 0;
@@ -466,11 +546,15 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
     `,
   ],
 })
-export class UnitViewComponent implements OnInit, OnDestroy {
+export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
 
-  acpId = '';
-  unitId = '';
+  @Input() acpId = '';
+  @Input() unitId = '';
+  @Input() embedded = false;
+  @Input() reviewMode = false;
+  @Input() featureConfigOverride: FeatureConfig | null = null;
+
   unit: UnitViewData | null = null;
   playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
@@ -488,24 +572,33 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   isNarrowLayout = false;
 
   // Feature config
-  featureConfig: any = {};
+  showMetadata = false;
+  showCodingScheme = false;
+  showRichText = false;
   showMetadataToggle = false;
   showCommentBtn = false;
   showDownloadBtn = false;
+  codingSchemeAsText: CodingAsText[] | null = null;
+  codingSchemeLoading = false;
+  codingSchemeError = '';
 
   private definitionContent: string | null = null;
   private playerFrameReady = false;
   private unitLoadToken = 0;
+  private initialized = false;
   private startSessionCounter = 0;
+  private featureConfigRequest: Subscription | null = null;
+  private unitRequest: Subscription | null = null;
+  private unitAbortController: AbortController | null = null;
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private resizeHandler = this.onWindowResize.bind(this);
   private autoResizeInterval: any;
 
   constructor(
-    private route: ActivatedRoute,
-    public api: ApiService,
-    private sanitizer: DomSanitizer,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) public api: ApiService,
+    @Inject(DomSanitizer) private sanitizer: DomSanitizer,
   ) {}
 
   get resolvedPanelMode(): 'split' | 'overlay' {
@@ -513,35 +606,77 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit() {
-    this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
-    this.unitId = this.route.snapshot.paramMap.get('unitId') || '';
+    this.acpId = this.acpId || this.route.snapshot.paramMap.get('acpId') || '';
+    this.unitId = this.unitId || this.route.snapshot.paramMap.get('unitId') || '';
 
     this.onWindowResize();
     window.addEventListener('resize', this.resizeHandler);
     window.addEventListener('message', this.messageHandler);
 
-    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      this.featureConfig = data?.featureConfig || {};
-      this.showMetadataToggle = !!(
-        this.featureConfig.showMetadata ||
-        this.featureConfig.showCodingScheme ||
-        this.featureConfig.showRichText
-      );
+    this.initialized = true;
+    if (this.featureConfigOverride) {
+      this.applyFeatureConfig(this.featureConfigOverride);
+    } else {
+      this.loadFeatureConfig();
+    }
+    this.loadUnit();
+  }
 
-      const commentTargets = Array.isArray(this.featureConfig.commentTargets)
-        ? this.featureConfig.commentTargets
-        : [];
-      this.showCommentBtn = !!(
-        this.featureConfig.enableCommenting && commentTargets.includes('UNIT')
-      );
-      this.showDownloadBtn = !!this.featureConfig.allowUnitDownload;
+  ngOnChanges(changes: SimpleChanges) {
+    if (!this.initialized) return;
 
-      if (this.featureConfig.showMetadata) this.activeTab = 'metadata';
-      else if (this.featureConfig.showCodingScheme) this.activeTab = 'coding';
-      else if (this.featureConfig.showRichText) this.activeTab = 'richtext';
+    if (changes['featureConfigOverride'] || changes['reviewMode']) {
+      if (this.featureConfigOverride) {
+        this.featureConfigRequest?.unsubscribe();
+        this.featureConfigRequest = null;
+        this.applyFeatureConfig(this.featureConfigOverride);
+      } else this.loadFeatureConfig();
+    }
+
+    if (changes['acpId'] || changes['unitId']) this.loadUnit();
+  }
+
+  private loadFeatureConfig() {
+    this.featureConfigRequest?.unsubscribe();
+    this.featureConfigRequest = this.api.getAcpStartPage(this.acpId).subscribe((data) => {
+      this.applyFeatureConfig(data?.featureConfig || {});
     });
+  }
 
-    this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
+  private applyFeatureConfig(featureConfig: FeatureConfig) {
+    this.showMetadata = this.reviewMode || !!featureConfig.showMetadata;
+    this.showCodingScheme = this.reviewMode || !!featureConfig.showCodingScheme;
+    this.showRichText = !!featureConfig.showRichText;
+    this.showMetadataToggle = this.showMetadata || this.showCodingScheme || this.showRichText;
+
+    const commentTargets = Array.isArray(featureConfig.commentTargets)
+      ? featureConfig.commentTargets
+      : [];
+    this.showCommentBtn = !!(featureConfig.enableCommenting && commentTargets.includes('UNIT'));
+    this.showDownloadBtn = !!featureConfig.allowUnitDownload;
+
+    if (this.showMetadata) this.activeTab = 'metadata';
+    else if (this.showCodingScheme) this.activeTab = 'coding';
+    else if (this.showRichText) this.activeTab = 'richtext';
+    if (!this.showMetadataToggle) this.panelVisible = false;
+  }
+
+  private loadUnit() {
+    if (!this.acpId || !this.unitId) return;
+    const requestToken = ++this.unitLoadToken;
+    this.unitRequest?.unsubscribe();
+    this.unitAbortController?.abort();
+    this.unitAbortController = new AbortController();
+    this.stopAutoResize();
+    this.unit = null;
+    this.playerSrcDoc = null;
+    this.playerFrameReady = false;
+    this.definitionContent = null;
+    this.codingSchemeAsText = null;
+    this.codingSchemeLoading = false;
+    this.codingSchemeError = '';
+    this.unitRequest = this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
+      if (requestToken !== this.unitLoadToken) return;
       this.unit = u;
       this.breadcrumbs = [
         { label: 'Assessment Content Pool', route: ['/'] },
@@ -559,13 +694,18 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       this.playerFrameReady = false;
       this.definitionContent = null;
 
-      const token = ++this.unitLoadToken;
-      this.loadPlayerSource(u.dependencies || [], token);
-      this.loadDefinitionSource(u.dependencies || [], token);
+      const signal = this.unitAbortController?.signal;
+      this.loadPlayerSource(u.dependencies || [], requestToken, signal);
+      this.loadDefinitionSource(u.dependencies || [], requestToken, signal);
+      this.loadCodingSchemeSource(u, requestToken, signal);
     });
   }
 
   ngOnDestroy() {
+    this.unitLoadToken += 1;
+    this.featureConfigRequest?.unsubscribe();
+    this.unitRequest?.unsubscribe();
+    this.unitAbortController?.abort();
     window.removeEventListener('resize', this.resizeHandler);
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
@@ -662,7 +802,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     return this.unit?.dependencies?.find((d) => typeSet.has((d.type || '').toLowerCase()));
   }
 
-  private loadPlayerSource(dependencies: any[], token: number) {
+  private loadPlayerSource(dependencies: any[], token: number, signal?: AbortSignal) {
     const playerDep = dependencies.find((d: any) => {
       const type = String(d?.type || '').toLowerCase();
       return type === 'player';
@@ -673,7 +813,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       return;
     }
 
-    fetch(playerDep.downloadUrl)
+    fetch(playerDep.downloadUrl, { signal })
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
@@ -685,7 +825,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       });
   }
 
-  private loadDefinitionSource(dependencies: any[], token: number) {
+  private loadDefinitionSource(dependencies: any[], token: number, signal?: AbortSignal) {
     const definitionDep = dependencies.find((d: any) => {
       const type = String(d?.type || '').toLowerCase();
       return type === 'unit_definition' || type === 'unitdefinition' || type === 'definition';
@@ -696,7 +836,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       return;
     }
 
-    fetch(definitionDep.downloadUrl)
+    fetch(definitionDep.downloadUrl, { signal })
       .then((res) => res.text())
       .then((definition) => {
         if (token !== this.unitLoadToken) return;
@@ -707,6 +847,68 @@ export class UnitViewComponent implements OnInit, OnDestroy {
         if (token !== this.unitLoadToken) return;
         this.definitionContent = null;
       });
+  }
+
+  private loadCodingSchemeSource(unit: UnitViewData, token: number, signal?: AbortSignal) {
+    if (unit.codingScheme) {
+      this.applyCodingScheme(unit.codingScheme, token);
+      return;
+    }
+
+    const codingDep = (unit.dependencies || []).find((dependency) => {
+      const type = String(dependency?.type || '').toLowerCase();
+      return type === 'coding_scheme' || type === 'codingscheme' || type === 'coding';
+    });
+    if (!codingDep?.downloadUrl) return;
+
+    this.codingSchemeLoading = true;
+    fetch(codingDep.downloadUrl, { signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((content) => {
+        if (token !== this.unitLoadToken) return;
+        this.applyCodingScheme(content, token);
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.codingSchemeLoading = false;
+        this.codingSchemeError = 'Kodierschema konnte nicht geladen werden.';
+      });
+  }
+
+  private applyCodingScheme(rawCodingScheme: unknown, token: number) {
+    if (token !== this.unitLoadToken) return;
+    try {
+      const codingScheme =
+        typeof rawCodingScheme === 'string' ? JSON.parse(rawCodingScheme) : rawCodingScheme;
+      const variableCodings = Array.isArray(codingScheme)
+        ? codingScheme
+        : Array.isArray((codingScheme as any)?.variableCodings)
+          ? (codingScheme as any).variableCodings
+          : [];
+      const codingSchemeAsText = CodingSchemeTextFactory.asText(variableCodings);
+      codingSchemeAsText.forEach((coding) => {
+        const rawVariable = variableCodings.find((variable: any) => variable.id === coding.id);
+        if (!rawVariable) return;
+        (coding as any).manualInstructionText = rawVariable.manualInstruction;
+        coding.codes.forEach((code) => {
+          const rawCode = rawVariable.codes?.find(
+            (candidate: any) =>
+              (candidate.id === null ? 'null' : candidate.id?.toString(10)) === code.id,
+          );
+          if (rawCode) (code as any).manualInstructionText = rawCode.manualInstruction;
+        });
+      });
+      this.codingSchemeAsText = codingSchemeAsText;
+      this.codingSchemeError = '';
+    } catch {
+      this.codingSchemeAsText = null;
+      this.codingSchemeError = 'Kodierschema konnte nicht gelesen werden.';
+    } finally {
+      this.codingSchemeLoading = false;
+    }
   }
 
   private startPlayerIfReady() {

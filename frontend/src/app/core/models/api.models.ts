@@ -505,7 +505,7 @@ export interface UnitViewData {
   lang?: string;
   items: any[];
   dependencies: FileDependency[];
-  codingScheme?: string;
+  codingScheme?: unknown;
   richText?: string;
 }
 

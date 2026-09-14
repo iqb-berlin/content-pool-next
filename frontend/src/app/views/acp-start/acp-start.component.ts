@@ -29,11 +29,30 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
       </div>
 
       <div class="sections-grid">
-        @if (capabilityAccess?.canReview || capabilityAccess?.canManageReview) {
-          <a [routerLink]="['/view', acpId, 'review']" class="card section-card"
-            ><h3>Review</h3>
-            <p>Booklets prüfen</p></a
-          >
+        @if (capabilityAccess?.canReview) {
+          <section class="card section-card review-card" aria-labelledby="review-heading">
+            <div class="section-icon">💬</div>
+            <h3 id="review-heading">Review</h3>
+            @if (capabilityAccess?.canManageReview) {
+              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
+                >Review verwalten</a
+              >
+            }
+            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
+            <div class="seq-list">
+              @for (booklet of reviewBooklets; track booklet.id) {
+                <a
+                  [routerLink]="['/view', acpId, 'sequence', booklet.id]"
+                  [queryParams]="{ kind: 'booklet' }"
+                  class="seq-link"
+                >
+                  {{ sequenceLabel(booklet) }} im Review öffnen
+                </a>
+              } @empty {
+                <span class="download-info">Noch kein Booklet verfügbar.</span>
+              }
+            </div>
+          </section>
         }
         <!-- Item Explorer — only if enableItemList -->
         @if (capabilityAccess?.canViewExplorer) {
@@ -57,12 +76,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         }
 
         <!-- Task sequences — only if enableSequenceNavigation -->
-        @if (data.sequences?.length && fc.enableSequenceNavigation !== false) {
+        @if (visibleSequences.length && fc.enableSequenceNavigation !== false) {
           <div class="card section-card sequences-card">
             <div class="section-icon">📋</div>
             <h3>Testhefte und Aufgabenfolgen</h3>
             <div class="seq-list">
-              @for (seq of data.sequences; track seq.kind + ':' + seq.id) {
+              @for (seq of visibleSequences; track seq.kind + ':' + seq.id) {
                 <a
                   [queryParams]="seq.kind === 'booklet' ? { kind: 'booklet' } : {}"
                   [routerLink]="['/view', acpId, 'sequence', seq.id]"
@@ -244,6 +263,17 @@ export class AcpStartComponent implements OnInit, OnDestroy {
   }
 
   sequenceLabel = sequenceLabel;
+
+  get reviewBooklets(): any[] {
+    return (this.data?.sequences || []).filter((sequence: any) => sequence.kind === 'booklet');
+  }
+
+  get visibleSequences(): any[] {
+    const sequences = this.data?.sequences || [];
+    return this.capabilityAccess?.canReview
+      ? sequences.filter((sequence: any) => sequence.kind !== 'booklet')
+      : sequences;
+  }
 
   private updateManagerState(): void {
     this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');

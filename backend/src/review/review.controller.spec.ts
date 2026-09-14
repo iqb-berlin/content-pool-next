@@ -44,6 +44,7 @@ describe("ReviewController stale memberships", () => {
         { assert: jest.fn() } as any,
         {} as any,
         { manager, findOne: async () => config } as any,
+        { check: jest.fn() } as any,
       );
       const result = await controller.configure(
         "acp",
@@ -104,7 +105,8 @@ describe("ReviewController stale memberships", () => {
       const controller = new ReviewController(
         { assert: jest.fn() } as any,
         {} as any,
-        { manager } as any,
+        { manager, findOne: async () => config } as any,
+        { check: jest.fn().mockResolvedValue({ status: "READY" }) } as any,
       );
       await expect(
         controller.configure(
@@ -124,4 +126,42 @@ describe("ReviewController stale memberships", () => {
       expect(manager.save).not.toHaveBeenCalled();
     },
   );
+
+  it("blocks activation when the ACP is not technically ready", async () => {
+    const config = {
+      reviewConfigVersion: 1,
+      reviewRevision: "0",
+      featureConfig: { enableReview: false, commentVisibilityMode: "PRIVATE" },
+      reviewGroups: [],
+    };
+    const manager = { transaction: jest.fn() };
+    const readiness = {
+      check: jest.fn().mockResolvedValue({
+        status: "BLOCKED",
+        blockers: ["Kein Booklet"],
+        warnings: [],
+      }),
+    };
+    const controller = new ReviewController(
+      { assert: jest.fn() } as any,
+      {} as any,
+      { manager, findOne: async () => config } as any,
+      readiness as any,
+    );
+
+    await expect(
+      controller.configure(
+        "acp",
+        {
+          enableReview: true,
+          visibilityMode: "PRIVATE",
+          configVersion: 1,
+          groups: [],
+        },
+        {},
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(readiness.check).toHaveBeenCalledWith("acp");
+    expect(manager.transaction).not.toHaveBeenCalled();
+  });
 });

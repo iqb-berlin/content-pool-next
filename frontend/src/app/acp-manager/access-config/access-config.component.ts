@@ -3,7 +3,7 @@ import {
   capabilityLabels,
 } from '../../shared/capabilities/capabilities.component';
 import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
 import { AccessModel, Credential } from '../../core/models/api.models';
@@ -12,7 +12,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 @Component({
   selector: 'app-access-config',
   standalone: true,
-  imports: [CapabilitiesComponent, FormsModule, AcpManagerContextComponent],
+  imports: [CapabilitiesComponent, FormsModule, RouterLink, AcpManagerContextComponent],
   template: `
     <app-acp-manager-context />
 
@@ -453,7 +453,8 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               <span>Kodierung</span>
             </label>
             <p class="help-text">
-              Sichtbarkeit und Review-Gruppen werden im Review-Einstieg konfiguriert.
+              Sichtbarkeit, Review-Gruppen und Aktivierung werden unter
+              <a [routerLink]="['/view', acpId, 'review', 'manage']">Review</a> verwaltet.
             </p>
           </div>
         }

@@ -570,6 +570,29 @@ Das ist vor allem fuer Test- und Analysezwecke hilfreich.
 - `Pos1` / `Ende` springen an Anfang oder Ende
 - `Strg/Cmd + S` oeffnet den Speicherdialog
 
+## Review vorbereiten und starten
+
+Die ACP-Uebersicht zeigt fuer Personen mit `Review: verwalten` eine eigene Review-Karte mit dem
+aktuellen Aktivierungsstatus.
+
+1. Oeffnen Sie die Review-Karte.
+2. Waehlen Sie `Bereitschaft pruefen`.
+3. Beheben Sie technische Blocker. Hinweise duerfen nach bewusster Bestaetigung bestehen bleiben.
+4. Waehlen Sie die Kommentarsicht und konfigurieren Sie bei Bedarf Review-Gruppen.
+5. Aktivieren Sie den Review und speichern Sie die Konfiguration.
+6. Vergeben Sie unter den Personen oder ACP-Zugaengen die Berechtigung `Review: teilnehmen`.
+
+Die Bereitschaftspruefung kontrolliert insbesondere Booklets, referenzierte Units,
+Aufgabendefinitionen, Player sowie syntaktische und semantische Validierungsergebnisse. Sie ist
+keine formale Release-Freigabe.
+
+Teilnehmende sehen auf der ACP-Startseite eine Review-Karte. Dort oeffnen sie ein Testheft direkt im
+Review-Arbeitsplatz mit Player und Reviewbereich. Eine zusaetzliche Review-Zwischenseite ist fuer
+Teilnehmende nicht erforderlich.
+
+`Review: verwalten` und `Review: teilnehmen` sind getrennte Berechtigungen. Review-Gruppen steuern
+nur die Sichtbarkeit von Kommentaren und vergeben keinen Zugang.
+
 ## Kommentare und Exporte
 
 Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare im

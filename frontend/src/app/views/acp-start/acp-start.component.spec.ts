@@ -207,4 +207,78 @@ describe('AcpStartComponent', () => {
     });
     component.ngOnDestroy();
   });
+
+  it('links Review participants directly to Booklet workspaces without duplicate Booklet cards', async () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getCapabilities: vi.fn().mockReturnValue(of({ canReview: true, canViewExplorer: false })),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { enableReview: true, enableSequenceNavigation: true },
+          units: [],
+          sequences: [
+            { id: 'booklet-1', name: 'Testheft A', kind: 'booklet' },
+            { id: 'sequence-1', name: 'Folge A' },
+          ],
+        }),
+      ),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AcpStartComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: createAuthStub({ isLoggedIn: true }) },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(AcpStartComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const links = Array.from(element.querySelectorAll('a'));
+    expect(
+      links.some(
+        (link) =>
+          link.getAttribute('href') === '/view/acp-1/sequence/booklet-1?kind=booklet' &&
+          link.textContent?.includes('im Review öffnen'),
+      ),
+    ).toBe(true);
+    expect(element.textContent?.match(/Testheft A/g)).toHaveLength(1);
+    expect(element.textContent).toContain('Folge A');
+  });
+
+  it('offers capability-only Review managers a visible management entry', async () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getCapabilities: vi
+        .fn()
+        .mockReturnValue(of({ canReview: true, canManageReview: true, canViewExplorer: false })),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AcpStartComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: createAuthStub({ isLoggedIn: true }) },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(AcpStartComponent);
+    fixture.detectChanges();
+    const element = fixture.nativeElement as HTMLElement;
+
+    const managementLink = element.querySelector(
+      'a[href="/view/acp-1/review/manage"]',
+    ) as HTMLAnchorElement | null;
+    expect(managementLink?.textContent).toContain('Review verwalten');
+    expect(router.navigate).not.toHaveBeenCalled();
+  });
 });

@@ -1,8 +1,10 @@
 import { Component, Inject, OnInit, OnDestroy } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
+import { ReviewReadiness } from '../../core/models/api.models';
 
 interface ReviewMember {
   kind: 'user' | 'credential';
@@ -24,7 +26,7 @@ interface ReviewConfig {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, FormsModule],
+  imports: [RouterLink, FormsModule, DatePipe],
   selector: 'app-review',
   styles: [
     `
@@ -81,6 +83,36 @@ interface ReviewConfig {
         max-height: 60vh;
         overflow-y: auto;
       }
+      .page-header {
+        margin-bottom: 1rem;
+      }
+      .page-header h1 {
+        margin-bottom: 0.35rem;
+      }
+      .readiness-card {
+        margin: 1rem 0;
+        padding: 1rem;
+        border-left: 4px solid var(--color-border);
+      }
+      .readiness-card.ready {
+        border-left-color: var(--color-success);
+      }
+      .readiness-card.warning {
+        border-left-color: var(--color-warning);
+      }
+      .readiness-card.blocked {
+        border-left-color: var(--color-danger);
+      }
+      .readiness-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .readiness-summary {
+        color: var(--color-text-secondary);
+      }
       p {
         margin: 0.65rem 0;
       }
@@ -91,10 +123,64 @@ interface ReviewConfig {
       }
     `,
   ],
-  template: `<h1>Review</h1>
-    <a [routerLink]="['/view', acpId]">Zur ACP-Übersicht</a>
+  template: `<a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId]"
+      >← Zur ACP-Übersicht</a
+    >
+    <div class="page-header">
+      <h1>Review vorbereiten und auswerten</h1>
+      <p>Prüfbereitschaft, Freigabe, Sichtbarkeit und Kommentare dieses ACP verwalten.</p>
+    </div>
     @if (error) {
-      <p role="alert">{{ error }}</p>
+      <p class="alert alert-error" role="alert">{{ error }}</p>
+    }
+    @if (access?.canManageReview) {
+      <section
+        class="card readiness-card"
+        [class.ready]="readiness?.status === 'READY'"
+        [class.warning]="readiness?.status === 'WARNING'"
+        [class.blocked]="readiness?.status === 'BLOCKED'"
+      >
+        <div class="readiness-header">
+          <div>
+            <h2>Review-Bereitschaft</h2>
+            @if (!readiness) {
+              <p>Noch nicht geprüft.</p>
+            } @else {
+              <p>
+                <strong>{{ readinessLabel }}</strong>
+                · {{ readiness.summary.bookletCount }} Booklet(s) ·
+                {{ readiness.summary.unitCount }} referenzierte Unit(s) ·
+                {{ readiness.summary.validFiles }}/{{ readiness.summary.totalFiles }} Datei(en) ohne
+                Fehler
+              </p>
+              <small>Geprüft: {{ readiness.checkedAt | date: 'medium' }}</small>
+            }
+          </div>
+          <button class="btn btn-outline" (click)="checkReadiness()" [disabled]="readinessBusy">
+            {{ readinessBusy ? 'Wird geprüft …' : 'Bereitschaft prüfen' }}
+          </button>
+        </div>
+        @if (readiness?.blockers?.length) {
+          <div>
+            <strong>Blocker</strong>
+            <ul>
+              @for (blocker of readiness!.blockers; track blocker) {
+                <li>{{ blocker }}</li>
+              }
+            </ul>
+          </div>
+        }
+        @if (readiness?.warnings?.length) {
+          <div>
+            <strong>Hinweise</strong>
+            <ul>
+              @for (warning of readiness!.warnings; track warning) {
+                <li>{{ warning }}</li>
+              }
+            </ul>
+          </div>
+        }
+      </section>
     }
     @if (access?.canManageReview && config) {
       <fieldset [disabled]="busy">
@@ -139,7 +225,7 @@ interface ReviewConfig {
           Beim Gruppenwechsel bleiben vorhandene Kommentare in ihrer bisherigen Gruppe. Archivierte
           Gruppen bleiben für Verantwortliche erhalten.
         </p>
-        <button class="btn btn-primary" (click)="configure()">
+        <button class="btn btn-primary" (click)="configure()" [disabled]="readinessBusy">
           Review-Konfiguration speichern
         </button>
         <button class="btn btn-outline" (click)="loadConfig()">Konfiguration neu laden</button>
@@ -192,6 +278,8 @@ interface ReviewConfig {
       </div>
     }
     @if (manifest) {
+      <h2>Review-Arbeitsplatz testen</h2>
+      <p>Ein Booklet öffnet die eigentliche Prüfansicht mit Player und Reviewbereich.</p>
       @for (booklet of manifest.booklets; track $index) {
         <section class="card">
           <h2>{{ booklet.name || booklet.id }}</h2>
@@ -203,7 +291,7 @@ interface ReviewConfig {
           <ul>
             @for (unit of booklet.units; track unit.occurrenceId) {
               <li>
-                <a [routerLink]="['/view', acpId, 'unit', unit.id]">{{ unit.name || unit.id }}</a>
+                <span>{{ unit.name || unit.id }}</span>
                 @if (unit.blockPath.length) {
                   <small> · {{ unit.blockPath.join(' / ') }}</small>
                 }
@@ -225,6 +313,9 @@ export class ReviewComponent implements OnInit, OnDestroy {
   saved = false;
   config: ReviewConfig | null = null;
   private savedMode = 'PRIVATE';
+  private savedEnabled = false;
+  readiness: ReviewReadiness | null = null;
+  readinessBusy = false;
   members: ReviewMember[] = [];
   comments: any[] = [];
   commentsError = '';
@@ -237,7 +328,10 @@ export class ReviewComponent implements OnInit, OnDestroy {
     @Inject(ApiService) private api: ApiService,
   ) {}
   ngOnInit() {
-    this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
+    this.acpId =
+      this.route.snapshot.paramMap.get('acpId') ||
+      this.route.parent?.snapshot.paramMap.get('acpId') ||
+      '';
     this.load();
     this.poll = setInterval(() => {
       if (this.access?.canReview) this.loadComments();
@@ -277,6 +371,7 @@ export class ReviewComponent implements OnInit, OnDestroy {
         next: (config) => {
           this.config = config;
           this.savedMode = config.visibilityMode;
+          this.savedEnabled = config.enableReview;
         },
         error: () => (this.error = 'Konfiguration konnte nicht geladen werden.'),
       }),
@@ -310,6 +405,29 @@ export class ReviewComponent implements OnInit, OnDestroy {
   addGroup() {
     this.config?.groups.push({ name: '', archived: false, members: [] });
   }
+  get readinessLabel(): string {
+    if (this.readiness?.status === 'READY') return 'Prüfbereit';
+    if (this.readiness?.status === 'WARNING') return 'Mit Hinweisen prüfbar';
+    if (this.readiness?.status === 'BLOCKED') return 'Blockiert';
+    return 'Noch nicht geprüft';
+  }
+  checkReadiness() {
+    if (this.readinessBusy) return;
+    this.readinessBusy = true;
+    this.error = '';
+    this.requests.add(
+      this.api.checkReviewReadiness(this.acpId).subscribe({
+        next: (readiness) => {
+          this.readiness = readiness;
+          this.readinessBusy = false;
+        },
+        error: (error) => {
+          this.readinessBusy = false;
+          this.error = error?.error?.message || 'Review-Bereitschaft konnte nicht geprüft werden.';
+        },
+      }),
+    );
+  }
   loadComments() {
     if (this.commentsRequest && !this.commentsRequest.closed) return;
     this.commentsRequest = this.api.getVisibleReviewComments(this.acpId).subscribe({
@@ -333,22 +451,62 @@ export class ReviewComponent implements OnInit, OnDestroy {
       )
     )
       return;
+    const activating = this.config.enableReview && !this.savedEnabled;
+    if (activating) {
+      this.readinessBusy = true;
+      this.error = '';
+      this.requests.add(
+        this.api.checkReviewReadiness(this.acpId).subscribe({
+          next: (readiness) => {
+            this.readiness = readiness;
+            this.readinessBusy = false;
+            if (readiness.status === 'BLOCKED') {
+              this.error = 'Der Review kann wegen technischer Blocker nicht aktiviert werden.';
+              return;
+            }
+            const confirmWarnings =
+              readiness.status !== 'WARNING' ||
+              window.confirm(
+                'Die Bereitschaftsprüfung enthält Hinweise. Review trotzdem aktivieren?',
+              );
+            if (!confirmWarnings) return;
+            this.saveConfig(sharing, readiness.status === 'WARNING');
+          },
+          error: (error) => {
+            this.readinessBusy = false;
+            this.error =
+              error?.error?.message || 'Review-Bereitschaft konnte nicht geprüft werden.';
+          },
+        }),
+      );
+      return;
+    }
+    this.saveConfig(sharing);
+  }
+  private saveConfig(sharing: boolean, confirmReadinessWarnings = false) {
+    if (!this.config) return;
     this.busy = true;
     this.saved = false;
     this.error = '';
     this.requests.add(
       this.api
-        .configureReview(this.acpId, { ...this.config, confirmExistingComments: sharing })
+        .configureReview(this.acpId, {
+          ...this.config,
+          confirmExistingComments: sharing,
+          confirmReadinessWarnings,
+        })
         .subscribe({
           next: (config) => {
             this.config = config;
             this.savedMode = config.visibilityMode;
+            this.savedEnabled = config.enableReview;
             this.busy = false;
             this.saved = true;
             this.load(false);
           },
           error: (error) => {
             this.busy = false;
+            if (error?.error?.readiness) this.readiness = error.error.readiness;
             this.error = error?.error?.message || 'Konfiguration konnte nicht gespeichert werden.';
           },
         }),

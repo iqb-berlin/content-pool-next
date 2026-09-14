@@ -207,6 +207,20 @@ export interface ValidateUnitsResponse {
   validationSummary: UploadValidationSummary;
 }
 
+export interface ReviewReadiness {
+  status: 'READY' | 'WARNING' | 'BLOCKED';
+  checkedAt: string;
+  blockers: string[];
+  warnings: string[];
+  summary: {
+    totalFiles: number;
+    validFiles: number;
+    invalidFiles: number;
+    bookletCount: number;
+    unitCount: number;
+  };
+}
+
 export type FilePreviewMode =
   | 'text'
   | 'image'

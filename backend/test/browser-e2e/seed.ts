@@ -24,6 +24,8 @@ const MANAGER_ID = "10000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "e2e-manager";
 const VIEWER_ID = "10000000-0000-4000-8000-000000000003";
 const VIEWER_USERNAME = "e2e-viewer";
+const REVIEW_MANAGER_ID = "10000000-0000-4000-8000-000000000004";
+const REVIEW_MANAGER_USERNAME = "e2e-review-manager";
 const CREDENTIAL_USERNAME = "e2e-reviewer";
 const CREDENTIAL_PASSWORD = "Reviewer-E2E-123!";
 
@@ -93,6 +95,14 @@ async function seed(): Promise<void> {
         id: VIEWER_ID,
         username: VIEWER_USERNAME,
         displayName: "E2E Viewer",
+        isAppAdmin: false,
+      }),
+    );
+    await dataSource.getRepository(User).save(
+      dataSource.getRepository(User).create({
+        id: REVIEW_MANAGER_ID,
+        username: REVIEW_MANAGER_USERNAME,
+        displayName: "E2E Review Manager",
         isAppAdmin: false,
       }),
     );
@@ -596,6 +606,14 @@ async function seed(): Promise<void> {
         acpId: bistaAcp.id,
         role: AcpRole.READ_ONLY,
         capabilities: ["review:participate", "item-explorer:view"],
+      }),
+    );
+    await dataSource.getRepository(AcpUserRole).save(
+      dataSource.getRepository(AcpUserRole).create({
+        userId: REVIEW_MANAGER_ID,
+        acpId: bistaAcp.id,
+        role: AcpRole.READ_ONLY,
+        capabilities: ["review:manage"],
       }),
     );
     await dataSource.getRepository(AcpAccessConfig).save(

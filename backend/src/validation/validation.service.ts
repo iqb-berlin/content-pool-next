@@ -135,6 +135,7 @@ export class ValidationService {
     acpId: string,
     files: AcpFile[],
     progress?: FileProcessingProgressReporter,
+    persistResults = true,
   ): Promise<{ files: AcpFile[]; summary: AutoValidationSummary }> {
     if (!files.length) {
       return {
@@ -215,7 +216,7 @@ export class ValidationService {
     });
     const validatedFiles = validatedEntries.map((entry) => entry.file);
 
-    await this.fileRepository.save(validatedFiles);
+    if (persistResults) await this.fileRepository.save(validatedFiles);
 
     const validFiles = validatedEntries.filter(
       (entry) => entry.result.valid,

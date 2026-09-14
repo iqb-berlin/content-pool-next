@@ -16,6 +16,8 @@ import { AuthModule } from "../auth/auth.module";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 import { FilesModule } from "../files/files.module";
 import { ItemCollectionsModule } from "../item-collections/item-collections.module";
+import { ValidationModule } from "../validation/validation.module";
+import { ReviewReadinessService } from "../review/review-readiness.service";
 
 @Module({
   imports: [
@@ -32,9 +34,10 @@ import { ItemCollectionsModule } from "../item-collections/item-collections.modu
     ItemExplorerModule,
     FilesModule,
     ItemCollectionsModule,
+    ValidationModule,
   ],
   controllers: [ViewsController, ReviewController],
-  providers: [ViewsService],
+  providers: [ViewsService, ReviewReadinessService],
   exports: [ViewsService],
 })
 export class ViewsModule {}

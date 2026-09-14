@@ -9,6 +9,15 @@ function setup() {
     getVisibleReviewComments: vi.fn().mockReturnValue(of([])),
     getReviewConfig: vi.fn(),
     getReviewMembers: vi.fn().mockReturnValue(of([])),
+    checkReviewReadiness: vi.fn().mockReturnValue(
+      of({
+        status: 'READY',
+        checkedAt: '2026-09-14T12:00:00.000Z',
+        blockers: [],
+        warnings: [],
+        summary: { totalFiles: 1, validFiles: 1, invalidFiles: 0, bookletCount: 1, unitCount: 1 },
+      }),
+    ),
     configureReview: vi.fn(),
     exportMyReviewCommentsCsv: vi.fn().mockReturnValue(new Subject()),
     exportMyReviewCommentsXlsx: vi.fn().mockReturnValue(new Subject()),
@@ -25,6 +34,7 @@ function setup() {
     configVersion: 1,
     groups: [],
   };
+  (component as any).savedEnabled = true;
   return { component, api };
 }
 
@@ -89,6 +99,29 @@ describe('Review configuration', () => {
     expect(component.config!.groups[0].members).toEqual([{ id: 'u', kind: 'user' }]);
     expect(component.error).toBe('Bitte neu laden');
     expect(component.busy).toBe(false);
+    component.ngOnDestroy();
+  });
+
+  it('checks readiness before activating Review', () => {
+    const { component, api } = setup();
+    component.config!.enableReview = true;
+    (component as any).savedEnabled = false;
+    api.configureReview.mockReturnValue(
+      of({
+        enableReview: true,
+        visibilityMode: 'PRIVATE',
+        configVersion: 2,
+        groups: [],
+      }),
+    );
+
+    component.configure();
+
+    expect(api.checkReviewReadiness).toHaveBeenCalledWith('acp');
+    expect(api.configureReview).toHaveBeenCalledWith(
+      'acp',
+      expect.objectContaining({ enableReview: true, confirmReadinessWarnings: false }),
+    );
     component.ngOnDestroy();
   });
 });

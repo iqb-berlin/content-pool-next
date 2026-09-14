@@ -83,20 +83,26 @@
             </select>
           </div>
           @if (vm.canEditExplorer && vm.itemExplorerConditionalVisibilityEnabled) {
-            <div class="preview-target-selector">
-              <label for="preview-start-page">Vorschauseite</label>
-              <select
-                class="preview-target-select"
-                id="preview-start-page"
-                [ngModel]="vm.previewStartPage"
-                (ngModelChange)="vm.setPreviewStartPage($event)"
-              >
-                <option value="">Automatisch aus dem Sprungziel</option>
-                @for (page of vm.previewStartPages; track page) {
-                  <option [value]="page">Seite {{ page + 1 }}</option>
-                }
-              </select>
-            </div>
+            @if (vm.showPreviewStartPageSelector) {
+              <div class="preview-target-selector">
+                <label for="preview-start-page">Aufgabenkontext</label>
+                <select
+                  class="preview-target-select"
+                  id="preview-start-page"
+                  [ngModel]="vm.previewStartPage"
+                  (ngModelChange)="vm.setPreviewStartPage($event)"
+                >
+                  <option value="">Keine feste Aufgabenseite (Standard)</option>
+                  @for (page of vm.previewStartPages; track page) {
+                    <option [value]="page">Aufgabenseite {{ page + 1 }}</option>
+                  }
+                </select>
+                <small>
+                  Legt fest, bei welcher Aufgabenseite der dauerhaft sichtbare Stimulus geprüft
+                  wird. Eine Auswahl ist nur nötig, wenn der Zustand nicht eindeutig ableitbar ist.
+                </small>
+              </div>
+            }
             @for (variable of vm.previewStateVariables; track variable.id) {
               <div class="preview-target-selector">
                 <label [for]="'preview-state-' + variable.id">{{ variable.label }}</label>

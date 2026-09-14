@@ -7162,6 +7162,35 @@ describe('shared preview start changes', () => {
   );
 });
 
+describe('preview context page control', () => {
+  const item = {
+    itemId: '01',
+    unitId: 'UNIT',
+    variableId: 'target',
+    metadata: {},
+  } as any;
+
+  it.each([
+    [false, false],
+    [true, true],
+  ])(
+    'shows the control only for an always-visible target (%s)',
+    (isAlwaysVisiblePage, expected) => {
+      const component = createFacade({
+        resolvePlayerTargetLocation: () => ({
+          absolutePageIndex: 0,
+          scrollPageIndex: isAlwaysVisiblePage ? undefined : 0,
+          isAlwaysVisiblePage,
+        }),
+      });
+      component.selectedItem = item;
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+
+      expect(component.showPreviewStartPageSelector).toBe(expected);
+    },
+  );
+});
+
 describe('shared preview recovery', () => {
   it('reloads a previously unavailable preview when the shared start state is corrected', () => {
     const component = createFacade();

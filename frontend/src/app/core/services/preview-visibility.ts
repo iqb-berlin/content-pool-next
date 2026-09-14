@@ -83,13 +83,12 @@ export function resolvePreviewVisibility(
   const location = targets[0];
   if (!location) return fail('Das Player-Ziel kommt in der Aufgabendefinition nicht vor.');
   const navigable = pages.map((p, i) => (always(p) ? -1 : i)).filter((i) => i >= 0);
-  const page =
-    manual?.page ?? (always(pages[location.pi]) ? undefined : navigable.indexOf(location.pi));
+  const targetIsAlwaysVisible = always(pages[location.pi]);
+  // A regular item has exactly one valid page: the page containing its target.
+  // A manual page is meaningful only for targets in the always-visible stimulus.
+  const page = targetIsAlwaysVisible ? manual?.page : navigable.indexOf(location.pi);
   if (page !== undefined && (!Number.isInteger(page) || page < 0 || page >= navigable.length)) {
     return fail('Die konfigurierte Vorschauseite existiert nicht.');
-  }
-  if (!always(pages[location.pi]) && page !== navigable.indexOf(location.pi)) {
-    return fail('Die Vorschauseite muss das ausgewählte Player-Ziel enthalten.');
   }
   const variables = definition.stateVariables || [];
   const byId = new Map(variables.map((v) => [v.id!, v]));

@@ -252,6 +252,16 @@ export class ItemExplorerFacade implements OnDestroy {
       .map((_, i) => i);
   }
 
+  get showPreviewStartPageSelector(): boolean {
+    if (!this.definitionContent || !this.selectedItem) return false;
+    const target = this.getEffectivePlayerTarget(this.selectedItem);
+    if (!target) return false;
+    return (
+      this.voudService.resolvePlayerTargetLocation(this.definitionContent, target)
+        ?.isAlwaysVisiblePage === true
+    );
+  }
+
   setPreviewStartPage(value: string) {
     this.persistPreviewStart({
       values: this.selectedItem?.previewStart?.values || {},

@@ -234,6 +234,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'previewStateVariables'
     | 'previewStartPage'
     | 'previewStartPages'
+    | 'showPreviewStartPageSelector'
     | 'setPreviewStartPage'
     | 'setPreviewStateValue'
     | 'applyCustomPreviewTarget'

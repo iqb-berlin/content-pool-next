@@ -58,10 +58,22 @@ describe('preview visibility', () => {
     }
   });
   it('validates manual pages and declared variables', () => {
-    expect(resolve([{ elements: [target] }], { page: 3, values: {} }).kind).toBe('unavailable');
     expect(resolve([{ elements: [target] }], { values: { unknown: '1' } }).kind).toBe(
       'unavailable',
     );
+  });
+  it('ignores a manual page for a regular item target', () => {
+    const content = JSON.stringify({
+      pages: [
+        { sections: [{ elements: [target] }] },
+        { sections: [{ elements: [{ alias: 'other' }] }] },
+      ],
+    });
+    expect(resolvePreviewVisibility(content, 'target', { page: 1, values: {} })).toEqual({
+      kind: 'ready',
+      page: 0,
+      codes: [],
+    });
   });
   it('uses global aliases before IDs and counts only navigable pages', () => {
     const content = JSON.stringify({

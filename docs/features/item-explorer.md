@@ -534,11 +534,13 @@ AND/OR constraints must yield exactly one assignment (bounded to 4096 candidates
 references use canonical variable IDs; the player receives aliases in `stateVariableCodes`.
 This is a stable preview context, not a simulation of the preceding user interactions.
 
-“Vorschau einstellen” allows managers to constrain the navigable page and declared state
-variables. These settings are stored as `itemProperties[rowKey].previewStart` with optional
-zero-based `page` and `values` keyed by canonical state-variable ID. They follow the existing
-shared draft/publish workflow. Empty fields restore automatic resolution. Stored answer states
-have priority and are forwarded unchanged. Prepared states cannot be saved as answer states.
+“Vorschau einstellen” allows managers to constrain declared state variables. For regular item
+targets, the containing page is always selected automatically. Only targets in an always-visible
+stimulus expose an “Aufgabenkontext” selector; its default leaves the navigable context page
+unset. These settings are stored as `itemProperties[rowKey].previewStart` with optional zero-based
+`page` and `values` keyed by canonical state-variable ID. They follow the existing shared
+draft/publish workflow. Empty fields restore automatic resolution. Stored answer states have
+priority and are forwarded unchanged. Prepared states cannot be saved as answer states.
 
 Missing, ambiguous, conflicting, external-response or timer-dependent conditions display an
 unavailable explanation and a link to the regular unit workflow. No audio progress or answers

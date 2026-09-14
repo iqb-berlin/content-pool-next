@@ -528,6 +528,30 @@ of it behind section visibility rules or media dependencies. ACP managers can re
 original conditional behavior through the ACP access-config feature flag
 `enableItemExplorerConditionalVisibility`.
 
+When enabled, a fresh item preview derives a transient start state from the target section,
+equality rules and stable state-variable triggers on the target and always-visible pages.
+AND/OR constraints must yield exactly one assignment (bounded to 4096 candidates). Trigger
+references use canonical variable IDs; the player receives aliases in `stateVariableCodes`.
+This is a stable preview context, not a simulation of the preceding user interactions.
+
+“Vorschau einstellen” allows managers to constrain the navigable page and declared state
+variables. These settings are stored as `itemProperties[rowKey].previewStart` with optional
+zero-based `page` and `values` keyed by canonical state-variable ID. They follow the existing
+shared draft/publish workflow. Empty fields restore automatic resolution. Stored answer states
+have priority and are forwarded unchanged. Prepared states cannot be saved as answer states.
+
+Missing, ambiguous, conflicting, external-response or timer-dependent conditions display an
+unavailable explanation and a link to the regular unit workflow. No audio progress or answers
+are fabricated, and the original unit definition is forwarded unchanged. The ACP flag remains
+opt-in. Definition/player version compatibility is still required by Aspect itself.
+
+Validation on 2026-09-14: the unchanged Docker DLB002 definition rendered item 01, its marking
+page, the return to 01 and item 04 using the resolver's output in release players 2.11.6 and
+3.0.1. Release 2.12.6 rejected this definition as outdated before rendering; this fixture does
+not establish compatibility with 2.12.6. The integrated Docker Explorer also rendered item 01
+with the opt-in flag enabled in the test browser. Existing DLB002 rows 02–04 have empty variable
+mappings in the item-list response and require a separate data correction.
+
 The preview keeps the corresponding schema fields in place with neutral default values so the
 embedded Aspect player can still parse the generated unit definition reliably.
 

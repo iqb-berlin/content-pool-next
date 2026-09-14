@@ -522,8 +522,14 @@ export class ViewsController {
       resolveStablePreferenceIdentity(req?.user),
       dto.rowKeys,
       canEditExplorerState,
+      req.reviewerColumnPolicy,
     );
 
+    if (req.reviewerColumnPolicy)
+      await this.itemExplorerStateService.assertColumnPolicyCurrent(
+        acpId,
+        req.reviewerColumnPolicy,
+      );
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -729,7 +735,13 @@ export class ViewsController {
       this.requireCollectionIdentity(req),
       collectionId,
       this.isEditorPerspective(req, perspective),
+      req.reviewerColumnPolicy,
     );
+    if (req.reviewerColumnPolicy)
+      await this.itemExplorerStateService.assertColumnPolicyCurrent(
+        acpId,
+        req.reviewerColumnPolicy,
+      );
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",

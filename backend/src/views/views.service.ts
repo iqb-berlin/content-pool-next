@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import { ReviewManifestService } from "../review/review-manifest.service";
 import {
   BadRequestException,
@@ -535,6 +536,7 @@ export class ViewsService {
     identity: StablePreferenceIdentity | null,
     rawRowKeys: string[],
     canEditExplorerState = false,
+    columnPolicy?: ReviewerColumnPolicy,
   ): Promise<Buffer> {
     const rowKeys = this.normalizeExportRowKeys(rawRowKeys);
     const [preferences, explorerState, accessConfig] = await Promise.all([
@@ -575,7 +577,15 @@ export class ViewsService {
       };
     });
 
-    return this.buildPersonalItemDataXlsx(rows);
+    return this.buildPersonalItemDataXlsx(
+      rows,
+      columnPolicy ||
+        new ReviewerColumnPolicy(
+          canEditExplorerState
+            ? undefined
+            : explorerState.publishedState.metadataColumns,
+        ),
+    );
   }
 
   async exportAllPersonalItemDataCsv(
@@ -804,6 +814,7 @@ export class ViewsService {
         competenceLevel: string | null;
       }
     >,
+    policy = new ReviewerColumnPolicy(),
   ): Promise<Buffer> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
@@ -819,7 +830,7 @@ export class ViewsService {
       { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
       ...ITEM_EXPORT_PARAMETER_COLUMNS,
       MEAN_DIFFICULTY_EXPORT_COLUMN,
-    ];
+    ].filter((column) => policy.allowsExportField(column.key));
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     sheet.autoFilter = {
       from: { row: 1, column: 1 },
@@ -844,7 +855,7 @@ export class ViewsService {
       ...ITEM_EXPORT_PARAMETER_COLUMNS,
       MEAN_DIFFICULTY_EXPORT_COLUMN,
     ]) {
-      if (column.numeric) {
+      if (column.numeric && policy.allowsExportField(column.key)) {
         sheet.getColumn(column.key).numFmt = "0.############";
       }
     }

@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
   ConflictException,
@@ -84,6 +85,7 @@ export interface ItemCommentCountsSnapshot {
 }
 
 export interface ReviewCommentExportActor {
+  columnPolicy?: ReviewerColumnPolicy;
   visible?: boolean;
   isManager?: boolean;
   authorLabel?: string;
@@ -873,7 +875,7 @@ export class CommentsService {
     actor: ReviewCommentExportActor,
   ): Promise<Buffer> {
     const data = await this.getReviewExportRows(acpId, actor);
-    const headers = this.reviewExportHeaders(false);
+    const headers = this.reviewExportHeaders(false, actor.columnPolicy);
     const lines = [
       headers.map((header) => this.quoteCsvField(header.label)).join(";"),
       ...data.map((row) =>
@@ -888,7 +890,11 @@ export class CommentsService {
     actor?: ReviewCommentExportActor,
   ): Promise<Buffer> {
     const data = await this.getReviewExportRows(acpId, actor);
-    return this.buildReviewXlsxBuffer(data, !actor || actor.visible === true);
+    return this.buildReviewXlsxBuffer(
+      data,
+      !actor || actor.visible === true,
+      actor?.columnPolicy,
+    );
   }
 
   private toExportRow(
@@ -1077,7 +1083,10 @@ export class CommentsService {
     }));
   }
 
-  private reviewExportHeaders(includeAuthor: boolean) {
+  private reviewExportHeaders(
+    includeAuthor: boolean,
+    policy?: ReviewerColumnPolicy,
+  ) {
     const headers = [
       { key: "groupId", label: "Review-Gruppe (ID)", width: 38 },
       { key: "level", label: "Ebene", width: 18 },
@@ -1101,7 +1110,17 @@ export class CommentsService {
     if (includeAuthor) {
       headers.splice(10, 0, { key: "author", label: "Autor", width: 22 });
     }
-    return headers;
+    return headers.filter(
+      (header) =>
+        !policy?.restricted ||
+        (["bookletId", "bookletLabel"].includes(header.key)
+          ? policy.allows("metadata:booklet")
+          : header.key === "unitLabel"
+            ? policy.allows("system:unitLabel")
+            : header.key === "itemLabel"
+              ? false
+              : true),
+    );
   }
 
   private quoteCsvField(value: unknown): string {
@@ -1113,6 +1132,7 @@ export class CommentsService {
   private async buildReviewXlsxBuffer(
     data: Array<Record<string, string>>,
     includeAuthor: boolean,
+    policy?: ReviewerColumnPolicy,
   ): Promise<Buffer> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
@@ -1121,7 +1141,7 @@ export class CommentsService {
     const sheet = workbook.addWorksheet("Kommentare", {
       views: [{ state: "frozen", ySplit: 1 }],
     });
-    const headers = this.reviewExportHeaders(includeAuthor);
+    const headers = this.reviewExportHeaders(includeAuthor, policy);
     sheet.columns = headers.map((header) => ({
       header: header.label,
       key: header.key,

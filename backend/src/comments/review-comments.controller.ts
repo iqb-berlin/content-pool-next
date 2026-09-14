@@ -151,7 +151,9 @@ export class ReviewCommentsController {
     const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
       ...this.reviewPolicy.resolveActor(req),
       visible: true,
+      columnPolicy: req.reviewerColumnPolicy,
     });
+    await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
       res,
       buffer,
@@ -182,7 +184,9 @@ export class ReviewCommentsController {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsCsv(acpId, {
       ...actor,
+      columnPolicy: req.reviewerColumnPolicy,
     });
+    await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
       res,
       buffer,
@@ -201,7 +205,9 @@ export class ReviewCommentsController {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
       ...actor,
+      columnPolicy: req.reviewerColumnPolicy,
     });
+    await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
       res,
       buffer,
@@ -222,7 +228,17 @@ export class ReviewCommentsController {
     if (!this.reviewPolicy.isManagerRequest(req)) {
       throw new ForbiddenException("Manager access required");
     }
-    const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId);
+    const buffer = await this.commentsService.exportReviewCommentsXlsx(
+      acpId,
+      req.reviewerColumnPolicy?.restricted
+        ? {
+            visible: true,
+            ...this.reviewPolicy.resolveActor(req),
+            columnPolicy: req.reviewerColumnPolicy,
+          }
+        : undefined,
+    );
+    await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
       res,
       buffer,

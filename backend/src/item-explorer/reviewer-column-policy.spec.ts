@@ -1,0 +1,304 @@
+import { buildReviewManifest } from "../review/review-manifest";
+import { ReviewerColumnsInterceptor } from "./reviewer-columns.interceptor";
+import { lastValueFrom, of } from "rxjs";
+import { ReviewerColumnPolicy } from "./reviewer-column-policy";
+
+const policy = (...visible: string[]) =>
+  new ReviewerColumnPolicy({
+    restrictReviewerColumnsToManagerSelection: true,
+    layout: { configured: true, visible, order: visible, widths: {} },
+  });
+
+describe("Reviewer column information boundary", () => {
+  it("preserves existing payloads when disabled", () => {
+    const payload = { items: [{ itemId: "I", empiricalDifficulty: 12 }] };
+    expect(new ReviewerColumnPolicy().projectResponse(payload)).toBe(payload);
+  });
+
+  it("projects both native values and metadata without mutating shared cached data", () => {
+    const item = {
+      itemId: "I",
+      rowKey: "U_I",
+      unitLabel: "Secret",
+      empiricalDifficulty: 123,
+      bista: 456,
+      metadata: {
+        empiricalDifficulty: "123",
+        bista: "456",
+        skill: "read",
+        future: "secret",
+      },
+      futureField: "secret",
+      tags: ["internal"],
+    };
+    const result = policy("metadata:skill", "metadata:bista").projectItem(item);
+    expect(result).toEqual({
+      itemId: "I",
+      rowKey: "U_I",
+      bista: 456,
+      metadata: { skill: "read", bista: "456" },
+    });
+    expect(item.empiricalDifficulty).toBe(123);
+    expect(
+      policy("system:empiricalDifficulty").projectItem(item),
+    ).toHaveProperty("empiricalDifficulty", 123);
+  });
+
+  it("removes unpublished state, hidden filters and hidden metadata definitions", () => {
+    const state = {
+      ui: { filter: "secret" },
+      tags: { I: ["secret"] },
+      itemProperties: { I: { bista: 123 } },
+      metadataColumns: {
+        layout: {
+          configured: true,
+          visible: ["metadata:bista"],
+          order: ["metadata:bista"],
+        },
+      },
+    };
+    const result = policy().projectResponse({
+      publishedState: state,
+      draftState: { secret: "draft" },
+      activeState: {},
+    });
+    expect(JSON.stringify(result)).not.toContain("secret");
+    expect(result.draftState).toEqual(result.publishedState);
+    expect(result.activeState.metadataColumns.layout.visible).toEqual([
+      "system:itemId",
+    ]);
+  });
+
+  it("also projects index-shaped unit items and fails closed for new fields", () => {
+    expect(
+      policy().projectResponse({
+        units: [
+          {
+            id: "U",
+            name: "Secret",
+            description: "Secret",
+            futureField: "Secret",
+            items: [
+              {
+                id: "I",
+                name: "Secret",
+                futureParameter: 123,
+                metadata: { hidden: "Secret" },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      units: [{ id: "U", items: [{ id: "I", metadata: {} }] }],
+    });
+  });
+
+  it("allows personal data and the identity while refusing future shared columns", () => {
+    const restricted = policy();
+    expect(restricted.allows("personal:note")).toBe(true);
+    expect(restricted.allows("system:itemId")).toBe(true);
+    expect(restricted.allows("metadata:future")).toBe(false);
+    expect(
+      restricted.projectResponse({
+        rowData: { I: { tags: ["my tag"], note: "my note" } },
+      }),
+    ).toEqual({ rowData: { I: { tags: ["my tag"], note: "my note" } } });
+    expect(restricted.allowsExportField("note")).toBe(true);
+    expect(restricted.allowsExportField("rowKey")).toBe(false);
+    expect(restricted.allowsExportField("subId")).toBe(false);
+    expect(policy("system:subId").allowsExportField("subId")).toBe(true);
+    expect(restricted.allowsExportField("empiricalDifficulty")).toBe(false);
+  });
+
+  it("separates booklet names from positions and removes raw metadata dependencies", () => {
+    const restricted = policy("metadata:bookletPosition");
+    expect(
+      restricted.projectItem({
+        itemId: "I",
+        bookletOccurrences: [{ booklet: "Secret booklet", position: 2 }],
+      }),
+    ).toEqual({ itemId: "I", bookletOccurrences: [{ position: 2 }] });
+    expect(
+      restricted.projectResponse({
+        dependencies: [
+          { type: "METADATA", downloadUrl: "secret" },
+          { type: "PLAYER", fileId: "P" },
+        ],
+      }),
+    ).toEqual({ dependencies: [{ type: "PLAYER", fileId: "P" }] });
+  });
+});
+
+describe("Restricted review navigation", () => {
+  const manifest = () =>
+    buildReviewManifest(
+      {
+        assessmentParts: [
+          {
+            units: [
+              {
+                id: "U",
+                name: "SECRET_UNIT",
+                items: [{ id: "I", name: "SECRET_ITEM" }],
+              },
+            ],
+            bookletModules: [
+              {
+                id: "M",
+                name: "SECRET_BLOCK",
+                units: [{ id: "U" }, { id: "U", alias: "repeat" }],
+              },
+            ],
+            instruments: [
+              {
+                testcenterBooklet: [
+                  { id: "B", name: "SECRET_BOOKLET", modules: ["M"] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      new Map(),
+    );
+
+  it.each([
+    [[]],
+    [["metadata:booklet"]],
+    [["system:unitLabel"]],
+    [["metadata:booklet", "system:unitLabel"]],
+  ])(
+    "preserves navigation and applies independent label releases (%j)",
+    (visible: string[]) => {
+      const original = manifest();
+      const before = JSON.stringify(original);
+      const projected = policy(...visible).projectReviewManifest(original);
+      const booklet = projected.booklets[0];
+      expect(booklet.id).toBe("B");
+      expect(booklet.units.map((unit) => unit.id)).toEqual(["U", "U"]);
+      expect(new Set(booklet.units.map((unit) => unit.occurrenceId)).size).toBe(
+        2,
+      );
+      expect(() =>
+        booklet.units.forEach((unit) => unit.blockPath.length),
+      ).not.toThrow();
+      expect(booklet.name).toBe(
+        visible.includes("metadata:booklet") ? "SECRET_BOOKLET" : "",
+      );
+      expect(booklet.children[0].label).toBe(
+        visible.includes("metadata:booklet") ? "SECRET_BLOCK" : "",
+      );
+      expect(booklet.units[0].blockPath).toEqual(
+        visible.includes("metadata:booklet") ? ["SECRET_BLOCK"] : [],
+      );
+      expect(booklet.children[0].children![0].label).toBe(
+        visible.includes("system:unitLabel") ? "SECRET_UNIT" : "",
+      );
+      expect(booklet.units[0].name).toBe(
+        visible.includes("system:unitLabel") ? "SECRET_UNIT" : "",
+      );
+      expect(JSON.stringify(projected)).not.toContain("SECRET_ITEM");
+      expect(JSON.stringify(original)).toBe(before);
+    },
+  );
+
+  it("uses the manifest projection on the review handler path", async () => {
+    const restricted = policy();
+    const states = {
+      getPublishedColumnPolicy: jest.fn().mockResolvedValue(restricted),
+      assertColumnPolicyCurrent: jest.fn(),
+    };
+    const interceptor = new ReviewerColumnsInterceptor(
+      states as any,
+      {} as any,
+      {} as any,
+    );
+    class ReviewController {}
+    function getReview() {}
+    const req = {
+      params: { acpId: "ACP" },
+      acpCapabilities: ["review:participate", "item-explorer:view"],
+    };
+    const context = {
+      getClass: () => ReviewController,
+      getHandler: () => getReview,
+      switchToHttp: () => ({
+        getRequest: () => req,
+        getResponse: () => ({ setHeader: jest.fn() }),
+      }),
+    };
+    const result = await lastValueFrom(
+      await interceptor.intercept(context as any, {
+        handle: () => of(manifest()),
+      }),
+    );
+    expect(result.booklets[0].units[0].blockPath).toEqual([]);
+    expect(result.booklets[0].units[0].occurrenceId).toBeTruthy();
+    expect(JSON.stringify(result)).not.toContain("SECRET_");
+    expect(states.assertColumnPolicyCurrent).toHaveBeenCalled();
+  });
+
+  it.each([
+    [[]],
+    [["metadata:booklet"]],
+    [["system:unitLabel"]],
+    [["metadata:booklet", "system:unitLabel"]],
+  ])(
+    "projects the booklet-opening handler with releases %j",
+    async (visible: string[]) => {
+      const restricted = policy(...visible);
+      const states = {
+        getPublishedColumnPolicy: jest.fn().mockResolvedValue(restricted),
+        assertColumnPolicyCurrent: jest.fn(),
+      };
+      const interceptor = new ReviewerColumnsInterceptor(
+        states as any,
+        {} as any,
+        {} as any,
+      );
+      class ViewsController {}
+      function getSequence() {}
+      const req = {
+        params: { acpId: "ACP", sequenceId: "B" },
+        query: { kind: "booklet" },
+        acpCapabilities: ["item-explorer:view"],
+      };
+      const context = {
+        getClass: () => ViewsController,
+        getHandler: () => getSequence,
+        switchToHttp: () => ({
+          getRequest: () => req,
+          getResponse: () => ({ setHeader: jest.fn() }),
+        }),
+      };
+      const original = manifest().booklets[0];
+      const before = JSON.stringify(original);
+      const project = async (response: any) =>
+        lastValueFrom(
+          await interceptor.intercept(context as any, {
+            handle: () => of(response),
+          }),
+        );
+      const result = await project(original);
+      expect(result.name).toBe(
+        visible.includes("metadata:booklet") ? "SECRET_BOOKLET" : "",
+      );
+      expect(result.children[0].children[0].label).toBe(
+        visible.includes("system:unitLabel") ? "SECRET_UNIT" : "",
+      );
+      expect(result.units[0].occurrenceId).toBe(original.units[0].occurrenceId);
+      expect(Array.isArray(result.units[0].blockPath)).toBe(true);
+      expect(JSON.stringify(original)).toBe(before);
+      expect(await project(null)).toBeNull();
+      expect(states.assertColumnPolicyCurrent).toHaveBeenCalled();
+    },
+  );
+
+  it("preserves unrestricted manifests", () => {
+    const original = manifest();
+    expect(new ReviewerColumnPolicy().projectReviewManifest(original)).toBe(
+      original,
+    );
+  });
+});

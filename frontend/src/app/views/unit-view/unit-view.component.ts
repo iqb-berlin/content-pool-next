@@ -477,6 +477,7 @@ type UnitPagingMode =
         flex: 1;
         min-height: 0;
         overflow-y: auto;
+        scrollbar-gutter: stable;
       }
       .review-mode .meta-panel.split .panel-content.comments-active {
         display: flex;
@@ -523,19 +524,27 @@ type UnitPagingMode =
         outline: none;
       }
       .panel-resize-handle::after {
-        content: '';
+        content: '↔';
         position: absolute;
         top: 50%;
-        left: 3px;
-        width: 4px;
-        height: 40px;
-        border-radius: 4px;
-        background: var(--color-border);
+        left: -1px;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 24px;
+        border: 1px solid var(--color-border);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--color-text-secondary);
+        font-size: 12px;
+        line-height: 1;
         transform: translateY(-50%);
+        box-shadow: var(--shadow-sm);
       }
       .panel-resize-handle:hover::after,
       .panel-resize-handle:focus-visible::after {
-        background: var(--color-primary-light);
+        border-color: var(--color-primary);
+        color: var(--color-primary);
       }
 
       .panel-overlay-backdrop {

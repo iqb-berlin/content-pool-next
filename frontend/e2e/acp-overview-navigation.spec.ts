@@ -22,7 +22,7 @@ test('manager opens content directly and returns to the same overview', async ({
   await page.getByRole('link', { name: /^Aufgaben ansehen/ }).click();
   await expect(page).toHaveURL(`/view/${acpId}/units`);
   await page.getByRole('link', { name: 'ACP-Übersicht', exact: true }).click();
-  await page.locator('summary').click();
+  await page.locator('details.index-section summary').click();
   await page.getByRole('link', { name: 'Struktur ansehen', exact: true }).click();
   await page.getByRole('link', { name: '← Zur ACP-Übersicht', exact: true }).click();
   await expect(page).toHaveURL(overview);
@@ -36,7 +36,7 @@ test('manager opens content directly and returns to the same overview', async ({
     await page.getByRole('link', { name: new RegExp(`^${label}`) }).click();
     await expect(page).toHaveURL(target);
     if (label === 'Review') {
-      await expect(page.getByRole('heading', { name: 'Review-Bereitschaft' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '1. Bereitschaft prüfen' })).toBeVisible();
       await expect(page.locator('a[href*="/unit/"]')).toHaveCount(0);
       await page.getByRole('button', { name: 'Bereitschaft prüfen' }).click();
       await expect(page.getByText('Blockiert', { exact: true })).toBeVisible();
@@ -109,7 +109,7 @@ test('index export, import and reset remain available without leaving the overvi
 }) => {
   await installOidcSession(page, managerId, 'e2e-manager');
   await page.goto(overview);
-  await page.locator('summary').click();
+  await page.locator('details.index-section summary').click();
   const downloaded = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Exportieren', exact: true }).click();
   expect((await downloaded).suggestedFilename()).toBe(`acp-index-${acpId}.json`);
@@ -168,6 +168,6 @@ test('delegated Review managers open management without an ACP manager role', as
   await page.getByRole('link', { name: 'Review verwalten', exact: true }).click();
 
   await expect(page).toHaveURL(`/view/${acpId}/review/manage`);
-  await expect(page.getByRole('heading', { name: 'Review-Bereitschaft' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '1. Bereitschaft prüfen' })).toBeVisible();
   await expect(page.locator('a[href^="/manage/"]')).toHaveCount(0);
 });

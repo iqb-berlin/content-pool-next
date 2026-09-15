@@ -44,6 +44,12 @@ describe('ItemExplorerPreviewComponent', () => {
       '[disabled]="!vm.canPreviewSelectedItem && !vm.correctSolutionRequested"',
     );
     expect(template).toContain('Musterlösung – nicht gespeichert');
+    expect(template).toContain('Keine eindeutige Musterlösung');
+    expect(template.replace(/\s+/g, ' ')).toContain(
+      'Aus den hinterlegten Bewertungsregeln lässt sich keine eindeutige Antwort ableiten.',
+    );
+    expect(template).toContain('<summary>Technische Details</summary>');
+    expect(template).toContain('<span>{{ vm.correctSolutionPrefill.message }}</span>');
     expect(template).toContain('[disabled]="!vm.canSaveCurrentResponseState"');
   });
 

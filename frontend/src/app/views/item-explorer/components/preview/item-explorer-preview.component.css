@@ -131,6 +131,7 @@
 .correct-solution-status {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid #9ac9aa;
@@ -145,6 +146,18 @@
 }
 .correct-solution-status span {
   color: inherit;
+}
+.correct-solution-technical-details {
+  display: inline;
+}
+.correct-solution-technical-details summary {
+  display: inline;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.correct-solution-technical-details[open] span {
+  margin-left: 6px;
 }
 .player-container:fullscreen,
 .player-container.player-fullscreen-fallback {

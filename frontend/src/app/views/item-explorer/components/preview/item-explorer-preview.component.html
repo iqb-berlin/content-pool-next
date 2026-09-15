@@ -262,10 +262,23 @@
         >
           <strong>
             {{
-              vm.isCorrectSolutionActive ? 'Musterlösung – nicht gespeichert' : 'Keine Musterlösung'
+              vm.isCorrectSolutionActive
+                ? 'Musterlösung – nicht gespeichert'
+                : 'Keine eindeutige Musterlösung'
             }}
           </strong>
-          <span>{{ vm.correctSolutionPrefill.message }}</span>
+          @if (vm.isCorrectSolutionActive) {
+            <span>{{ vm.correctSolutionPrefill.message }}</span>
+          } @else {
+            <span
+              >Aus den hinterlegten Bewertungsregeln lässt sich keine eindeutige Antwort
+              ableiten.</span
+            >
+            <details class="correct-solution-technical-details">
+              <summary>Technische Details</summary>
+              <span>{{ vm.correctSolutionPrefill.message }}</span>
+            </details>
+          }
         </div>
       }
       @if (vm.previewUnavailableReason) {

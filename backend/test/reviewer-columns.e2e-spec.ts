@@ -238,6 +238,13 @@ describe("Published reviewer column boundary (HTTP)", () => {
       .expect(200);
     expect(draft.body.items[0].empiricalDifficulty).toBe(123456);
     await publish();
+    const reviewerState = await request(server)
+      .get(`/api/view/acp/${acpId}/item-explorer/state`)
+      .set(headers("reader"))
+      .expect(200);
+    expect(
+      reviewerState.body.publishedState.metadataColumns.layout.visible,
+    ).toEqual(expect.arrayContaining(["system:position", "system:itemId"]));
     for (const actor of ["reader", "credential", "reviewManager"]) {
       const response = await request(server)
         .get(`${path}?perspective=editor`)

@@ -1916,6 +1916,9 @@ describe('ItemExplorerFacade', () => {
     expect(component.isColumnVisible(positionColumn)).toBe(true);
     expect(component.tableColumns[0].key).toBe('system:position');
 
+    component.setColumnWidth(positionColumn, 120);
+    const itemIdColumn = component.tableColumns.find((column) => column.key === 'system:itemId')!;
+    expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(120);
     component.toggleColumnVisibility(positionColumn);
 
     expect(component.isColumnVisible(positionColumn)).toBe(false);
@@ -1923,6 +1926,17 @@ describe('ItemExplorerFacade', () => {
     expect(
       component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns),
     ).toBe(0);
+
+    component.enableItemCollections = true;
+    component.toggleReferenceNumberVisibility();
+
+    const visibleColumns = component.tableColumns;
+    expect(visibleColumns.slice(0, 2).map((column) => column.key)).toEqual([
+      'system:referenceNumber',
+      'system:itemId',
+    ]);
+    expect(component.getStickyTableColumnLeft(visibleColumns[0], visibleColumns)).toBe(38);
+    expect(component.getStickyTableColumnLeft(visibleColumns[1], visibleColumns)).toBe(178);
 
     component.resetToDefault();
 

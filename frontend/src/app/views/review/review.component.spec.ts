@@ -160,11 +160,12 @@ describe('review filters and group removal', () => {
     const { component } = setup();
     const group = { id: 'g', name: 'Group', archived: false, members: [] };
     component.config!.groups = [group];
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     component.deleteGroup(group);
+    expect(component.groupToDelete).toBe(group);
+    component.cancelGroupDeletion();
     expect(component.config!.groups).toHaveLength(1);
-    vi.mocked(window.confirm).mockReturnValue(true);
     component.deleteGroup(group);
+    component.confirmGroupDeletion();
     expect(component.config!.groups).toHaveLength(0);
     expect(component.deletedGroupIds).toEqual(['g']);
     vi.restoreAllMocks();
@@ -175,8 +176,8 @@ it('restores a staged group when the server rejects deletion', () => {
   const { component, api } = setup();
   const group = { id: 'g', name: 'Group', archived: false, members: [] };
   component.config!.groups = [group];
-  vi.spyOn(window, 'confirm').mockReturnValue(true);
   component.deleteGroup(group);
+  component.confirmGroupDeletion();
   api.configureReview.mockReturnValue(
     throwError(() => ({ status: 400, error: { message: 'Die Gruppe enthält Kommentare.' } })),
   );

@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, Inject, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -158,6 +158,43 @@ interface ReviewConfig {
       }
       .configuration-actions {
         margin-top: 12px;
+      }
+      .delete-group-dialog {
+        width: min(520px, calc(100vw - 32px));
+        max-height: calc(100dvh - 48px);
+        overflow-y: auto;
+        margin: auto;
+        padding: 28px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        color: var(--color-text);
+        background: var(--color-surface, #fff);
+        box-shadow: var(--shadow);
+      }
+      .delete-group-dialog::backdrop {
+        background: rgba(15, 23, 42, 0.5);
+      }
+      .delete-group-name {
+        padding: 12px 16px;
+        background: var(--color-bg);
+        border-radius: var(--radius);
+        overflow-wrap: anywhere;
+        font-weight: 600;
+      }
+      .delete-group-dialog ul {
+        padding-left: 20px;
+        color: var(--color-text-secondary);
+        line-height: 1.6;
+      }
+      .delete-group-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .delete-group-actions .btn {
+        margin: 0;
       }
       .member-list {
         max-height: 14rem;
@@ -443,11 +480,13 @@ interface ReviewConfig {
               speichern.
             </p>
           }
-          <button class="btn btn-outline" (click)="addGroup()">Review-Gruppe hinzufügen</button>
+          <button #addGroupButton class="btn btn-outline" (click)="addGroup()">
+            Review-Gruppe hinzufügen
+          </button>
           <p>
-            Beim Gruppenwechsel bleiben vorhandene Kommentare in ihrer bisherigen Gruppe.
-            Gespeicherte Gruppen werden archiviert statt gelöscht, damit ihre Kommentare erhalten
-            bleiben.
+            Beim Gruppenwechsel bleiben vorhandene Kommentare in ihrer bisherigen Gruppe. Gruppen
+            ohne Kommentare können gelöscht werden. Gruppen mit Kommentaren werden archiviert, damit
+            ihr Verlauf erhalten bleibt.
           </p>
           <div class="configuration-actions">
             <button class="btn btn-primary" (click)="configure()" [disabled]="readinessBusy">
@@ -579,7 +618,35 @@ interface ReviewConfig {
           </div>
         </section>
       }
-    }`,
+    }
+    <dialog
+      #deleteGroupDialog
+      class="delete-group-dialog"
+      aria-labelledby="delete-group-heading"
+      aria-describedby="delete-group-description"
+      (cancel)="cancelGroupDeletion()"
+      (close)="restoreGroupFocus()"
+    >
+      <h2 id="delete-group-heading">Review-Gruppe löschen?</h2>
+      <p class="delete-group-name">{{ groupToDelete?.name }}</p>
+      <div id="delete-group-description">
+        <p>
+          Die Gruppe wird zum Löschen vorgemerkt. Wirksam wird die Löschung erst mit „Einstellungen
+          speichern“.
+        </p>
+        <ul>
+          <li>Die Mitgliedszuordnung dieser Gruppe wird entfernt.</li>
+          <li>
+            Gruppen mit Kommentaren können nicht gelöscht werden. Du kannst sie stattdessen
+            archivieren.
+          </li>
+        </ul>
+      </div>
+      <div class="delete-group-actions">
+        <button class="btn btn-outline" autofocus (click)="cancelGroupDeletion()">Abbrechen</button>
+        <button class="btn btn-danger" (click)="confirmGroupDeletion()">Löschung vormerken</button>
+      </div>
+    </dialog>`,
 })
 export class ReviewComponent implements OnInit, OnDestroy {
   activeSection: 'preparation' | 'analysis' = 'preparation';
@@ -602,6 +669,10 @@ export class ReviewComponent implements OnInit, OnDestroy {
   busy = false;
   saved = false;
   configConflict = false;
+  @ViewChild('deleteGroupDialog') private deleteGroupDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('addGroupButton') private addGroupButton?: ElementRef<HTMLButtonElement>;
+  groupToDelete: ReviewGroup | null = null;
+  private groupDeleteTrigger: HTMLElement | null = null;
   deletedGroupIds: string[] = [];
   private removedGroups: ReviewGroup[] = [];
   config: ReviewConfig | null = null;
@@ -734,16 +805,32 @@ export class ReviewComponent implements OnInit, OnDestroy {
     );
   }
   deleteGroup(group: ReviewGroup) {
-    if (!group.id || !this.config) return;
-    if (
-      !window.confirm(
-        `Gruppe „${group.name}“ löschen? Die Mitgliedszuordnung wird entfernt. Das Löschen wird beim Speichern wirksam und ist nur möglich, wenn keine Kommentare zu dieser Gruppe existieren.`,
-      )
-    )
-      return;
+    if (!group.id || !this.config || this.busy) return;
+    this.groupToDelete = group;
+    this.groupDeleteTrigger =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.deleteGroupDialog?.nativeElement.showModal();
+  }
+  cancelGroupDeletion() {
+    this.groupToDelete = null;
+    this.deleteGroupDialog?.nativeElement.close();
+  }
+  confirmGroupDeletion() {
+    const group = this.groupToDelete;
+    if (!group?.id || !this.config || this.busy) return;
     this.removedGroups.push(group);
     this.deletedGroupIds.push(group.id);
     this.config.groups = this.config.groups.filter((entry) => entry !== group);
+    this.groupToDelete = null;
+    this.groupDeleteTrigger = null;
+    this.deleteGroupDialog?.nativeElement.close();
+  }
+  restoreGroupFocus() {
+    const target = this.groupDeleteTrigger?.isConnected
+      ? this.groupDeleteTrigger
+      : this.addGroupButton?.nativeElement;
+    target?.focus();
+    this.groupDeleteTrigger = null;
   }
   get filteredComments() {
     return this.comments.filter(

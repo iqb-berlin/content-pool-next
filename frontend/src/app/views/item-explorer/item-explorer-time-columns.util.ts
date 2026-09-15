@@ -7,7 +7,7 @@ const TIME_COLUMN_ALIASES: Readonly<Record<string, string>> = {
 };
 
 export function normalizeItemExplorerMetadataColumnId(id: string): string {
-  return TIME_COLUMN_ALIASES[id] || id;
+  return Object.hasOwn(TIME_COLUMN_ALIASES, id) ? TIME_COLUMN_ALIASES[id] : id;
 }
 
 export function normalizeItemExplorerTableColumnKey(key: string): string {
@@ -35,7 +35,7 @@ export function normalizeItemExplorerColumnRecord<T>(
   values: Readonly<Record<string, T>>,
   normalizeKey: (key: string) => string = normalizeItemExplorerMetadataColumnId,
 ): Record<string, T> {
-  const normalized: Record<string, T> = {};
+  const normalized: Record<string, T> = Object.create(null);
   const entries = Object.entries(values);
 
   for (const [key, value] of entries) {
@@ -55,7 +55,7 @@ export function normalizeItemExplorerColumnRecord<T>(
 export function normalizeItemExplorerColumnFilters(
   values: Readonly<Record<string, unknown>>,
 ): Record<string, string> {
-  const normalized: Record<string, string> = {};
+  const normalized: Record<string, string> = Object.create(null);
   const entries = Object.entries(values);
 
   for (const [key, value] of entries) {

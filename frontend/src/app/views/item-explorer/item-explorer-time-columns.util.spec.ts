@@ -8,6 +8,19 @@ import {
 } from './item-explorer-time-columns.util';
 
 describe('item explorer time column normalization', () => {
+  it.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'preserves metadata ID %s and its saved settings',
+    (id) => {
+      expect(normalizeItemExplorerMetadataColumnId(id)).toBe(id);
+      expect(normalizeItemExplorerTableColumnKey(`metadata:${id}`)).toBe(`metadata:${id}`);
+      expect(normalizeItemExplorerColumnList([id])).toEqual([id]);
+      const widths = normalizeItemExplorerColumnRecord({ [id]: 180 });
+      expect(Object.entries(widths)).toEqual([[id, 180]]);
+      const filters = normalizeItemExplorerColumnFilters({ [id]: 'example' });
+      expect(Object.entries(filters)).toEqual([[id, 'example']]);
+    },
+  );
+
   it('maps the known VOMD time metadata IDs', () => {
     expect(normalizeItemExplorerMetadataColumnId('iqb_time_item')).toBe('itemTimeSeconds');
     expect(normalizeItemExplorerMetadataColumnId('iqb_item_time')).toBe('itemTimeSeconds');

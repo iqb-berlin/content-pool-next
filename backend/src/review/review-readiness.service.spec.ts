@@ -3,6 +3,8 @@ import { ReviewReadinessService } from "./review-readiness.service";
 function setup(overrides: Record<string, any> = {}) {
   const uploadedFile = {
     id: "file-1",
+    filePath: "/nonexistent/review-test-file",
+    checksum: "v1",
     validationResult: { valid: true, issues: [] },
   };
   const files = {
@@ -53,12 +55,27 @@ function setup(overrides: Record<string, any> = {}) {
   Object.assign(validation, overrides.validation);
   Object.assign(unitParser, overrides.unitParser);
   Object.assign(manifest, overrides.manifest);
+  const acp = { acpIndex: { version: "1" } };
+  let snapshot: any = null;
+  const snapshots = {
+    findOne: jest.fn(async () => snapshot),
+    upsert: jest.fn(async (value) => {
+      snapshot = structuredClone(value);
+    }),
+  };
   return {
+    acp,
+    uploadedFile,
+    files,
+    snapshots,
+    validation,
     service: new ReviewReadinessService(
       files as any,
       validation as any,
       unitParser as any,
       manifest as any,
+      { findOne: async () => acp } as any,
+      snapshots as any,
     ),
   };
 }
@@ -126,5 +143,33 @@ describe("ReviewReadinessService", () => {
     expect(result.warnings).toContain(
       "Unit „Unit 1“: Metadaten „metadata.vomd“ fehlen.",
     );
+  });
+});
+
+describe("persisted readiness", () => {
+  it("loads the saved result and detects changes to files, index, and rules", async () => {
+    const { service, acp, uploadedFile } = setup();
+    expect(await service.getLast("acp-1")).toBeNull();
+    const result = await service.check("acp-1");
+    expect(await service.getLast("acp-1")).toEqual(result);
+    uploadedFile.checksum = "v2";
+    expect((await service.getLast("acp-1"))?.stale).toBe(true);
+    await service.check("acp-1");
+    expect((await service.getLast("acp-1"))?.stale).toBe(false);
+    acp.acpIndex.version = "2";
+    expect((await service.getLast("acp-1"))?.stale).toBe(true);
+    await service.check("acp-1");
+    (service as any).rulesVersion = "new-rules";
+    expect((await service.getLast("acp-1"))?.stale).toBe(true);
+  });
+  it("marks a result stale when content changes during validation", async () => {
+    const { service, validation, uploadedFile } = setup();
+    const response = await validation.autoValidateUploadedFiles();
+    validation.autoValidateUploadedFiles.mockImplementation(async () => {
+      uploadedFile.checksum = "changed-during-check";
+      return response;
+    });
+    expect((await service.check("acp-1")).stale).toBe(true);
+    expect((await service.getLast("acp-1"))?.stale).toBe(true);
   });
 });

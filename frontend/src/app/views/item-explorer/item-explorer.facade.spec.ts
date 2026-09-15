@@ -34,6 +34,17 @@ function createFacade(options?: {
       }
     | undefined;
   getFocusIdentifiers?: (definition: string, variableId: string) => string[];
+  resolvePlayerResponseTarget?: (
+    definition: string,
+    variableId: string,
+  ) =>
+    | {
+        responseId: string;
+        elementType: string;
+        identifiers: string[];
+        optionCount?: number;
+      }
+    | undefined;
   stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
   authService?: Record<string, unknown>;
@@ -60,6 +71,14 @@ function createFacade(options?: {
       }),
     getFocusIdentifiers:
       options?.getFocusIdentifiers || ((_definition: string, variableId: string) => [variableId]),
+    resolvePlayerResponseTarget:
+      options?.resolvePlayerResponseTarget ||
+      ((_definition: string, variableId: string) => ({
+        responseId: variableId,
+        elementType: 'radio',
+        identifiers: [variableId],
+        optionCount: 4,
+      })),
     stripConditionalVisibility:
       options?.stripConditionalVisibility || ((definition: string) => definition),
   };
@@ -4505,6 +4524,195 @@ describe('ItemExplorerFacade', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows a validated solution without replacing or saving the persisted player state', () => {
+    vi.useFakeTimers();
+    const component = createFacade();
+    const postMessage = vi.fn();
+    const persistedDataParts = {
+      elementCodes: JSON.stringify([
+        { id: 'A1', status: 'VALUE_CHANGED', value: 1 },
+        { id: 'B1', status: 'VALUE_CHANGED', value: 'keep' },
+      ]),
+    };
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Single choice',
+        variableId: 'A1',
+        metadata: {},
+      };
+      component.currentCodingScheme = {
+        variableCodings: [
+          {
+            id: 'A1',
+            alias: 'A1',
+            sourceType: 'BASE',
+            codes: [
+              {
+                id: 1,
+                type: 'FULL_CREDIT',
+                score: 1,
+                ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['2'] }] }],
+              },
+              { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+            ],
+          },
+        ],
+      };
+      component.currentResponseData = persistedDataParts;
+      component.hasResponseState = true;
+      (component as any).unit = { id: 'UNIT_1', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+      (component as any).playerFrameReady = true;
+      setPreviewStatus(component, 'ready');
+      (component as any).refreshCorrectSolutionPrefill();
+      registerPlayerDom(component, postMessage);
+      postMessage.mockClear();
+
+      component.toggleCorrectSolution();
+
+      expect(component.isCorrectSolutionActive).toBe(true);
+      const solutionStart = postMessage.mock.calls[0][0];
+      expect(solutionStart.type).toBe('vopStartCommand');
+      expect(JSON.parse(solutionStart.unitState.dataParts.elementCodes)).toEqual([
+        { id: 'B1', status: 'VALUE_CHANGED', value: 'keep' },
+        { id: 'A1', status: 'VALUE_CHANGED', value: 2 },
+      ]);
+
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: solutionStart.sessionId,
+        unitState: { dataParts: { elementCodes: 'synthetic-state' } },
+      });
+      expect(component.currentResponseData).toBe(persistedDataParts);
+
+      component.saveCurrentResponseState();
+      expect(component.showSaveConfirmDialog).toBe(true);
+      expect(component.confirmDialogError).toContain('Musterlösung ist nur eine Vorschau');
+
+      component.closeSaveConfirmDialog();
+      postMessage.mockClear();
+      component.toggleCorrectSolution();
+
+      expect(component.isCorrectSolutionActive).toBe(false);
+      expect(postMessage.mock.calls[0][0].unitState.dataParts).toBe(persistedDataParts);
+    } finally {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the player usable when no unique correct solution can be derived', () => {
+    const component = createFacade();
+    const startPlayerIfReady = vi.fn();
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Ambiguous item',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'A1',
+          sourceType: 'BASE',
+          codes: [
+            {
+              id: 1,
+              type: 'FULL_CREDIT',
+              ruleSets: [{ rules: [{ method: 'MATCH_REGEX', parameters: ['[12]'] }] }],
+            },
+          ],
+        },
+      ],
+    };
+    (component as any).definitionContent = JSON.stringify({ pages: [] });
+    (component as any).startPlayerIfReady = startPlayerIfReady;
+    setPreviewStatus(component, 'ready');
+    (component as any).refreshCorrectSolutionPrefill();
+
+    component.toggleCorrectSolution();
+
+    expect(component.correctSolutionRequested).toBe(true);
+    expect(component.correctSolutionAvailable).toBe(false);
+    expect(component.isCorrectSolutionActive).toBe(false);
+    expect(startPlayerIfReady).not.toHaveBeenCalled();
+  });
+
+  it('keeps the requested mode and recalculates the solution for the newly selected item', () => {
+    const component = createFacade();
+    const solutionVariable = (id: string, answer: string) => ({
+      id,
+      alias: id,
+      sourceType: 'BASE',
+      codes: [
+        {
+          id: 1,
+          type: 'FULL_CREDIT',
+          score: 1,
+          ruleSets: [{ rules: [{ method: 'MATCH', parameters: [answer] }] }],
+        },
+        { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+      ],
+    });
+    const firstItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'First item',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    const secondItem = {
+      ...firstItem,
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      variableId: 'B1',
+      description: 'Second item',
+    };
+    component.currentCodingScheme = {
+      variableCodings: [solutionVariable('A1', '1'), solutionVariable('B1', '2')],
+    };
+    (component as any).definitionContent = JSON.stringify({ pages: [] });
+    component.correctSolutionRequested = true;
+
+    component.selectedItem = firstItem;
+    setPreviewStatus(component, 'ready');
+    (component as any).applyPreviewResult({
+      item: firstItem,
+      reuseUnit: true,
+      responseState: null,
+    });
+    expect(component.correctSolutionPrefill).toMatchObject({
+      status: 'available',
+      responses: [{ id: 'A1', value: 1 }],
+    });
+
+    component.selectedItem = secondItem;
+    setPreviewStatus(component, 'ready');
+    (component as any).applyPreviewResult({
+      item: secondItem,
+      reuseUnit: true,
+      responseState: null,
+    });
+    expect(component.correctSolutionRequested).toBe(true);
+    expect(component.correctSolutionPrefill).toMatchObject({
+      status: 'available',
+      responses: [{ id: 'B1', value: 2 }],
+    });
   });
 
   it('uses the scroll-page index from the VOUD service in the player preview', () => {

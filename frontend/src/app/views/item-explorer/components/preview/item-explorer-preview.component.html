@@ -214,6 +214,19 @@
       <div class="player-display-toolbar">
         <strong>Player-Vorschau</strong>
         <button
+          type="button"
+          class="btn btn-outline btn-sm btn-state"
+          (click)="vm.toggleCorrectSolution()"
+          [disabled]="!vm.canPreviewSelectedItem && !vm.correctSolutionRequested"
+          [attr.aria-pressed]="vm.correctSolutionRequested"
+          [title]="vm.correctSolutionToggleTitle"
+        >
+          <svg class="preview-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="m4 13 5 5L20 6M4 6h8" />
+          </svg>
+          {{ vm.correctSolutionRequested ? 'Musterlösung ausblenden' : 'Musterlösung anzeigen' }}
+        </button>
+        <button
           #fullscreenToggle
           type="button"
           class="btn btn-outline btn-sm btn-state"
@@ -240,6 +253,19 @@
           {{ isPlayerFullscreen ? 'Vollbild beenden' : 'Vollbild' }}
         </button>
       </div>
+      @if (vm.correctSolutionRequested) {
+        <div
+          class="correct-solution-status"
+          [class.unavailable]="!vm.correctSolutionAvailable"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>
+            {{ vm.isCorrectSolutionActive ? 'Musterlösung – nicht gespeichert' : 'Keine Musterlösung' }}
+          </strong>
+          <span>{{ vm.correctSolutionPrefill.message }}</span>
+        </div>
+      }
       @if (vm.previewUnavailableReason) {
         <div class="empty-state">
           <div style="font-size: 2.5rem; margin-bottom: 12px">🧭</div>
@@ -380,8 +406,12 @@
             <button
               class="btn btn-outline btn-sm"
               (click)="playerActions.removeAttribute('open'); vm.saveCurrentResponseState()"
-              [disabled]="vm.previewUpdateInProgress"
-              title="Die aktuellen Player-Eingaben für dieses Item nach Bestätigung speichern"
+              [disabled]="!vm.canSaveCurrentResponseState"
+              [title]="
+                vm.isCorrectSolutionActive
+                  ? 'Musterlösungen werden nicht als Player-Eingaben gespeichert'
+                  : 'Die aktuellen Player-Eingaben für dieses Item nach Bestätigung speichern'
+              "
             >
               <svg
                 class="preview-action-icon"

@@ -121,11 +121,30 @@
 }
 .player-display-toolbar strong {
   font-size: 0.9rem;
+  margin-right: auto;
 }
 .player-display-toolbar .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.correct-solution-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #9ac9aa;
+  background: #eef8f1;
+  color: #1e6336;
+  font-size: 0.85rem;
+}
+.correct-solution-status.unavailable {
+  border-bottom-color: #e0bd74;
+  background: #fff8e8;
+  color: #7a4a00;
+}
+.correct-solution-status span {
+  color: inherit;
 }
 .player-container:fullscreen,
 .player-container.player-fullscreen-fallback {

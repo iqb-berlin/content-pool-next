@@ -2,35 +2,6 @@
   margin-top: 12px;
 }
 
-:host(.review-comment-thread) {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-}
-
-:host(.review-comment-thread) .comment-thread-shell {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-}
-
-:host(.review-comment-thread) .comment-panel {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 0;
-  max-height: none;
-  overflow: hidden;
-}
-
-:host(.review-comment-thread) .thread-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
 .comment-toggle {
   width: 100%;
   justify-content: center;

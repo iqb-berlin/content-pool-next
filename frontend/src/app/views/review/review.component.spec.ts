@@ -8,6 +8,7 @@ function setup() {
     getReview: vi.fn().mockReturnValue(of({ booklets: [] })),
     getVisibleReviewComments: vi.fn().mockReturnValue(of([])),
     getReviewConfig: vi.fn(),
+    getReviewReadiness: vi.fn().mockReturnValue(of(null)),
     getReviewMembers: vi.fn().mockReturnValue(of([])),
     checkReviewReadiness: vi.fn().mockReturnValue(
       of({
@@ -43,12 +44,12 @@ describe('Review configuration', () => {
     const { component, api } = setup();
     component.access = { canManageReview: true, canReview: true } as any;
     component.exportComments('csv');
-    expect(api.exportMyReviewCommentsCsv).toHaveBeenCalledWith('acp');
+    expect(api.exportMyReviewCommentsCsv).toHaveBeenCalledWith('acp', {});
     component.exportComments('xlsx');
-    expect(api.exportMyReviewCommentsXlsx).toHaveBeenCalledWith('acp');
+    expect(api.exportMyReviewCommentsXlsx).toHaveBeenCalledWith('acp', {});
     expect(api.exportVisibleReviewComments).not.toHaveBeenCalled();
     component.exportComments();
-    expect(api.exportVisibleReviewComments).toHaveBeenCalledWith('acp');
+    expect(api.exportVisibleReviewComments).toHaveBeenCalledWith('acp', {});
     component.ngOnDestroy();
   });
 
@@ -124,4 +125,97 @@ describe('Review configuration', () => {
     );
     component.ngOnDestroy();
   });
+});
+
+describe('review filters and group removal', () => {
+  it('uses the same selection for display and export, unless explicitly ignored', () => {
+    const { component, api } = setup();
+    component.comments = [
+      {
+        id: '1',
+        commentText: 'Bitte prüfen',
+        authorLabel: 'Alex',
+        targetType: 'UNIT',
+        groupId: 'g',
+      },
+      { id: '2', commentText: 'Andere', authorLabel: 'Sam', targetType: 'ITEM' },
+    ];
+    component.textFilter = ' PRÜFEN ';
+    component.authorFilter = 'Alex';
+    component.groupFilter = 'g';
+    component.targetFilter = 'UNIT';
+    expect(component.filteredComments.map((c) => c.id)).toEqual(['1']);
+    component.exportComments();
+    expect(api.exportVisibleReviewComments).toHaveBeenLastCalledWith('acp', {
+      q: 'PRÜFEN',
+      author: 'Alex',
+      groupId: 'g',
+      targetType: 'UNIT',
+    });
+    component.exportAll = true;
+    component.exportComments();
+    expect(api.exportVisibleReviewComments).toHaveBeenLastCalledWith('acp', {});
+  });
+  it('only stages a persisted group deletion after confirmation', () => {
+    const { component } = setup();
+    const group = { id: 'g', name: 'Group', archived: false, members: [] };
+    component.config!.groups = [group];
+    component.deleteGroup(group);
+    expect(component.groupToDelete).toBe(group);
+    component.cancelGroupDeletion();
+    expect(component.config!.groups).toHaveLength(1);
+    component.deleteGroup(group);
+    component.confirmGroupDeletion();
+    expect(component.config!.groups).toHaveLength(0);
+    expect(component.deletedGroupIds).toEqual(['g']);
+    vi.restoreAllMocks();
+  });
+});
+
+it('restores a staged group when the server rejects deletion', () => {
+  const { component, api } = setup();
+  const group = { id: 'g', name: 'Group', archived: false, members: [] };
+  component.config!.groups = [group];
+  component.deleteGroup(group);
+  component.confirmGroupDeletion();
+  api.configureReview.mockReturnValue(
+    throwError(() => ({ status: 400, error: { message: 'Die Gruppe enthält Kommentare.' } })),
+  );
+  component.configure();
+  expect(component.config!.groups).toEqual([group]);
+  expect(component.deletedGroupIds).toEqual([]);
+  expect(component.error).toContain('enthält Kommentare');
+  vi.restoreAllMocks();
+});
+
+it('does not let an older background response overwrite a fresh readiness check', () => {
+  const { component, api } = setup();
+  const pending = new Subject<any>();
+  api.getReviewReadiness.mockReturnValue(pending);
+  component.loadReadiness();
+  component.checkReadiness();
+  expect(component.readiness?.status).toBe('READY');
+  pending.next({ status: 'BLOCKED' });
+  expect(component.readiness?.status).toBe('READY');
+  component.ngOnDestroy();
+});
+
+it('ignores an older background error after a successful readiness check', () => {
+  const { component, api } = setup();
+  const pending = new Subject<any>();
+  api.getReviewReadiness.mockReturnValue(pending);
+  component.loadReadiness();
+  component.checkReadiness();
+  expect(component.readinessLabel).toBe('Prüfbereit');
+  pending.error(new Error('outdated timeout'));
+  expect(component.readinessLabel).toBe('Prüfbereit');
+  expect(component.readinessError).toBe('');
+  component.ngOnDestroy();
+});
+it('still reports errors of the current readiness request', () => {
+  const { component, api } = setup();
+  api.getReviewReadiness.mockReturnValue(throwError(() => new Error('offline')));
+  component.loadReadiness();
+  expect(component.readinessLabel).toBe('Aktualität unbekannt');
+  component.ngOnDestroy();
 });

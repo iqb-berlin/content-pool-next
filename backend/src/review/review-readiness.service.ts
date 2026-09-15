@@ -1,3 +1,7 @@
+import { createHash } from "crypto";
+import { stat } from "fs/promises";
+import { Acp } from "../database/entities/acp.entity";
+import { ReviewReadinessSnapshot } from "../database/entities/review-readiness-snapshot.entity";
 import { Injectable } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
@@ -14,6 +18,7 @@ export type ReviewReadinessStatus = "READY" | "WARNING" | "BLOCKED";
 export interface ReviewReadinessResult {
   status: ReviewReadinessStatus;
   checkedAt: string;
+  stale?: boolean;
   blockers: string[];
   warnings: string[];
   summary: {
@@ -33,9 +38,66 @@ export class ReviewReadinessService {
     private readonly validation: ValidationService,
     private readonly unitParser: UnitParserService,
     private readonly manifest: ReviewManifestService,
+    @InjectRepository(Acp) private readonly acps: Repository<Acp>,
+    @InjectRepository(ReviewReadinessSnapshot)
+    private readonly snapshots: Repository<ReviewReadinessSnapshot>,
   ) {}
 
+  // Bump when readiness rules or validation dependencies change.
+  private readonly rulesVersion = "review-readiness-v1";
+
+  private async fingerprint(acpId: string): Promise<string> {
+    const [acp, files] = await Promise.all([
+      this.acps.findOne({ where: { id: acpId } }),
+      this.files.find({ where: { acpId } }),
+    ]);
+    const entries = await Promise.all(
+      files.map(async (file) => {
+        const disk = await stat(file.filePath)
+          .then((s) => [s.size, s.mtimeMs, s.ctimeMs])
+          .catch(() => null);
+        return [
+          file.id,
+          file.originalName,
+          file.fileType,
+          file.checksum,
+          file.fileSize,
+          file.filePath,
+          disk,
+        ];
+      }),
+    );
+    entries.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    const stable = (value: any): any =>
+      Array.isArray(value)
+        ? value.map(stable)
+        : value && typeof value === "object"
+          ? Object.fromEntries(
+              Object.keys(value)
+                .sort()
+                .map((key) => [key, stable(value[key])]),
+            )
+          : value;
+    return createHash("sha256")
+      .update(
+        JSON.stringify(stable([this.rulesVersion, acp?.acpIndex, entries])),
+      )
+      .digest("hex");
+  }
+
+  async getLast(acpId: string): Promise<ReviewReadinessResult | null> {
+    const snapshot = await this.snapshots.findOne({ where: { acpId } });
+    if (!snapshot) return null;
+    return {
+      ...snapshot.result,
+      stale:
+        snapshot.result.stale === true ||
+        snapshot.fingerprint !== (await this.fingerprint(acpId)),
+    };
+  }
+
   async check(acpId: string): Promise<ReviewReadinessResult> {
+    const fingerprint = await this.fingerprint(acpId);
     const blockers = new Set<string>();
     const warnings = new Set<string>();
     const files = await this.files.find({ where: { acpId } });
@@ -120,7 +182,7 @@ export class ReviewReadinessService {
 
     const blockerList = [...blockers];
     const warningList = [...warnings];
-    return {
+    const result: ReviewReadinessResult = {
       status: blockerList.length
         ? "BLOCKED"
         : warningList.length
@@ -137,6 +199,9 @@ export class ReviewReadinessService {
         unitCount: referencedUnitIds.size,
       },
     };
+    result.stale = fingerprint !== (await this.fingerprint(acpId));
+    await this.snapshots.upsert({ acpId, fingerprint, result }, ["acpId"]);
+    return result;
   }
 
   private uniqueIssues(files: AcpFile[]): ValidationIssue[] {

@@ -1,3 +1,4 @@
+import { ReviewReadinessSnapshot } from "../database/entities/review-readiness-snapshot.entity";
 import { ReviewController } from "../review/review.controller";
 import { ReviewManifestModule } from "../review/review-manifest.module";
 import { Module } from "@nestjs/common";
@@ -22,6 +23,7 @@ import { ReviewReadinessService } from "../review/review-readiness.service";
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      ReviewReadinessSnapshot,
       Acp,
       AcpAccessConfig,
       AcpFile,

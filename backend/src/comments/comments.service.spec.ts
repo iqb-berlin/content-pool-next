@@ -529,6 +529,62 @@ describe("CommentsService", () => {
     });
   });
 
+  it("applies combined filters to both CSV and XLSX without exporting other comments", async () => {
+    const base = {
+      acpId: "acp-1",
+      userId: "manager",
+      targetType: CommentTargetType.UNIT,
+      targetId: "unit-1",
+      groupId: "g",
+      authorLabel: "Alex",
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-01"),
+    };
+    commentRepository.find.mockResolvedValue([
+      { ...base, id: "yes", commentText: "Bitte PRÜFEN" },
+      {
+        ...base,
+        id: "no-group",
+        groupId: "other",
+        commentText: "Andere Gruppe prüfen",
+      },
+      {
+        ...base,
+        id: "no-author",
+        authorLabel: "Sam",
+        commentText: "Anderer Autor prüfen",
+      },
+      {
+        ...base,
+        id: "no-type",
+        targetType: CommentTargetType.ITEM,
+        commentText: "Anderer Bezug prüfen",
+      },
+    ]);
+    const actor = {
+      userId: "manager",
+      filters: {
+        q: " prüfen ",
+        author: "Alex",
+        groupId: "g",
+        targetType: CommentTargetType.UNIT,
+      },
+    };
+    const csv = (
+      await service.exportReviewCommentsCsv("acp-1", actor)
+    ).toString("utf8");
+    expect(csv).toContain("Bitte PRÜFEN");
+    expect(csv).not.toContain("Andere");
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+    );
+    const sheet = workbook.getWorksheet("Kommentare")!;
+    expect(sheet.rowCount).toBe(2);
+    expect(JSON.stringify(sheet.getRow(2).values)).toContain("Bitte PRÜFEN");
+  });
+
   it("keeps personal review exports personal for manager identities", async () => {
     const date = new Date("2026-01-01T10:00:00.000Z");
     commentRepository.find.mockResolvedValue([

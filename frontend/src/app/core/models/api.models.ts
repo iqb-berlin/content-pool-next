@@ -208,6 +208,7 @@ export interface ValidateUnitsResponse {
 }
 
 export interface ReviewReadiness {
+  stale?: boolean;
   status: 'READY' | 'WARNING' | 'BLOCKED';
   checkedAt: string;
   blockers: string[];

@@ -549,7 +549,7 @@ describe('ItemExplorerFacade comment counts', () => {
     expect(component.metadataSettings.layout?.order).toContain('system:comments');
   });
 
-  it('preserves an explicitly empty shared column selection during layout migration', () => {
+  it('keeps position visible when migrating an explicitly empty legacy column selection', () => {
     const component = createFacade();
     component.itemCommentsEnabled = true;
     const envelope = createExplorerEnvelope();
@@ -564,9 +564,9 @@ describe('ItemExplorerFacade comment counts', () => {
 
     (component as any).applySharedExplorerEnvelope(envelope);
 
-    expect(component.metadataSettings.layout?.visible).toEqual([]);
-    expect(component.metadataSettings.layout?.order).toEqual([]);
-    expect(component.metadataSettings.layout?.schemaVersion).toBe(2);
+    expect(component.metadataSettings.layout?.visible).toEqual(['system:position']);
+    expect(component.metadataSettings.layout?.order).toEqual(['system:position']);
+    expect(component.metadataSettings.layout?.schemaVersion).toBe(3);
   });
 
   it('resolves a filtered deep link and consumes its automatic-open state on navigation', () => {
@@ -1907,6 +1907,29 @@ describe('ItemExplorerFacade', () => {
     ).toBe(true);
   });
 
+  it('toggles position through the shared layout and restores its default visibility', () => {
+    const component = createFacade();
+    const positionColumn = component.allTableColumns.find(
+      (column) => column.key === 'system:position',
+    )!;
+
+    expect(component.isColumnVisible(positionColumn)).toBe(true);
+    expect(component.tableColumns[0].key).toBe('system:position');
+
+    component.toggleColumnVisibility(positionColumn);
+
+    expect(component.isColumnVisible(positionColumn)).toBe(false);
+    expect(component.tableColumns.some((column) => column.key === 'system:position')).toBe(false);
+    expect(
+      component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns),
+    ).toBe(0);
+
+    component.resetToDefault();
+
+    expect(component.isColumnVisible(positionColumn)).toBe(true);
+    expect(component.tableColumns[0].key).toBe('system:position');
+  });
+
   it('keeps an enabled reference number directly before the sticky Item-ID column', () => {
     const component = createFacade();
 
@@ -1915,13 +1938,15 @@ describe('ItemExplorerFacade', () => {
     const tableColumns = component.tableColumns;
     const tableColumnsSpy = vi.spyOn(component, 'tableColumns', 'get');
 
-    expect(tableColumns.slice(0, 2).map((column) => column.id)).toEqual([
+    expect(tableColumns.slice(0, 3).map((column) => column.id)).toEqual([
+      'position',
       'referenceNumber',
       'itemId',
     ]);
     expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
     expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
-    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(212);
+    expect(component.isStickyTableColumn(tableColumns[2], tableColumns)).toBe(true);
+    expect(component.getStickyTableColumnLeft(tableColumns[2], tableColumns)).toBe(212);
     expect(tableColumnsSpy).not.toHaveBeenCalled();
   });
 
@@ -1929,15 +1954,16 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade();
     component.enableItemCollections = true;
 
-    const itemIdColumn = component.tableColumns[0];
+    const itemIdColumn = component.tableColumns.find((column) => column.id === 'itemId')!;
     expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(110);
 
     component.toggleReferenceNumberVisibility();
 
     const tableColumns = component.tableColumns;
 
-    expect(component.getStickyTableColumnLeft(tableColumns[0], tableColumns)).toBe(110);
-    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(250);
+    expect(component.getStickyTableColumnLeft(tableColumns[0], tableColumns)).toBe(38);
+    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(110);
+    expect(component.getStickyTableColumnLeft(tableColumns[2], tableColumns)).toBe(250);
   });
 
   it('normalizes persisted layouts to keep reference number and Item-ID pinned first', () => {
@@ -1948,8 +1974,8 @@ describe('ItemExplorerFacade', () => {
       configured: true,
       widths: {},
       layout: {
-        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber'],
-        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber'],
+        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber', 'system:position'],
+        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber', 'system:position'],
         configured: true,
         widths: {},
       },
@@ -1958,14 +1984,17 @@ describe('ItemExplorerFacade', () => {
     const tableColumns = component.tableColumns;
 
     expect(tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'referenceNumber',
       'itemId',
       'unitLabel',
     ]);
     expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
     expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
+    expect(component.isStickyTableColumn(tableColumns[2], tableColumns)).toBe(true);
     expect(component.canMoveTableColumn(tableColumns[0], 1)).toBe(false);
     expect(component.canMoveTableColumn(tableColumns[1], 1)).toBe(false);
+    expect(component.canMoveTableColumn(tableColumns[2], 1)).toBe(false);
   });
 
   it('restores column settings when the column manager is cancelled', () => {
@@ -2114,6 +2143,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).personalDataSessionIdentity = 'oidc:test-user';
 
     expect(component.allTableColumns.map((column) => column.label)).toEqual([
+      'Position',
       'Referenz-Nr.',
       'Item-ID',
       'Aufgabe',
@@ -2135,6 +2165,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.getColumnWidth(taskColumn)).toBe(310);
     expect(component.getColumnWidth(competenceColumn)).toBe(230);
     expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'itemId',
       'customQuality',
       'unitLabel',
@@ -2266,11 +2297,12 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.metadataSettings.layout?.configured).toBe(false);
     expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'itemId',
       'unitLabel',
       'second',
     ]);
-    expect(component.getColumnWidth(component.tableColumns[2])).toBe(260);
+    expect(component.getColumnWidth(component.tableColumns[3])).toBe(260);
   });
 
   it('allows an explicitly empty selection to be reset to defaults', () => {

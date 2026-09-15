@@ -239,7 +239,7 @@ type UnitPagingMode =
           }
         </div>
 
-        <div class="panel-content" [class.comments-active]="activeTab === 'comments'">
+        <div class="panel-content">
           @if (activeTab === 'comments') {
             @if (showCommentBtn || showBookletCommentBtn) {
               @if (showCommentBtn && showBookletCommentBtn) {
@@ -253,7 +253,6 @@ type UnitPagingMode =
               }
               @if (commentScope === 'booklet' && showBookletCommentBtn) {
                 <app-item-comment-thread
-                  class="review-comment-thread"
                   [acpId]="acpId"
                   [targetType]="'BOOKLET'"
                   [bookletId]="bookletId"
@@ -263,7 +262,6 @@ type UnitPagingMode =
                 />
               } @else {
                 <app-item-comment-thread
-                  class="review-comment-thread"
                   [acpId]="acpId"
                   [targetType]="'UNIT'"
                   [unitId]="unitId"
@@ -477,20 +475,6 @@ type UnitPagingMode =
         flex: 1;
         min-height: 0;
         overflow-y: auto;
-        scrollbar-gutter: stable;
-      }
-      .review-mode .meta-panel.split .panel-content.comments-active {
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-      }
-      .review-mode .panel-content.comments-active app-item-comment-thread {
-        display: flex;
-        flex: 1;
-        min-height: 0;
-      }
-      .review-mode .comment-scope-select {
-        flex: none;
       }
       .review-mode .player-container.print-mode {
         height: var(--review-content-height);
@@ -524,27 +508,19 @@ type UnitPagingMode =
         outline: none;
       }
       .panel-resize-handle::after {
-        content: '↔';
+        content: '';
         position: absolute;
         top: 50%;
-        left: -1px;
-        display: grid;
-        place-items: center;
-        width: 20px;
-        height: 24px;
-        border: 1px solid var(--color-border);
-        border-radius: 999px;
-        background: #fff;
-        color: var(--color-text-secondary);
-        font-size: 12px;
-        line-height: 1;
+        left: 3px;
+        width: 4px;
+        height: 40px;
+        border-radius: 4px;
+        background: var(--color-border);
         transform: translateY(-50%);
-        box-shadow: var(--shadow-sm);
       }
       .panel-resize-handle:hover::after,
       .panel-resize-handle:focus-visible::after {
-        border-color: var(--color-primary);
-        color: var(--color-primary);
+        background: var(--color-primary-light);
       }
 
       .panel-overlay-backdrop {

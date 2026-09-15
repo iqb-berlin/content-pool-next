@@ -155,7 +155,7 @@ export function extractValueText(valueAsText: any): string {
 
 export function extractVomdTimeSeconds(
   profiles: unknown,
-  entryId: "iqb_time_item" | "iqb_time_stimulus",
+  entryId: "iqb_time_item" | "iqb_item_time" | "iqb_time_stimulus",
 ): number | undefined {
   if (!Array.isArray(profiles)) return undefined;
 

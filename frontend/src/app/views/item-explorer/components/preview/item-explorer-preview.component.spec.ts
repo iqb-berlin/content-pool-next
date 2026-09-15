@@ -17,7 +17,7 @@ function createPreview() {
 
 describe('ItemExplorerPreviewComponent', () => {
   it('exposes metadata and exclusion state with the matching semantics', () => {
-    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
+    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(4);
     expect(template).toContain('[attr.aria-expanded]="vm.showMetadataDrawer"');
     expect(template).toContain('aria-controls="item-explorer-metadata-drawer"');
     expect(template).toContain('[attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"');
@@ -35,6 +35,22 @@ describe('ItemExplorerPreviewComponent', () => {
     expect(template).toContain('(click)="togglePlayerFullscreen()"');
     expect(template).toContain("'Player-Vorschau im Vollbild anzeigen'");
     expect(template).toContain("'Vollbild der Player-Vorschau beenden'");
+  });
+
+  it('offers a labelled, non-persistent correct-solution mode', () => {
+    expect(template).toContain('(click)="vm.toggleCorrectSolution()"');
+    expect(template).toContain('[attr.aria-pressed]="vm.correctSolutionRequested"');
+    expect(template).toContain(
+      '[disabled]="!vm.canPreviewSelectedItem && !vm.correctSolutionRequested"',
+    );
+    expect(template).toContain('Musterlösung – nicht gespeichert');
+    expect(template).toContain('Keine eindeutige Musterlösung');
+    expect(template.replace(/\s+/g, ' ')).toContain(
+      'Aus den hinterlegten Bewertungsregeln lässt sich keine eindeutige Antwort ableiten.',
+    );
+    expect(template).toContain('<summary>Technische Details</summary>');
+    expect(template).toContain('<span>{{ vm.correctSolutionPrefill.message }}</span>');
+    expect(template).toContain('[disabled]="!vm.canSaveCurrentResponseState"');
   });
 
   it('opens and closes the existing player container with the Fullscreen API', async () => {

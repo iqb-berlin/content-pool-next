@@ -181,27 +181,28 @@
           @if (vm.enableItemCollections) {
             <th class="collection-select-col" title="Zur aktiven Auswahlliste hinzufügen">✓</th>
           }
-          <th class="number-col" title="Position in der aktuell gefilterten und sortierten Liste">
-            Pos.
-          </th>
           @for (col of tableColumns; track col.key) {
             <th
               (click)="vm.sortTableColumn(col)"
               [class.sortable]="vm.isTableColumnSortable(col)"
               [class.sticky-col]="vm.isStickyTableColumn(col, tableColumns)"
+              [class.number-col]="col.key === 'system:position'"
               [class.reference-number-col]="col.key === 'system:referenceNumber'"
               [style.width.px]="vm.getColumnWidth(col)"
               [style.minWidth.px]="vm.getColumnWidth(col)"
               [style.maxWidth.px]="vm.getColumnWidth(col)"
               [style.left.px]="vm.getStickyTableColumnLeft(col, tableColumns)"
               [attr.title]="
-                col.key === 'system:referenceNumber'
-                  ? col.label +
-                    ': Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
-                  : col.label
+                col.key === 'system:position'
+                  ? 'Position in der aktuell gefilterten und sortierten Liste'
+                  : col.key === 'system:referenceNumber'
+                    ? col.label +
+                      ': Stabile Nummer im vollständigen Itembestand; bei ausgeblendeten Zeilen sind Lücken sichtbar.'
+                    : col.label
               "
             >
-              {{ col.label }} {{ vm.getTableColumnSortIndicator(col) }}
+              {{ col.key === 'system:position' ? 'Pos.' : col.label }}
+              {{ vm.getTableColumnSortIndicator(col) }}
             </th>
           }
         </tr>
@@ -209,10 +210,10 @@
           @if (vm.enableItemCollections) {
             <th class="collection-select-col"></th>
           }
-          <th class="number-col"></th>
           @for (col of tableColumns; track col.key) {
             <th
               [class.sticky-col]="vm.isStickyTableColumn(col, tableColumns)"
+              [class.number-col]="col.key === 'system:position'"
               [class.reference-number-col]="col.key === 'system:referenceNumber'"
               [style.width.px]="vm.getColumnWidth(col)"
               [style.minWidth.px]="vm.getColumnWidth(col)"
@@ -220,6 +221,7 @@
               [style.left.px]="vm.getStickyTableColumnLeft(col, tableColumns)"
             >
               @switch (col.key) {
+                @case ('system:position') {}
                 @case ('system:referenceNumber') {}
                 @case ('system:itemId') {
                   <input
@@ -363,7 +365,6 @@
                 />
               </td>
             }
-            <td class="number-col">{{ i + 1 }}</td>
             @for (col of tableColumns; track col.key) {
               <td
                 [class.meta-cell]="col.source === 'metadata'"
@@ -371,6 +372,7 @@
                 [class.personal-data-cell]="col.source === 'personal'"
                 [class.note-cell]="col.key === 'personal:note'"
                 [class.sticky-col]="vm.isStickyTableColumn(col, tableColumns)"
+                [class.number-col]="col.key === 'system:position'"
                 [class.reference-number-col]="col.key === 'system:referenceNumber'"
                 [style.width.px]="vm.getColumnWidth(col)"
                 [style.minWidth.px]="vm.getColumnWidth(col)"
@@ -388,6 +390,9 @@
                 "
               >
                 @switch (col.key) {
+                  @case ('system:position') {
+                    {{ i + 1 }}
+                  }
                   @case ('system:referenceNumber') {
                     {{ item.rowNumber }}
                   }

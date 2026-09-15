@@ -7,7 +7,7 @@
         [ngModel]="vm.filterText"
         (ngModelChange)="vm.setFilterText($event)"
         placeholder="🔍 Items filtern..."
-        (input)="vm.applyFilter()"
+        (input)="vm.applyFilter(false)"
       />
       <div class="search-count-group">
         <span

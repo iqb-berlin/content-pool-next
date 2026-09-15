@@ -1114,21 +1114,26 @@ describe('ItemExplorerFacade', () => {
     expect((component as any).pendingPersonalRowUpdates.size).toBe(0);
   });
 
-  it('keeps personal filters out of the shared Explorer UI state', () => {
+  it('keeps local search and personal filters out of the shared Explorer UI state', () => {
     const component = createFacade({ authService: { isLoggedIn: true } });
+    component.filterText = 'lokale Suche';
     component.columnFilters = {
       unitLabel: 'Mathematik',
       personalNote: 'vertraulich',
     };
     component.personalColumnFilters = { personalNote: 'vertraulich' };
 
-    expect((component as any).buildUiPreferences().columnFilters).toEqual({
+    const sharedUi = (component as any).buildUiPreferences();
+    expect(sharedUi).not.toHaveProperty('filterText');
+    expect(sharedUi.columnFilters).toEqual({
       unitLabel: 'Mathematik',
     });
 
     (component as any).applyUiPreferences({
+      filterText: 'fremde gespeicherte Suche',
       columnFilters: { unitLabel: 'Deutsch', personalCategory: 'III' },
     });
+    expect(component.filterText).toBe('lokale Suche');
     expect(component.columnFilters).toEqual({ unitLabel: 'Deutsch' });
     expect(component.personalColumnFilters).toEqual({ personalNote: 'vertraulich' });
   });
@@ -2509,13 +2514,11 @@ describe('ItemExplorerFacade', () => {
     consoleError.mockRestore();
   });
 
-  it('serializes and merges draft patches queued during a request', async () => {
+  it('serializes and merges draft patches without replacing the local search', async () => {
     const firstPatch$ = new Subject<any>();
     const secondPatch$ = new Subject<any>();
     const savedEnvelope = createExplorerEnvelope({
       status: 'CLEAN',
-      draftFilterText: 'DLB002',
-      publishedFilterText: 'DLB002',
     });
     savedEnvelope.version = 6;
     savedEnvelope.publishedVersion = 3;
@@ -2531,18 +2534,22 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 3;
     vi.spyOn(component, 'reloadItems').mockImplementation(() => undefined);
 
-    component.setFilterText('D');
-    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'D' } }, true);
+    component.setFilterText('lokale Suche');
+    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { sortField: 'itemId' } }, true);
     expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
     expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
       changeType: 'UI_STATE_CHANGED',
-      patch: { ui: { filterText: 'D' } },
+      patch: { ui: { sortField: 'itemId' } },
       baseVersion: 3,
     });
     const savePromise = component.saveExplorerDraft(true);
 
-    component.setFilterText('DLB002');
-    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'DLB002' } }, true);
+    component.setFilterText('aktualisierte lokale Suche');
+    (component as any).queueDraftPatch(
+      'UI_STATE_CHANGED',
+      { ui: { sortField: 'unitLabel' } },
+      true,
+    );
     (component as any).queueDraftPatch(
       'ITEM_EXCLUSION_CHANGED',
       { itemPropertiesPatch: { 'row-1': { excluded: true } } },
@@ -2570,18 +2577,18 @@ describe('ItemExplorerFacade', () => {
     );
     expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
 
-    const firstEnvelope = createExplorerEnvelope({ draftFilterText: 'D' });
+    const firstEnvelope = createExplorerEnvelope();
     firstEnvelope.version = 4;
     firstPatch$.next(firstEnvelope);
     firstPatch$.complete();
 
     await vi.waitFor(() => expect(patchItemExplorerDraft).toHaveBeenCalledTimes(2));
     expect(saveItemExplorerDraft).not.toHaveBeenCalled();
-    expect(component.filterText).toBe('DLB002');
+    expect(component.filterText).toBe('aktualisierte lokale Suche');
     expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
       changeType: 'PREVIEW_TARGET_CHANGED',
       patch: {
-        ui: { filterText: 'DLB002' },
+        ui: { sortField: 'unitLabel' },
         itemPropertiesPatch: {
           'row-1': { excluded: true, previewTargetId: 'V2' },
           'row-2': null,
@@ -2591,7 +2598,7 @@ describe('ItemExplorerFacade', () => {
       baseVersion: 4,
     });
 
-    const secondEnvelope = createExplorerEnvelope({ draftFilterText: 'DLB002' });
+    const secondEnvelope = createExplorerEnvelope();
     secondEnvelope.version = 5;
     secondPatch$.next(secondEnvelope);
     secondPatch$.complete();
@@ -2599,7 +2606,7 @@ describe('ItemExplorerFacade', () => {
     await vi.waitFor(() => expect(saveItemExplorerDraft).toHaveBeenCalledWith('acp-1', 5));
     await expect(savePromise).resolves.toBe(true);
     expect(component.explorerVersion).toBe(6);
-    expect(component.filterText).toBe('DLB002');
+    expect(component.filterText).toBe('aktualisierte lokale Suche');
     expect(component.lastDraftOperationError).toBe('');
   });
 
@@ -4757,7 +4764,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.showExplorerKeyboardHints).toBe(true);
   });
 
-  it('switches to the published explorer state in read-only preview mode', async () => {
+  it('keeps the local search when switching to the published explorer state', async () => {
     const envelope = createExplorerEnvelope();
     const getItemExplorerState = vi.fn(() => of(envelope));
     const getFileItemList = vi.fn(() =>
@@ -4770,9 +4777,10 @@ describe('ItemExplorerFacade', () => {
       },
     });
     component.acpId = 'acp-1';
+    component.filterText = 'lokale Suche';
 
     (component as any).applySharedExplorerEnvelope(envelope);
-    expect(component.filterText).toBe('draft');
+    expect(component.filterText).toBe('lokale Suche');
 
     const flushDraftPatch = vi.fn().mockResolvedValue(true);
     (component as any).flushDraftPatch = flushDraftPatch;
@@ -4782,14 +4790,14 @@ describe('ItemExplorerFacade', () => {
     expect(flushDraftPatch).toHaveBeenCalledTimes(1);
     expect(component.isReadOnlyPreview).toBe(true);
     expect(component.canEditExplorer).toBe(false);
-    expect(component.filterText).toBe('published');
+    expect(component.filterText).toBe('lokale Suche');
     expect(getItemExplorerState).toHaveBeenCalledWith('acp-1', 'read-only');
     expect(getFileItemList).toHaveBeenCalledWith('acp-1', {
       perspective: 'read-only',
     });
   });
 
-  it('switches back to the draft explorer state when leaving read-only preview mode', async () => {
+  it('keeps the local search when switching back to the draft explorer state', async () => {
     const envelope = createExplorerEnvelope();
     const getItemExplorerState = vi.fn(() => of(envelope));
     const getFileItemList = vi.fn(() =>
@@ -4802,6 +4810,7 @@ describe('ItemExplorerFacade', () => {
       },
     });
     component.acpId = 'acp-1';
+    component.filterText = 'lokale Suche';
 
     (component as any).applySharedExplorerEnvelope(envelope);
     (component as any).flushDraftPatch = vi.fn().mockResolvedValue(true);
@@ -4811,7 +4820,7 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.isReadOnlyPreview).toBe(false);
     expect(component.canEditExplorer).toBe(true);
-    expect(component.filterText).toBe('draft');
+    expect(component.filterText).toBe('lokale Suche');
     expect(getFileItemList).toHaveBeenLastCalledWith('acp-1', {
       perspective: 'editor',
     });

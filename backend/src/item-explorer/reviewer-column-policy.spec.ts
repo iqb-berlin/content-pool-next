@@ -65,8 +65,43 @@ describe("Reviewer column information boundary", () => {
     expect(JSON.stringify(result)).not.toContain("secret");
     expect(result.draftState).toEqual(result.publishedState);
     expect(result.activeState.metadataColumns.layout.visible).toEqual([
+      "system:position",
       "system:itemId",
     ]);
+  });
+
+  it("keeps position visible for legacy restricted layouts and honors schema 3 hiding", () => {
+    const legacy = new ReviewerColumnPolicy({
+      restrictReviewerColumnsToManagerSelection: true,
+      layout: {
+        configured: true,
+        visible: ["system:itemId"],
+        order: ["system:itemId"],
+        widths: {},
+        schemaVersion: 2,
+      },
+    });
+    const current = new ReviewerColumnPolicy({
+      restrictReviewerColumnsToManagerSelection: true,
+      layout: {
+        configured: true,
+        visible: ["system:itemId"],
+        order: ["system:itemId"],
+        widths: {},
+        schemaVersion: 3,
+      },
+    });
+
+    expect(legacy.allows("system:position")).toBe(true);
+    expect(legacy.projectColumnSettings({ layout: {} }).layout).toMatchObject({
+      visible: ["system:position", "system:itemId"],
+      order: ["system:position", "system:itemId"],
+    });
+    expect(current.allows("system:position")).toBe(false);
+    expect(current.projectColumnSettings({ layout: {} }).layout).toMatchObject({
+      visible: ["system:itemId"],
+      order: ["system:itemId"],
+    });
   });
 
   it("also projects index-shaped unit items and fails closed for new fields", () => {

@@ -89,6 +89,10 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 - In fullscreen mode the explorer keeps the same split view, dialogs, and overlays, but hides the
   breadcrumb to maximize usable space.
 - `Escape` leaves fullscreen when no dialog or overlay is currently open.
+- The player preview has its own fullscreen action. It enlarges the existing player container
+  without recreating the iframe, so the selected item and current player state are retained.
+- The player fullscreen can be closed with its visible action or `Escape`. Browsers without an
+  available Fullscreen API use a viewport-filling fallback.
 
 ### Focus model
 

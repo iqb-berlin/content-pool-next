@@ -17,7 +17,7 @@ function createPreview() {
 
 describe('ItemExplorerPreviewComponent', () => {
   it('exposes metadata and exclusion state with the matching semantics', () => {
-    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(2);
+    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(3);
     expect(template).toContain('[attr.aria-expanded]="vm.showMetadataDrawer"');
     expect(template).toContain('aria-controls="item-explorer-metadata-drawer"');
     expect(template).toContain('[attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"');
@@ -28,6 +28,122 @@ describe('ItemExplorerPreviewComponent', () => {
     expect(template).toContain('aria-label="Item-Vorschau"');
     expect(template).toContain('[title]="\'Player-Vorschau für Item \' + vm.selectedItem.itemId"');
     expect(template).toContain('aria-label="Seitendarstellung der Player-Vorschau"');
+  });
+
+  it('offers a dedicated fullscreen action for the player preview', () => {
+    expect(template).toContain('#playerContainer');
+    expect(template).toContain('(click)="togglePlayerFullscreen()"');
+    expect(template).toContain("'Player-Vorschau im Vollbild anzeigen'");
+    expect(template).toContain("'Vollbild der Player-Vorschau beenden'");
+  });
+
+  it('opens and closes the existing player container with the Fullscreen API', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const toggle = document.createElement('button');
+    const focus = vi.spyOn(toggle, 'focus');
+    let fullscreenElement: Element | null = null;
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+    const requestFullscreen = vi.fn(async () => {
+      fullscreenElement = container;
+    });
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null;
+    });
+    Object.defineProperty(container, 'requestFullscreen', { value: requestFullscreen });
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    component.playerContainerElement = new ElementRef(container);
+    component.fullscreenToggleElement = new ElementRef(toggle);
+
+    try {
+      await component.togglePlayerFullscreen();
+      expect(component.isPlayerFullscreen).toBe(true);
+      await component.togglePlayerFullscreen();
+      component.handlePlayerFullscreenChange();
+
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(component.isPlayerFullscreen).toBe(false);
+      expect(focus).toHaveBeenCalledOnce();
+    } finally {
+      component.ngOnDestroy();
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+      if (exitDescriptor) {
+        Object.defineProperty(document, 'exitFullscreen', exitDescriptor);
+      } else {
+        delete (document as any).exitFullscreen;
+      }
+    }
+  });
+
+  it('uses a closable fullscreen fallback when the browser API is unavailable', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const toggle = document.createElement('button');
+    const focus = vi.spyOn(toggle, 'focus');
+    component.playerContainerElement = new ElementRef(container);
+    component.fullscreenToggleElement = new ElementRef(toggle);
+
+    await component.togglePlayerFullscreen();
+
+    expect(component.isPlayerFullscreenFallback).toBe(true);
+    expect(component.isPlayerFullscreen).toBe(true);
+
+    component.handlePlayerFullscreenKeydown(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(component.isPlayerFullscreenFallback).toBe(false);
+    expect(component.isPlayerFullscreen).toBe(false);
+    expect(focus).toHaveBeenCalledOnce();
+    component.ngOnDestroy();
+  });
+
+  it('does not activate the fallback when leaving native fullscreen fails', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+    const exitFullscreen = vi.fn().mockRejectedValue(new Error('fullscreen exit blocked'));
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => container,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    component.playerContainerElement = new ElementRef(container);
+
+    try {
+      await component.togglePlayerFullscreen();
+
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(component.isPlayerFullscreen).toBe(true);
+      expect(component.isPlayerFullscreenFallback).toBe(false);
+    } finally {
+      component.ngOnDestroy();
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+      if (exitDescriptor) {
+        Object.defineProperty(document, 'exitFullscreen', exitDescriptor);
+      } else {
+        delete (document as any).exitFullscreen;
+      }
+    }
   });
 
   it('owns iframe messages and ignores messages from other windows', () => {

@@ -1141,6 +1141,38 @@ export class ItemExplorerStateService {
         }
       }
 
+      const previewStart = itemValue.previewStart;
+      if (
+        previewStart &&
+        typeof previewStart === "object" &&
+        !Array.isArray(previewStart)
+      ) {
+        const raw = previewStart as Record<string, unknown>;
+        const values = raw.values;
+        if (
+          values &&
+          typeof values === "object" &&
+          !Array.isArray(values) &&
+          Object.keys(values).length <= 100 &&
+          Object.entries(values).every(
+            ([key, value]) =>
+              key.length <= 256 &&
+              typeof value === "string" &&
+              value.length <= 4096,
+          ) &&
+          (raw.page === undefined ||
+            (typeof raw.page === "number" &&
+              Number.isInteger(raw.page) &&
+              raw.page >= 0 &&
+              raw.page < 10000))
+        ) {
+          nextItemValue.previewStart = {
+            ...(raw.page === undefined ? {} : { page: raw.page }),
+            values,
+          };
+        } else delete nextItemValue.previewStart;
+      } else delete nextItemValue.previewStart;
+
       const previewTargetIdRaw = itemValue.previewTargetId;
       if (typeof previewTargetIdRaw === "string") {
         const normalizedPreviewTargetId = previewTargetIdRaw.trim();

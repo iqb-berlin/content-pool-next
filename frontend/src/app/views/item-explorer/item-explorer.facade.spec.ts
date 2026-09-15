@@ -2805,7 +2805,8 @@ describe('ItemExplorerFacade', () => {
       isFallback: false,
     });
     responseState$.complete();
-    await vi.waitFor(() => expect(component.currentResponseData).toEqual({ current: true }));
+    await vi.waitFor(() => expect((component as any).savedResponseData).toEqual({ current: true }));
+    expect(component.currentResponseData).toBeNull();
     component.ngOnDestroy();
   });
 
@@ -2910,7 +2911,8 @@ describe('ItemExplorerFacade', () => {
 
     await vi.waitFor(() => expect(component.unit?.id).toBe('UNIT_2'));
     expect(component.selectedItem?.itemId).toBe('ITEM_2');
-    expect(component.currentResponseData).toEqual({ current: true });
+    expect((component as any).savedResponseData).toEqual({ current: true });
+    expect(component.currentResponseData).toBeNull();
     component.ngOnDestroy();
   });
 
@@ -4643,7 +4645,9 @@ describe('ItemExplorerFacade', () => {
       } as any;
       registerPlayerDom(component, postMessage);
       (component as any).unit = { id: 'UNIT_1', dependencies: [] };
-      (component as any).definitionContent = 'original-definition';
+      (component as any).definitionContent = JSON.stringify({
+        pages: [{ sections: [{ elements: [{ id: 'VAR_1' }] }] }],
+      });
       (component as any).playerFrameReady = true;
       setPreviewStatus(component, 'ready');
 
@@ -4652,7 +4656,9 @@ describe('ItemExplorerFacade', () => {
       expect(stripConditionalVisibility).not.toHaveBeenCalled();
       expect(postMessage.mock.calls[0][0]).toMatchObject({
         type: 'vopStartCommand',
-        unitDefinition: 'original-definition',
+        unitDefinition: JSON.stringify({
+          pages: [{ sections: [{ elements: [{ id: 'VAR_1' }] }] }],
+        }),
       });
 
       vi.runAllTimers();
@@ -7049,5 +7055,255 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.collectionViewMode).toBe('all');
     expect(component.filteredItems.map((item) => item.rowKey)).toEqual(['uuid-1', 'uuid-2']);
+  });
+});
+
+describe('prepared preview response isolation', () => {
+  it('never saves a synthetic state through the response API', () => {
+    const saveResponseState = vi.fn();
+    const component = createFacade({ api: { saveResponseState } });
+    component.syntheticPreviewState = true;
+    component.confirmSaveResponseState();
+    expect(saveResponseState).not.toHaveBeenCalled();
+    expect(component.confirmDialogError).toContain('Vorschauzustand');
+  });
+});
+
+describe('visibility start protocol', () => {
+  it('seeds a fresh preview, preserves saved answers, and resets synthetic state', () => {
+    vi.useFakeTimers();
+    const component = createFacade();
+    const postMessage = vi.fn();
+    try {
+      component.itemExplorerConditionalVisibilityEnabled = true;
+      component.selectedItem = {
+        itemId: 'ITEM',
+        unitId: 'UNIT',
+        variableId: 'target',
+        metadata: {},
+      } as any;
+      registerPlayerDom(component, postMessage);
+      (component as any).unit = { id: 'UNIT', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({
+        stateVariables: [{ id: 'v', alias: 'State', value: '0' }],
+        pages: [
+          {
+            sections: [
+              {
+                visibilityRules: [{ id: 'v', operator: '=', value: '2' }],
+                elements: [{ alias: 'target' }],
+              },
+            ],
+          },
+        ],
+      });
+      (component as any).playerFrameReady = true;
+      setPreviewStatus(component, 'ready');
+      (component as any).startPlayerIfReady();
+      const first = postMessage.mock.calls[0][0];
+      expect(JSON.parse(first.unitState.dataParts.stateVariableCodes)).toEqual([
+        { id: 'State', status: 'VALUE_CHANGED', value: '2' },
+      ]);
+      expect(component.syntheticPreviewState).toBe(true);
+      expect((component as any).currentResponseData).toBeNull();
+      component.hasResponseState = true;
+      const saved = { responses: 'saved answers', stateVariableCodes: 'saved state' };
+      (component as any).applyResponseStateResult({ state: { responseData: saved } });
+      (component as any).startPlayerIfReady();
+      expect(postMessage.mock.calls[1][0].unitState.dataParts).toEqual(saved);
+      expect(component.currentResponseData).toBeNull();
+      expect(component.syntheticPreviewState).toBe(false);
+      // A second start before a player reply still uses the loaded saved state.
+      (component as any).startPlayerIfReady();
+      expect(postMessage.mock.calls[2][0].unitState.dataParts).toEqual(saved);
+      expect(component.currentResponseData).toBeNull();
+      vi.runAllTimers();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('shared preview start changes', () => {
+  it.each([
+    [{ page: 0, values: { state: '2' } }, { page: 0, values: { state: '1' } }, true],
+    [{ page: 0, values: {} }, { page: 1, values: {} }, true],
+    [{ page: 0, values: { state: '2' } }, undefined, true],
+    [{ values: { a: '1', b: '2' } }, { values: { b: '2', a: '1' } }, false],
+    [undefined, { values: {} }, false],
+  ])(
+    'refreshes changed page/values but ignores equivalent settings (%j -> %j)',
+    (before, after, changed) => {
+      const component = createFacade();
+      const item = {
+        itemId: '01',
+        uuid: 'row',
+        rowKey: 'row',
+        unitId: 'UNIT',
+        variableId: '01',
+        metadata: {},
+        previewStart: before,
+      } as any;
+      component.items = [item];
+      component.filteredItems = [item];
+      component.selectedItem = item;
+      const envelope = createExplorerEnvelope({ draftFilterText: '', publishedFilterText: '' });
+      envelope.draftState.itemProperties = { row: { previewStart: after } };
+      envelope.activeState = envelope.draftState;
+      (component as any).playerFrameReady = true;
+      (component as any).definitionContent = 'loaded';
+      (component as any).unit = { id: 'UNIT' };
+      setPreviewStatus(component, 'ready');
+      const restart = vi.spyOn(component as any, 'startPlayerIfReady').mockImplementation(() => {});
+      (component as any).applySharedExplorerEnvelope(envelope);
+      expect(component.selectedItem?.previewStart).toEqual(after);
+      expect(restart).toHaveBeenCalledTimes(changed ? 1 : 0);
+    },
+  );
+});
+
+describe('preview context page control', () => {
+  const item = {
+    itemId: '01',
+    unitId: 'UNIT',
+    variableId: 'target',
+    metadata: {},
+  } as any;
+
+  it.each([
+    [false, false],
+    [true, true],
+  ])(
+    'shows the control only for an always-visible target (%s)',
+    (isAlwaysVisiblePage, expected) => {
+      const component = createFacade({
+        resolvePlayerTargetLocation: () => ({
+          absolutePageIndex: 0,
+          scrollPageIndex: isAlwaysVisiblePage ? undefined : 0,
+          isAlwaysVisiblePage,
+        }),
+      });
+      component.selectedItem = item;
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+
+      expect(component.showPreviewStartPageSelector).toBe(expected);
+    },
+  );
+});
+
+describe('shared preview recovery', () => {
+  it('reloads a previously unavailable preview when the shared start state is corrected', () => {
+    const component = createFacade();
+    const item = {
+      itemId: '01',
+      uuid: 'row',
+      rowKey: 'row',
+      unitId: 'UNIT',
+      variableId: '01',
+      metadata: {},
+      previewStart: { values: { state: 'invalid' } },
+    } as any;
+    component.items = [item];
+    component.filteredItems = [item];
+    component.selectedItem = item;
+    const envelope = createExplorerEnvelope({ draftFilterText: '', publishedFilterText: '' });
+    envelope.draftState.itemProperties = { row: { previewStart: { values: { state: '1' } } } };
+    envelope.activeState = envelope.draftState;
+    (component as any).playerFrameReady = false;
+    (component as any).definitionContent = 'loaded';
+    (component as any).unit = { id: 'UNIT' };
+    setPreviewStatus(component, 'unavailable');
+    const reload = vi
+      .spyOn(component as any, 'reloadPreviewAfterTargetChange')
+      .mockImplementation(() => {});
+    (component as any).applySharedExplorerEnvelope(envelope);
+    expect(reload).toHaveBeenCalledWith(item);
+  });
+});
+
+describe('preview response session isolation', () => {
+  it('never saves the previous synthetic response after switching to an unseeded target', () => {
+    vi.useFakeTimers();
+    const saveResponseState = vi.fn(() => of({}));
+    const component = createFacade({ api: { saveResponseState } });
+    const postMessage = vi.fn();
+    try {
+      component.itemExplorerConditionalVisibilityEnabled = true;
+      component.selectedItem = {
+        itemId: 'ITEM',
+        uuid: 'row',
+        rowKey: 'row',
+        unitId: 'UNIT',
+        variableId: 'targetA',
+        metadata: {},
+      } as any;
+      registerPlayerDom(component, postMessage);
+      (component as any).unit = { id: 'UNIT', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({
+        stateVariables: [{ id: 'v', alias: 'State', value: '0' }],
+        pages: [
+          {
+            sections: [
+              {
+                visibilityRules: [{ id: 'v', operator: '=', value: '2' }],
+                elements: [{ alias: 'targetA' }],
+              },
+            ],
+          },
+          { sections: [{ elements: [{ alias: 'targetB' }] }] },
+        ],
+      });
+      (component as any).playerFrameReady = true;
+      setPreviewStatus(component, 'ready');
+      (component as any).startPlayerIfReady();
+      const first = postMessage.mock.calls[0][0];
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: first.sessionId,
+        unitState: { dataParts: first.unitState.dataParts },
+      });
+      expect(component.syntheticPreviewState).toBe(true);
+      component.selectedItem!.previewTargetId = 'targetB';
+      (component as any).startPlayerIfReady();
+      expect(postMessage.mock.calls[1][0].unitState.dataParts).toEqual({});
+      expect(component.syntheticPreviewState).toBe(false);
+      component.confirmSaveResponseState();
+      expect(saveResponseState).not.toHaveBeenCalled();
+      // A delayed notification from the old session must not restore that payload.
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: first.sessionId,
+        unitState: { dataParts: first.unitState.dataParts },
+      });
+      expect(component.currentResponseData).toBeNull();
+      const second = postMessage.mock.calls[1][0];
+      const answers = { elementCodes: 'fresh answers' };
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: second.sessionId,
+        unitState: { dataParts: answers },
+      });
+      component.confirmSaveResponseState();
+      expect(saveResponseState).toHaveBeenCalledExactlyOnceWith('', 'ITEM', 'UNIT', answers, 'row');
+    } finally {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('response save completion isolation', () => {
+  it('does not attach a delayed save result to a different selected item', () => {
+    const saved$ = new Subject<any>();
+    const component = createFacade({ api: { saveResponseState: () => saved$ } });
+    component.selectedItem = { itemId: 'A', unitId: 'UNIT', metadata: {} } as any;
+    component.currentResponseData = { elementCodes: 'answers A' };
+    setPreviewStatus(component, 'ready');
+    component.confirmSaveResponseState();
+    component.selectedItem = { itemId: 'B', unitId: 'UNIT', metadata: {} } as any;
+    saved$.next({});
+    saved$.complete();
+    expect((component as any).savedResponseData).toBeNull();
+    expect(component.hasResponseState).toBe(false);
   });
 });

@@ -49,6 +49,12 @@
           <span class="player-target-badge unmapped">Kein Player-Ziel</span>
         }
       </div>
+      @if (vm.syntheticPreviewState) {
+        <p class="preview-state-note">
+          Vorbereiteter Vorschauzustand: Die Sichtbarkeitsregeln bleiben aktiv. Dieser Zustand kann
+          nicht als Antwort gespeichert werden.
+        </p>
+      }
       <details #previewSettings class="preview-settings">
         <summary
           class="btn btn-outline btn-sm"
@@ -76,6 +82,44 @@
               <option value="print-ids">Alle Seiten mit IDs (Druckansicht)</option>
             </select>
           </div>
+          @if (vm.canEditExplorer && vm.itemExplorerConditionalVisibilityEnabled) {
+            @if (vm.showPreviewStartPageSelector) {
+              <div class="preview-target-selector">
+                <label for="preview-start-page">Aufgabenkontext</label>
+                <select
+                  class="preview-target-select"
+                  id="preview-start-page"
+                  [ngModel]="vm.previewStartPage"
+                  (ngModelChange)="vm.setPreviewStartPage($event)"
+                >
+                  <option value="">Keine feste Aufgabenseite (Standard)</option>
+                  @for (page of vm.previewStartPages; track page) {
+                    <option [value]="page">Aufgabenseite {{ page + 1 }}</option>
+                  }
+                </select>
+                <small>
+                  Legt fest, bei welcher Aufgabenseite der dauerhaft sichtbare Stimulus geprüft
+                  wird. Eine Auswahl ist nur nötig, wenn der Zustand nicht eindeutig ableitbar ist.
+                </small>
+              </div>
+            }
+            @for (variable of vm.previewStateVariables; track variable.id) {
+              <div class="preview-target-selector">
+                <label [for]="'preview-state-' + variable.id">{{ variable.label }}</label>
+                <input
+                  class="preview-target-input"
+                  [id]="'preview-state-' + variable.id"
+                  [ngModel]="variable.value"
+                  (change)="vm.setPreviewStateValue(variable.id, $any($event.target).value)"
+                  placeholder="Automatisch"
+                />
+              </div>
+            }
+            <small
+              >Leere Werte werden automatisch abgeleitet. Gespeicherte Antwortzustände haben
+              Vorrang.</small
+            >
+          }
           @if (vm.canEditExplorer) {
             <div class="preview-target-controls">
               @if (vm.showPreviewTargetSelector) {
@@ -245,6 +289,11 @@
           <div style="font-size: 2.5rem; margin-bottom: 12px">🧭</div>
           <h3>Keine zielgenaue Player-Vorschau</h3>
           <p>{{ vm.previewUnavailableMessage }}</p>
+          <a
+            class="btn btn-outline"
+            [routerLink]="['/view', vm.acpId, 'unit', vm.selectedItem.unitId]"
+            >Gesamte Aufgabe öffnen</a
+          >
         </div>
       } @else if (vm.isPreviewLoading) {
         <div class="empty-state">
@@ -380,7 +429,7 @@
             <button
               class="btn btn-outline btn-sm"
               (click)="playerActions.removeAttribute('open'); vm.saveCurrentResponseState()"
-              [disabled]="vm.previewUpdateInProgress"
+              [disabled]="vm.previewUpdateInProgress || vm.syntheticPreviewState"
               title="Die aktuellen Player-Eingaben für dieses Item nach Bestätigung speichern"
             >
               <svg

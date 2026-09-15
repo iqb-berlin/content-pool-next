@@ -2082,6 +2082,81 @@ describe('ItemExplorerFacade', () => {
     expect(component.canResetMetadataSettings).toBe(true);
   });
 
+  it('offers VOMD time metadata only through the canonical numeric columns', () => {
+    const component = createFacade();
+    (component as any).configuredMetadataColumns = [
+      { id: 'iqb_time_item', label: 'Konfigurierte Itemzeit', kind: 'text' },
+      { id: 'iqb_item_time', label: 'Konfigurierte alte Itemzeit', kind: 'text' },
+      { id: 'iqb_time_stimulus', label: 'Konfigurierte Stimuluszeit', kind: 'text' },
+      { id: 'custom', label: 'Eigene Spalte', kind: 'text' },
+    ];
+
+    const columns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+      { id: 'iqb_item_time', label: 'Alte Itemzeit' },
+      { id: 'itemTimeSeconds', label: 'Itemzeit aus Import' },
+      { id: 'iqb_time_stimulus', label: 'Stimuluszeit' },
+      { id: 'subject', label: 'Fach' },
+    ]);
+
+    expect(columns.filter((column: { id: string }) => column.id === 'itemTimeSeconds')).toEqual([
+      { id: 'itemTimeSeconds', label: 'Itemzeit (s)', kind: 'number' },
+    ]);
+    expect(columns.filter((column: { id: string }) => column.id === 'stimulusTimeSeconds')).toEqual(
+      [{ id: 'stimulusTimeSeconds', label: 'Stimuluszeit (s)', kind: 'number' }],
+    );
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_time_item');
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_item_time');
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_time_stimulus');
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'subject', label: 'Fach' }),
+        expect.objectContaining({ id: 'custom', label: 'Eigene Spalte' }),
+      ]),
+    );
+  });
+
+  it('displays and filters canonical time overrides instead of differing VOMD display metadata', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+    ]);
+    const itemTimeColumn = columns.find(
+      (column: { id: string }) => column.id === 'itemTimeSeconds',
+    );
+    component.allColumns = columns;
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: { iqb_time_item: '00:30' },
+        itemTimeSeconds: 40,
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: { iqb_time_item: '00:45' },
+        itemTimeSeconds: 0,
+      },
+    ];
+    component.columnFilters = { itemTimeSeconds: '40' };
+
+    expect(component.getMetadataColumnDisplayValue(component.items[0], itemTimeColumn)).toBe('40');
+    expect(component.getMetadataColumnDisplayValue(component.items[1], itemTimeColumn)).toBe('0');
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+  });
+
   it('materializes the default column order before moving a column', () => {
     const component = createFacade();
     component.allColumns = [
@@ -2322,6 +2397,113 @@ describe('ItemExplorerFacade', () => {
       'second',
     ]);
     expect(component.getColumnWidth(component.tableColumns[3])).toBe(260);
+  });
+
+  it('normalizes legacy VOMD time settings without writing a draft', () => {
+    const component = createFacade();
+    component.allColumns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+      { id: 'iqb_time_stimulus', label: 'Stimuluszeit' },
+    ]);
+    const envelope = createExplorerEnvelope();
+    const state = {
+      ui: {
+        sortField: 'iqb_time_item',
+        sortIsMeta: true,
+        sortDir: 'desc',
+        columnFilters: {
+          iqb_time_item: '00:30',
+          iqb_time_stimulus: 'nicht numerisch',
+          unitLabel: 'Lesen',
+        },
+      },
+      tags: {},
+      metadataColumns: {
+        visible: ['iqb_time_item', 'itemTimeSeconds'],
+        order: ['iqb_time_item', 'subject', 'itemTimeSeconds'],
+        widths: { iqb_time_item: 180, itemTimeSeconds: 220 },
+        layout: {
+          configured: true,
+          visible: ['metadata:iqb_time_item', 'metadata:itemTimeSeconds'],
+          order: ['metadata:iqb_time_item', 'system:itemId', 'metadata:itemTimeSeconds'],
+          widths: { 'metadata:iqb_time_item': 190, 'metadata:itemTimeSeconds': 230 },
+          schemaVersion: 3,
+        },
+      },
+      itemOrder: [],
+      itemProperties: {},
+    };
+    envelope.activeState = state;
+    envelope.draftState = state;
+    envelope.publishedState = state;
+    const queueDraftPatch = vi.spyOn(component as any, 'queueDraftPatch');
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.visible).toEqual(['itemTimeSeconds']);
+    expect(component.metadataSettings.order).toEqual(['itemTimeSeconds', 'subject']);
+    expect(component.metadataSettings.widths).toEqual({ itemTimeSeconds: 220 });
+    expect(component.metadataSettings.layout).toMatchObject({
+      visible: ['metadata:itemTimeSeconds'],
+      order: ['metadata:itemTimeSeconds', 'system:itemId'],
+      widths: { 'metadata:itemTimeSeconds': 230 },
+      schemaVersion: 3,
+    });
+    expect(component.sortField).toBe('itemTimeSeconds');
+    expect(component.sortIsMeta).toBe(true);
+    expect(component.sortDir).toBe('desc');
+    expect(component.columnFilters).toEqual({ itemTimeSeconds: '30' });
+    expect(queueDraftPatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps canonical settings authoritative when legacy and current filters coexist', () => {
+    const component = createFacade();
+
+    (component as any).applyUiPreferences({
+      sortField: 'iqb_time_stimulus',
+      sortIsMeta: true,
+      sortDir: 'asc',
+      columnFilters: {
+        iqb_time_item: '00:30',
+        itemTimeSeconds: '',
+        iqb_time_stimulus: '1:02:03',
+      },
+    });
+
+    expect(component.sortField).toBe('stimulusTimeSeconds');
+    expect(component.columnFilters).toEqual({
+      itemTimeSeconds: '',
+      stimulusTimeSeconds: '3723',
+    });
+  });
+
+  it('honors legacy VOMD time keys in restricted published reviewer layouts', () => {
+    const component = createFacade();
+    component.canEditExplorer = false;
+    component.allColumns = (component as any).getAvailableMetadataColumns([]);
+    (component as any).latestExplorerState = {
+      publishedState: {
+        metadataColumns: {
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: {
+            configured: true,
+            visible: ['system:itemId', 'metadata:iqb_time_item'],
+          },
+        },
+      },
+    };
+    component.metadataSettings.layout = {
+      configured: true,
+      visible: ['system:itemId', 'metadata:itemTimeSeconds'],
+      order: ['system:itemId', 'metadata:itemTimeSeconds'],
+      widths: {},
+      schemaVersion: 3,
+    };
+
+    expect(component.tableColumns.map((column) => column.key)).toEqual([
+      'system:itemId',
+      'metadata:itemTimeSeconds',
+    ]);
   });
 
   it('allows an explicitly empty selection to be reset to defaults', () => {

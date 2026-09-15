@@ -448,10 +448,14 @@ content that looks numeric. Time values are non-negative seconds; decimal point 
 are accepted.
 
 Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
-item profile and `iqb_time_stimulus` from the VOMD unit profile. The unit value is shared by every
-item row in that unit, and partial-credit rows inherit both values. Explicit Explorer values remain
-the higher-priority override. Empty, negative, and non-numeric VOMD values are treated as missing;
-the formatted `valueAsText` is retained only as display metadata and is not parsed as seconds.
+item profile and `iqb_time_stimulus` from the VOMD unit profile. The legacy item property
+`iqb_item_time` is used as a fallback when `iqb_time_item` is absent. If both item properties exist,
+`iqb_time_item` wins. The unit value is shared by every item row in that unit, and partial-credit
+rows inherit both values. Explicit Explorer values remain the higher-priority override. Empty,
+negative, and non-numeric VOMD values are treated as missing; the formatted `valueAsText` remains
+available as raw metadata and is not parsed as seconds. The column manager maps these VOMD
+properties to the canonical numeric `Itemzeit (s)` and `Stimuluszeit (s)` columns instead of
+offering the formatted metadata as duplicate columns.
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
 must agree, while `booklet` and the optional `position` are collected as ordered 1:n metadata on the

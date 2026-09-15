@@ -76,6 +76,13 @@ import {
   ItemExplorerLoadDiagnostics,
   ItemExplorerTimingToken,
 } from './item-explorer-load-diagnostics.service';
+import {
+  normalizeItemExplorerColumnFilters,
+  normalizeItemExplorerColumnList,
+  normalizeItemExplorerColumnRecord,
+  normalizeItemExplorerMetadataColumnId,
+  normalizeItemExplorerTableColumnKey,
+} from './item-explorer-time-columns.util';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -969,9 +976,10 @@ export class ItemExplorerFacade implements OnDestroy {
       key === TABLE_COLUMN_KEYS.itemId
     )
       return true;
+    const visible = this.latestExplorerState?.publishedState?.metadataColumns?.layout?.visible;
     return (
-      this.latestExplorerState?.publishedState?.metadataColumns?.layout?.visible?.includes(key) ===
-      true
+      Array.isArray(visible) &&
+      normalizeItemExplorerColumnList(visible, normalizeItemExplorerTableColumnKey).includes(key)
     );
   }
 
@@ -1697,14 +1705,18 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private getAvailableMetadataColumns(sourceColumns: MetadataColumn[]): MetadataColumn[] {
     const importedIds = new Set(IMPORTED_PARAMETER_COLUMNS.map((column) => column.id));
-    const normalizedSourceColumns = sourceColumns.filter((column) => !importedIds.has(column.id));
+    const normalizedSourceColumns = sourceColumns.filter(
+      (column) => !importedIds.has(normalizeItemExplorerMetadataColumnId(column.id)),
+    );
     const columnsById = new Map<string, MetadataColumn>();
     normalizedSourceColumns.forEach((column) =>
       columnsById.set(column.id, { ...column, kind: 'text' as const }),
     );
-    this.configuredMetadataColumns.forEach((column) =>
-      columnsById.set(column.id, { ...columnsById.get(column.id), ...column, kind: 'text' }),
-    );
+    this.configuredMetadataColumns
+      .filter((column) => !importedIds.has(normalizeItemExplorerMetadataColumnId(column.id)))
+      .forEach((column) =>
+        columnsById.set(column.id, { ...columnsById.get(column.id), ...column, kind: 'text' }),
+      );
     IMPORTED_PARAMETER_COLUMNS.forEach((column) => columnsById.set(column.id, column));
     return Array.from(columnsById.values());
   }
@@ -5786,16 +5798,20 @@ export class ItemExplorerFacade implements OnDestroy {
   private resolveMetadataSettings(featureConfig: Record<string, any>): MetadataSettings {
     const metadataColumns = featureConfig?.['metadataColumns'];
     if (metadataColumns && typeof metadataColumns === 'object') {
-      const visible = Array.isArray(metadataColumns.visible)
-        ? metadataColumns.visible.filter(
-            (entry: unknown): entry is string => typeof entry === 'string',
-          )
-        : [];
-      const order = Array.isArray(metadataColumns.order)
-        ? metadataColumns.order.filter(
-            (entry: unknown): entry is string => typeof entry === 'string',
-          )
-        : [];
+      const visible = normalizeItemExplorerColumnList(
+        Array.isArray(metadataColumns.visible)
+          ? metadataColumns.visible.filter(
+              (entry: unknown): entry is string => typeof entry === 'string',
+            )
+          : [],
+      );
+      const order = normalizeItemExplorerColumnList(
+        Array.isArray(metadataColumns.order)
+          ? metadataColumns.order.filter(
+              (entry: unknown): entry is string => typeof entry === 'string',
+            )
+          : [],
+      );
 
       return {
         visible: visible.length ? visible : order,
@@ -5803,16 +5819,20 @@ export class ItemExplorerFacade implements OnDestroy {
         restrictReviewerColumnsToManagerSelection:
           metadataColumns.restrictReviewerColumnsToManagerSelection === true,
         configured: metadataColumns.configured === true || visible.length > 0 || order.length > 0,
-        widths: this.normalizeMetadataColumnWidths(metadataColumns.widths),
+        widths: normalizeItemExplorerColumnRecord(
+          this.normalizeMetadataColumnWidths(metadataColumns.widths),
+        ),
         referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
         layout: this.resolveTableColumnLayout(metadataColumns.layout),
       };
     }
 
     const legacyColumns = featureConfig?.['itemListMetadataColumns'];
-    const legacy = Array.isArray(legacyColumns)
-      ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
+    const legacy = normalizeItemExplorerColumnList(
+      Array.isArray(legacyColumns)
+        ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+    );
 
     return {
       visible: legacy,
@@ -5826,17 +5846,26 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private resolveTableColumnLayout(raw: unknown) {
     const layout = this.isRecord(raw) ? raw : {};
-    const visible = Array.isArray(layout['visible'])
-      ? layout['visible'].filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
-    const order = Array.isArray(layout['order'])
-      ? layout['order'].filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
+    const visible = normalizeItemExplorerColumnList(
+      Array.isArray(layout['visible'])
+        ? layout['visible'].filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+      normalizeItemExplorerTableColumnKey,
+    );
+    const order = normalizeItemExplorerColumnList(
+      Array.isArray(layout['order'])
+        ? layout['order'].filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+      normalizeItemExplorerTableColumnKey,
+    );
     return {
       visible: layout['configured'] === true ? visible : visible.length ? visible : order,
       order: order.length ? order : visible,
       configured: layout['configured'] === true || visible.length > 0 || order.length > 0,
-      widths: this.normalizeMetadataColumnWidths(layout['widths']),
+      widths: normalizeItemExplorerColumnRecord(
+        this.normalizeMetadataColumnWidths(layout['widths']),
+        normalizeItemExplorerTableColumnKey,
+      ),
       ...(Number.isInteger(Number(layout['schemaVersion']))
         ? { schemaVersion: Number(layout['schemaVersion']) }
         : {}),
@@ -5890,20 +5919,21 @@ export class ItemExplorerFacade implements OnDestroy {
     const sortDir = rawUi['sortDir'];
     const columnFilters = rawUi['columnFilters'];
 
+    const normalizedSortIsMeta = typeof sortIsMeta === 'boolean' ? sortIsMeta : this.sortIsMeta;
     if (typeof sortField === 'string') {
-      this.sortField = sortField;
+      this.sortField = normalizedSortIsMeta
+        ? normalizeItemExplorerMetadataColumnId(sortField)
+        : sortField;
     }
 
-    if (typeof sortIsMeta === 'boolean') {
-      this.sortIsMeta = sortIsMeta;
-    }
+    this.sortIsMeta = normalizedSortIsMeta;
 
     this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
     this.columnFilters = this.isRecord(columnFilters)
-      ? Object.fromEntries(
-          Object.entries(columnFilters)
-            .filter(([key]) => !this.isPersonalColumnFilterKey(key))
-            .map(([key, value]) => [key, typeof value === 'string' ? value : '']),
+      ? normalizeItemExplorerColumnFilters(
+          Object.fromEntries(
+            Object.entries(columnFilters).filter(([key]) => !this.isPersonalColumnFilterKey(key)),
+          ),
         )
       : {};
   }

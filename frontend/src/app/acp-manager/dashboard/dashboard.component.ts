@@ -277,9 +277,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                   <td>
                     <div class="role-actions">
                       <button
-                        class="btn btn-sm"
-                        [class.btn-primary]="hasAssignmentChanges(role)"
-                        [class.btn-outline]="!hasAssignmentChanges(role)"
+                        class="btn btn-primary btn-sm"
                         (click)="saveAssignment(role)"
                         [disabled]="roleBusy || !hasAssignmentChanges(role)"
                       >

@@ -1920,9 +1920,9 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.isColumnVisible(positionColumn)).toBe(false);
     expect(component.tableColumns.some((column) => column.key === 'system:position')).toBe(false);
-    expect(component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns)).toBe(
-      0,
-    );
+    expect(
+      component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns),
+    ).toBe(0);
 
     component.resetToDefault();
 
@@ -1974,18 +1974,8 @@ describe('ItemExplorerFacade', () => {
       configured: true,
       widths: {},
       layout: {
-        visible: [
-          'system:itemId',
-          'system:unitLabel',
-          'system:referenceNumber',
-          'system:position',
-        ],
-        order: [
-          'system:unitLabel',
-          'system:itemId',
-          'system:referenceNumber',
-          'system:position',
-        ],
+        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber', 'system:position'],
+        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber', 'system:position'],
         configured: true,
         widths: {},
       },

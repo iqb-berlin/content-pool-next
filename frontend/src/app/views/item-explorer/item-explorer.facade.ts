@@ -81,8 +81,10 @@ const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 const COLLECTION_SELECTION_COLUMN_WIDTH = 38;
 const POSITION_COLUMN_WIDTH = 72;
-const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
+const COMMENT_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
+const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 3;
 const TABLE_COLUMN_KEYS = {
+  position: 'system:position',
   referenceNumber: 'system:referenceNumber',
   itemId: 'system:itemId',
   unitLabel: 'system:unitLabel',
@@ -985,6 +987,13 @@ export class ItemExplorerFacade implements OnDestroy {
   get allTableColumns(): ItemExplorerTableColumn[] {
     const columns: ItemExplorerTableColumn[] = [
       {
+        key: TABLE_COLUMN_KEYS.position,
+        id: 'position',
+        label: 'Position',
+        source: 'system',
+        defaultWidth: POSITION_COLUMN_WIDTH,
+      },
+      {
         key: TABLE_COLUMN_KEYS.referenceNumber,
         id: 'referenceNumber',
         label: 'Referenz-Nr.',
@@ -1432,7 +1441,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
           // Load metadata column settings
           this.metadataSettings = this.resolveMetadataSettings(fc);
-          this.ensureCommentColumnDefault();
+          this.ensureTableColumnDefaults();
           this.configuredMetadataColumns = this.resolveConfiguredMetadataColumns(fc);
           void this.reloadSharedExplorerStateAndItems();
           this.syncItemCommentCountSession();
@@ -5400,18 +5409,27 @@ export class ItemExplorerFacade implements OnDestroy {
     };
   }
 
-  private ensureCommentColumnDefault(): void {
-    if (!this.itemCommentsEnabled) return;
+  private ensureTableColumnDefaults(): void {
     const layout = this.metadataSettings.layout;
     if (!layout?.configured || (layout.schemaVersion || 0) >= TABLE_COLUMN_LAYOUT_SCHEMA_VERSION) {
       return;
     }
+    const schemaVersion = layout.schemaVersion || 0;
+    const hasExplicitColumns = layout.order.length > 0 || layout.visible.length > 0;
     if (
-      (layout.order.length > 0 || layout.visible.length > 0) &&
+      this.itemCommentsEnabled &&
+      schemaVersion < COMMENT_COLUMN_LAYOUT_SCHEMA_VERSION &&
+      hasExplicitColumns &&
       !layout.order.includes(TABLE_COLUMN_KEYS.comments)
     ) {
       layout.order.push(TABLE_COLUMN_KEYS.comments);
       layout.visible.push(TABLE_COLUMN_KEYS.comments);
+    }
+    if (!layout.order.includes(TABLE_COLUMN_KEYS.position)) {
+      layout.order.unshift(TABLE_COLUMN_KEYS.position);
+    }
+    if (!layout.visible.includes(TABLE_COLUMN_KEYS.position)) {
+      layout.visible.unshift(TABLE_COLUMN_KEYS.position);
     }
     layout.schemaVersion = TABLE_COLUMN_LAYOUT_SCHEMA_VERSION;
   }
@@ -5477,17 +5495,9 @@ export class ItemExplorerFacade implements OnDestroy {
 
   isStickyTableColumn(
     column: DeepReadonly<ItemExplorerTableColumn>,
-    columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
+    _columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
   ): boolean {
-    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
-      return columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber;
-    }
-    if (column.key !== TABLE_COLUMN_KEYS.itemId) return false;
-    return (
-      columns[0]?.key === TABLE_COLUMN_KEYS.itemId ||
-      (columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber &&
-        columns[1]?.key === TABLE_COLUMN_KEYS.itemId)
-    );
+    return this.isPinnedTableColumnKey(column.key);
   }
 
   getStickyTableColumnLeft(
@@ -5495,12 +5505,13 @@ export class ItemExplorerFacade implements OnDestroy {
     columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
   ): number | null {
     if (!this.isStickyTableColumn(column, columns)) return null;
-    const leadingColumnsWidth =
-      POSITION_COLUMN_WIDTH + (this.enableItemCollections ? COLLECTION_SELECTION_COLUMN_WIDTH : 0);
-    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return leadingColumnsWidth;
-    const referenceColumn =
-      columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber ? columns[0] : undefined;
-    return leadingColumnsWidth + (referenceColumn ? this.getColumnWidth(referenceColumn) : 0);
+    let left = this.enableItemCollections ? COLLECTION_SELECTION_COLUMN_WIDTH : 0;
+    for (const current of columns) {
+      if (current.key === column.key) return left;
+      if (!this.isPinnedTableColumnKey(current.key)) break;
+      left += this.getColumnWidth(current);
+    }
+    return null;
   }
 
   private clearHiddenTableColumnFilters() {
@@ -5554,7 +5565,10 @@ export class ItemExplorerFacade implements OnDestroy {
     const colIndex = layout.visible.indexOf(column.key);
     if (colIndex === -1) {
       layout.visible.push(column.key);
-      if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
+      if (
+        column.key === TABLE_COLUMN_KEYS.position ||
+        column.key === TABLE_COLUMN_KEYS.referenceNumber
+      ) {
         layout.order = [column.key, ...layout.order.filter((key) => key !== column.key)];
       } else if (!layout.order.includes(column.key)) {
         layout.order.push(column.key);
@@ -5632,14 +5646,22 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private orderPinnedTableColumns(columns: ItemExplorerTableColumn[]): ItemExplorerTableColumn[] {
     const byKey = new Map(columns.map((column) => [column.key, column]));
-    const pinned = [TABLE_COLUMN_KEYS.referenceNumber, TABLE_COLUMN_KEYS.itemId]
+    const pinned = [
+      TABLE_COLUMN_KEYS.position,
+      TABLE_COLUMN_KEYS.referenceNumber,
+      TABLE_COLUMN_KEYS.itemId,
+    ]
       .map((key) => byKey.get(key))
       .filter((column): column is ItemExplorerTableColumn => Boolean(column));
     return [...pinned, ...columns.filter((column) => !this.isPinnedTableColumnKey(column.key))];
   }
 
   private isPinnedTableColumnKey(key: string): boolean {
-    return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
+    return (
+      key === TABLE_COLUMN_KEYS.position ||
+      key === TABLE_COLUMN_KEYS.referenceNumber ||
+      key === TABLE_COLUMN_KEYS.itemId
+    );
   }
 
   toggleManualOrderMode() {
@@ -6048,7 +6070,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.metadataSettings = this.resolveMetadataSettings({
         metadataColumns: (activeState as ItemExplorerSharedState).metadataColumns,
       });
-      this.ensureCommentColumnDefault();
+      this.ensureTableColumnDefaults();
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.clearHiddenTableColumnFilters();
       this.ensureVisibleSortField();
@@ -7079,7 +7101,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.applyFilter(false);
 
     if (nextIdentity) {
-      this.ensureCommentColumnDefault();
+      this.ensureTableColumnDefaults();
       this.refreshItemComments(false);
       document.addEventListener('visibilitychange', this.commentVisibilityListener);
       window.addEventListener('focus', this.commentVisibilityListener);

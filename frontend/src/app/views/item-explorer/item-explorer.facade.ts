@@ -5875,7 +5875,6 @@ export class ItemExplorerFacade implements OnDestroy {
       Object.entries(this.columnFilters).filter(([key]) => !this.isPersonalColumnFilterKey(key)),
     );
     return {
-      filterText: this.filterText,
       sortField: this.sortField,
       sortIsMeta: this.sortIsMeta,
       sortDir: this.sortDir,
@@ -5886,15 +5885,10 @@ export class ItemExplorerFacade implements OnDestroy {
   private applyUiPreferences(rawUi: unknown) {
     if (!this.isRecord(rawUi)) return;
 
-    const filterText = rawUi['filterText'];
     const sortField = rawUi['sortField'];
     const sortIsMeta = rawUi['sortIsMeta'];
     const sortDir = rawUi['sortDir'];
     const columnFilters = rawUi['columnFilters'];
-
-    if (typeof filterText === 'string') {
-      this.filterText = filterText;
-    }
 
     if (typeof sortField === 'string') {
       this.sortField = sortField;

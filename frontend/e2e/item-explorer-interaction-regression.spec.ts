@@ -6,12 +6,12 @@ const MANAGER_ID = '10000000-0000-4000-8000-000000000002';
 
 const headers = { Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, 'e2e-manager')}` };
 const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
-let originalFilterText = '';
+let originalItemOrder: string[] = [];
 
 test.beforeEach(async ({ request }) => {
   const response = await request.get(stateUrl, { headers });
   expect(response.ok()).toBeTruthy();
-  originalFilterText = (await response.json()).activeState.ui.filterText || '';
+  originalItemOrder = [...((await response.json()).activeState.itemOrder || [])];
 });
 
 test.afterEach(async ({ page, request }) => {
@@ -24,14 +24,14 @@ test.afterEach(async ({ page, request }) => {
     headers,
     data: {
       baseVersion: state.version,
-      changeType: 'UI_STATE_CHANGED',
-      patch: { ui: { filterText: originalFilterText } },
+      changeType: 'ITEM_ORDER_CHANGED',
+      patch: { itemOrder: originalItemOrder },
     },
   });
   expect(restored.ok()).toBeTruthy();
   const verification = await request.get(stateUrl, { headers });
   expect(verification.ok()).toBeTruthy();
-  expect((await verification.json()).activeState.ui.filterText).toBe(originalFilterText);
+  expect((await verification.json()).activeState.itemOrder).toEqual(originalItemOrder);
 });
 
 async function openExplorer(page: Page) {
@@ -134,9 +134,21 @@ test('keeps global save shortcuts out of a pending native dialog even when focus
   page,
 }, info) => {
   await openExplorer(page);
-  await page
-    .locator('input[placeholder="🔍 Items filtern..."]')
-    .fill(`Pending ${info.project.name}`);
+  const stateResponse = await page.request.get(stateUrl, { headers });
+  expect(stateResponse.ok()).toBeTruthy();
+  const state = await stateResponse.json();
+  const pendingItemOrder = Object.keys(state.activeState.itemProperties || {}).reverse();
+  expect(pendingItemOrder.length).toBeGreaterThan(1);
+  const pendingDraft = await page.request.patch(`/api/acp/${ACP_ID}/item-explorer/draft`, {
+    headers,
+    data: {
+      baseVersion: state.version,
+      changeType: 'ITEM_ORDER_CHANGED',
+      patch: { itemOrder: pendingItemOrder },
+    },
+  });
+  expect(pendingDraft.ok()).toBeTruthy();
+  await page.reload();
   await expect(
     page.getByRole('button', { name: 'Änderungen prüfen …', exact: true }),
   ).toBeEnabled();

@@ -232,11 +232,51 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(page.locator('tbody tr')).toHaveCount(2);
 });
 
-test('serializes delayed draft updates while typing into the item filter', async ({ page }) => {
+test('keeps item searches local for two users and out of the shared draft', async ({
+  page,
+  browser,
+}) => {
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await openExplorer(page);
 
-  const requests: Array<{ baseVersion: number; filterText: string; status: number }> = [];
+  const draftPatchUrls: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PATCH' &&
+      request.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`)
+    ) {
+      draftPatchUrls.push(request.url());
+    }
+  });
+
+  const filter = page.getByPlaceholder('🔍 Items filtern...');
+  await filter.fill('GeoGebra');
+  await expect(filter).toHaveValue('GeoGebra');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  expect(draftPatchUrls).toEqual([]);
+
+  const observerContext = await browser.newContext();
+  const observer = await observerContext.newPage();
+  await login(observer, VIEWER_ID, VIEWER_USERNAME);
+  await openExplorer(observer);
+  const observerFilter = observer.getByPlaceholder('🔍 Items filtern...');
+  await expect(observerFilter).toHaveValue('');
+  await observerFilter.fill('Item ohne ausgewählte Kodiervariable');
+  await expect(observer.locator('tbody tr')).toHaveCount(1);
+
+  await expect(filter).toHaveValue('GeoGebra');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  expect(draftPatchUrls).toEqual([]);
+  await observerContext.close();
+});
+
+test('serializes delayed draft updates while typing into a shared column filter', async ({
+  page,
+}) => {
+  await login(page, MANAGER_ID, MANAGER_USERNAME);
+  await openExplorer(page);
+
+  const requests: Array<{ baseVersion: number; itemIdFilter: string; status: number }> = [];
   let activeRequests = 0;
   let maximumActiveRequests = 0;
   const draftPatchUrl = `**/api/acp/${ACP_ID}/item-explorer/draft`;
@@ -245,23 +285,24 @@ test('serializes delayed draft updates while typing into the item filter', async
     maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
     const payload = route.request().postDataJSON() as {
       baseVersion: number;
-      patch?: { ui?: { filterText?: string } };
+      patch?: { ui?: { columnFilters?: Record<string, string> } };
     };
     await new Promise((resolve) => setTimeout(resolve, 700));
     const response = await route.fetch();
     requests.push({
       baseVersion: payload.baseVersion,
-      filterText: payload.patch?.ui?.filterText || '',
+      itemIdFilter: payload.patch?.ui?.columnFilters?.['itemId'] || '',
       status: response.status(),
     });
     activeRequests -= 1;
     await route.fulfill({ response });
   });
 
-  const filter = page.getByPlaceholder('🔍 Items filtern...');
-  await filter.pressSequentially('DLB002', { delay: 300 });
-  await expect(filter).toHaveValue('DLB002');
-  await expect.poll(() => requests.at(-1)?.filterText).toBe('DLB002');
+  const filter = page.getByPlaceholder('🔍 ID...');
+  await filter.pressSequentially('MDB00701', { delay: 300 });
+  await expect(filter).toHaveValue('MDB00701');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect.poll(() => requests.at(-1)?.itemIdFilter).toBe('MDB00701');
   await expect.poll(() => activeRequests).toBe(0);
 
   expect(requests.length).toBeGreaterThan(1);
@@ -275,7 +316,7 @@ test('serializes delayed draft updates while typing into the item filter', async
   ).toHaveCount(0);
 
   await filter.fill('');
-  await expect.poll(() => requests.at(-1)?.filterText).toBe('');
+  await expect.poll(() => requests.at(-1)?.itemIdFilter).toBe('');
   await expect.poll(() => activeRequests).toBe(0);
   await page.unroute(draftPatchUrl);
 });

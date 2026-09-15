@@ -4,6 +4,10 @@ import { ItemExplorerTableComponent } from './item-explorer-table.component';
 import template from './item-explorer-table.component.html?raw';
 
 describe('ItemExplorerTableComponent', () => {
+  it('applies the global item search without persisting shared UI state', () => {
+    expect(template).toContain('(input)="vm.applyFilter(false)"');
+  });
+
   it('exposes the excluded-item filter as a semantic state button', () => {
     expect(template).toContain('class="btn btn-outline btn-sm btn-state"');
     expect(template).toContain('[attr.aria-pressed]="vm.showExcludedItems"');

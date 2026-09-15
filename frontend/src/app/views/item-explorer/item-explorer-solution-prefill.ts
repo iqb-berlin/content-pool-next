@@ -206,11 +206,14 @@ const deriveVariableValue = (variable: CodingVariableLike): SolutionScalar | nul
   return uniqueScalar(values as SolutionScalar[]);
 };
 
-const hasOnlyZeroCreditAlternatives = (variable: CodingVariableLike): boolean => {
+const hasUnambiguousScoreContribution = (variable: CodingVariableLike): boolean => {
   const codes = Array.isArray(variable.codes) ? variable.codes : [];
   return codes.every((code) => {
     const type = String(code.type || '').toUpperCase();
-    if (type === 'FULL_CREDIT') return true;
+    if (type === 'FULL_CREDIT') {
+      const score = Number(code.score ?? 0);
+      return Number.isFinite(score) && score > 0;
+    }
     return (
       ['NO_CREDIT', 'RESIDUAL', 'RESIDUAL_AUTO'].includes(type) && Number(code.score || 0) === 0
     );
@@ -319,7 +322,7 @@ export function derivePlayerSolutionPrefill(
   if (
     selectedSourceType === 'SUM_SCORE' &&
     (typeof deriveVariableValue(selectedVariable) !== 'number' ||
-      baseVariables.some((variable) => !hasOnlyZeroCreditAlternatives(variable)))
+      baseVariables.some((variable) => !hasUnambiguousScoreContribution(variable)))
   ) {
     return unavailable(
       'Die zusammengesetzte Kodierung enthält alternative oder partielle Lösungswege.',

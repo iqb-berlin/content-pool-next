@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { CodingSchemeFactory } from '@iqb/responses';
+import type { VariableCodingData } from '@iqbspecs/coding-scheme';
 import {
   derivePlayerSolutionPrefill,
   mergePlayerSolutionIntoDataParts,
@@ -179,6 +181,56 @@ describe('derivePlayerSolutionPrefill', () => {
       ],
       message: '2 eindeutige Teilantworten bilden die Musterlösung.',
     });
+  });
+
+  it('rejects a SUM_SCORE solution with an optional zero-score checkbox', () => {
+    const base = (id: string, score: number) => ({
+      id,
+      alias: id,
+      sourceType: 'BASE',
+      codes: [
+        { id: 1, type: 'FULL_CREDIT', score, ruleSets: [{ rules: [{ method: 'IS_TRUE' }] }] },
+        { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+      ],
+    });
+    const a = base('A', 1);
+    const b = base('B', 0);
+    const sum = {
+      id: 'SUM',
+      alias: 'SUM',
+      sourceType: 'SUM_SCORE',
+      deriveSources: ['A', 'B'],
+      codes: [
+        {
+          id: 1,
+          type: 'FULL_CREDIT',
+          score: 1,
+          ruleSets: [{ rules: [{ method: 'NUMERIC_MATCH', parameters: ['1'] }] }],
+        },
+        { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+      ],
+    };
+    const variables = [a, b, sum];
+    for (const value of [true, false]) {
+      const coded = CodingSchemeFactory.code(
+        [
+          { id: 'A', status: 'VALUE_CHANGED', value: true },
+          { id: 'B', status: 'VALUE_CHANGED', value },
+        ],
+        variables as VariableCodingData[],
+      );
+      expect(coded.find((r) => r.id === 'SUM')).toMatchObject({
+        status: 'CODING_COMPLETE',
+        code: 1,
+      });
+    }
+    expect(
+      derivePlayerSolutionPrefill(sum, variables, (variable) => ({
+        responseId: String(variable.id),
+        elementType: 'checkbox',
+        identifiers: [String(variable.id)],
+      })),
+    ).toMatchObject({ status: 'unavailable' });
   });
 
   it('rejects alternatives even if both are marked as full credit', () => {

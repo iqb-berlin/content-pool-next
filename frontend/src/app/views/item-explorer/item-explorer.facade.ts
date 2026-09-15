@@ -76,6 +76,11 @@ import {
   ItemExplorerLoadDiagnostics,
   ItemExplorerTimingToken,
 } from './item-explorer-load-diagnostics.service';
+import {
+  derivePlayerSolutionPrefill,
+  mergePlayerSolutionIntoDataParts,
+  PlayerSolutionPrefill,
+} from './item-explorer-solution-prefill';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -427,6 +432,13 @@ export class ItemExplorerFacade implements OnDestroy {
   currentResponseData: Record<string, any> | null = null;
   hasResponseState = false;
   isFallbackState = false;
+  correctSolutionRequested = false;
+  correctSolutionPrefill: PlayerSolutionPrefill = {
+    status: 'unavailable',
+    responses: [],
+    message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+  };
+  private restoreResponseDataAfterSolution = false;
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
   previewUserFacingMessage = '';
@@ -886,6 +898,27 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get canPreviewSelectedItem(): boolean {
     return this.canPreviewItem(this.selectedItem) && !this.previewUnavailableReason;
+  }
+
+  get correctSolutionAvailable(): boolean {
+    return this.correctSolutionPrefill.status === 'available';
+  }
+
+  get isCorrectSolutionActive(): boolean {
+    return this.correctSolutionRequested && this.correctSolutionAvailable;
+  }
+
+  get correctSolutionToggleTitle(): string {
+    if (this.correctSolutionRequested) {
+      return 'Musterlösung ausblenden und den vorherigen Player-Zustand wiederherstellen';
+    }
+    return this.correctSolutionAvailable
+      ? 'Eindeutig aus dem Kodierschema abgeleitete Musterlösung anzeigen'
+      : 'Musterlösungsmodus einschalten; für dieses Item ist derzeit keine eindeutige Lösung verfügbar';
+  }
+
+  get canSaveCurrentResponseState(): boolean {
+    return !this.previewUpdateInProgress && !this.isCorrectSolutionActive;
   }
 
   get loadingUnit(): boolean {
@@ -2975,6 +3008,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.activePlayerSessionId = null;
     this.playerFrameRefreshPending = false;
     this.previewUserFacingMessage = '';
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Die Player-Daten für die Musterlösung werden geladen.',
+    };
+    this.restoreResponseDataAfterSolution = false;
   }
 
   private startItemListSlowTimer(): void {
@@ -3050,7 +3089,13 @@ export class ItemExplorerFacade implements OnDestroy {
     this.isFallbackState = false;
     this.currentResponseData = null;
     this.activePlayerSessionId = null;
+    this.restoreResponseDataAfterSolution = false;
     this.previewUserFacingMessage = '';
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Die Kodierung und Player-Daten für die Musterlösung werden geladen.',
+    };
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -3102,6 +3147,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.applyPreviewAssets(result.assets);
     }
     this.applyResponseStateResult(result.responseState);
+    this.refreshCorrectSolutionPrefill();
 
     if (this.previewCoordinator.status.kind !== 'ready') {
       this.previewUserFacingMessage =
@@ -3162,6 +3208,12 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Response State ---
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
+    if (this.isCorrectSolutionActive) {
+      this.confirmDialogError =
+        'Die Musterlösung ist nur eine Vorschau und kann nicht als Player-Eingabe gespeichert werden. Blenden Sie sie zuerst aus.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
     if (this.previewCoordinator.status.kind !== 'ready') {
       this.confirmDialogError =
         'Der Zustand des ausgewählten Items wird noch geladen. Bitte versuchen Sie es gleich erneut.';
@@ -3182,6 +3234,7 @@ export class ItemExplorerFacade implements OnDestroy {
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
+      this.isCorrectSolutionActive ||
       this.previewCoordinator.status.kind !== 'ready'
     ) {
       this.confirmDialogError =
@@ -3270,6 +3323,20 @@ export class ItemExplorerFacade implements OnDestroy {
 
   navigateItem(delta: number) {
     this.selectFilteredItemAt(this.selectedIndex + delta, true);
+  }
+
+  toggleCorrectSolution(): void {
+    if (!this.selectedItem) return;
+
+    const wasActive = this.isCorrectSolutionActive;
+    this.correctSolutionRequested = !this.correctSolutionRequested;
+    const isActive = this.isCorrectSolutionActive;
+    this.restoreResponseDataAfterSolution = wasActive && !isActive;
+
+    if (wasActive === isActive || this.previewCoordinator.status.kind !== 'ready') return;
+    this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
+    this.startPlayerIfReady();
   }
 
   onPreviewTargetSelectionChange() {
@@ -3391,8 +3458,9 @@ export class ItemExplorerFacade implements OnDestroy {
           this.totalPages = playerMessage['playerState'].validPages.length || this.totalPages;
         }
         // Capture response data from unitState.dataParts
-        if (playerMessage['unitState']?.dataParts) {
+        if (playerMessage['unitState']?.dataParts && !this.isCorrectSolutionActive) {
           this.currentResponseData = playerMessage['unitState'].dataParts;
+          this.restoreResponseDataAfterSolution = false;
         }
         break;
 
@@ -3483,8 +3551,7 @@ export class ItemExplorerFacade implements OnDestroy {
       sessionId,
       unitDefinition: playerDefinition,
       unitState: {
-        dataParts:
-          this.hasResponseState && this.currentResponseData ? this.currentResponseData : {},
+        dataParts: this.getPlayerStartDataParts(),
       },
       playerConfig: {
         stateReportPolicy: 'none',
@@ -3522,6 +3589,22 @@ export class ItemExplorerFacade implements OnDestroy {
       });
     }
     this.schedulePlayerFocus();
+  }
+
+  private getPlayerStartDataParts(): Record<string, any> {
+    if (this.isCorrectSolutionActive) {
+      return mergePlayerSolutionIntoDataParts(
+        this.currentResponseData,
+        this.correctSolutionPrefill.responses,
+      );
+    }
+    if (
+      this.currentResponseData &&
+      (this.hasResponseState || this.restoreResponseDataAfterSolution)
+    ) {
+      return this.currentResponseData;
+    }
+    return {};
   }
 
   private getPlayerDefinitionContent(): string {
@@ -3747,6 +3830,49 @@ export class ItemExplorerFacade implements OnDestroy {
     return Array.isArray(this.currentCodingScheme?.variableCodings)
       ? this.currentCodingScheme.variableCodings
       : [];
+  }
+
+  private refreshCorrectSolutionPrefill(): void {
+    const variables = this.getCurrentCodingVariables();
+    const variableMatch = this.resolveItemCodingVariable(this.selectedItem, variables);
+    if (variableMatch.status !== 'unique' || !variableMatch.variable) {
+      this.correctSolutionPrefill = {
+        status: 'unavailable',
+        responses: [],
+        message: 'Für dieses Item konnte keine eindeutige Kodiervariable ermittelt werden.',
+      };
+      return;
+    }
+    if (!this.definitionContent) {
+      this.correctSolutionPrefill = {
+        status: 'unavailable',
+        responses: [],
+        message: 'Für dieses Item ist keine auswertbare Player-Definition verfügbar.',
+      };
+      return;
+    }
+
+    this.correctSolutionPrefill = derivePlayerSolutionPrefill(
+      variableMatch.variable,
+      variables,
+      (variable) => {
+        const candidates = Array.from(
+          new Set(
+            [variable?.['alias'], variable?.['id']]
+              .map((value) => String(value || '').trim())
+              .filter((value) => value.length > 0),
+          ),
+        );
+        for (const candidate of candidates) {
+          const target = this.voudService.resolvePlayerResponseTarget(
+            this.definitionContent!,
+            candidate,
+          );
+          if (target) return target;
+        }
+        return undefined;
+      },
+    );
   }
 
   private createCodingSchemeAsText(codings: any[]): CodingAsText[] {
@@ -6710,6 +6836,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.currentResponseData = null;
     this.hasResponseState = false;
     this.isFallbackState = false;
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+    };
+    this.restoreResponseDataAfterSolution = false;
     this.selectedPreviewTargetId = '';
     this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);

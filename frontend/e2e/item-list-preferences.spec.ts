@@ -462,6 +462,96 @@ test('keeps collection management actions inside wide, narrow and mobile panels'
   await checkMenu();
 });
 
+test('hides, persists, and restores the position column through column management', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  const headers = {
+    Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, MANAGER_USERNAME)}`,
+  };
+  const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+  const draftUrl = `/api/acp/${ACP_ID}/item-explorer/draft`;
+  const originalResponse = await request.get(stateUrl, { headers });
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+
+  const saveColumnSettings = async () => {
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (candidate) =>
+          candidate.request().method() === 'PATCH' && candidate.url().endsWith(draftUrl),
+      ),
+      page
+        .getByRole('button', { name: /Speichern/ })
+        .last()
+        .click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+  };
+
+  try {
+    await page.goto(`/view/${ACP_ID}/item-explorer`);
+    const positionHeader = page.getByRole('columnheader', { name: 'Pos.' });
+    await expect(positionHeader).toBeVisible();
+    await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
+
+    await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+    const positionCheckbox = page.getByRole('checkbox', { name: 'Position', exact: true });
+    await expect(positionCheckbox).toBeChecked();
+    await positionCheckbox.uncheck();
+    await saveColumnSettings();
+
+    await expect(positionHeader).toHaveCount(0);
+    await expect(page.locator('tbody tr td.number-col')).toHaveCount(0);
+    await page.reload();
+    await expect(positionHeader).toHaveCount(0);
+
+    const tableScroll = page.locator('.table-scroll');
+    await tableScroll.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const leadingAlignment = await page.locator('table.explorer-table').evaluate((table) => {
+      const itemId = Array.from(
+        table.querySelectorAll<HTMLElement>('thead tr:first-child th'),
+      ).find((header) => header.textContent?.trim().startsWith('Item-ID'));
+      const selection = table.querySelector<HTMLElement>('thead th.collection-select-col');
+      const scroller = table.closest<HTMLElement>('.table-scroll');
+      if (!itemId || !scroller) throw new Error('Leading table cells are missing');
+      return {
+        itemIdLeft: itemId.getBoundingClientRect().left,
+        expectedLeft:
+          selection?.getBoundingClientRect().right ?? scroller.getBoundingClientRect().left,
+      };
+    });
+    expect(
+      Math.abs(leadingAlignment.itemIdLeft - leadingAlignment.expectedLeft),
+    ).toBeLessThanOrEqual(1);
+
+    await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+    await expect(positionCheckbox).not.toBeChecked();
+    await page.getByRole('button', { name: /Standard/ }).click();
+    await expect(positionCheckbox).toBeChecked();
+    await saveColumnSettings();
+
+    await expect(positionHeader).toBeVisible();
+    await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
+  } finally {
+    await page.close();
+    const current = await request.get(stateUrl, { headers });
+    expect(current.ok()).toBeTruthy();
+    const cleanup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: (await current.json()).version,
+        changeType: 'METADATA_COLUMNS_CHANGED',
+        patch: { metadataColumns: original.draftState.metadataColumns },
+      },
+    });
+    expect(cleanup.ok()).toBeTruthy();
+  }
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
 }) => {

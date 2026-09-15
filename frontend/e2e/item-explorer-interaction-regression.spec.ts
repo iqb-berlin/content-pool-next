@@ -11,7 +11,7 @@ let originalFilterText = '';
 test.beforeEach(async ({ request }) => {
   const response = await request.get(stateUrl, { headers });
   expect(response.ok()).toBeTruthy();
-  originalFilterText = (await response.json()).activeState.ui.filterText;
+  originalFilterText = (await response.json()).activeState.ui.filterText || '';
 });
 
 test.afterEach(async ({ page, request }) => {
@@ -54,6 +54,54 @@ async function openExplorer(page: Page) {
   await page.locator('input[placeholder="🔍 Items filtern..."]').clear();
   await expect(page.locator('.explorer-table tbody tr').first()).toBeVisible();
 }
+
+test('shows only the existing player preview in fullscreen and restores the explorer state', async ({
+  page,
+}) => {
+  await openExplorer(page);
+  const firstRow = page.locator('.explorer-table tbody tr').first();
+  await firstRow.click();
+  await expect(firstRow).toHaveAttribute('aria-selected', 'true');
+
+  const container = page.locator('.player-container');
+  const frame = page.locator('iframe.player-iframe');
+  await expect(frame).toBeVisible();
+  await frame.evaluate((element) => {
+    element.dataset['fullscreenStateMarker'] = 'preserved';
+  });
+  await container.evaluate((element) => {
+    Object.defineProperty(element, 'requestFullscreen', {
+      configurable: true,
+      value: () => Promise.reject(new Error('Fullscreen API blocked for fallback test')),
+    });
+  });
+
+  const openFullscreen = page.getByRole('button', {
+    name: 'Player-Vorschau im Vollbild anzeigen',
+  });
+  await openFullscreen.click();
+
+  await expect(container).toHaveClass(/player-fullscreen-fallback/);
+  await expect(
+    page.getByRole('button', { name: 'Vollbild der Player-Vorschau beenden' }),
+  ).toBeVisible();
+  const viewport = page.viewportSize();
+  const bounds = await container.boundingBox();
+  expect(viewport).not.toBeNull();
+  expect(bounds).not.toBeNull();
+  expect(Math.abs(bounds!.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.width - viewport!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(bounds!.height - viewport!.height)).toBeLessThanOrEqual(1);
+  await expect(frame).toHaveAttribute('data-fullscreen-state-marker', 'preserved');
+
+  await page.keyboard.press('Escape');
+
+  await expect(container).not.toHaveClass(/player-fullscreen-fallback/);
+  await expect(openFullscreen).toBeFocused();
+  await expect(firstRow).toHaveAttribute('aria-selected', 'true');
+  await expect(frame).toHaveAttribute('data-fullscreen-state-marker', 'preserved');
+});
 
 test('shrinks narrow metadata immediately with keyboard and pointer after resizing the viewport', async ({
   page,

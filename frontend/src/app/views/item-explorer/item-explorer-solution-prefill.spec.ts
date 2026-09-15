@@ -42,9 +42,7 @@ describe('derivePlayerSolutionPrefill', () => {
       ],
     };
 
-    expect(
-      derivePlayerSolutionPrefill(variable, [variable], () => target('A1', 'radio')),
-    ).toEqual({
+    expect(derivePlayerSolutionPrefill(variable, [variable], () => target('A1', 'radio'))).toEqual({
       status: 'available',
       responses: [{ id: 'A1', status: 'VALUE_CHANGED', value: 2 }],
       message: 'Eine eindeutige Musterlösung ist verfügbar.',
@@ -120,9 +118,7 @@ describe('derivePlayerSolutionPrefill', () => {
     };
 
     expect(
-      derivePlayerSolutionPrefill(variable, [variable], () =>
-        target('MATH_1', 'text-area-math'),
-      ),
+      derivePlayerSolutionPrefill(variable, [variable], () => target('MATH_1', 'text-area-math')),
     ).toMatchObject({ status: 'unavailable', responses: [] });
   });
 
@@ -203,7 +199,9 @@ describe('derivePlayerSolutionPrefill', () => {
       ],
     };
 
-    expect(derivePlayerSolutionPrefill(variable, [variable], () => target('A1', 'radio'))).toMatchObject({
+    expect(
+      derivePlayerSolutionPrefill(variable, [variable], () => target('A1', 'radio')),
+    ).toMatchObject({
       status: 'unavailable',
       responses: [],
     });
@@ -246,9 +244,7 @@ describe('derivePlayerSolutionPrefill', () => {
     };
 
     expect(
-      derivePlayerSolutionPrefill(aggregate, [option, aggregate], () =>
-        target('A', 'checkbox'),
-      ),
+      derivePlayerSolutionPrefill(aggregate, [option, aggregate], () => target('A', 'checkbox')),
     ).toEqual({
       status: 'unavailable',
       responses: [],

@@ -261,7 +261,9 @@
           aria-live="polite"
         >
           <strong>
-            {{ vm.isCorrectSolutionActive ? 'Musterlösung – nicht gespeichert' : 'Keine Musterlösung' }}
+            {{
+              vm.isCorrectSolutionActive ? 'Musterlösung – nicht gespeichert' : 'Keine Musterlösung'
+            }}
           </strong>
           <span>{{ vm.correctSolutionPrefill.message }}</span>
         </div>

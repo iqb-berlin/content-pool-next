@@ -60,7 +60,10 @@ const unavailable = (message: string): PlayerSolutionPrefill => ({
   message,
 });
 
-const normalizeIdentifier = (value: unknown): string => String(value || '').trim().toLowerCase();
+const normalizeIdentifier = (value: unknown): string =>
+  String(value || '')
+    .trim()
+    .toLowerCase();
 
 const variableIdentifiers = (variable: CodingVariableLike): string[] =>
   Array.from(
@@ -100,7 +103,9 @@ const collectBaseVariables = (
 
   const nextVisited = new Set(visited);
   nextVisited.add(visitKey);
-  const sourceType = String(variable?.sourceType || 'BASE').trim().toUpperCase();
+  const sourceType = String(variable?.sourceType || 'BASE')
+    .trim()
+    .toUpperCase();
   if (sourceType === 'BASE') return [variable];
   // The first supported multiple-choice shape is the Studio convention where a SUM_SCORE
   // variable combines direct checkbox variables. Other derivations are not safely invertible.
@@ -113,7 +118,12 @@ const collectBaseVariables = (
   for (const source of sources) {
     const sourceVariable = findVariable(source, variables);
     if (!sourceVariable) return null;
-    if (String(sourceVariable.sourceType || 'BASE').trim().toUpperCase() !== 'BASE') return null;
+    if (
+      String(sourceVariable.sourceType || 'BASE')
+        .trim()
+        .toUpperCase() !== 'BASE'
+    )
+      return null;
     const sourceBases = collectBaseVariables(sourceVariable, variables, nextVisited);
     if (!sourceBases?.length) return null;
     collected.push(...sourceBases);
@@ -242,10 +252,7 @@ const coercePlayerValue = (
   }
 };
 
-const codeIsFullCredit = (
-  variable: CodingVariableLike,
-  codeId: unknown,
-): boolean =>
+const codeIsFullCredit = (variable: CodingVariableLike, codeId: unknown): boolean =>
   (Array.isArray(variable?.codes) ? variable.codes : []).some(
     (code) =>
       String(code?.id) === String(codeId) &&
@@ -277,8 +284,8 @@ const validatesAsFullCredit = (
     );
     return Boolean(
       selectedResponse &&
-        selectedResponse.status === 'CODING_COMPLETE' &&
-        codeIsFullCredit(selectedVariable, selectedResponse.code),
+      selectedResponse.status === 'CODING_COMPLETE' &&
+      codeIsFullCredit(selectedVariable, selectedResponse.code),
     );
   } catch (_error) {
     return false;
@@ -294,15 +301,21 @@ export function derivePlayerSolutionPrefill(
     return unavailable('Für dieses Item konnte keine eindeutige Kodiervariable ermittelt werden.');
   }
   if (!hasFullCreditCode(selectedVariable)) {
-    return unavailable('Die Kodiervariable enthält keinen ausdrücklich markierten FULL_CREDIT-Code.');
+    return unavailable(
+      'Die Kodiervariable enthält keinen ausdrücklich markierten FULL_CREDIT-Code.',
+    );
   }
 
   const baseVariables = collectBaseVariables(selectedVariable, variables);
   if (!baseVariables?.length) {
-    return unavailable('Die richtige Antwort ist nicht sicher auf Player-Basisvariablen abbildbar.');
+    return unavailable(
+      'Die richtige Antwort ist nicht sicher auf Player-Basisvariablen abbildbar.',
+    );
   }
 
-  const selectedSourceType = String(selectedVariable.sourceType || 'BASE').trim().toUpperCase();
+  const selectedSourceType = String(selectedVariable.sourceType || 'BASE')
+    .trim()
+    .toUpperCase();
   if (
     selectedSourceType === 'SUM_SCORE' &&
     (typeof deriveVariableValue(selectedVariable) !== 'number' ||
@@ -381,7 +394,9 @@ export function mergePlayerSolutionIntoDataParts(
     existingResponses = [];
   }
 
-  const solutionIds = new Set(solutionResponses.map((response) => normalizeIdentifier(response.id)));
+  const solutionIds = new Set(
+    solutionResponses.map((response) => normalizeIdentifier(response.id)),
+  );
   merged['elementCodes'] = JSON.stringify([
     ...existingResponses.filter((response) => !solutionIds.has(normalizeIdentifier(response?.id))),
     ...solutionResponses,

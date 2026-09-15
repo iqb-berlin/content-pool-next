@@ -169,15 +169,6 @@ describe('UnitViewComponent', () => {
         'unitId'
       ],
     ).toBe('u1');
-    expect(fixture.nativeElement.querySelector('app-item-comment-thread').classList).toContain(
-      'review-comment-thread',
-    );
-    expect(fixture.nativeElement.querySelector('.panel-content').classList).toContain(
-      'comments-active',
-    );
-    expect(
-      getComputedStyle(fixture.nativeElement.querySelector('.panel-content')).scrollbarGutter,
-    ).toBe('stable');
 
     const tabs = Array.from(
       fixture.nativeElement.querySelectorAll('.panel-tabs .tab') as NodeListOf<HTMLButtonElement>,

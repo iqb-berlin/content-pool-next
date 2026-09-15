@@ -1919,14 +1919,17 @@ describe('ItemExplorerFacade', () => {
     component.setColumnWidth(positionColumn, 120);
     const itemIdColumn = component.tableColumns.find((column) => column.key === 'system:itemId')!;
     expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(120);
-
-    component.enableItemCollections = true;
-    component.toggleReferenceNumberVisibility();
-
     component.toggleColumnVisibility(positionColumn);
 
     expect(component.isColumnVisible(positionColumn)).toBe(false);
     expect(component.tableColumns.some((column) => column.key === 'system:position')).toBe(false);
+    expect(
+      component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns),
+    ).toBe(0);
+
+    component.enableItemCollections = true;
+    component.toggleReferenceNumberVisibility();
+
     const visibleColumns = component.tableColumns;
     expect(visibleColumns.slice(0, 2).map((column) => column.key)).toEqual([
       'system:referenceNumber',

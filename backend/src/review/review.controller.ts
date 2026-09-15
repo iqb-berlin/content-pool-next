@@ -28,6 +28,7 @@ import {
 import { Type } from "class-transformer";
 import { randomUUID } from "crypto";
 import {
+  Comment,
   AcpAccessConfig,
   AcpCredential,
   AcpUserRole,
@@ -68,6 +69,11 @@ class ReviewConfigDto {
   @ValidateNested({ each: true })
   @Type(() => ReviewGroupDto)
   groups?: ReviewGroupDto[];
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  deletedGroupIds?: string[];
 }
 @Controller("view/acp/:acpId")
 @UseGuards(AcpAccessGuard)
@@ -114,11 +120,12 @@ export class ReviewController {
     if (!current) throw new ForbiddenException("ACP-Konfiguration fehlt");
     if (dto.enableReview && current.featureConfig.enableReview !== true) {
       const readiness = await this.readiness.check(acpId);
-      if (readiness.status === "BLOCKED") {
+      if (readiness.stale || readiness.status === "BLOCKED") {
         throw new BadRequestException({
           code: "REVIEW_NOT_READY",
-          message:
-            "Der Review kann wegen technischer Blocker nicht aktiviert werden.",
+          message: readiness.stale
+            ? "Das Paket wurde während der Prüfung geändert. Bitte erneut prüfen."
+            : "Der Review kann wegen technischer Blocker nicht aktiviert werden.",
           readiness,
         });
       }
@@ -198,10 +205,23 @@ export class ReviewController {
           }
           next.push({ ...group, id, name, members });
         }
-        if (previous.some((group) => !ids.has(group.id)))
-          throw new BadRequestException(
-            "Gruppen bitte archivieren statt entfernen",
-          );
+        for (const group of previous.filter((entry) => !ids.has(entry.id))) {
+          if (!dto.deletedGroupIds?.includes(group.id))
+            throw new BadRequestException(
+              "Löschen der Gruppe muss bestätigt werden.",
+            );
+          // Comment writes acquire this same ACP config lock before choosing a group.
+          // Include soft-deleted comments: their historical references must survive.
+          if (
+            await manager.count(Comment, {
+              where: { acpId, groupId: group.id },
+            })
+          ) {
+            throw new BadRequestException(
+              "Die Gruppe enthält Kommentare und kann nur archiviert werden.",
+            );
+          }
+        }
         config.reviewGroups = next;
       }
       if (dto.visibilityMode === "GROUP" && previousMode !== "GROUP") {
@@ -217,6 +237,12 @@ export class ReviewController {
       await manager.save(config);
       return this.configView(config);
     });
+  }
+
+  @Get("review/readiness")
+  async lastReadiness(@UuidParam("acpId") acpId: string, @Request() req: any) {
+    await this.capabilities.assert(req, "review:manage");
+    return this.readiness.getLast(acpId);
   }
 
   @Post("review/readiness")

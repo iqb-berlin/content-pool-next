@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { of, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
-import type { LoginResponse, CredentialLoginResponse, UserProfile } from '../models/api.models';
+import type { CredentialLoginResponse, UserProfile } from '../models/api.models';
 import { PendingPersonalSessionStorageService } from './pending-personal-session-storage.service';
 
 function createJwt(sub: string, type = 'user', acpId = ''): string {

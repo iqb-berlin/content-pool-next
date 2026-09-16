@@ -2,7 +2,7 @@ import {
   CapabilitiesComponent,
   capabilityLabels,
 } from '../../shared/capabilities/capabilities.component';
-import { Component, OnInit } from '@angular/core';
+import { Component, Inject, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -376,6 +376,22 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
     <div class="card">
       <h3>Feature-Konfiguration</h3>
       <p class="help-text">Steuert, welche Funktionen im Nur-Lese-Zugriff verfügbar sind.</p>
+
+      <!-- Start page -->
+      <div class="feature-section">
+        <h4>🏠 Auf dieser Startseite anzeigen</h4>
+        <p class="help-text">
+          Diese Schalter steuern nur die sichtbaren Einstiege. Sie vergeben oder entziehen keine
+          Funktionsrechte. Item-Explorer, Aufgabenansicht und Aufgabenfolgen werden in den
+          jeweiligen Bereichen separat freigegeben; Review-Zugänge werden unter Review verwaltet.
+        </p>
+        @for (feat of startPageFlags; track feat.key) {
+          <label class="feature-toggle">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
+            <span>{{ feat.label }}</span>
+          </label>
+        }
+      </div>
 
       <!-- Downloads -->
       <div class="feature-section">
@@ -1061,8 +1077,14 @@ export class AccessConfigComponent implements OnInit {
   ];
 
   navFlags = [
-    { key: 'enableUnitListNavigation', label: 'Navigation über Aufgabenliste' },
-    { key: 'enableSequenceNavigation', label: 'Aufgabenfolgen aus Testheften generieren' },
+    { key: 'enableSequenceNavigation', label: 'Testhefte und Aufgabenfolgen aktivieren' },
+  ];
+
+  startPageFlags = [
+    { key: 'showItemExplorerOnStartPage', label: 'Item-Explorer' },
+    { key: 'showUnitListOnStartPage', label: 'Aufgaben ansehen' },
+    { key: 'showSequencesOnStartPage', label: 'Testhefte und Aufgabenfolgen' },
+    { key: 'showIndexOnStartPage', label: 'Paketstruktur (ACP-Index)' },
   ];
 
   itemFlags = [
@@ -1074,8 +1096,8 @@ export class AccessConfigComponent implements OnInit {
   ];
 
   constructor(
-    private route: ActivatedRoute,
-    private api: ApiService,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) private api: ApiService,
   ) {}
 
   ngOnInit() {
@@ -1284,6 +1306,15 @@ export class AccessConfigComponent implements OnInit {
   }
 
   private applyFeatureConfigDefaults() {
+    this.featureConfig['showItemExplorerOnStartPage'] =
+      this.featureConfig['showItemExplorerOnStartPage'] !== false;
+    this.featureConfig['showUnitListOnStartPage'] =
+      (this.featureConfig['showUnitListOnStartPage'] ??
+        this.featureConfig['enableUnitListNavigation']) !== false;
+    this.featureConfig['showSequencesOnStartPage'] =
+      this.featureConfig['showSequencesOnStartPage'] !== false;
+    this.featureConfig['showIndexOnStartPage'] =
+      this.featureConfig['showIndexOnStartPage'] !== false;
     this.featureConfig['commentVisibilityMode'] =
       this.featureConfig['commentVisibilityMode'] === 'GROUP'
         ? 'GROUP'

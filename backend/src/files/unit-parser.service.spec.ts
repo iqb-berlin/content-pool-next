@@ -860,6 +860,11 @@ describe("UnitParserService", () => {
                   value: "30",
                   valueAsText: { lang: "de", value: "00:30" },
                 },
+                {
+                  id: "iqb_item_time",
+                  value: "99",
+                  valueAsText: { lang: "de", value: "01:39" },
+                },
               ],
             },
           ],
@@ -871,7 +876,7 @@ describe("UnitParserService", () => {
             {
               entries: [
                 {
-                  id: "iqb_time_item",
+                  id: "iqb_item_time",
                   value: 45,
                   valueAsText: { lang: "de", value: "00:45" },
                 },
@@ -914,6 +919,7 @@ describe("UnitParserService", () => {
         rowKey: "uuid-2",
         itemTimeSeconds: 45,
         stimulusTimeSeconds: 90,
+        metadata: expect.objectContaining({ iqb_item_time: "00:45" }),
       }),
     ]);
   });

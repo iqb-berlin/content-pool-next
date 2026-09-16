@@ -35,6 +35,15 @@ describe("extractVomdTimeSeconds", () => {
     ).toBe(90);
   });
 
+  it("accepts the legacy item-time entry ID", () => {
+    expect(
+      extractVomdTimeSeconds(
+        [{ entries: [{ id: "iqb_item_time", value: "45" }] }],
+        "iqb_item_time",
+      ),
+    ).toBe(45);
+  });
+
   it.each(["", "  ", "invalid", "-1", -1, null, undefined])(
     "treats %p as a missing VOMD time",
     (value) => {

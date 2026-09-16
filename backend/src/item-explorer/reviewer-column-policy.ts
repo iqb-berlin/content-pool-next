@@ -25,6 +25,15 @@ const FIELD_COLUMNS: Record<string, string> = {
   bookletPositions: "metadata:bookletPosition",
 };
 
+const TIME_COLUMN_ALIASES: Readonly<Record<string, string>> = {
+  "metadata:iqb_time_item": "metadata:itemTimeSeconds",
+  "metadata:iqb_item_time": "metadata:itemTimeSeconds",
+  "metadata:iqb_time_stimulus": "metadata:stimulusTimeSeconds",
+};
+
+const normalizeColumn = (column: string): string =>
+  TIME_COLUMN_ALIASES[column] || column;
+
 const IDENTITY_FIELDS = new Set([
   "id",
   "itemId",
@@ -72,11 +81,13 @@ export class ReviewerColumnPolicy {
     // locally computed legacy column and remains visible until schema 3 records
     // an explicit visibility choice.
     this.allowedColumns = [
-      ...new Set([
-        ...(this.legacyPositionVisible ? ["system:position"] : []),
-        "system:itemId",
-        ...(columns?.layout?.configured ? columns.layout.visible : []),
-      ]),
+      ...new Set(
+        [
+          ...(this.legacyPositionVisible ? ["system:position"] : []),
+          "system:itemId",
+          ...(columns?.layout?.configured ? columns.layout.visible : []),
+        ].map(normalizeColumn),
+      ),
     ].filter((key) => !key.startsWith("personal:"));
   }
 
@@ -86,6 +97,14 @@ export class ReviewerColumnPolicy {
       column.startsWith("personal:") ||
       this.allowedColumns.includes(column)
     );
+  }
+
+  private allowsConfiguredColumn(column: string): boolean {
+    return this.allows(normalizeColumn(column));
+  }
+
+  private allowsConfiguredMetadata(id: string): boolean {
+    return this.allowsConfiguredColumn(FIELD_COLUMNS[id] || `metadata:${id}`);
   }
 
   allowsField(field: string): boolean {
@@ -164,7 +183,15 @@ export class ReviewerColumnPolicy {
     const columns = record(value);
     const layout = record(columns.layout);
     const filterKeys = (keys: unknown) =>
-      Array.isArray(keys) ? keys.filter((key) => this.allows(key)) : [];
+      Array.isArray(keys)
+        ? keys.filter((key) => this.allowsConfiguredColumn(key))
+        : [];
+    const projectConfiguredMetadata = (metadata: unknown) =>
+      Object.fromEntries(
+        Object.entries(record(metadata)).filter(([id]) =>
+          this.allowsConfiguredMetadata(id),
+        ),
+      );
     const visible = filterKeys(layout.visible);
     const defaultVisible = [
       ...(this.legacyPositionVisible ? ["system:position"] : []),
@@ -173,14 +200,14 @@ export class ReviewerColumnPolicy {
     return {
       ...columns,
       visible: Array.isArray(columns.visible)
-        ? columns.visible.filter((id) => this.allowsMetadata(id))
+        ? columns.visible.filter((id) => this.allowsConfiguredMetadata(id))
         : [],
       order: Array.isArray(columns.order)
-        ? columns.order.filter((id) => this.allowsMetadata(id))
+        ? columns.order.filter((id) => this.allowsConfiguredMetadata(id))
         : [],
-      widths: this.projectMetadata(columns.widths),
+      widths: projectConfiguredMetadata(columns.widths),
       definitions: Array.isArray(columns.definitions)
-        ? columns.definitions.filter((c) => this.allowsMetadata(c.id))
+        ? columns.definitions.filter((c) => this.allowsConfiguredMetadata(c.id))
         : [],
       layout: {
         ...layout,
@@ -189,7 +216,7 @@ export class ReviewerColumnPolicy {
         order: [...new Set([...defaultVisible, ...filterKeys(layout.order)])],
         widths: Object.fromEntries(
           Object.entries(record(layout.widths)).filter(([key]) =>
-            this.allows(key),
+            this.allowsConfiguredColumn(key),
           ),
         ),
       },

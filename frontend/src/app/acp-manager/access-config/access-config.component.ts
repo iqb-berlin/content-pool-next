@@ -2,7 +2,7 @@ import {
   CapabilitiesComponent,
   capabilityLabels,
 } from '../../shared/capabilities/capabilities.component';
-import { Component, OnInit } from '@angular/core';
+import { Component, Inject, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -467,15 +467,16 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <h3>Item-Explorer</h3>
         @for (feat of itemFlags; track feat.key) {
           <label class="feature-toggle">
-            <input
-              type="checkbox"
-              [(ngModel)]="featureConfig[feat.key]"
-              [disabled]="feat.key !== 'enableItemList' && !featureConfig['enableItemList']"
-            />
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
-        <fieldset class="explorer-options" [disabled]="!featureConfig['enableItemList']">
+        <p class="help-text">
+          Die Freigabe des Item-Explorers betrifft Personen ohne Verwaltungsrechte und ohne
+          gesonderte Explorer-Berechtigung. Darstellung und Datenzuordnung bleiben für die
+          Verwaltung konfigurierbar. Die Hervorhebung gilt auch in der separaten Item-Ansicht.
+        </p>
+        <div class="explorer-options">
           <details class="settings-details">
             <summary>Inhalte und Darstellung</summary>
             <label class="feature-toggle">
@@ -649,7 +650,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               </div>
             </div>
           }
-        </fieldset>
+        </div>
       </div>
       <div class="feature-section">
         <h3>Persönliche Arbeit</h3>
@@ -886,9 +887,6 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         padding: 0;
         margin: 0;
         min-width: 0;
-      }
-      .explorer-options:disabled {
-        opacity: 0.6;
       }
       .save-bar {
         position: sticky;
@@ -1244,8 +1242,8 @@ export class AccessConfigComponent implements OnInit {
   ];
 
   constructor(
-    private route: ActivatedRoute,
-    private api: ApiService,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) private api: ApiService,
   ) {}
 
   ngOnInit() {
@@ -1448,6 +1446,10 @@ export class AccessConfigComponent implements OnInit {
   }
 
   private applyFeatureConfigDefaults() {
+    // Match the viewer API: existing ACPs without this flag allow the Explorer.
+    if (this.featureConfig['enableItemList'] === undefined) {
+      this.featureConfig['enableItemList'] = true;
+    }
     this.featureConfig['commentVisibilityMode'] =
       this.featureConfig['commentVisibilityMode'] === 'GROUP'
         ? 'GROUP'

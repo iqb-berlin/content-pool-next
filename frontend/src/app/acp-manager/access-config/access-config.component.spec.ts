@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { of, Subject, throwError } from 'rxjs';
+import { NO_ERRORS_SCHEMA } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ApiService } from '../../core/services/api.service';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { AccessConfigComponent } from './access-config.component';
 
 describe('AccessConfigComponent', () => {
@@ -34,6 +39,7 @@ describe('AccessConfigComponent', () => {
   });
 
   afterEach(() => {
+    TestBed.resetTestingModule();
     vi.restoreAllMocks();
   });
 
@@ -97,6 +103,63 @@ describe('AccessConfigComponent', () => {
     expect(api.updateAccessConfig).not.toHaveBeenCalled();
     expect(component.saveError).not.toBe('');
   });
+
+  it.each([undefined, true, false])(
+    'renders and saves the effective Explorer setting for %s without blocking shared display controls',
+    async (configured) => {
+      api.getAccessConfig.mockReturnValue(
+        of({
+          accessModel: 'PUBLIC',
+          featureConfig: configured === undefined ? {} : { enableItemList: configured },
+        }),
+      );
+      await TestBed.configureTestingModule({
+        imports: [AccessConfigComponent],
+        providers: [
+          { provide: ActivatedRoute, useValue: route },
+          { provide: ApiService, useValue: api },
+        ],
+      })
+        .overrideComponent(AccessConfigComponent, {
+          remove: { imports: [AcpManagerContextComponent, RouterLink] },
+          add: { schemas: [NO_ERRORS_SCHEMA] },
+        })
+        .compileComponents();
+      const fixture = TestBed.createComponent(AccessConfigComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root: HTMLElement = fixture.nativeElement;
+      const enabled = configured !== false;
+      expect(root.querySelector('.settings-overview')?.textContent).toContain(
+        `Item-Explorer ${enabled ? 'aktiviert' : 'deaktiviert'}`,
+      );
+      const checkbox = (label: string): HTMLInputElement => {
+        const element = [...root.querySelectorAll('label')].find((el) =>
+          el.textContent?.includes(label),
+        );
+        return element!.querySelector('input')!;
+      };
+      expect(checkbox('Item-Explorer aktivieren').checked).toBe(enabled);
+      expect(fixture.componentInstance.hasUnsavedChanges).toBe(false);
+      const highlight = checkbox('Item im Player hervorheben');
+      expect(highlight.matches(':disabled')).toBe(false);
+      highlight.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.hasUnsavedChanges).toBe(true);
+      fixture.componentInstance.saveFeatures();
+      expect(api.updateAccessConfig).toHaveBeenCalledWith(
+        'acp-1',
+        expect.objectContaining({
+          featureConfig: expect.objectContaining({
+            enableItemList: enabled,
+            enablePlayerFocusHighlight: true,
+          }),
+        }),
+      );
+      fixture.destroy();
+    },
+  );
 
   it('defaults showAudioVideoCodingVariables to true when flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);

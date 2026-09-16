@@ -401,6 +401,10 @@ export interface FeatureConfig {
   showCodingScheme?: boolean;
   enableUnitListNavigation?: boolean;
   enableSequenceNavigation?: boolean;
+  showItemExplorerOnStartPage?: boolean;
+  showUnitListOnStartPage?: boolean;
+  showSequencesOnStartPage?: boolean;
+  showIndexOnStartPage?: boolean;
   enableCommenting?: boolean;
   commentTargets?: string[];
   commentVisibilityMode?: 'PRIVATE' | 'SHARED';

@@ -281,4 +281,80 @@ describe('AcpStartComponent', () => {
     expect(managementLink?.textContent).toContain('Review verwalten');
     expect(router.navigate).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['showItemExplorerOnStartPage', 'a[href="/view/acp-1/item-explorer"]'],
+    ['showUnitListOnStartPage', 'a[href="/view/acp-1/units"]'],
+    ['showSequencesOnStartPage', 'a[href="/view/acp-1/sequence/sequence-1"]'],
+    ['showIndexOnStartPage', 'a[href="/view/acp-1/index"]'],
+  ])('hides only the configured start-page entry for %s', async (flag, selector) => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { [flag]: false },
+          units: [{ id: 'unit-1', name: 'Aufgabe 1' }],
+          sequences: [{ id: 'sequence-1', name: 'Folge 1' }],
+        }),
+      ),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AcpStartComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: createAuthStub() },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(AcpStartComponent);
+    fixture.detectChanges();
+
+    const element = fixture.nativeElement as HTMLElement;
+    expect(element.querySelector(selector)).toBeNull();
+
+    const allEntrySelectors = [
+      'a[href="/view/acp-1/item-explorer"]',
+      'a[href="/view/acp-1/units"]',
+      'a[href="/view/acp-1/sequence/sequence-1"]',
+      'a[href="/view/acp-1/index"]',
+    ];
+    expect(
+      allEntrySelectors.filter((entrySelector) => element.querySelector(entrySelector)),
+    ).toHaveLength(3);
+  });
+
+  it('uses the legacy unit-list navigation flag until the new visibility flag is saved', async () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { enableUnitListNavigation: false },
+          units: [{ id: 'unit-1', name: 'Aufgabe 1' }],
+          sequences: [],
+        }),
+      ),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AcpStartComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: createAuthStub() },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(AcpStartComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('a[href="/view/acp-1/units"]')).toBeNull();
+  });
 });

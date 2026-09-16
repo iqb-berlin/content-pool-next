@@ -207,6 +207,21 @@ export interface ValidateUnitsResponse {
   validationSummary: UploadValidationSummary;
 }
 
+export interface ReviewReadiness {
+  stale?: boolean;
+  status: 'READY' | 'WARNING' | 'BLOCKED';
+  checkedAt: string;
+  blockers: string[];
+  warnings: string[];
+  summary: {
+    totalFiles: number;
+    validFiles: number;
+    invalidFiles: number;
+    bookletCount: number;
+    unitCount: number;
+  };
+}
+
 export type FilePreviewMode =
   | 'text'
   | 'image'
@@ -505,7 +520,7 @@ export interface UnitViewData {
   lang?: string;
   items: any[];
   dependencies: FileDependency[];
-  codingScheme?: string;
+  codingScheme?: unknown;
   richText?: string;
 }
 

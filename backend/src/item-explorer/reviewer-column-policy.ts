@@ -25,6 +25,15 @@ const FIELD_COLUMNS: Record<string, string> = {
   bookletPositions: "metadata:bookletPosition",
 };
 
+const TIME_COLUMN_ALIASES: Readonly<Record<string, string>> = {
+  "metadata:iqb_time_item": "metadata:itemTimeSeconds",
+  "metadata:iqb_item_time": "metadata:itemTimeSeconds",
+  "metadata:iqb_time_stimulus": "metadata:stimulusTimeSeconds",
+};
+
+const normalizeColumn = (column: string): string =>
+  TIME_COLUMN_ALIASES[column] || column;
+
 const IDENTITY_FIELDS = new Set([
   "id",
   "itemId",
@@ -48,12 +57,14 @@ const PERSONAL_EXPORT_FIELDS = new Set([
   "category",
   "competenceLevel",
 ]);
+const POSITION_COLUMN_LAYOUT_SCHEMA_VERSION = 3;
 const record = (value: unknown): Record<string, any> =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
 
 export class ReviewerColumnPolicy {
   readonly restricted: boolean;
   readonly allowedColumns: string[];
+  private readonly legacyPositionVisible: boolean;
 
   constructor(
     columns?: Partial<ExplorerMetadataColumns>,
@@ -61,13 +72,23 @@ export class ReviewerColumnPolicy {
   ) {
     this.restricted =
       columns?.restrictReviewerColumnsToManagerSelection === true;
+    const layoutSchemaVersion = Number(columns?.layout?.schemaVersion);
+    this.legacyPositionVisible =
+      this.restricted &&
+      (!Number.isInteger(layoutSchemaVersion) ||
+        layoutSchemaVersion < POSITION_COLUMN_LAYOUT_SCHEMA_VERSION);
     // Enabling the option requires the editor to materialize the current layout.
-    // Missing/legacy layouts fail closed rather than releasing future columns.
+    // Missing/legacy layouts fail closed for data-bearing columns. Position is a
+    // locally computed legacy column and remains visible until schema 3 records
+    // an explicit visibility choice.
     this.allowedColumns = [
-      ...new Set([
-        "system:itemId",
-        ...(columns?.layout?.configured ? columns.layout.visible : []),
-      ]),
+      ...new Set(
+        [
+          ...(this.legacyPositionVisible ? ["system:position"] : []),
+          "system:itemId",
+          ...(columns?.layout?.configured ? columns.layout.visible : []),
+        ].map(normalizeColumn),
+      ),
     ].filter((key) => !key.startsWith("personal:"));
   }
 
@@ -77,6 +98,14 @@ export class ReviewerColumnPolicy {
       column.startsWith("personal:") ||
       this.allowedColumns.includes(column)
     );
+  }
+
+  private allowsConfiguredColumn(column: string): boolean {
+    return this.allows(normalizeColumn(column));
+  }
+
+  private allowsConfiguredMetadata(id: string): boolean {
+    return this.allowsConfiguredColumn(FIELD_COLUMNS[id] || `metadata:${id}`);
   }
 
   allowsField(field: string): boolean {
@@ -155,28 +184,40 @@ export class ReviewerColumnPolicy {
     const columns = record(value);
     const layout = record(columns.layout);
     const filterKeys = (keys: unknown) =>
-      Array.isArray(keys) ? keys.filter((key) => this.allows(key)) : [];
+      Array.isArray(keys)
+        ? keys.filter((key) => this.allowsConfiguredColumn(key))
+        : [];
+    const projectConfiguredMetadata = (metadata: unknown) =>
+      Object.fromEntries(
+        Object.entries(record(metadata)).filter(([id]) =>
+          this.allowsConfiguredMetadata(id),
+        ),
+      );
     const visible = filterKeys(layout.visible);
+    const defaultVisible = [
+      ...(this.legacyPositionVisible ? ["system:position"] : []),
+      "system:itemId",
+    ];
     return {
       ...columns,
       visible: Array.isArray(columns.visible)
-        ? columns.visible.filter((id) => this.allowsMetadata(id))
+        ? columns.visible.filter((id) => this.allowsConfiguredMetadata(id))
         : [],
       order: Array.isArray(columns.order)
-        ? columns.order.filter((id) => this.allowsMetadata(id))
+        ? columns.order.filter((id) => this.allowsConfiguredMetadata(id))
         : [],
-      widths: this.projectMetadata(columns.widths),
+      widths: projectConfiguredMetadata(columns.widths),
       definitions: Array.isArray(columns.definitions)
-        ? columns.definitions.filter((c) => this.allowsMetadata(c.id))
+        ? columns.definitions.filter((c) => this.allowsConfiguredMetadata(c.id))
         : [],
       layout: {
         ...layout,
         configured: true,
-        visible: [...new Set(["system:itemId", ...visible])],
-        order: [...new Set(["system:itemId", ...filterKeys(layout.order)])],
+        visible: [...new Set([...defaultVisible, ...visible])],
+        order: [...new Set([...defaultVisible, ...filterKeys(layout.order)])],
         widths: Object.fromEntries(
           Object.entries(record(layout.widths)).filter(([key]) =>
-            this.allows(key),
+            this.allowsConfiguredColumn(key),
           ),
         ),
       },

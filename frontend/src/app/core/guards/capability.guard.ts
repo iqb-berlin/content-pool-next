@@ -12,3 +12,13 @@ export const explorerCapabilityGuard = ((route) => {
     catchError(() => of(router.createUrlTree(['/view', id]))),
   );
 }) satisfies CanActivateFn;
+
+export const reviewManageGuard = ((route) => {
+  const api = inject(ApiService);
+  const router = inject(Router);
+  const id = route.paramMap.get('acpId') || route.parent?.paramMap.get('acpId') || '';
+  return api.getCapabilities(id).pipe(
+    map((access) => (access.canManageReview ? true : router.createUrlTree(['/view', id]))),
+    catchError(() => of(router.createUrlTree(['/view', id]))),
+  );
+}) satisfies CanActivateFn;

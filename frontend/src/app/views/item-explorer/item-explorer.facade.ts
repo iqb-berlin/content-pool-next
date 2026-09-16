@@ -81,13 +81,34 @@ import {
   ItemExplorerLoadDiagnostics,
   ItemExplorerTimingToken,
 } from './item-explorer-load-diagnostics.service';
+import {
+  normalizeItemExplorerColumnFilters,
+  normalizeItemExplorerColumnList,
+  normalizeItemExplorerColumnRecord,
+  normalizeItemExplorerMetadataColumnId,
+  normalizeItemExplorerTableColumnKey,
+} from './item-explorer-time-columns.util';
+import {
+  derivePlayerSolutionPrefill,
+  mergePlayerSolutionIntoDataParts,
+  PlayerSolutionPrefill,
+} from './item-explorer-solution-prefill';
+
+interface PreviewResponseSession {
+  id: string | null;
+  origin: 'answers' | 'visibility' | 'solution';
+  initialDataParts: Record<string, any>;
+  dataParts: Record<string, any> | null;
+}
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
 const COLLECTION_SELECTION_COLUMN_WIDTH = 38;
 const POSITION_COLUMN_WIDTH = 72;
-const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
+const COMMENT_COLUMN_LAYOUT_SCHEMA_VERSION = 2;
+const TABLE_COLUMN_LAYOUT_SCHEMA_VERSION = 3;
 const TABLE_COLUMN_KEYS = {
+  position: 'system:position',
   referenceNumber: 'system:referenceNumber',
   itemId: 'system:itemId',
   unitLabel: 'system:unitLabel',
@@ -219,7 +240,9 @@ export class ItemExplorerFacade implements OnDestroy {
   showGeneralCodingInstructions = false;
   preferManualCodingInstructions = true;
   itemExplorerConditionalVisibilityEnabled = false;
-  syntheticPreviewState = false;
+  get syntheticPreviewState(): boolean {
+    return this.responseSession.origin === 'visibility';
+  }
 
   private previewDefinitionSource: string | null | undefined;
   private previewDefinitionCache: ReturnType<typeof readPreviewDefinition> = null;
@@ -395,7 +418,15 @@ export class ItemExplorerFacade implements OnDestroy {
   private readonly listPageSize = 10;
   private definitionContent: string | null = null;
   private playerFrameReady = false;
-  private activePlayerSessionId: string | null = null;
+  private responseSession: PreviewResponseSession = {
+    id: null,
+    origin: 'answers',
+    initialDataParts: {},
+    dataParts: null,
+  };
+  private get activePlayerSessionId(): string | null {
+    return this.responseSession.id;
+  }
   private itemListLoadToken = 0;
   private startSessionCounter = 0;
   private itemListSlowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -496,10 +527,19 @@ export class ItemExplorerFacade implements OnDestroy {
   codingSortDir: 'asc' | 'desc' = 'asc';
 
   // Response State
-  currentResponseData: Record<string, any> | null = null;
+  get currentResponseData(): Record<string, any> | null {
+    return this.responseSession.dataParts;
+  }
   private savedResponseData: Record<string, any> | null = null;
   hasResponseState = false;
   isFallbackState = false;
+  correctSolutionRequested = false;
+  correctSolutionPrefill: PlayerSolutionPrefill = {
+    status: 'unavailable',
+    responses: [],
+    message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+  };
+  private responseBeforeSolution: Record<string, any> | null = null;
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
   previewUserFacingMessage = '';
@@ -961,6 +1001,31 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.canPreviewItem(this.selectedItem) && !this.previewUnavailableReason;
   }
 
+  get correctSolutionAvailable(): boolean {
+    return this.correctSolutionPrefill.status === 'available';
+  }
+
+  get isCorrectSolutionActive(): boolean {
+    return this.correctSolutionRequested && this.correctSolutionAvailable;
+  }
+
+  get correctSolutionToggleTitle(): string {
+    if (this.correctSolutionRequested) {
+      return 'Musterlösung ausblenden und den vorherigen Player-Zustand wiederherstellen';
+    }
+    return this.correctSolutionAvailable
+      ? 'Eindeutig aus dem Kodierschema abgeleitete Musterlösung anzeigen'
+      : 'Musterlösungsmodus einschalten; für dieses Item ist derzeit keine eindeutige Lösung verfügbar';
+  }
+
+  get canSaveCurrentResponseState(): boolean {
+    return (
+      !this.previewUpdateInProgress &&
+      !this.isCorrectSolutionActive &&
+      this.responseSession.origin === 'answers'
+    );
+  }
+
   get loadingUnit(): boolean {
     return this.previewCoordinator.status.kind === 'loading-unit';
   }
@@ -1042,9 +1107,10 @@ export class ItemExplorerFacade implements OnDestroy {
       key === TABLE_COLUMN_KEYS.itemId
     )
       return true;
+    const visible = this.latestExplorerState?.publishedState?.metadataColumns?.layout?.visible;
     return (
-      this.latestExplorerState?.publishedState?.metadataColumns?.layout?.visible?.includes(key) ===
-      true
+      Array.isArray(visible) &&
+      normalizeItemExplorerColumnList(visible, normalizeItemExplorerTableColumnKey).includes(key)
     );
   }
 
@@ -1059,6 +1125,13 @@ export class ItemExplorerFacade implements OnDestroy {
 
   get allTableColumns(): ItemExplorerTableColumn[] {
     const columns: ItemExplorerTableColumn[] = [
+      {
+        key: TABLE_COLUMN_KEYS.position,
+        id: 'position',
+        label: 'Position',
+        source: 'system',
+        defaultWidth: POSITION_COLUMN_WIDTH,
+      },
       {
         key: TABLE_COLUMN_KEYS.referenceNumber,
         id: 'referenceNumber',
@@ -1507,7 +1580,7 @@ export class ItemExplorerFacade implements OnDestroy {
 
           // Load metadata column settings
           this.metadataSettings = this.resolveMetadataSettings(fc);
-          this.ensureCommentColumnDefault();
+          this.ensureTableColumnDefaults();
           this.configuredMetadataColumns = this.resolveConfiguredMetadataColumns(fc);
           void this.reloadSharedExplorerStateAndItems();
           this.syncItemCommentCountSession();
@@ -1763,14 +1836,18 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private getAvailableMetadataColumns(sourceColumns: MetadataColumn[]): MetadataColumn[] {
     const importedIds = new Set(IMPORTED_PARAMETER_COLUMNS.map((column) => column.id));
-    const normalizedSourceColumns = sourceColumns.filter((column) => !importedIds.has(column.id));
+    const normalizedSourceColumns = sourceColumns.filter(
+      (column) => !importedIds.has(normalizeItemExplorerMetadataColumnId(column.id)),
+    );
     const columnsById = new Map<string, MetadataColumn>();
     normalizedSourceColumns.forEach((column) =>
       columnsById.set(column.id, { ...column, kind: 'text' as const }),
     );
-    this.configuredMetadataColumns.forEach((column) =>
-      columnsById.set(column.id, { ...columnsById.get(column.id), ...column, kind: 'text' }),
-    );
+    this.configuredMetadataColumns
+      .filter((column) => !importedIds.has(normalizeItemExplorerMetadataColumnId(column.id)))
+      .forEach((column) =>
+        columnsById.set(column.id, { ...columnsById.get(column.id), ...column, kind: 'text' }),
+      );
     IMPORTED_PARAMETER_COLUMNS.forEach((column) => columnsById.set(column.id, column));
     return Array.from(columnsById.values());
   }
@@ -3038,9 +3115,15 @@ export class ItemExplorerFacade implements OnDestroy {
     this.unit = null;
     this.definitionContent = null;
     this.playerFrameReady = false;
-    this.activePlayerSessionId = null;
+    this.beginResponseSession(null, 'answers');
     this.playerFrameRefreshPending = false;
     this.previewUserFacingMessage = '';
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Die Player-Daten für die Musterlösung werden geladen.',
+    };
+    this.responseBeforeSolution = null;
   }
 
   private startItemListSlowTimer(): void {
@@ -3115,9 +3198,15 @@ export class ItemExplorerFacade implements OnDestroy {
     this.hasResponseState = false;
     this.savedResponseData = null;
     this.isFallbackState = false;
-    this.currentResponseData = null;
-    this.activePlayerSessionId = null;
+    this.responseSession.dataParts = null;
+    this.beginResponseSession(null, 'answers');
+    this.responseBeforeSolution = null;
     this.previewUserFacingMessage = '';
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Die Kodierung und Player-Daten für die Musterlösung werden geladen.',
+    };
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -3169,6 +3258,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.applyPreviewAssets(result.assets);
     }
     this.applyResponseStateResult(result.responseState);
+    this.refreshCorrectSolutionPrefill();
 
     if (this.previewCoordinator.status.kind !== 'ready') {
       this.previewUserFacingMessage =
@@ -3212,13 +3302,13 @@ export class ItemExplorerFacade implements OnDestroy {
   private applyResponseStateResult(result: any): void {
     if (result?.state?.responseData && Object.keys(result.state.responseData).length > 0) {
       this.savedResponseData = result.state.responseData;
-      this.currentResponseData = null;
+      this.responseSession.dataParts = null;
       this.hasResponseState = true;
       this.isFallbackState = !!result.isFallback;
       return;
     }
 
-    this.currentResponseData = null;
+    this.responseSession.dataParts = null;
     this.hasResponseState = false;
     this.savedResponseData = null;
     this.isFallbackState = false;
@@ -3231,6 +3321,18 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Response State ---
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
+    if (this.isCorrectSolutionActive) {
+      this.confirmDialogError =
+        'Die Musterlösung ist nur eine Vorschau und kann nicht als Player-Eingabe gespeichert werden. Blenden Sie sie zuerst aus.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
     if (this.previewCoordinator.status.kind !== 'ready') {
       this.confirmDialogError =
         'Der Zustand des ausgewählten Items wird noch geladen. Bitte versuchen Sie es gleich erneut.';
@@ -3256,6 +3358,9 @@ export class ItemExplorerFacade implements OnDestroy {
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
+      this.isCorrectSolutionActive ||
+      this.responseSession.origin !== 'answers' ||
+      !this.activePlayerSessionId ||
       this.previewCoordinator.status.kind !== 'ready'
     ) {
       this.confirmDialogError =
@@ -3266,6 +3371,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.confirmDialogState = 'saving';
     const responseData = this.currentResponseData;
     const responseItem = this.selectedItem;
+    const responseSession = this.responseSession;
 
     this.api
       .saveResponseState(
@@ -3278,7 +3384,8 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          if (this.selectedItem !== responseItem) return;
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           this.savedResponseData = responseData;
           this.hasResponseState = true;
           this.isFallbackState = false;
@@ -3286,6 +3393,8 @@ export class ItemExplorerFacade implements OnDestroy {
           this.closeSaveConfirmDialog();
         },
         error: (err) => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           console.error('Error saving response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
@@ -3304,6 +3413,8 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!this.selectedItem) return;
 
     this.confirmDialogState = 'deleting';
+    const responseItem = this.selectedItem;
+    const responseSession = this.responseSession;
 
     this.api
       .deleteResponseState(
@@ -3315,14 +3426,20 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           this.hasResponseState = false;
           this.savedResponseData = null;
           this.isFallbackState = false;
-          this.currentResponseData = null;
+          this.responseSession.dataParts = null;
+          this.responseSession.initialDataParts = {};
+          this.responseBeforeSolution = null;
           this.confirmDialogState = 'idle';
           this.closeDeleteConfirmDialog();
         },
         error: (err) => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           console.error('Error deleting response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
@@ -3349,6 +3466,25 @@ export class ItemExplorerFacade implements OnDestroy {
 
   navigateItem(delta: number) {
     this.selectFilteredItemAt(this.selectedIndex + delta, true);
+  }
+
+  toggleCorrectSolution(): void {
+    if (!this.selectedItem) return;
+
+    const wasActive = this.isCorrectSolutionActive;
+    this.correctSolutionRequested = !this.correctSolutionRequested;
+    const isActive = this.isCorrectSolutionActive;
+    if (!wasActive && isActive) {
+      this.responseBeforeSolution =
+        this.responseSession.origin === 'answers'
+          ? this.currentResponseData || this.savedResponseData
+          : null;
+    }
+
+    if (wasActive === isActive || this.previewCoordinator.status.kind !== 'ready') return;
+    this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
+    this.startPlayerIfReady();
   }
 
   onPreviewTargetSelectionChange() {
@@ -3418,8 +3554,9 @@ export class ItemExplorerFacade implements OnDestroy {
     this.hasResponseState = false;
     this.savedResponseData = null;
     this.isFallbackState = false;
-    this.currentResponseData = null;
-    this.activePlayerSessionId = null;
+    this.responseSession.dataParts = null;
+    this.beginResponseSession(null, 'answers');
+    this.responseBeforeSolution = null;
     this.startPreviewSlowTimer(
       reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
     );
@@ -3471,8 +3608,9 @@ export class ItemExplorerFacade implements OnDestroy {
           this.totalPages = playerMessage['playerState'].validPages.length || this.totalPages;
         }
         // Capture response data from unitState.dataParts
-        if (playerMessage['unitState']?.dataParts) {
-          this.currentResponseData = playerMessage['unitState'].dataParts;
+        if (playerMessage['unitState']?.dataParts && this.responseSession.origin !== 'solution') {
+          this.responseSession.dataParts = playerMessage['unitState'].dataParts;
+          this.responseBeforeSolution = null;
         }
         break;
 
@@ -3552,10 +3690,8 @@ export class ItemExplorerFacade implements OnDestroy {
       return;
     }
     let startPage = targetLocation.scrollPageIndex;
-    this.syntheticPreviewState = false;
-    let dataParts = this.hasResponseState
-      ? this.currentResponseData || this.savedResponseData || {}
-      : {};
+    let origin: PreviewResponseSession['origin'] = 'answers';
+    let dataParts = this.getPlayerStartDataParts();
     if (this.itemExplorerConditionalVisibilityEnabled && !this.hasResponseState) {
       const resolved = resolvePreviewVisibility(
         this.definitionContent,
@@ -3563,25 +3699,32 @@ export class ItemExplorerFacade implements OnDestroy {
         selectedItem.previewStart,
       );
       if (resolved.kind === 'unavailable') {
+        this.beginResponseSession(null, 'answers');
+        this.previewUserFacingMessage = resolved.reason;
         this.previewCoordinator.markUnavailable(resolved.reason);
         this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-visibility' });
         this.playerReadyTiming = null;
         return;
       }
       startPage = resolved.page;
-      this.syntheticPreviewState = resolved.codes.length > 0;
+      origin = resolved.codes.length > 0 ? 'visibility' : 'answers';
       dataParts = resolved.codes.length
-        ? { stateVariableCodes: JSON.stringify(resolved.codes) }
-        : {};
+        ? { ...dataParts, stateVariableCodes: JSON.stringify(resolved.codes) }
+        : dataParts;
+    }
+    if (this.isCorrectSolutionActive) {
+      dataParts = mergePlayerSolutionIntoDataParts(
+        dataParts,
+        this.correctSolutionPrefill.responses,
+      );
+      origin = 'solution';
     }
     const sessionId = `explorer-${this.getStableRowKey(selectedItem) || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
-    this.activePlayerSessionId = sessionId;
-    // Only notifications carrying this session ID may populate saveable response data.
-    this.currentResponseData = null;
+    this.beginResponseSession(sessionId, origin, dataParts);
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
@@ -3590,7 +3733,7 @@ export class ItemExplorerFacade implements OnDestroy {
         dataParts,
       },
       playerConfig: {
-        stateReportPolicy: 'none',
+        stateReportPolicy: 'eager',
         pagingMode:
           this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
             ? 'concat-scroll'
@@ -3625,6 +3768,33 @@ export class ItemExplorerFacade implements OnDestroy {
       });
     }
     this.schedulePlayerFocus();
+  }
+
+  private beginResponseSession(
+    id: string | null,
+    origin: PreviewResponseSession['origin'],
+    initialDataParts: Record<string, any> = {},
+  ): void {
+    // Identity changes even when the item stays selected. Async mutations capture
+    // this object; player replies may only update data within the active session.
+    this.responseSession = { id, origin, initialDataParts, dataParts: null };
+    this.confirmDialogState = 'idle';
+    this.confirmDialogError = '';
+    this.showSaveConfirmDialog = false;
+    this.showDeleteConfirmDialog = false;
+  }
+
+  private getPlayerStartDataParts(): Record<string, any> {
+    const answers =
+      this.responseSession.origin === 'answers'
+        ? this.currentResponseData || this.responseSession.initialDataParts
+        : null;
+    // Never promote a visibility or solution session to an answer session just
+    // because a saved state exists. Its data keeps its provenance across restarts.
+    if (this.responseBeforeSolution) return this.responseBeforeSolution;
+    if (!this.hasResponseState) return {};
+    if (answers && Object.keys(answers).length) return answers;
+    return this.savedResponseData || {};
   }
 
   private getPlayerDefinitionContent(): string {
@@ -3850,6 +4020,49 @@ export class ItemExplorerFacade implements OnDestroy {
     return Array.isArray(this.currentCodingScheme?.variableCodings)
       ? this.currentCodingScheme.variableCodings
       : [];
+  }
+
+  private refreshCorrectSolutionPrefill(): void {
+    const variables = this.getCurrentCodingVariables();
+    const variableMatch = this.resolveItemCodingVariable(this.selectedItem, variables);
+    if (variableMatch.status !== 'unique' || !variableMatch.variable) {
+      this.correctSolutionPrefill = {
+        status: 'unavailable',
+        responses: [],
+        message: 'Für dieses Item konnte keine eindeutige Kodiervariable ermittelt werden.',
+      };
+      return;
+    }
+    if (!this.definitionContent) {
+      this.correctSolutionPrefill = {
+        status: 'unavailable',
+        responses: [],
+        message: 'Für dieses Item ist keine auswertbare Player-Definition verfügbar.',
+      };
+      return;
+    }
+
+    this.correctSolutionPrefill = derivePlayerSolutionPrefill(
+      variableMatch.variable,
+      variables,
+      (variable) => {
+        const candidates = Array.from(
+          new Set(
+            [variable?.['alias'], variable?.['id']]
+              .map((value) => String(value || '').trim())
+              .filter((value) => value.length > 0),
+          ),
+        );
+        for (const candidate of candidates) {
+          const target = this.voudService.resolvePlayerResponseTarget(
+            this.definitionContent!,
+            candidate,
+          );
+          if (target) return target;
+        }
+        return undefined;
+      },
+    );
   }
 
   private createCodingSchemeAsText(codings: any[]): CodingAsText[] {
@@ -5512,18 +5725,27 @@ export class ItemExplorerFacade implements OnDestroy {
     };
   }
 
-  private ensureCommentColumnDefault(): void {
-    if (!this.itemCommentsEnabled) return;
+  private ensureTableColumnDefaults(): void {
     const layout = this.metadataSettings.layout;
     if (!layout?.configured || (layout.schemaVersion || 0) >= TABLE_COLUMN_LAYOUT_SCHEMA_VERSION) {
       return;
     }
+    const schemaVersion = layout.schemaVersion || 0;
+    const hasExplicitColumns = layout.order.length > 0 || layout.visible.length > 0;
     if (
-      (layout.order.length > 0 || layout.visible.length > 0) &&
+      this.itemCommentsEnabled &&
+      schemaVersion < COMMENT_COLUMN_LAYOUT_SCHEMA_VERSION &&
+      hasExplicitColumns &&
       !layout.order.includes(TABLE_COLUMN_KEYS.comments)
     ) {
       layout.order.push(TABLE_COLUMN_KEYS.comments);
       layout.visible.push(TABLE_COLUMN_KEYS.comments);
+    }
+    if (!layout.order.includes(TABLE_COLUMN_KEYS.position)) {
+      layout.order.unshift(TABLE_COLUMN_KEYS.position);
+    }
+    if (!layout.visible.includes(TABLE_COLUMN_KEYS.position)) {
+      layout.visible.unshift(TABLE_COLUMN_KEYS.position);
     }
     layout.schemaVersion = TABLE_COLUMN_LAYOUT_SCHEMA_VERSION;
   }
@@ -5589,17 +5811,9 @@ export class ItemExplorerFacade implements OnDestroy {
 
   isStickyTableColumn(
     column: DeepReadonly<ItemExplorerTableColumn>,
-    columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
+    _columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
   ): boolean {
-    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
-      return columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber;
-    }
-    if (column.key !== TABLE_COLUMN_KEYS.itemId) return false;
-    return (
-      columns[0]?.key === TABLE_COLUMN_KEYS.itemId ||
-      (columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber &&
-        columns[1]?.key === TABLE_COLUMN_KEYS.itemId)
-    );
+    return this.isPinnedTableColumnKey(column.key);
   }
 
   getStickyTableColumnLeft(
@@ -5607,12 +5821,13 @@ export class ItemExplorerFacade implements OnDestroy {
     columns: ReadonlyArray<DeepReadonly<ItemExplorerTableColumn>> = this.tableColumns,
   ): number | null {
     if (!this.isStickyTableColumn(column, columns)) return null;
-    const leadingColumnsWidth =
-      POSITION_COLUMN_WIDTH + (this.enableItemCollections ? COLLECTION_SELECTION_COLUMN_WIDTH : 0);
-    if (column.key === TABLE_COLUMN_KEYS.referenceNumber) return leadingColumnsWidth;
-    const referenceColumn =
-      columns[0]?.key === TABLE_COLUMN_KEYS.referenceNumber ? columns[0] : undefined;
-    return leadingColumnsWidth + (referenceColumn ? this.getColumnWidth(referenceColumn) : 0);
+    let left = this.enableItemCollections ? COLLECTION_SELECTION_COLUMN_WIDTH : 0;
+    for (const current of columns) {
+      if (current.key === column.key) return left;
+      if (!this.isPinnedTableColumnKey(current.key)) break;
+      left += this.getColumnWidth(current);
+    }
+    return null;
   }
 
   private clearHiddenTableColumnFilters() {
@@ -5666,7 +5881,10 @@ export class ItemExplorerFacade implements OnDestroy {
     const colIndex = layout.visible.indexOf(column.key);
     if (colIndex === -1) {
       layout.visible.push(column.key);
-      if (column.key === TABLE_COLUMN_KEYS.referenceNumber) {
+      if (
+        column.key === TABLE_COLUMN_KEYS.position ||
+        column.key === TABLE_COLUMN_KEYS.referenceNumber
+      ) {
         layout.order = [column.key, ...layout.order.filter((key) => key !== column.key)];
       } else if (!layout.order.includes(column.key)) {
         layout.order.push(column.key);
@@ -5744,14 +5962,22 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private orderPinnedTableColumns(columns: ItemExplorerTableColumn[]): ItemExplorerTableColumn[] {
     const byKey = new Map(columns.map((column) => [column.key, column]));
-    const pinned = [TABLE_COLUMN_KEYS.referenceNumber, TABLE_COLUMN_KEYS.itemId]
+    const pinned = [
+      TABLE_COLUMN_KEYS.position,
+      TABLE_COLUMN_KEYS.referenceNumber,
+      TABLE_COLUMN_KEYS.itemId,
+    ]
       .map((key) => byKey.get(key))
       .filter((column): column is ItemExplorerTableColumn => Boolean(column));
     return [...pinned, ...columns.filter((column) => !this.isPinnedTableColumnKey(column.key))];
   }
 
   private isPinnedTableColumnKey(key: string): boolean {
-    return key === TABLE_COLUMN_KEYS.referenceNumber || key === TABLE_COLUMN_KEYS.itemId;
+    return (
+      key === TABLE_COLUMN_KEYS.position ||
+      key === TABLE_COLUMN_KEYS.referenceNumber ||
+      key === TABLE_COLUMN_KEYS.itemId
+    );
   }
 
   toggleManualOrderMode() {
@@ -5876,16 +6102,20 @@ export class ItemExplorerFacade implements OnDestroy {
   private resolveMetadataSettings(featureConfig: Record<string, any>): MetadataSettings {
     const metadataColumns = featureConfig?.['metadataColumns'];
     if (metadataColumns && typeof metadataColumns === 'object') {
-      const visible = Array.isArray(metadataColumns.visible)
-        ? metadataColumns.visible.filter(
-            (entry: unknown): entry is string => typeof entry === 'string',
-          )
-        : [];
-      const order = Array.isArray(metadataColumns.order)
-        ? metadataColumns.order.filter(
-            (entry: unknown): entry is string => typeof entry === 'string',
-          )
-        : [];
+      const visible = normalizeItemExplorerColumnList(
+        Array.isArray(metadataColumns.visible)
+          ? metadataColumns.visible.filter(
+              (entry: unknown): entry is string => typeof entry === 'string',
+            )
+          : [],
+      );
+      const order = normalizeItemExplorerColumnList(
+        Array.isArray(metadataColumns.order)
+          ? metadataColumns.order.filter(
+              (entry: unknown): entry is string => typeof entry === 'string',
+            )
+          : [],
+      );
 
       return {
         visible: visible.length ? visible : order,
@@ -5893,16 +6123,20 @@ export class ItemExplorerFacade implements OnDestroy {
         restrictReviewerColumnsToManagerSelection:
           metadataColumns.restrictReviewerColumnsToManagerSelection === true,
         configured: metadataColumns.configured === true || visible.length > 0 || order.length > 0,
-        widths: this.normalizeMetadataColumnWidths(metadataColumns.widths),
+        widths: normalizeItemExplorerColumnRecord(
+          this.normalizeMetadataColumnWidths(metadataColumns.widths),
+        ),
         referenceNumberVisible: metadataColumns.referenceNumberVisible === true,
         layout: this.resolveTableColumnLayout(metadataColumns.layout),
       };
     }
 
     const legacyColumns = featureConfig?.['itemListMetadataColumns'];
-    const legacy = Array.isArray(legacyColumns)
-      ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
+    const legacy = normalizeItemExplorerColumnList(
+      Array.isArray(legacyColumns)
+        ? legacyColumns.filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+    );
 
     return {
       visible: legacy,
@@ -5916,17 +6150,26 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private resolveTableColumnLayout(raw: unknown) {
     const layout = this.isRecord(raw) ? raw : {};
-    const visible = Array.isArray(layout['visible'])
-      ? layout['visible'].filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
-    const order = Array.isArray(layout['order'])
-      ? layout['order'].filter((entry: unknown): entry is string => typeof entry === 'string')
-      : [];
+    const visible = normalizeItemExplorerColumnList(
+      Array.isArray(layout['visible'])
+        ? layout['visible'].filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+      normalizeItemExplorerTableColumnKey,
+    );
+    const order = normalizeItemExplorerColumnList(
+      Array.isArray(layout['order'])
+        ? layout['order'].filter((entry: unknown): entry is string => typeof entry === 'string')
+        : [],
+      normalizeItemExplorerTableColumnKey,
+    );
     return {
       visible: layout['configured'] === true ? visible : visible.length ? visible : order,
       order: order.length ? order : visible,
       configured: layout['configured'] === true || visible.length > 0 || order.length > 0,
-      widths: this.normalizeMetadataColumnWidths(layout['widths']),
+      widths: normalizeItemExplorerColumnRecord(
+        this.normalizeMetadataColumnWidths(layout['widths']),
+        normalizeItemExplorerTableColumnKey,
+      ),
       ...(Number.isInteger(Number(layout['schemaVersion']))
         ? { schemaVersion: Number(layout['schemaVersion']) }
         : {}),
@@ -5965,7 +6208,6 @@ export class ItemExplorerFacade implements OnDestroy {
       Object.entries(this.columnFilters).filter(([key]) => !this.isPersonalColumnFilterKey(key)),
     );
     return {
-      filterText: this.filterText,
       sortField: this.sortField,
       sortIsMeta: this.sortIsMeta,
       sortDir: this.sortDir,
@@ -5976,30 +6218,26 @@ export class ItemExplorerFacade implements OnDestroy {
   private applyUiPreferences(rawUi: unknown) {
     if (!this.isRecord(rawUi)) return;
 
-    const filterText = rawUi['filterText'];
     const sortField = rawUi['sortField'];
     const sortIsMeta = rawUi['sortIsMeta'];
     const sortDir = rawUi['sortDir'];
     const columnFilters = rawUi['columnFilters'];
 
-    if (typeof filterText === 'string') {
-      this.filterText = filterText;
-    }
-
+    const normalizedSortIsMeta = typeof sortIsMeta === 'boolean' ? sortIsMeta : this.sortIsMeta;
     if (typeof sortField === 'string') {
-      this.sortField = sortField;
+      this.sortField = normalizedSortIsMeta
+        ? normalizeItemExplorerMetadataColumnId(sortField)
+        : sortField;
     }
 
-    if (typeof sortIsMeta === 'boolean') {
-      this.sortIsMeta = sortIsMeta;
-    }
+    this.sortIsMeta = normalizedSortIsMeta;
 
     this.sortDir = sortDir === 'desc' ? 'desc' : 'asc';
     this.columnFilters = this.isRecord(columnFilters)
-      ? Object.fromEntries(
-          Object.entries(columnFilters)
-            .filter(([key]) => !this.isPersonalColumnFilterKey(key))
-            .map(([key, value]) => [key, typeof value === 'string' ? value : '']),
+      ? normalizeItemExplorerColumnFilters(
+          Object.fromEntries(
+            Object.entries(columnFilters).filter(([key]) => !this.isPersonalColumnFilterKey(key)),
+          ),
         )
       : {};
   }
@@ -6167,7 +6405,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.metadataSettings = this.resolveMetadataSettings({
         metadataColumns: (activeState as ItemExplorerSharedState).metadataColumns,
       });
-      this.ensureCommentColumnDefault();
+      this.ensureTableColumnDefaults();
       this.columns = this.filterVisibleColumns(this.allColumns);
       this.clearHiddenTableColumnFilters();
       this.ensureVisibleSortField();
@@ -6813,10 +7051,16 @@ export class ItemExplorerFacade implements OnDestroy {
     this.currentUnitMetadata = [];
     this.currentCodingScheme = null;
     this.currentCodingSchemeAsText = null;
-    this.currentResponseData = null;
+    this.responseSession.dataParts = null;
     this.hasResponseState = false;
     this.savedResponseData = null;
     this.isFallbackState = false;
+    this.correctSolutionPrefill = {
+      status: 'unavailable',
+      responses: [],
+      message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+    };
+    this.responseBeforeSolution = null;
     this.selectedPreviewTargetId = '';
     this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);
@@ -7202,7 +7446,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.applyFilter(false);
 
     if (nextIdentity) {
-      this.ensureCommentColumnDefault();
+      this.ensureTableColumnDefaults();
       this.refreshItemComments(false);
       document.addEventListener('visibilitychange', this.commentVisibilityListener);
       window.addEventListener('focus', this.commentVisibilityListener);

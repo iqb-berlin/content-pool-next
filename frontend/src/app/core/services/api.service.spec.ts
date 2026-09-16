@@ -903,13 +903,13 @@ describe('ApiService', () => {
       expect(httpClientMock.get).toHaveBeenNthCalledWith(
         1,
         '/api/acp/acp1/review/comments/export/mine.csv',
-        { responseType: 'blob' },
+        { params: {}, responseType: 'blob' },
       );
       service.exportMyReviewCommentsXlsx('acp1').subscribe();
       expect(httpClientMock.get).toHaveBeenNthCalledWith(
         2,
         '/api/acp/acp1/review/comments/export/mine.xlsx',
-        { responseType: 'blob' },
+        { params: {}, responseType: 'blob' },
       );
       service.exportAllReviewCommentsXlsx('acp1').subscribe();
       expect(httpClientMock.get).toHaveBeenNthCalledWith(

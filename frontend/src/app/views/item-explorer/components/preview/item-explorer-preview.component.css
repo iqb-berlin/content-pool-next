@@ -110,6 +110,84 @@
   transition: height 0.2s;
   position: relative;
 }
+.player-display-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.player-display-toolbar strong {
+  font-size: 0.9rem;
+  margin-right: auto;
+}
+.player-display-toolbar .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.correct-solution-status {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #9ac9aa;
+  background: #eef8f1;
+  color: #1e6336;
+  font-size: 0.85rem;
+}
+.correct-solution-status.unavailable {
+  border-bottom-color: #e0bd74;
+  background: #fff8e8;
+  color: #7a4a00;
+}
+.correct-solution-status span {
+  color: inherit;
+}
+.correct-solution-technical-details {
+  display: inline;
+}
+.correct-solution-technical-details summary {
+  display: inline;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.correct-solution-technical-details[open] span {
+  margin-left: 6px;
+}
+.player-container:fullscreen,
+.player-container.player-fullscreen-fallback {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-bg);
+}
+.player-container:fullscreen::backdrop {
+  background: var(--color-bg);
+}
+.player-container.player-fullscreen-fallback {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+}
+.player-container:fullscreen.view-all-mode,
+.player-container.player-fullscreen-fallback.view-all-mode {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+.player-container:fullscreen .player-iframe,
+.player-container.player-fullscreen-fallback .player-iframe {
+  flex: 1;
+  height: 100% !important;
+  min-height: 0;
+}
 .preview-update-status {
   position: absolute;
   z-index: 2;

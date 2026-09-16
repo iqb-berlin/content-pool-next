@@ -1,44 +1,45 @@
-import { Component, Inject, OnInit } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import {
+  ChangeDetectorRef,
+  Component,
+  ElementRef,
+  Inject,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+} from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
-import { TaskSequence } from '../../core/models/api.models';
+import { FeatureConfig, TaskSequence } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
+import { UnitViewComponent } from '../unit-view/unit-view.component';
 
 @Component({
   selector: 'app-task-sequence',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, ItemCommentThreadComponent],
+  imports: [BreadcrumbComponent, ItemCommentThreadComponent, UnitViewComponent],
   template: `
     @if (sequence) {
       <app-breadcrumb [items]="breadcrumbs" />
 
-      <div class="seq-header">
-        <h1>{{ sequence.name || sequence.id }}</h1>
-        <div class="seq-actions">
-          @if (showUnitListBtn) {
-            <button
-              class="btn btn-outline btn-sm btn-state"
-              (click)="toggleUnitList()"
-              [attr.aria-expanded]="unitListOpen"
-              aria-controls="task-sequence-unit-list"
-            >
-              📋 Aufgabenliste
-            </button>
-          }
-          @if (showDownloadBtn) {
-            <button
-              class="btn btn-outline btn-sm"
-              (click)="downloadSequence()"
-              [disabled]="!hasUnits"
-            >
-              ⬇️ Download
-            </button>
-          }
+      @if (!isBookletReview) {
+        <div class="seq-header">
+          <h1>{{ sequence.name || sequence.id }}</h1>
+          <div class="seq-actions">
+            @if (showDownloadBtn) {
+              <button
+                class="btn btn-outline btn-sm"
+                (click)="downloadSequence()"
+                [disabled]="!hasUnits"
+              >
+                ⬇️ Download
+              </button>
+            }
+          </div>
         </div>
-      </div>
+      }
 
-      @if (showCommentBtn) {
+      @if (showCommentBtn && !isBookletReview) {
         <app-item-comment-thread
           [acpId]="acpId"
           [targetType]="'BOOKLET'"
@@ -47,89 +48,111 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
         />
       }
 
-      <!-- Navigation bar -->
-      <div class="nav-bar">
-        <button class="btn btn-primary" [disabled]="!canGoPrev" (click)="prev()">← Zurück</button>
-        @if (hasUnits && currentUnit) {
-          <span class="nav-info">
-            Aufgabe {{ currentIndex + 1 }} / {{ sequence.units.length }}:
-            <strong>{{ currentUnit.name || currentUnit.id }}</strong>
-            @if (currentUnit.blockPath?.length) {
-              <small> · {{ currentUnit.blockPath?.join(' / ') }}</small>
+      <div
+        #reviewWorkspace
+        class="review-workspace"
+        [class.fullscreen-fallback]="isFallbackFullscreen"
+      >
+        <!-- Navigation bar -->
+        <div class="nav-bar">
+          <div class="sequence-navigation">
+            <button class="btn btn-primary" [disabled]="!canGoPrev" (click)="prev()">
+              ← Zurück
+            </button>
+            @if (hasUnits && currentUnit) {
+              <span class="nav-info">
+                Aufgabe {{ currentIndex + 1 }} / {{ sequence.units.length }}:
+                <strong>{{ currentUnit.name || currentUnit.id }}</strong>
+                @if (currentUnit.blockPath?.length) {
+                  <small> · {{ currentUnit.blockPath?.join(' / ') }}</small>
+                }
+              </span>
+            } @else {
+              <span class="nav-info"><strong>Keine Aufgabe in dieser Aufgabenfolge</strong></span>
             }
-          </span>
-        } @else {
-          <span class="nav-info"><strong>Keine Aufgabe in dieser Aufgabenfolge</strong></span>
-        }
-        <button class="btn btn-primary" [disabled]="!canGoNext" (click)="next()">Weiter →</button>
-      </div>
-
-      <!-- Current unit → navigate to unit view -->
-      @if (hasUnits && currentUnit) {
-        <div class="unit-embed card">
-          <div class="embed-header">
-            <h3>{{ currentUnit.name || currentUnit.id }}</h3>
-            <a
-              [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
-              class="btn btn-sm btn-outline"
-            >
-              Vollansicht ↗
-            </a>
+            <button class="btn btn-primary" [disabled]="!canGoNext" (click)="next()">
+              Weiter →
+            </button>
           </div>
-          <div class="embed-body">
-            <p class="help-text">
-              Klicken Sie auf "Vollansicht" um die Aufgabe im Verona-Player anzuzeigen, oder nutzen
-              Sie die Navigationspfeile um durch die Aufgabenfolge zu blättern.
-            </p>
-            <a
-              [routerLink]="['/view', acpId, 'unit', currentUnit.id]"
-              class="btn btn-primary"
-              style="margin-top: 12px"
-            >
-              📝 Aufgabe {{ currentUnit.name || currentUnit.id }} öffnen
-            </a>
-          </div>
-        </div>
-      } @else {
-        <div class="unit-embed card">
-          <div class="embed-body">
-            <p class="help-text">
-              Diese Aufgabenfolge enthält aktuell keine referenzierten Aufgaben.
-            </p>
-          </div>
-        </div>
-      }
-
-      <!-- Unit list popup -->
-      @if (unitListOpen && hasUnits) {
-        <div class="popup-overlay" (click)="unitListOpen = false">
-          <div id="task-sequence-unit-list" class="popup card" (click)="$event.stopPropagation()">
-            <div class="popup-header">
-              <h3>Aufgaben in dieser Folge</h3>
-              <button class="btn btn-outline btn-sm" (click)="unitListOpen = false">✕</button>
-            </div>
-            @for (unit of sequence.units; track unit.occurrenceId || $index; let i = $index) {
+          <div class="workspace-actions">
+            @if (showDownloadBtn && isBookletReview) {
               <button
-                class="unit-list-item"
-                [class.active]="i === currentIndex"
-                [attr.aria-current]="i === currentIndex ? 'step' : null"
-                (click)="jumpTo(i)"
+                class="btn btn-outline btn-sm"
+                (click)="downloadSequence()"
+                [disabled]="!hasUnits"
               >
-                <span class="unit-num">{{ i + 1 }}</span>
-                <span>
-                  @if (unit.blockPath?.length) {
-                    <small>{{ unit.blockPath?.join(' / ') }} · </small>
-                  }
-                  {{ unit.name || unit.id }}
-                  @if (unit.alias) {
-                    ({{ unit.alias }})
-                  }
-                </span>
+                ⬇️ Download
               </button>
             }
+            @if (showUnitListBtn) {
+              <button
+                class="btn btn-outline btn-sm btn-state"
+                (click)="toggleUnitList()"
+                [attr.aria-expanded]="unitListOpen"
+                aria-controls="task-sequence-unit-list"
+              >
+                📋 Aufgabenliste
+              </button>
+            }
+            <button class="btn btn-outline btn-sm" (click)="toggleFullscreen()">
+              {{ isFullscreen ? 'Vollbild beenden' : '⛶ Vollbild' }}
+            </button>
           </div>
         </div>
-      }
+
+        <!-- Current unit review -->
+        @if (hasUnits && currentUnit) {
+          <div class="unit-embed card">
+            <app-unit-view
+              [acpId]="acpId"
+              [unitId]="currentUnit.id"
+              [bookletId]="sequenceId"
+              [embedded]="true"
+              [reviewMode]="isBookletReview"
+              [featureConfigOverride]="featureConfig"
+            />
+          </div>
+        } @else {
+          <div class="unit-embed card">
+            <div class="embed-body">
+              <p class="help-text">
+                Diese Aufgabenfolge enthält aktuell keine referenzierten Aufgaben.
+              </p>
+            </div>
+          </div>
+        }
+
+        <!-- Unit list popup -->
+        @if (unitListOpen && hasUnits) {
+          <div class="popup-overlay" (click)="unitListOpen = false">
+            <div id="task-sequence-unit-list" class="popup card" (click)="$event.stopPropagation()">
+              <div class="popup-header">
+                <h3>Aufgaben in dieser Folge</h3>
+                <button class="btn btn-outline btn-sm" (click)="unitListOpen = false">✕</button>
+              </div>
+              @for (unit of sequence.units; track unit.occurrenceId || $index; let i = $index) {
+                <button
+                  class="unit-list-item"
+                  [class.active]="i === currentIndex"
+                  [attr.aria-current]="i === currentIndex ? 'step' : null"
+                  (click)="jumpTo(i)"
+                >
+                  <span class="unit-num">{{ i + 1 }}</span>
+                  <span>
+                    @if (unit.blockPath?.length) {
+                      <small>{{ unit.blockPath?.join(' / ') }} · </small>
+                    }
+                    {{ unit.name || unit.id }}
+                    @if (unit.alias) {
+                      ({{ unit.alias }})
+                    }
+                  </span>
+                </button>
+              }
+            </div>
+          </div>
+        }
+      </div>
     } @else {
       <div class="empty-state"><h3>Lade Aufgabenfolge...</h3></div>
     }
@@ -152,13 +175,23 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
 
       .nav-bar {
         display: flex;
-        justify-content: center;
+        justify-content: space-between;
         align-items: center;
-        gap: 20px;
+        gap: 16px;
         padding: 16px;
         background: var(--color-bg);
         border-radius: var(--radius);
         margin-bottom: 16px;
+      }
+      .sequence-navigation,
+      .workspace-actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .sequence-navigation {
+        flex: 1;
+        justify-content: center;
       }
       .nav-info {
         font-size: 0.95rem;
@@ -166,22 +199,26 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
       }
 
       .unit-embed {
+        padding: 16px;
       }
-      .embed-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
+      .review-workspace:fullscreen,
+      .review-workspace.fullscreen-fallback {
+        overflow: auto;
+        padding: 16px;
+        background: var(--color-bg);
       }
-      .embed-body {
-        padding: 24px;
-        text-align: center;
+      .review-workspace.fullscreen-fallback {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
       }
-      .help-text {
-        color: var(--color-text-secondary);
-        font-size: 0.9rem;
+      .review-workspace:fullscreen .nav-bar,
+      .review-workspace.fullscreen-fallback .nav-bar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        box-shadow: var(--shadow);
       }
-
       .popup-overlay {
         position: fixed;
         inset: 0;
@@ -251,11 +288,20 @@ import { ItemCommentThreadComponent } from '../comment-thread/item-comment-threa
           flex-direction: column;
           gap: 12px;
         }
+        .sequence-navigation {
+          flex-wrap: wrap;
+        }
+        .workspace-actions {
+          width: 100%;
+          justify-content: center;
+        }
       }
     `,
   ],
 })
-export class TaskSequenceComponent implements OnInit {
+export class TaskSequenceComponent implements OnInit, OnDestroy {
+  @ViewChild('reviewWorkspace') reviewWorkspace?: ElementRef<HTMLElement>;
+
   acpId = '';
   sequenceId = '';
   sequenceKind?: 'booklet';
@@ -267,21 +313,37 @@ export class TaskSequenceComponent implements OnInit {
   showCommentBtn = false;
   showDownloadBtn = false;
   showUnitListBtn = true;
+  featureConfig: FeatureConfig | null = null;
+  isFullscreen = false;
+  isFallbackFullscreen = false;
+
+  private readonly fullscreenChangeHandler = () => {
+    this.isFullscreen =
+      this.isFallbackFullscreen ||
+      document.fullscreenElement === this.reviewWorkspace?.nativeElement;
+    this.changeDetector.markForCheck();
+  };
+  private readonly fullscreenKeyHandler = (event: KeyboardEvent) => {
+    if (event.key === 'Escape' && this.isFallbackFullscreen) this.closeFallbackFullscreen();
+  };
 
   constructor(
     @Inject(ActivatedRoute) private route: ActivatedRoute,
-    @Inject(Router) private router: Router,
     @Inject(ApiService) private api: ApiService,
+    @Inject(ChangeDetectorRef) private changeDetector: ChangeDetectorRef,
   ) {}
 
   ngOnInit() {
+    document.addEventListener('fullscreenchange', this.fullscreenChangeHandler);
+    document.addEventListener('keydown', this.fullscreenKeyHandler);
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
     this.sequenceId = this.route.snapshot.paramMap.get('sequenceId') || '';
     this.sequenceKind =
       this.route.snapshot.queryParamMap?.get('kind') === 'booklet' ? 'booklet' : undefined;
 
     this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      const fc = data?.featureConfig || {};
+      const fc: FeatureConfig = data?.featureConfig || {};
+      this.featureConfig = fc;
       const commentTargets = Array.isArray(fc.commentTargets) ? fc.commentTargets : [];
       this.showCommentBtn = !!(
         this.sequenceKind === 'booklet' &&
@@ -289,7 +351,7 @@ export class TaskSequenceComponent implements OnInit {
         commentTargets.includes('BOOKLET')
       );
       this.showDownloadBtn = !!fc.allowUnitDownload;
-      this.showUnitListBtn = fc.enableSequenceNavigation !== false;
+      this.showUnitListBtn = this.isBookletReview || fc.enableSequenceNavigation !== false;
     });
 
     this.api.getViewSequence(this.acpId, this.sequenceId, this.sequenceKind).subscribe((s) => {
@@ -304,8 +366,17 @@ export class TaskSequenceComponent implements OnInit {
     });
   }
 
+  ngOnDestroy() {
+    document.removeEventListener('fullscreenchange', this.fullscreenChangeHandler);
+    document.removeEventListener('keydown', this.fullscreenKeyHandler);
+  }
+
   get hasUnits(): boolean {
     return !!this.sequence?.units?.length;
+  }
+
+  get isBookletReview(): boolean {
+    return this.sequenceKind === 'booklet';
   }
 
   get currentUnit(): TaskSequence['units'][number] | null {
@@ -342,6 +413,29 @@ export class TaskSequenceComponent implements OnInit {
   toggleUnitList() {
     if (!this.hasUnits) return;
     this.unitListOpen = !this.unitListOpen;
+  }
+
+  async toggleFullscreen() {
+    const workspace = this.reviewWorkspace?.nativeElement;
+    if (!workspace) return;
+    if (this.isFallbackFullscreen) {
+      this.closeFallbackFullscreen();
+      return;
+    }
+    try {
+      if (document.fullscreenElement === workspace) await document.exitFullscreen();
+      else await workspace.requestFullscreen();
+    } catch {
+      this.isFallbackFullscreen = true;
+      this.isFullscreen = true;
+      this.changeDetector.markForCheck();
+    }
+  }
+
+  private closeFallbackFullscreen() {
+    this.isFallbackFullscreen = false;
+    this.isFullscreen = false;
+    this.changeDetector.markForCheck();
   }
 
   downloadSequence() {

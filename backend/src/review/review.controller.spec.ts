@@ -44,6 +44,7 @@ describe("ReviewController stale memberships", () => {
         { assert: jest.fn() } as any,
         {} as any,
         { manager, findOne: async () => config } as any,
+        { check: jest.fn() } as any,
       );
       const result = await controller.configure(
         "acp",
@@ -104,7 +105,8 @@ describe("ReviewController stale memberships", () => {
       const controller = new ReviewController(
         { assert: jest.fn() } as any,
         {} as any,
-        { manager } as any,
+        { manager, findOne: async () => config } as any,
+        { check: jest.fn().mockResolvedValue({ status: "READY" }) } as any,
       );
       await expect(
         controller.configure(
@@ -124,4 +126,124 @@ describe("ReviewController stale memberships", () => {
       expect(manager.save).not.toHaveBeenCalled();
     },
   );
+
+  it("blocks activation when the ACP is not technically ready", async () => {
+    const config = {
+      reviewConfigVersion: 1,
+      reviewRevision: "0",
+      featureConfig: { enableReview: false, commentVisibilityMode: "PRIVATE" },
+      reviewGroups: [],
+    };
+    const manager = { transaction: jest.fn() };
+    const readiness = {
+      check: jest.fn().mockResolvedValue({
+        status: "BLOCKED",
+        blockers: ["Kein Booklet"],
+        warnings: [],
+      }),
+    };
+    const controller = new ReviewController(
+      { assert: jest.fn() } as any,
+      {} as any,
+      { manager, findOne: async () => config } as any,
+      readiness as any,
+    );
+
+    await expect(
+      controller.configure(
+        "acp",
+        {
+          enableReview: true,
+          visibilityMode: "PRIVATE",
+          configVersion: 1,
+          groups: [],
+        },
+        {},
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(readiness.check).toHaveBeenCalledWith("acp");
+    expect(manager.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleting review groups", () => {
+  it.each([0, 1])(
+    "allows only comment-free groups (comment count %i)",
+    async (count) => {
+      const config = {
+        id: "cfg",
+        reviewConfigVersion: 1,
+        reviewRevision: "0",
+        featureConfig: { enableReview: false },
+        reviewGroups: [
+          { id: "g", name: "Group", members: [], archived: false },
+        ],
+      };
+      const manager: any = {
+        findOne: jest.fn(async () => config),
+        count: jest.fn(async () => count),
+        save: jest.fn(async (x) => x),
+        transaction: async (fn: any) => fn(manager),
+      };
+      const controller = new ReviewController(
+        { assert: jest.fn() } as any,
+        {} as any,
+        { manager, findOne: async () => config } as any,
+        {} as any,
+      );
+      const dto = {
+        configVersion: 1,
+        enableReview: false,
+        visibilityMode: "PRIVATE" as const,
+        groups: [],
+        deletedGroupIds: ["g"],
+      };
+      if (count) {
+        await expect(controller.configure("acp", dto, {})).rejects.toThrow(
+          "enthält Kommentare",
+        );
+        expect(manager.save).not.toHaveBeenCalled();
+      } else {
+        expect((await controller.configure("acp", dto, {})).groups).toEqual([]);
+      }
+      expect(manager.findOne).toHaveBeenCalledWith(
+        AcpAccessConfig,
+        expect.objectContaining({ lock: { mode: "pessimistic_write" } }),
+      );
+      expect(manager.count).toHaveBeenCalledWith(expect.anything(), {
+        where: { acpId: "acp", groupId: "g" },
+      });
+    },
+  );
+  it("requires an explicit deletion confirmation", async () => {
+    const config = {
+      reviewConfigVersion: 1,
+      featureConfig: {},
+      reviewGroups: [{ id: "g" }],
+    };
+    const manager: any = {
+      findOne: async () => config,
+      transaction: async (fn: any) => fn(manager),
+      save: jest.fn(),
+    };
+    const controller = new ReviewController(
+      { assert: jest.fn() } as any,
+      {} as any,
+      { manager, findOne: async () => config } as any,
+      {} as any,
+    );
+    await expect(
+      controller.configure(
+        "acp",
+        {
+          configVersion: 1,
+          enableReview: false,
+          visibilityMode: "PRIVATE",
+          groups: [],
+        },
+        {},
+      ),
+    ).rejects.toThrow("bestätigt");
+    expect(manager.save).not.toHaveBeenCalled();
+  });
 });

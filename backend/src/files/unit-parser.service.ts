@@ -39,6 +39,7 @@ import { UnitViewResolver } from "./unit-view.resolver";
 import {
   extractValueText,
   findPlayerFile,
+  getXmlRootElement,
   isRecord,
   isValidVomdItem,
   parseUnitXml,
@@ -174,20 +175,17 @@ export class UnitParserService {
     const fileNames = allFiles.map((f) => f.originalName);
     const results: UnitValidationResult[] = [];
 
-    // Find all .xml files
-    const xmlFiles = allFiles.filter(
-      (f) =>
-        f.originalName.toLowerCase().endsWith(".xml") &&
-        !f.originalName.toLowerCase().startsWith("booklet") &&
-        !f.originalName.toLowerCase().startsWith("testtaker"),
+    const xmlFiles = allFiles.filter((f) =>
+      f.originalName.toLowerCase().endsWith(".xml"),
     );
 
     for (const xmlFile of xmlFiles) {
       try {
         const content = await fs.readFile(xmlFile.filePath, "utf-8");
 
-        // Only process Unit XML files (not booklet or testtaker XMLs)
-        if (!content.includes("<Unit")) continue;
+        // Classify by the XML root instead of relying on file-name prefixes.
+        // Booklets contain nested <Unit> references but are not Unit files.
+        if (getXmlRootElement(content) !== "Unit") continue;
 
         const parsed = this.parseUnitXml(content, xmlFile.originalName);
         if (!parsed) continue;

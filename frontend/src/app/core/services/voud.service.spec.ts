@@ -191,6 +191,63 @@ describe('VoudService.getFocusIdentifiers', () => {
   });
 });
 
+describe('VoudService.resolvePlayerResponseTarget', () => {
+  const service = new VoudService();
+
+  it('returns the alias used by Aspect response states and the element type', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              elements: [
+                {
+                  id: 'radio_1',
+                  alias: 'A1',
+                  type: 'radio',
+                  options: [{ text: 'A' }, { text: 'B' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'radio_1')).toEqual({
+      responseId: 'A1',
+      elementType: 'radio',
+      identifiers: ['radio_1', 'A1'],
+      optionCount: 2,
+    });
+  });
+
+  it('falls back to the internal id when the element has no alias', () => {
+    const definition = JSON.stringify({
+      pages: [{ elements: [{ id: 'checkbox_1', type: 'checkbox' }] }],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'checkbox_1')).toEqual({
+      responseId: 'checkbox_1',
+      elementType: 'checkbox',
+      identifiers: ['checkbox_1'],
+    });
+  });
+
+  it('does not treat references in visibility rules as response targets', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          visibilityRules: [{ id: 'RULE_ONLY' }],
+          elements: [{ id: 'field_1', alias: 'A1', type: 'text-field' }],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'RULE_ONLY')).toBeUndefined();
+  });
+});
+
 describe('VoudService.stripConditionalVisibility', () => {
   const service = new VoudService();
 

@@ -204,6 +204,28 @@ describe("UnitParserService", () => {
     service = module.get<UnitParserService>(UnitParserService);
   });
 
+  it("does not validate a Booklet with nested Unit references as a Unit file", async () => {
+    const bookletFile = {
+      id: "f-booklet",
+      acpId: "acp-1",
+      originalName: "OBI-Deutsch-Aufgabenreview.xml",
+      filePath: "/tmp/OBI-Deutsch-Aufgabenreview.xml",
+    };
+    fileRepo.find.mockResolvedValue([...files, bookletFile]);
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === bookletFile.filePath) {
+        return '<?xml version="1.0"?><Booklet><Metadata><Id>review</Id><Label>Review</Label></Metadata><Units><Unit id="u1"/></Units></Booklet>';
+      }
+      return "";
+    });
+
+    const results = await service.validateUnitFiles("acp-1");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ unitId: "u1", valid: true });
+  });
+
   it("reconnects a test booklet after upload, deletion and reupload without duplicating it", async () => {
     const file = { originalName: "review.xml", filePath: "/tmp/review.xml" };
     const xml =
@@ -838,6 +860,11 @@ describe("UnitParserService", () => {
                   value: "30",
                   valueAsText: { lang: "de", value: "00:30" },
                 },
+                {
+                  id: "iqb_item_time",
+                  value: "99",
+                  valueAsText: { lang: "de", value: "01:39" },
+                },
               ],
             },
           ],
@@ -849,7 +876,7 @@ describe("UnitParserService", () => {
             {
               entries: [
                 {
-                  id: "iqb_time_item",
+                  id: "iqb_item_time",
                   value: 45,
                   valueAsText: { lang: "de", value: "00:45" },
                 },
@@ -892,6 +919,7 @@ describe("UnitParserService", () => {
         rowKey: "uuid-2",
         itemTimeSeconds: 45,
         stimulusTimeSeconds: 90,
+        metadata: expect.objectContaining({ iqb_item_time: "00:45" }),
       }),
     ]);
   });

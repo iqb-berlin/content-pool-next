@@ -138,24 +138,31 @@ Snapshots support:
 - restore,
 - delete.
 
-## 9. Run Read-Only Review
+## 9. Prepare and Run Review
 
-Once an ACP is stable enough for review, users can work through the view-side routes:
+Review management and Review participation use separate entry points:
 
-- start page,
-- units,
-- task sequences,
-- item list,
-- item explorer,
-- item detail,
-- ACP index.
+1. A user with `review:manage` opens the Review card on the ACP management overview.
+2. `Bereitschaft prüfen` validates files, semantic references, the Review manifest, referenced
+   Units, Unit definitions, and players.
+3. Technical blockers prevent a new Review activation. Non-blocking warnings can be confirmed.
+4. The manager configures visibility and optional Review groups, activates Review, and grants
+   `review:participate` to the intended user accounts or ACP credentials.
+5. Participants open the Review card on the ACP start page and select a Booklet directly.
+6. The Booklet workspace shows the player and the Review panel side by side.
 
-Exactly what appears depends on:
+Review readiness has three states:
 
-- access model,
-- feature flags,
-- user role,
-- whether the session is anonymous, user-based, or credential-based.
+- `READY`: the technical Review path is complete;
+- `WARNING`: Review is possible, but the manager must confirm the reported warnings;
+- `BLOCKED`: a Booklet, referenced Unit, Unit definition, player, or another required structure is
+  missing or invalid.
+
+The readiness check is not a formal release approval. It verifies that the material can be opened
+for Review; content quality is still assessed during Review.
+
+`review:manage` does not imply `review:participate`. Review groups control comment visibility but do
+not grant ACP or Review access.
 
 ## 10. Collect Comments
 
@@ -165,7 +172,8 @@ Comments can target:
 - items,
 - task sequences.
 
-Commenting is controlled by ACP feature flags. Managers can export comments as:
+Commenting is enabled separately under `Zugriff & Funktionen`; activating Review alone does not
+enable comment targets. Managers can export comments as:
 
 - JSON
 - XLSX

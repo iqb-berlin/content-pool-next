@@ -89,6 +89,10 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 - In fullscreen mode the explorer keeps the same split view, dialogs, and overlays, but hides the
   breadcrumb to maximize usable space.
 - `Escape` leaves fullscreen when no dialog or overlay is currently open.
+- The player preview has its own fullscreen action. It enlarges the existing player container
+  without recreating the iframe, so the selected item and current player state are retained.
+- The player fullscreen can be closed with its visible action or `Escape`. Browsers without an
+  available Fullscreen API use a viewport-filling fallback.
 
 ### Focus model
 
@@ -444,10 +448,14 @@ content that looks numeric. Time values are non-negative seconds; decimal point 
 are accepted.
 
 Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
-item profile and `iqb_time_stimulus` from the VOMD unit profile. The unit value is shared by every
-item row in that unit, and partial-credit rows inherit both values. Explicit Explorer values remain
-the higher-priority override. Empty, negative, and non-numeric VOMD values are treated as missing;
-the formatted `valueAsText` is retained only as display metadata and is not parsed as seconds.
+item profile and `iqb_time_stimulus` from the VOMD unit profile. The legacy item property
+`iqb_item_time` is used as a fallback when `iqb_time_item` is absent. If both item properties exist,
+`iqb_time_item` wins. The unit value is shared by every item row in that unit, and partial-credit
+rows inherit both values. Explicit Explorer values remain the higher-priority override. Empty,
+negative, and non-numeric VOMD values are treated as missing; the formatted `valueAsText` remains
+available as raw metadata and is not parsed as seconds. The column manager maps these VOMD
+properties to the canonical numeric `Itemzeit (s)` and `Stimuluszeit (s)` columns instead of
+offering the formatted metadata as duplicate columns.
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
 must agree, while `booklet` and the optional `position` are collected as ordered 1:n metadata on the
@@ -547,12 +555,35 @@ unavailable explanation and a link to the regular unit workflow. No audio progre
 are fabricated, and the original unit definition is forwarded unchanged. The ACP flag remains
 opt-in. Definition/player version compatibility is still required by Aspect itself.
 
-Validation on 2026-09-14: the unchanged Docker DLB002 definition rendered item 01, its marking
-page, the return to 01 and item 04 using the resolver's output in release players 2.11.6 and
-3.0.1. Release 2.12.6 rejected this definition as outdated before rendering; this fixture does
-not establish compatibility with 2.12.6. The integrated Docker Explorer also rendered item 01
-with the opt-in flag enabled in the test browser. Existing DLB002 rows 02–04 have empty variable
-mappings in the item-list response and require a separate data correction.
+### Conditional visibility acceptance scope (Issue #150)
+
+The supported preview is an explicit start context, not a replay of a student's interaction
+history. The following describes the technical scope; the broader request for identical
+rendering of arbitrary dynamic tasks still requires subject-matter acceptance before closing
+Issue #150.
+
+| Case | Expected behavior |
+| --- | --- |
+| Option disabled | Existing overview behavior, with conditional visibility neutralized. |
+| Option enabled, uniquely resolvable equality rules | Preserve the original definition, select the target page and show only matching stimulus sections. Switching A → B → A restores each context. |
+| Multiple stable contexts | Explain the ambiguity; managers may constrain declared state values. |
+| Answers, media progress, timers, unsupported or conflicting rules | Explain why the preview is unavailable and link to the complete unit workflow. |
+| Existing saved state, including a fallback state | Use the saved context with priority. It can differ from the automatically derived item context. This is intentional and requires acceptance for the intended review workflow. |
+| Synthetic visibility context or correct-solution preview | Never save it as an answer, including after restarts, solution toggles or late API responses. |
+
+The active player session groups its ID, data origin and received data. Save/delete completions
+and their errors apply only to the item and session that started the operation. A session change
+closes its obsolete confirmation dialog. Saved answer data remains separate; a new session
+must report current data before it can be saved. `stateReportPolicy: eager` requests those reports.
+Correct-solution data does not overwrite the ordinary answer snapshot.
+
+`npm run e2e` downloads and SHA-256-verifies the pinned **Aspect 3.0.1** release into
+`frontend/tmp/` (cached and unversioned). `item-explorer-visibility.spec.ts` runs the real player
+with synthetic VOUD **4.10.0** content, verifying stimulus switching, the disabled option,
+saved-state priority and the unavailable fallback. The response-state regression suite uses
+a separate protocol fixture to test editing, saving, reloading and deleting answers. Other
+player/definition version combinations require their own compatibility checks; these tests
+make no compatibility claim for Aspect 2.12.6 or for the old DLB002 production example.
 
 The preview keeps the corresponding schema fields in place with neutral default values so the
 embedded Aspect player can still parse the generated unit definition reliably.

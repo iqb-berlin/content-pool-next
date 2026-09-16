@@ -17,6 +17,7 @@ import {
 import { CommentVotes1789500000000 } from "../src/database/migrations/1789500000000-CommentVotes";
 import { ReviewVisibilityGroups1789400000000 } from "../src/database/migrations/1789400000000-ReviewVisibilityGroups";
 import { ReviewManifestService } from "../src/review/review-manifest.service";
+import { ReviewReadinessService } from "../src/review/review-readiness.service";
 import { UnitParserService } from "../src/files/unit-parser.service";
 
 import { mkdtemp, writeFile, rm } from "fs/promises";
@@ -65,6 +66,22 @@ describe("Review visibility, groups and synchronization API", () => {
           booklets: [{ id: "B", name: "Booklet", units: [] }],
           units: [{ id: "U", items: [{ id: "I" }] }],
           issues: [],
+        }),
+      })
+      .overrideProvider(ReviewReadinessService)
+      .useValue({
+        check: async () => ({
+          status: "READY",
+          checkedAt: new Date().toISOString(),
+          blockers: [],
+          warnings: [],
+          summary: {
+            totalFiles: 0,
+            validFiles: 0,
+            invalidFiles: 0,
+            bookletCount: 1,
+            unitCount: 1,
+          },
         }),
       })
       .overrideProvider(UnitParserService)

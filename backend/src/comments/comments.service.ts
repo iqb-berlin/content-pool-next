@@ -1,3 +1,7 @@
+import {
+  ReviewCommentFilters,
+  matchesReviewFilters,
+} from "./review-comment-filters";
 import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
@@ -85,6 +89,7 @@ export interface ItemCommentCountsSnapshot {
 }
 
 export interface ReviewCommentExportActor {
+  filters?: ReviewCommentFilters;
   columnPolicy?: ReviewerColumnPolicy;
   visible?: boolean;
   isManager?: boolean;
@@ -1007,15 +1012,23 @@ export class CommentsService {
       const unit = unitCatalog.get(unitId);
       if (unit) unit.unitOrder = unitOrder++;
     }
-    const resolved = comments.map((comment) => ({
-      comment,
-      target: this.resolveReviewExportTarget(
+    const resolved = comments
+      .filter((comment) =>
+        matchesReviewFilters(
+          comment,
+          this.resolveAuthorLabel(comment),
+          actor?.filters,
+        ),
+      )
+      .map((comment) => ({
         comment,
-        itemCatalog,
-        bookletCatalog,
-        unitCatalog,
-      ),
-    }));
+        target: this.resolveReviewExportTarget(
+          comment,
+          itemCatalog,
+          bookletCatalog,
+          unitCatalog,
+        ),
+      }));
     const sorted = resolved.sort((left, right) => {
       return (
         Number(Boolean(left.comment.legacyReadOnly)) -

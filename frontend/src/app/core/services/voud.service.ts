@@ -18,9 +18,18 @@ export interface PlayerTargetLocation {
   isAlwaysVisiblePage: boolean;
 }
 
+export interface PlayerResponseTarget {
+  responseId: string;
+  elementType: string;
+  identifiers: string[];
+  optionCount?: number;
+}
+
 interface IdentifierBearingNode {
   id?: unknown;
   alias?: unknown;
+  type?: unknown;
+  options?: unknown;
 }
 
 interface IdentifierNodeMatch {
@@ -173,6 +182,41 @@ export class VoudService {
     } catch (e) {
       console.error('Error resolving focus identifiers from VOUD:', e);
       return [target];
+    }
+  }
+
+  /**
+   * Resolves the identifier and element type expected in Aspect's `elementCodes` data part.
+   * The player serializes responses by alias and falls back to the internal element id when
+   * no alias is present.
+   */
+  resolvePlayerResponseTarget(
+    definition: string,
+    variableId: string,
+  ): PlayerResponseTarget | undefined {
+    const target = String(variableId || '').trim();
+    if (!target) return undefined;
+
+    try {
+      const unitDefinition = this.parseDefinition(definition);
+      const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
+      const match = this.findTargetNode(pages, target);
+      if (!match) return undefined;
+
+      const identifiers = this.getNodeIdentifiers(match.node);
+      const responseId = String(match.node.alias || match.node.id || '').trim();
+      if (!responseId) return undefined;
+      const optionCount = Array.isArray(match.node.options) ? match.node.options.length : undefined;
+
+      return {
+        responseId,
+        elementType: String(match.node.type || '').trim(),
+        identifiers,
+        ...(optionCount !== undefined ? { optionCount } : {}),
+      };
+    } catch (e) {
+      console.error('Error resolving player response target from VOUD:', e);
+      return undefined;
     }
   }
 

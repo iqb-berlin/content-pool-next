@@ -1,3 +1,4 @@
+import { ReviewCommentFilters } from "./review-comment-filters";
 import {
   BadRequestException,
   Body,
@@ -147,11 +148,13 @@ export class ReviewCommentsController {
     @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Res() res: Response,
+    @Query() filters?: ReviewCommentFilters,
   ) {
     const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
       ...this.reviewPolicy.resolveActor(req),
       visible: true,
       columnPolicy: req.reviewerColumnPolicy,
+      ...(filters && Object.keys(filters).length ? { filters } : {}),
     });
     await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
@@ -180,11 +183,13 @@ export class ReviewCommentsController {
     @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Res() res: Response,
+    @Query() filters?: ReviewCommentFilters,
   ) {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsCsv(acpId, {
       ...actor,
       columnPolicy: req.reviewerColumnPolicy,
+      ...(filters && Object.keys(filters).length ? { filters } : {}),
     });
     await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(
@@ -201,11 +206,13 @@ export class ReviewCommentsController {
     @UuidParam("acpId") acpId: string,
     @Request() req: any,
     @Res() res: Response,
+    @Query() filters?: ReviewCommentFilters,
   ) {
     const actor = this.reviewPolicy.resolveActor(req);
     const buffer = await this.commentsService.exportReviewCommentsXlsx(acpId, {
       ...actor,
       columnPolicy: req.reviewerColumnPolicy,
+      ...(filters && Object.keys(filters).length ? { filters } : {}),
     });
     await req.assertReviewerColumnPolicyCurrent?.();
     this.sendExport(

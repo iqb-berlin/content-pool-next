@@ -44,6 +44,67 @@ describe("Reviewer column information boundary", () => {
     ).toHaveProperty("empiricalDifficulty", 123);
   });
 
+  it.each([
+    ["metadata:iqb_time_item", "itemTimeSeconds", "iqb_time_item"],
+    ["metadata:iqb_item_time", "itemTimeSeconds", "iqb_item_time"],
+    ["metadata:iqb_time_stimulus", "stimulusTimeSeconds", "iqb_time_stimulus"],
+  ])(
+    "projects canonical time values released through %s",
+    (legacyColumn, canonicalField, metadataId) => {
+      const restricted = policy(legacyColumn);
+      const item = {
+        itemId: "I",
+        [canonicalField]: 45,
+        metadata: { [metadataId]: "00:45" },
+      };
+
+      expect(restricted.allowedColumns).toContain(`metadata:${canonicalField}`);
+      expect(restricted.allowsField(canonicalField)).toBe(true);
+      expect(restricted.projectItem(item)).toEqual({
+        itemId: "I",
+        [canonicalField]: 45,
+        metadata: {},
+      });
+      expect(
+        restricted.projectColumnSettings({
+          visible: [metadataId],
+          order: [metadataId],
+          widths: { [metadataId]: 180 },
+          definitions: [{ id: metadataId, label: "Zeit" }],
+          layout: {
+            configured: true,
+            visible: ["system:itemId", legacyColumn],
+            order: ["system:itemId", legacyColumn],
+            widths: { [legacyColumn]: 180 },
+          },
+        }),
+      ).toMatchObject({
+        visible: [metadataId],
+        order: [metadataId],
+        widths: { [metadataId]: 180 },
+        definitions: [{ id: metadataId, label: "Zeit" }],
+        layout: {
+          visible: ["system:position", "system:itemId", legacyColumn],
+          order: ["system:position", "system:itemId", legacyColumn],
+          widths: { [legacyColumn]: 180 },
+        },
+      });
+    },
+  );
+
+  it("does not release raw time metadata through a canonical column", () => {
+    expect(
+      policy("metadata:itemTimeSeconds").projectItem({
+        itemId: "I",
+        itemTimeSeconds: 45,
+        metadata: {
+          iqb_time_item: "UNRELEASED_TEXT",
+          iqb_item_time: "ALSO_UNRELEASED",
+        },
+      }),
+    ).toEqual({ itemId: "I", itemTimeSeconds: 45, metadata: {} });
+  });
+
   it("removes unpublished state, hidden filters and hidden metadata definitions", () => {
     const state = {
       ui: { filter: "secret" },
@@ -65,8 +126,43 @@ describe("Reviewer column information boundary", () => {
     expect(JSON.stringify(result)).not.toContain("secret");
     expect(result.draftState).toEqual(result.publishedState);
     expect(result.activeState.metadataColumns.layout.visible).toEqual([
+      "system:position",
       "system:itemId",
     ]);
+  });
+
+  it("keeps position visible for legacy restricted layouts and honors schema 3 hiding", () => {
+    const legacy = new ReviewerColumnPolicy({
+      restrictReviewerColumnsToManagerSelection: true,
+      layout: {
+        configured: true,
+        visible: ["system:itemId"],
+        order: ["system:itemId"],
+        widths: {},
+        schemaVersion: 2,
+      },
+    });
+    const current = new ReviewerColumnPolicy({
+      restrictReviewerColumnsToManagerSelection: true,
+      layout: {
+        configured: true,
+        visible: ["system:itemId"],
+        order: ["system:itemId"],
+        widths: {},
+        schemaVersion: 3,
+      },
+    });
+
+    expect(legacy.allows("system:position")).toBe(true);
+    expect(legacy.projectColumnSettings({ layout: {} }).layout).toMatchObject({
+      visible: ["system:position", "system:itemId"],
+      order: ["system:position", "system:itemId"],
+    });
+    expect(current.allows("system:position")).toBe(false);
+    expect(current.projectColumnSettings({ layout: {} }).layout).toMatchObject({
+      visible: ["system:itemId"],
+      order: ["system:itemId"],
+    });
   });
 
   it("also projects index-shaped unit items and fails closed for new fields", () => {

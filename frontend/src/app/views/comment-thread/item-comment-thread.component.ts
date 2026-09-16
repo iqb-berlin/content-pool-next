@@ -138,14 +138,14 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get contextLabel(): string {
-    if (this.targetType === 'BOOKLET') return `Booklet ${this.bookletId}`;
+    if (this.targetType === 'BOOKLET') return `Testheft ${this.bookletId}`;
     if (this.targetType === 'UNIT') return `Unit ${this.unitId}`;
     if (this.targetType === 'CODING') return `Kodierung ${this.unitId} · ${this.itemId}`;
     return `Item ${this.unitId} · ${this.itemId}`;
   }
 
   get commentHeading(): string {
-    if (this.targetType === 'BOOKLET') return `Kommentare zum Booklet ${this.bookletId}`;
+    if (this.targetType === 'BOOKLET') return `Kommentare zum Testheft ${this.bookletId}`;
     if (this.targetType === 'UNIT') return `Kommentare zur Unit ${this.unitId}`;
     if (this.targetType === 'CODING') {
       return `Kommentare zur Kodierung ${this.unitId} · ${this.itemId}`;
@@ -159,7 +159,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
 
   get newCommentPlaceholder(): string {
     if (this.targetType === 'ITEM') return 'Kommentar zu diesem Item …';
-    if (this.targetType === 'BOOKLET') return `Kommentar zum Booklet ${this.bookletId} …`;
+    if (this.targetType === 'BOOKLET') return `Kommentar zum Testheft ${this.bookletId} …`;
     if (this.targetType === 'UNIT') return `Kommentar zur Unit ${this.unitId} …`;
     return `Kommentar zur Kodierung ${this.unitId} · ${this.itemId} …`;
   }

@@ -11,6 +11,7 @@ import {
   CommentThreadSnapshot,
   ItemCommentCountsSnapshot,
   ReviewCommentTarget,
+  ReviewReadiness,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -220,13 +221,23 @@ export class ApiService {
   getVisibleReviewComments(acpId: string): Observable<Comment[]> {
     return this.http.get<Comment[]>(`${this.API}/acp/${acpId}/review/comments/visible`);
   }
-  exportVisibleReviewComments(acpId: string): Observable<Blob> {
+  exportVisibleReviewComments(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/visible.xlsx`, {
       responseType: 'blob',
+      params: filters,
     });
   }
   configureReview(acpId: string, config: any): Observable<any> {
     return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, config);
+  }
+  getReviewReadiness(acpId: string): Observable<ReviewReadiness | null> {
+    return this.http.get<ReviewReadiness | null>(`${this.API}/view/acp/${acpId}/review/readiness`);
+  }
+  checkReviewReadiness(acpId: string): Observable<ReviewReadiness> {
+    return this.http.post<ReviewReadiness>(`${this.API}/view/acp/${acpId}/review/readiness`, {});
   }
   importCredentialFile(
     acpId: string,
@@ -561,14 +572,19 @@ export class ApiService {
     return value === null ? this.http.delete(url) : this.http.put(url, { value });
   }
 
-  exportMyReviewCommentsCsv(acpId: string): Observable<Blob> {
+  exportMyReviewCommentsCsv(acpId: string, filters: Record<string, string> = {}): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.csv`, {
       responseType: 'blob',
+      params: filters,
     });
   }
-  exportMyReviewCommentsXlsx(acpId: string): Observable<Blob> {
+  exportMyReviewCommentsXlsx(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.xlsx`, {
       responseType: 'blob',
+      params: filters,
     });
   }
   exportAllReviewCommentsXlsx(acpId: string): Observable<Blob> {

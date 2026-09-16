@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { AccessConfigComponent } from './access-config.component';
 
 describe('AccessConfigComponent', () => {
@@ -35,6 +35,67 @@ describe('AccessConfigComponent', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('saves access and features together and clears the dirty state after success', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    expect(component.hasUnsavedChanges).toBe(false);
+    component.accessModel = 'PRIVATE';
+    component.featureConfig.enableCommenting = true;
+    expect(component.hasUnsavedChanges).toBe(true);
+    component.saveFeatures();
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      '',
+      expect.objectContaining({
+        accessModel: 'PRIVATE',
+        featureConfig: expect.objectContaining({ enableCommenting: true }),
+      }),
+    );
+    expect(component.hasUnsavedChanges).toBe(false);
+    expect(component.featuresSaved).toBe(true);
+  });
+
+  it('keeps changes made during a pending save dirty and prevents duplicate requests', () => {
+    const response = new Subject<any>();
+    api.updateAccessConfig.mockReturnValue(response);
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    component.accessModel = 'PRIVATE';
+    component.saveFeatures();
+    component.saveFeatures();
+    expect(api.updateAccessConfig).toHaveBeenCalledTimes(1);
+    component.accessModel = 'PUBLIC';
+    response.next({});
+    expect(component.hasUnsavedChanges).toBe(true);
+    expect(component.saving).toBe(false);
+  });
+
+  it('retains unsaved changes and allows retry after a failed save', () => {
+    api.updateAccessConfig.mockReturnValue(throwError(() => new Error('offline')));
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    component.availableTags.push('Prüfen');
+    component.saveFeatures();
+    expect(component.hasUnsavedChanges).toBe(true);
+    expect(component.saveError).toContain('nicht gespeichert');
+    expect(component.saving).toBe(false);
+    expect(component.featuresSaved).toBe(false);
+  });
+
+  it.each([
+    ['', ''],
+    ['invalid', 'invalid'],
+    ['2026-09-16T10:00', '2026-09-15T10:00'],
+    ['2026-09-16T10:00', '2027-01-16T10:00'],
+  ])('does not save an invalid credential window %s to %s', (from, until) => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.accessModel = 'CREDENTIALS_LIST';
+    component.validFrom = from;
+    component.validUntil = until;
+    component.saveFeatures();
+    expect(api.updateAccessConfig).not.toHaveBeenCalled();
+    expect(component.saveError).not.toBe('');
   });
 
   it('defaults showAudioVideoCodingVariables to true when flag is missing', () => {

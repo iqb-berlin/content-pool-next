@@ -378,6 +378,22 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         gelten auch in der Verwaltung; Ausnahmen sind gekennzeichnet.
       </p>
 
+      <!-- Start page -->
+      <div class="feature-section start-page-section">
+        <h3>Auf dieser Startseite anzeigen</h3>
+        <p class="help-text">
+          Diese Schalter steuern nur die sichtbaren Einstiege. Sie vergeben oder entziehen keine
+          Funktionsrechte. Item-Explorer, Aufgabenansicht und Aufgabenfolgen werden in den
+          jeweiligen Bereichen separat freigegeben; Review-Zugänge werden unter Review verwaltet.
+        </p>
+        @for (feat of startPageFlags; track feat.key) {
+          <label class="feature-toggle">
+            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
+            <span>{{ feat.label }}</span>
+          </label>
+        }
+      </div>
+
       <div class="basic-functions">
         <!-- Downloads -->
         <div class="feature-section">
@@ -1229,8 +1245,14 @@ export class AccessConfigComponent implements OnInit {
   ];
 
   navFlags = [
-    { key: 'enableUnitListNavigation', label: 'Navigation über Aufgabenliste' },
-    { key: 'enableSequenceNavigation', label: 'Aufgabenfolgen aus Testheften generieren' },
+    { key: 'enableSequenceNavigation', label: 'Testhefte und Aufgabenfolgen aktivieren' },
+  ];
+
+  startPageFlags = [
+    { key: 'showItemExplorerOnStartPage', label: 'Item-Explorer' },
+    { key: 'showUnitListOnStartPage', label: 'Aufgaben ansehen' },
+    { key: 'showSequencesOnStartPage', label: 'Testhefte und Aufgabenfolgen' },
+    { key: 'showIndexOnStartPage', label: 'Paketstruktur (ACP-Index)' },
   ];
 
   itemFlags = [
@@ -1450,6 +1472,15 @@ export class AccessConfigComponent implements OnInit {
     if (this.featureConfig['enableItemList'] === undefined) {
       this.featureConfig['enableItemList'] = true;
     }
+    this.featureConfig['showItemExplorerOnStartPage'] =
+      this.featureConfig['showItemExplorerOnStartPage'] !== false;
+    this.featureConfig['showUnitListOnStartPage'] =
+      (this.featureConfig['showUnitListOnStartPage'] ??
+        this.featureConfig['enableUnitListNavigation']) !== false;
+    this.featureConfig['showSequencesOnStartPage'] =
+      this.featureConfig['showSequencesOnStartPage'] !== false;
+    this.featureConfig['showIndexOnStartPage'] =
+      this.featureConfig['showIndexOnStartPage'] !== false;
     this.featureConfig['commentVisibilityMode'] =
       this.featureConfig['commentVisibilityMode'] === 'GROUP'
         ? 'GROUP'

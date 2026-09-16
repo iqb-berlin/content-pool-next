@@ -1,11 +1,18 @@
+import { Component, provideZonelessChangeDetection } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { of, Subject, throwError } from 'rxjs';
-import { NO_ERRORS_SCHEMA } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/services/api.service';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { AccessConfigComponent } from './access-config.component';
+
+@Component({
+  selector: 'app-acp-manager-context',
+  standalone: true,
+  template: '',
+})
+class AcpManagerContextStubComponent {}
 
 describe('AccessConfigComponent', () => {
   let api: {
@@ -39,8 +46,92 @@ describe('AccessConfigComponent', () => {
   });
 
   afterEach(() => {
-    TestBed.resetTestingModule();
     vi.restoreAllMocks();
+    TestBed.resetTestingModule();
+  });
+
+  it('renders and binds all four start-page visibility switches', async () => {
+    await TestBed.configureTestingModule({
+      imports: [AccessConfigComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+      ],
+    })
+      .overrideComponent(AccessConfigComponent, {
+        remove: { imports: [AcpManagerContextComponent] },
+        add: { imports: [AcpManagerContextStubComponent] },
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(AccessConfigComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const sections = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.feature-section'),
+    );
+    const startPageSection = sections.find((section) =>
+      section.querySelector('h3')?.textContent?.includes('Auf dieser Startseite anzeigen'),
+    );
+    const labels = Array.from(startPageSection?.querySelectorAll('label') || []).map((label) =>
+      label.textContent?.trim(),
+    );
+    const checkboxes = Array.from(
+      startPageSection?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') || [],
+    );
+
+    expect(labels).toEqual([
+      'Item-Explorer',
+      'Aufgaben ansehen',
+      'Testhefte und Aufgabenfolgen',
+      'Paketstruktur (ACP-Index)',
+    ]);
+    expect(checkboxes).toHaveLength(4);
+    expect(checkboxes.every((checkbox) => checkbox.checked)).toBe(true);
+
+    checkboxes[3].click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.featureConfig.showIndexOnStartPage).toBe(false);
+  });
+
+  it('keeps start-page entries visible by default and preserves an explicit false value', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { showIndexOnStartPage: false },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+
+    component.loadConfig();
+
+    expect(component.featureConfig).toEqual(
+      expect.objectContaining({
+        showItemExplorerOnStartPage: true,
+        showUnitListOnStartPage: true,
+        showSequencesOnStartPage: true,
+        showIndexOnStartPage: false,
+      }),
+    );
+  });
+
+  it('migrates the legacy unit-list visibility into the new start-page setting', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { enableUnitListNavigation: false },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+
+    component.loadConfig();
+
+    expect(component.featureConfig.showUnitListOnStartPage).toBe(false);
   });
 
   it('saves access and features together and clears the dirty state after success', () => {
@@ -116,13 +207,15 @@ describe('AccessConfigComponent', () => {
       await TestBed.configureTestingModule({
         imports: [AccessConfigComponent],
         providers: [
+          provideZonelessChangeDetection(),
+          provideRouter([]),
           { provide: ActivatedRoute, useValue: route },
           { provide: ApiService, useValue: api },
         ],
       })
         .overrideComponent(AccessConfigComponent, {
-          remove: { imports: [AcpManagerContextComponent, RouterLink] },
-          add: { schemas: [NO_ERRORS_SCHEMA] },
+          remove: { imports: [AcpManagerContextComponent] },
+          add: { imports: [AcpManagerContextStubComponent] },
         })
         .compileComponents();
       const fixture = TestBed.createComponent(AccessConfigComponent);

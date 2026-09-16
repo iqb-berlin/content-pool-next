@@ -336,6 +336,21 @@ Vor dem Import sehen Sie eine Vorschau mit:
 
 Die Feature-Schalter steuern die Lesesicht fuer andere Nutzerinnen und Nutzer.
 
+#### Auf dieser Startseite anzeigen
+
+Hier legen Sie fest, welche Einstiege auf der ACP-Startseite erscheinen:
+
+- Item-Explorer
+- Aufgaben ansehen
+- Testhefte und Aufgabenfolgen
+- Paketstruktur (ACP-Index)
+
+Diese Schalter aendern keine Funktionsrechte. Die fachlichen Funktionen werden weiterhin in den
+Bereichen `Aufgaben-Ansicht`, `Navigation`, `Kommentare` und `Item-Explorer` aktiviert. Auch ein
+ausgeblendeter Einstieg ist keine Zugriffssperre; Zugriffe werden ueber das Zugriffsmodell und die
+Funktionsrechte geregelt. Bestehende ACPs zeigen alle Eintraege weiterhin an. Eine vorhandene,
+deaktivierte Einstellung `Navigation ueber die Unit-Liste` bleibt als Alt-Konfiguration erhalten.
+
 #### Downloads
 
 Sie koennen einzeln erlauben:
@@ -352,8 +367,7 @@ Hier steuern Sie unter anderem, ob die Unit-Ansicht mit Verona-Player verfuegbar
 
 Hier steuern Sie unter anderem:
 
-- Navigation ueber die Unit-Liste
-- Aufgabenfolgen aus Testheften
+- Verfuegbarkeit von Testheften und Aufgabenfolgen
 
 #### Kommentare
 

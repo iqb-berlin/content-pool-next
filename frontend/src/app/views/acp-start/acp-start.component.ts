@@ -54,8 +54,8 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             </div>
           </section>
         }
-        <!-- Item Explorer — only if enableItemList -->
-        @if (capabilityAccess?.canViewExplorer) {
+        <!-- Item Explorer — availability and start-page visibility are configured separately -->
+        @if (capabilityAccess?.canViewExplorer && fc.showItemExplorerOnStartPage !== false) {
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
             <div class="section-icon">🔭</div>
             <h3>Item-Explorer</h3>
@@ -63,8 +63,11 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </a>
         }
 
-        <!-- Units list — always available if units exist -->
-        @if (data.units?.length && fc.enableUnitListNavigation !== false) {
+        <!-- Preserve the legacy navigation flag as fallback for existing ACPs. -->
+        @if (
+          data.units?.length &&
+          (fc.showUnitListOnStartPage ?? fc.enableUnitListNavigation) !== false
+        ) {
           <a [routerLink]="['/view', acpId, 'units']" class="card section-card">
             <div class="section-icon">📝</div>
             <h3>Aufgaben ansehen</h3>
@@ -75,8 +78,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </a>
         }
 
-        <!-- Task sequences — only if enableSequenceNavigation -->
-        @if (visibleSequences.length && fc.enableSequenceNavigation !== false) {
+        <!-- Sequence availability and start-page visibility are configured separately. -->
+        @if (
+          visibleSequences.length &&
+          fc.enableSequenceNavigation !== false &&
+          fc.showSequencesOnStartPage !== false
+        ) {
           <div class="card section-card sequences-card">
             <div class="section-icon">📋</div>
             <h3>Testhefte und Aufgabenfolgen</h3>
@@ -112,9 +119,11 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </div>
         }
       </div>
-      <a class="index-link" [routerLink]="['/view', acpId, 'index']"
-        >Paketstruktur (ACP-Index) ansehen</a
-      >
+      @if (fc.showIndexOnStartPage !== false) {
+        <a class="index-link" [routerLink]="['/view', acpId, 'index']"
+          >Paketstruktur (ACP-Index) ansehen</a
+        >
+      }
     } @else {
       <div class="empty-state">
         <h3>Lade ACP-Daten...</h3>

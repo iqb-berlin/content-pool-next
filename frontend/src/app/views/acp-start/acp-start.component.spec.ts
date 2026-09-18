@@ -263,6 +263,45 @@ describe('AcpStartComponent', () => {
     expect(element.textContent).toContain('Folge A');
   });
 
+  it('places general entries before Review when a participant can also use the Item Explorer', async () => {
+    const route = createRouteStub();
+    const api = {
+      ...createApiStub(),
+      getCapabilities: vi.fn().mockReturnValue(of({ canReview: true, canViewExplorer: true })),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          name: 'ACP 1',
+          featureConfig: { enableReview: true },
+          units: [{ id: 'unit-1', name: 'Aufgabe 1' }],
+          sequences: [{ id: 'booklet-1', name: 'Testheft 1', kind: 'booklet' }],
+        }),
+      ),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AcpStartComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: createAuthStub({ isLoggedIn: true }) },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(AcpStartComponent);
+    fixture.detectChanges();
+    const entries = Array.from(
+      fixture.nativeElement.querySelectorAll('.sections-grid > .section-card'),
+    ) as HTMLElement[];
+
+    expect(entries.map((entry) => entry.querySelector('h3')?.textContent)).toEqual([
+      'Item-Explorer',
+      'Aufgaben ansehen',
+      'Review',
+    ]);
+    expect(entries.at(-1)?.classList.contains('review-card')).toBe(true);
+  });
+
   it('offers capability-only Review managers a visible management entry', async () => {
     const route = createRouteStub();
     const api = {

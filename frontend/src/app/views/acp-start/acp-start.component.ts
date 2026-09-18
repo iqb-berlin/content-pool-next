@@ -30,23 +30,6 @@ import { BookletSelectionComponent } from '../../shared/components/booklet-selec
       </div>
 
       <div class="sections-grid">
-        @if (capabilityAccess?.canReview) {
-          <section class="card section-card review-card" aria-labelledby="review-heading">
-            <div class="section-icon">💬</div>
-            <h3 id="review-heading">Review</h3>
-            @if (capabilityAccess?.canManageReview) {
-              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
-                >Review verwalten</a
-              >
-            }
-            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
-            <app-booklet-selection
-              [acpId]="acpId"
-              [booklets]="reviewBooklets"
-              actionLabel="Review öffnen"
-            />
-          </section>
-        }
         <!-- Item Explorer — availability and start-page visibility are configured separately -->
         @if (capabilityAccess?.canViewExplorer && fc.showItemExplorerOnStartPage !== false) {
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
@@ -110,6 +93,24 @@ import { BookletSelectionComponent } from '../../shared/components/booklet-selec
               }
             </div>
           </div>
+        }
+
+        @if (capabilityAccess?.canReview) {
+          <section class="card section-card review-card" aria-labelledby="review-heading">
+            <div class="section-icon">💬</div>
+            <h3 id="review-heading">Review</h3>
+            @if (capabilityAccess?.canManageReview) {
+              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
+                >Review verwalten</a
+              >
+            }
+            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
+            <app-booklet-selection
+              [acpId]="acpId"
+              [booklets]="reviewBooklets"
+              actionLabel="Review öffnen"
+            />
+          </section>
         }
       </div>
       @if (fc.showIndexOnStartPage !== false) {

@@ -9,6 +9,7 @@ import { AuthService } from '../../core/services/auth.service';
 import { Acp } from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 @Component({
   selector: 'app-dashboard',
@@ -20,6 +21,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
     JsonPipe,
     AcpManagerContextComponent,
     ConfirmDialogComponent,
+    BookletSelectionComponent,
   ],
   template: `
     @if (acp) {
@@ -94,15 +96,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               contentData.sequences?.length &&
               contentData.featureConfig?.enableSequenceNavigation !== false
             ) {
-              @for (sequence of contentData.sequences; track sequence.kind + ':' + sequence.id) {
-                <a
-                  [queryParams]="sequence.kind === 'booklet' ? { kind: 'booklet' } : {}"
-                  [routerLink]="['/view', acp.id, 'sequence', sequence.id]"
-                  class="card link-card"
-                >
+              @for (sequence of nonBookletSequences; track sequence.kind + ':' + sequence.id) {
+                <a [routerLink]="['/view', acp.id, 'sequence', sequence.id]" class="card link-card">
                   <span class="tile-icon" aria-hidden="true">📋</span>
                   <div>
-                    <h3>{{ sequence.kind === 'booklet' ? 'Testheft' : 'Aufgabenfolge' }}</h3>
+                    <h3>Aufgabenfolge</h3>
                     <p>{{ sequenceLabel(sequence) }}</p>
                   </div>
                   <span class="tile-arrow" aria-hidden="true">›</span>
@@ -110,6 +108,15 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               }
             }
           </div>
+          @if (
+            bookletSequences.length && contentData.featureConfig?.enableSequenceNavigation !== false
+          ) {
+            <app-booklet-selection
+              [acpId]="acp.id"
+              [booklets]="bookletSequences"
+              actionLabel="Öffnen"
+            />
+          }
         } @else {
           <p>{{ contentError || 'Inhalte werden geladen …' }}</p>
         }
@@ -696,6 +703,19 @@ export class DashboardComponent implements OnInit {
   get availableUsers(): any[] {
     return this.allUsers.filter((user) => !this.roles.some((role) => role.userId === user.id));
   }
+
+  get bookletSequences(): any[] {
+    return (this.contentData?.sequences || []).filter(
+      (sequence: any) => sequence.kind === 'booklet',
+    );
+  }
+
+  get nonBookletSequences(): any[] {
+    return (this.contentData?.sequences || []).filter(
+      (sequence: any) => sequence.kind !== 'booklet',
+    );
+  }
+
   myRole: string | null = null;
   editingName = false;
   editName = '';

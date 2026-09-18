@@ -18,12 +18,29 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
     <div class="page-header"><h1>Zugriff &amp; Funktionen</h1></div>
 
+    @if (configLoaded) {
+      <p class="settings-overview" aria-live="polite">
+        <strong>{{
+          hasUnsavedChanges
+            ? 'Ausgewählte Einstellungen (noch nicht gespeichert):'
+            : 'Gespeicherte Einstellungen:'
+        }}</strong>
+        {{
+          accessModel === 'PUBLIC'
+            ? 'Öffentlich ohne Anmeldung.'
+            : accessModel === 'PRIVATE'
+              ? 'Zugriff nur für zugewiesene Personen und App-Admins.'
+              : 'Zugang mit befristeten ACP-Zugangsdaten sowie über zugewiesene Rollen.'
+        }}
+        Item-Explorer {{ featureConfig['enableItemList'] ? 'aktiviert' : 'deaktiviert' }}.
+        Kommentare {{ featureConfig['enableCommenting'] ? 'aktiviert' : 'deaktiviert' }}.
+      </p>
+    }
     <!-- Access Model -->
     <div class="card">
-      <h3>Zugriffsmodell</h3>
+      <h2>Wer darf diesen ACP öffnen?</h2>
       <p class="help-text">
-        Optionen 1 bis 3 schließen einander als Basismodell aus. Option 4 kann zusätzlich gewählt
-        werden.
+        Wählen Sie eine Zugangsart. Änderungen werden erst mit „Änderungen speichern“ übernommen.
       </p>
 
       <div class="radio-group">
@@ -36,7 +53,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             (ngModelChange)="onAccessModelChange()"
           />
           <div>
-            <strong>1. Privat</strong>
+            <strong>Nur zugewiesene Personen</strong>
             <span class="radio-desc"
               >Nur App-Admins und Personen mit zugewiesener ACP-Rolle haben Zugriff</span
             >
@@ -51,7 +68,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             (ngModelChange)="onAccessModelChange()"
           />
           <div>
-            <strong>2. Öffentlich (Public)</strong>
+            <strong>Öffentlich – ohne Anmeldung</strong>
             <span class="radio-desc">Jede Person hat ohne Anmeldung Zugriff</span>
           </div>
         </label>
@@ -64,7 +81,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             (ngModelChange)="onAccessModelChange()"
           />
           <div>
-            <strong>3. Zugangsliste</strong>
+            <strong>Zugang mit ACP-Zugangsdaten</strong>
             <span class="radio-desc"
               >Benutzername/Kennwort-Paare, zeitlich begrenzt (max. 3 Monate)</span
             >
@@ -72,27 +89,17 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         </label>
       </div>
 
-      <label class="feature-toggle" style="margin-top:12px">
-        <input type="checkbox" [(ngModel)]="allowRegistered" />
-        <span><strong>4. Registrierte Nutzer</strong> — zusätzlich zu oben</span>
-      </label>
-
-      @if (allowRegistered) {
-        <div class="sub-section">
-          <p class="help-text">
-            Zusätzlich zu {{ getBaseAccessLabel() }} erhalten auch registrierte Nutzer mit einer
-            zugewiesenen ACP-Rolle Zugriff.
-          </p>
-        </div>
-      }
-
-      @if (accessModel === 'PRIVATE' && !allowRegistered) {
-        <div class="sub-section">
-          <p class="help-text" style="margin-bottom: 0;">
-            Neue ACPs starten standardmäßig in diesem Zustand. Das ACP erscheint nicht auf der
-            Landing-Page und ist nicht anonym erreichbar.
-          </p>
-        </div>
+      <p class="help-text">
+        App-Admins und Personen mit zugewiesener ACP-Rolle haben unabhängig von der Zugangsart
+        Zugriff. Eine Registrierung allein reicht nicht aus.
+        <a [routerLink]="['/manage', acpId]" fragment="roles-heading"
+          >Personen und Rollen verwalten</a
+        >
+      </p>
+      @if (accessModel === 'PRIVATE') {
+        <p class="help-text">
+          Dieser ACP ist nicht öffentlich gelistet und nicht anonym erreichbar.
+        </p>
       }
 
       <!-- Credentials section -->
@@ -117,9 +124,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             class="manual-add-form"
             style="margin-top: 16px; padding: 12px; border: 1px solid var(--color-border); border-radius: var(--radius);"
           >
-            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">
-              Einzelnes Zugangsdatum hinzufügen
-            </h4>
+            <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">ACP-Zugang hinzufügen</h4>
             <div class="form-row">
               <div class="form-group">
                 <label>Benutzername</label>
@@ -363,23 +368,19 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
           }
         </div>
       }
-
-      <button class="btn btn-primary" style="margin-top:16px" (click)="saveAccess()">
-        Zugriffsmodell speichern
-      </button>
-      @if (accessSaved) {
-        <span class="save-indicator">✓ Gespeichert</span>
-      }
     </div>
 
     <!-- Feature Configuration -->
     <div class="card">
-      <h3>Feature-Konfiguration</h3>
-      <p class="help-text">Steuert, welche Funktionen im Nur-Lese-Zugriff verfügbar sind.</p>
+      <h2>Verfügbare Funktionen und Darstellung</h2>
+      <p class="help-text">
+        Funktionsfreigaben gelten für Personen ohne Verwaltungsrechte. Darstellungseinstellungen
+        gelten auch in der Verwaltung; Ausnahmen sind gekennzeichnet.
+      </p>
 
       <!-- Start page -->
-      <div class="feature-section">
-        <h4>🏠 Auf dieser Startseite anzeigen</h4>
+      <div class="feature-section start-page-section">
+        <h3>Auf dieser Startseite anzeigen</h3>
         <p class="help-text">
           Diese Schalter steuern nur die sichtbaren Einstiege. Sie vergeben oder entziehen keine
           Funktionsrechte. Item-Explorer, Aufgabenansicht und Aufgabenfolgen werden in den
@@ -393,42 +394,43 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         }
       </div>
 
-      <!-- Downloads -->
-      <div class="feature-section">
-        <h4>⬇️ Downloads</h4>
-        @for (feat of downloadFlags; track feat.key) {
-          <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
-            <span>{{ feat.label }}</span>
-          </label>
-        }
-      </div>
+      <div class="basic-functions">
+        <!-- Downloads -->
+        <div class="feature-section">
+          <h3>Downloads</h3>
+          @for (feat of downloadFlags; track feat.key) {
+            <label class="feature-toggle">
+              <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
+              <span>{{ feat.label }}</span>
+            </label>
+          }
+        </div>
 
-      <!-- Unit View -->
-      <div class="feature-section">
-        <h4>📝 Aufgaben-Ansicht</h4>
-        @for (feat of unitViewFlags; track feat.key) {
-          <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
-            <span>{{ feat.label }}</span>
-          </label>
-        }
-      </div>
+        <!-- Unit View -->
+        <div class="feature-section">
+          <h3>Aufgabenansicht</h3>
+          @for (feat of unitViewFlags; track feat.key) {
+            <label class="feature-toggle">
+              <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
+              <span>{{ feat.label }}</span>
+            </label>
+          }
+        </div>
 
-      <!-- Navigation -->
-      <div class="feature-section">
-        <h4>🧭 Navigation</h4>
-        @for (feat of navFlags; track feat.key) {
-          <label class="feature-toggle">
-            <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
-            <span>{{ feat.label }}</span>
-          </label>
-        }
+        <!-- Navigation -->
+        <div class="feature-section">
+          <h3>Navigation</h3>
+          @for (feat of navFlags; track feat.key) {
+            <label class="feature-toggle">
+              <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
+              <span>{{ feat.label }}</span>
+            </label>
+          }
+        </div>
       </div>
-
       <!-- Commenting -->
       <div class="feature-section">
-        <h4>💬 Kommentare</h4>
+        <h3>Kommentare</h3>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig['enableCommenting']" />
           <span>Kommentare aktivieren</span>
@@ -458,7 +460,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
                 [checked]="commentTargets.includes('BOOKLET')"
                 (change)="toggleCommentTarget('BOOKLET')"
               />
-              <span>Booklets</span>
+              <span>Testhefte</span>
             </label>
             <label class="feature-toggle">
               <input
@@ -469,7 +471,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
               <span>Kodierung</span>
             </label>
             <p class="help-text">
-              Sichtbarkeit, Review-Gruppen und Aktivierung werden unter
+              Sichtbarkeit, Review-Gruppen und die Aktivierung des Reviews werden unter
               <a [routerLink]="['/view', acpId, 'review', 'manage']">Review</a> verwaltet.
             </p>
           </div>
@@ -478,163 +480,202 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
       <!-- Item List -->
       <div class="feature-section">
-        <h4>🔭 Item-Explorer</h4>
+        <h3>Item-Explorer</h3>
         @for (feat of itemFlags; track feat.key) {
           <label class="feature-toggle">
             <input type="checkbox" [(ngModel)]="featureConfig[feat.key]" />
             <span>{{ feat.label }}</span>
           </label>
         }
-        <div class="indent-section">
-          <label class="help-text" for="item-sub-id-label">Bezeichnung der Sub-ID-Spalte</label>
-          <input
-            id="item-sub-id-label"
-            class="tag-input"
-            type="text"
-            [(ngModel)]="featureConfig[itemSubIdLabelKey]"
-            placeholder="Sub-ID"
-          />
-          <span class="help-text">
-            Die zweite Spalte einer Itemschwierigkeits-CSV wird als Sub-ID/Kategorie/Stufe
-            verwendet.
-          </span>
-          <label class="help-text" style="margin-top: 10px;">Labels der Ausprägungen</label>
-          <div class="tags-editor">
-            @for (entry of itemSubIdLabelEntries; track $index) {
-              <div class="tag-add">
-                <input
-                  class="tag-input"
-                  type="text"
-                  [(ngModel)]="entry.value"
-                  placeholder="Wert, z. B. 1"
-                />
-                <input
-                  class="tag-input"
-                  type="text"
-                  [(ngModel)]="entry.label"
-                  placeholder="Label, z. B. teilweise richtig"
-                />
-                <button class="tag-remove" type="button" (click)="removeItemSubIdLabel($index)">
-                  ✕
-                </button>
-              </div>
-            }
-            <button class="btn btn-outline btn-sm" type="button" (click)="addItemSubIdLabel()">
-              + Ausprägung
-            </button>
-          </div>
-        </div>
-        <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]" />
-          <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
-        </label>
-        <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[showGeneralCodingInstructionsKey]" />
-          <span>Allgemeine Kodierungshinweise anzeigen</span>
-        </label>
-        <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[preferManualCodingInstructionsKey]" />
-          <span>Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden</span>
-        </label>
-        <div class="indent-section">
-          <label class="help-text">Zusätzliche Metadatenspalten</label>
-          <span class="help-text">
-            Diese Spalten werden im Item-Explorer auch dann angeboten, wenn sie nicht in den
-            VOMD-/Importdaten definiert sind. Der Wert wird über die jeweilige Metadaten-ID gelesen.
-          </span>
-          <div class="tags-editor" style="margin-top: 8px;">
-            @for (entry of metadataColumnDefinitions; track $index) {
-              <div class="tag-add">
-                <input
-                  class="tag-input"
-                  type="text"
-                  [(ngModel)]="entry.id"
-                  placeholder="Metadaten-ID"
-                  [attr.aria-label]="'ID der zusätzlichen Spalte ' + ($index + 1)"
-                />
-                <input
-                  class="tag-input"
-                  type="text"
-                  [(ngModel)]="entry.label"
-                  placeholder="Anzeigename"
-                  [attr.aria-label]="'Name der zusätzlichen Spalte ' + ($index + 1)"
-                />
-                <button
-                  class="tag-remove"
-                  type="button"
-                  (click)="removeMetadataColumnDefinition($index)"
-                >
-                  ✕
-                </button>
-              </div>
-            }
-            <button
-              class="btn btn-outline btn-sm"
-              type="button"
-              (click)="addMetadataColumnDefinition()"
-            >
-              + Spalte
-            </button>
-          </div>
-        </div>
-        <label class="feature-toggle">
-          <input
-            type="checkbox"
-            [(ngModel)]="featureConfig[enableItemExplorerConditionalVisibilityKey]"
-          />
-          <span>Bedingte Sichtbarkeit im Item-Explorer-Player anwenden</span>
-        </label>
-        <label class="feature-toggle">
-          <input
-            type="checkbox"
-            [(ngModel)]="featureConfig[showOnlyItemsWithEmpiricalDifficultyKey]"
-          />
-          <span>Im Item-Explorer nur Items mit Itemschwierigkeit anzeigen</span>
-        </label>
-        <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[enablePlayerFocusHighlightKey]" />
-          <span>Item im Player hervorheben (Explorer + Item-Ansicht)</span>
-        </label>
-        <label class="feature-toggle">
-          <input type="checkbox" [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]" />
-          <span>
-            Zusätzliche Player-Zuordnungsinfos im Item-Explorer anzeigen (für Manager/Admins)
-          </span>
-        </label>
-
-        @if (featureConfig['enableItemListTags']) {
-          <div class="indent-section">
-            <label class="help-text">Verfügbare Tags:</label>
-            <div class="tags-editor">
-              @for (tag of availableTags; track $index) {
-                <div class="tag-item">
-                  <span class="badge badge-info">{{ tag }}</span>
-                  <button class="tag-remove" (click)="removeTag($index)">✕</button>
-                </div>
-              }
-              <div class="tag-add">
-                <input
-                  type="text"
-                  [(ngModel)]="newTag"
-                  placeholder="Neuer Tag..."
-                  (keyup.enter)="addTag()"
-                  class="tag-input"
-                />
-                <button
-                  class="btn btn-outline btn-sm"
-                  (click)="addTag()"
-                  [disabled]="!newTag.trim()"
-                >
-                  +
+        <p class="help-text">
+          Die Freigabe des Item-Explorers betrifft Personen ohne Verwaltungsrechte und ohne
+          gesonderte Explorer-Berechtigung. Darstellung und Datenzuordnung bleiben für die
+          Verwaltung konfigurierbar. Die Hervorhebung gilt auch in der separaten Item-Ansicht.
+        </p>
+        <div class="explorer-options">
+          <details class="settings-details">
+            <summary>Inhalte und Darstellung</summary>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[showGeneralCodingInstructionsKey]"
+              />
+              <span>Allgemeine Kodierungshinweise anzeigen</span>
+            </label>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[preferManualCodingInstructionsKey]"
+              />
+              <span>Manuelle Kodieranweisungen bevorzugt anzeigen</span>
+            </label>
+            <p class="help-text">
+              Wenn eine manuelle Anweisung vorliegt, werden die automatischen Kodierregeln
+              ausgeblendet. Die Kodierung selbst bleibt unverändert.
+            </p>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[enableItemExplorerConditionalVisibilityKey]"
+              />
+              <span>Bedingte Sichtbarkeit im Item-Explorer-Player anwenden</span>
+            </label>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[showOnlyItemsWithEmpiricalDifficultyKey]"
+              />
+              <span>Im Item-Explorer nur Items mit Itemschwierigkeit anzeigen</span>
+            </label>
+            <label class="feature-toggle">
+              <input type="checkbox" [(ngModel)]="featureConfig[enablePlayerFocusHighlightKey]" />
+              <span>Item im Player hervorheben (Explorer + Item-Ansicht)</span>
+            </label>
+          </details>
+          <details class="settings-details">
+            <summary>Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose</summary>
+            <p class="help-text">
+              Für die Einrichtung importierter Daten und die Prüfung der Player-Zuordnung.
+            </p>
+            <div class="indent-section">
+              <label class="help-text" for="item-sub-id-label">Bezeichnung der Sub-ID-Spalte</label>
+              <input
+                id="item-sub-id-label"
+                class="tag-input"
+                type="text"
+                [(ngModel)]="featureConfig[itemSubIdLabelKey]"
+                placeholder="Sub-ID"
+              />
+              <span class="help-text">
+                Die zweite Spalte einer Itemschwierigkeits-CSV wird als Sub-ID/Kategorie/Stufe
+                verwendet.
+              </span>
+              <label class="help-text" style="margin-top: 10px;"
+                >Anzeigenamen der Ausprägungen</label
+              >
+              <div class="tags-editor">
+                @for (entry of itemSubIdLabelEntries; track $index) {
+                  <div class="tag-add">
+                    <input
+                      class="tag-input"
+                      type="text"
+                      [(ngModel)]="entry.value"
+                      placeholder="Wert, z. B. 1"
+                    />
+                    <input
+                      class="tag-input"
+                      type="text"
+                      [(ngModel)]="entry.label"
+                      placeholder="Anzeigename, z. B. teilweise richtig"
+                    />
+                    <button class="tag-remove" type="button" (click)="removeItemSubIdLabel($index)">
+                      ✕
+                    </button>
+                  </div>
+                }
+                <button class="btn btn-outline btn-sm" type="button" (click)="addItemSubIdLabel()">
+                  + Ausprägung
                 </button>
               </div>
             </div>
-          </div>
-        }
-
+            <div class="indent-section">
+              <label class="help-text">Zusätzliche Metadatenspalten</label>
+              <span class="help-text">
+                Diese Spalten werden im Item-Explorer auch dann angeboten, wenn sie nicht in den
+                VOMD-/Importdaten definiert sind. Der Wert wird über die jeweilige Metadaten-ID
+                gelesen.
+              </span>
+              <div class="tags-editor" style="margin-top: 8px;">
+                @for (entry of metadataColumnDefinitions; track $index) {
+                  <div class="tag-add">
+                    <input
+                      class="tag-input"
+                      type="text"
+                      [(ngModel)]="entry.id"
+                      placeholder="Metadaten-ID"
+                      [attr.aria-label]="'ID der zusätzlichen Spalte ' + ($index + 1)"
+                    />
+                    <input
+                      class="tag-input"
+                      type="text"
+                      [(ngModel)]="entry.label"
+                      placeholder="Anzeigename"
+                      [attr.aria-label]="'Name der zusätzlichen Spalte ' + ($index + 1)"
+                    />
+                    <button
+                      class="tag-remove"
+                      type="button"
+                      (click)="removeMetadataColumnDefinition($index)"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                }
+                <button
+                  class="btn btn-outline btn-sm"
+                  type="button"
+                  (click)="addMetadataColumnDefinition()"
+                >
+                  + Spalte
+                </button>
+              </div>
+            </div>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[showAudioVideoCodingVariablesKey]"
+              />
+              <span>Kodierungsvariablen mit "audio"/"video" im Namen anzeigen</span>
+            </label>
+            <label class="feature-toggle">
+              <input
+                type="checkbox"
+                [(ngModel)]="featureConfig[showItemExplorerPlayerTargetInfoKey]"
+              />
+              <span>
+                Zusätzliche Player-Zuordnungsinfos im Item-Explorer anzeigen (für Manager/Admins)
+              </span>
+            </label>
+          </details>
+          @if (featureConfig['enableItemListTags']) {
+            <div class="indent-section">
+              <label class="help-text">Gemeinsam verfügbare Item-Tags:</label>
+              <div class="tags-editor">
+                @for (tag of availableTags; track $index) {
+                  <div class="tag-item">
+                    <span class="badge badge-info">{{ tag }}</span>
+                    <button class="tag-remove" (click)="removeTag($index)">✕</button>
+                  </div>
+                }
+                <div class="tag-add">
+                  <input
+                    type="text"
+                    [(ngModel)]="newTag"
+                    placeholder="Neuer Tag..."
+                    (keyup.enter)="addTag()"
+                    class="tag-input"
+                  />
+                  <button
+                    class="btn btn-outline btn-sm"
+                    (click)="addTag()"
+                    [disabled]="!newTag.trim()"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+      <div class="feature-section">
+        <h3>Persönliche Arbeit</h3>
+        <p class="help-text">
+          Kategorien, Markierungen, Notizen und Auswahllisten gehören jeweils der nutzenden Person.
+        </p>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enablePersonalItemDataKey]" />
-          <span>Persönliche Arbeitsdaten im Item-Explorer aktivieren</span>
+          <span>Persönliche Kategorien, Markierungen und Notizen aktivieren</span>
         </label>
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig[enableItemCollectionsKey]" />
@@ -726,22 +767,39 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
 
         <label class="feature-toggle">
           <input type="checkbox" [(ngModel)]="featureConfig['persistUserPreferences']" />
-          <span>Nutzer-Einstellungen speichern (nur bei Anmeldung)</span>
+          <span>Ansichtseinstellungen nach erneuter Anmeldung wiederherstellen</span>
         </label>
       </div>
 
-      <button class="btn btn-primary" style="margin-top:16px" (click)="saveFeatures()">
-        Features speichern
-      </button>
-      @if (featuresSaved) {
-        <span class="save-indicator">✓ Gespeichert</span>
+      <div class="save-bar">
+        <div aria-live="polite">
+          <strong>{{
+            hasUnsavedChanges ? 'Ungespeicherte Änderungen' : 'Keine ungespeicherten Änderungen'
+          }}</strong>
+          <span class="help-text"
+            >Zugriff, Funktionen und Darstellung werden gemeinsam gespeichert.</span
+          >
+          @if (featuresSaved && !hasUnsavedChanges) {
+            <span class="save-indicator">✓ Gespeichert</span>
+          }
+        </div>
+        <button
+          class="btn btn-primary"
+          [disabled]="saving || !configLoaded || !hasUnsavedChanges"
+          (click)="saveFeatures()"
+        >
+          {{ saving ? 'Wird gespeichert …' : 'Änderungen speichern' }}
+        </button>
+      </div>
+      @if (saveError) {
+        <p class="alert alert-error" role="alert">{{ saveError }}</p>
       }
       <!-- Edit Dialog -->
       @if (editingCredential) {
         <div class="dialog-overlay" (click)="closeEditDialog()">
           <div class="dialog-content card" (click)="$event.stopPropagation()">
             <div class="dialog-header">
-              <h3>Zugangsdatum bearbeiten</h3>
+              <h3>ACP-Zugang bearbeiten</h3>
               <button class="btn btn-outline btn-sm" (click)="closeEditDialog()">✕</button>
             </div>
             <div class="dialog-body">
@@ -793,6 +851,94 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
   `,
   styles: [
     `
+      :host {
+        display: block;
+        max-width: 1120px;
+        margin-inline: auto;
+        padding-bottom: 24px;
+      }
+      h2 {
+        font-size: 1.2rem;
+        margin: 0 0 12px;
+      }
+      .settings-overview {
+        line-height: 1.6;
+        margin-bottom: 24px;
+        color: var(--color-text-secondary);
+      }
+      .settings-overview strong {
+        display: block;
+        color: var(--color-text);
+      }
+      .basic-functions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 24px;
+      }
+      .basic-functions .feature-section {
+        border-top: 0;
+      }
+      @media (max-width: 850px) {
+        .basic-functions {
+          grid-template-columns: 1fr;
+          gap: 0;
+        }
+      }
+      .settings-details {
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        padding: 12px 16px;
+        margin: 12px 0;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+        padding: 4px 0;
+      }
+      .settings-details[open] summary {
+        margin-bottom: 12px;
+      }
+      .explorer-options {
+        border: 0;
+        padding: 0;
+        margin: 0;
+        min-width: 0;
+      }
+      .save-bar {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding: 16px;
+        margin-top: 24px;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        z-index: 2;
+      }
+      .save-bar .help-text {
+        margin: 4px 0 0;
+      }
+      .tag-input {
+        max-width: 100%;
+      }
+      @media (max-width: 640px) {
+        .form-row {
+          grid-template-columns: 1fr !important;
+        }
+        .save-bar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .tag-add {
+          flex-wrap: wrap;
+        }
+        .indent-section {
+          margin-left: 12px;
+        }
+      }
       .help-text {
         color: var(--color-text-secondary);
         font-size: 0.85rem;
@@ -853,7 +999,7 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
       .feature-section:first-of-type {
         border-top: none;
       }
-      .feature-section h4 {
+      .feature-section h3 {
         font-size: 0.95rem;
         margin-bottom: 8px;
       }
@@ -1023,7 +1169,29 @@ export class AccessConfigComponent implements OnInit {
   personalItemCategoryValues: string[] = [];
   personalItemTags: Array<{ label: string; color: string }> = [];
   metadataColumnDefinitions: Array<{ id: string; label: string }> = [];
-  accessSaved = false;
+  configLoaded = false;
+  saving = false;
+  saveError = '';
+  private savedSettings = '';
+
+  private settingsSnapshot(): string {
+    return JSON.stringify([
+      this.accessModel,
+      this.validFrom,
+      this.validUntil,
+      this.featureConfig,
+      this.commentTargets,
+      this.availableTags,
+      this.itemSubIdLabelEntries,
+      this.metadataColumnDefinitions,
+      this.personalItemCategoryValues,
+      this.personalItemTags,
+    ]);
+  }
+
+  get hasUnsavedChanges(): boolean {
+    return this.configLoaded && this.settingsSnapshot() !== this.savedSettings;
+  }
   featuresSaved = false;
   credentials: Credential[] = [];
 
@@ -1064,13 +1232,13 @@ export class AccessConfigComponent implements OnInit {
   editError = '';
 
   downloadFlags = [
-    { key: 'allowIndexDownload', label: 'ACP-Index Download erlauben' },
+    { key: 'allowIndexDownload', label: 'ACP-Index herunterladen erlauben' },
     { key: 'allowUnitDownload', label: 'Aufgaben-Download erlauben (ZIP)' },
-    { key: 'allowFileDownload', label: 'Andere Dateien Download erlauben' },
+    { key: 'allowFileDownload', label: 'Weitere ACP-Dateien herunterladen erlauben' },
   ];
 
   unitViewFlags = [
-    { key: 'enableUnitView', label: 'Aufgabenansicht (Verona Player) aktivieren' },
+    { key: 'enableUnitView', label: 'Interaktive Aufgabenansicht aktivieren' },
     { key: 'showMetadata', label: 'Metadaten anzeigen' },
     { key: 'showRichText', label: 'RichText-Inhalte anzeigen' },
     { key: 'showCodingScheme', label: 'Kodierschema anzeigen' },
@@ -1089,10 +1257,10 @@ export class AccessConfigComponent implements OnInit {
 
   itemFlags = [
     { key: 'enableItemList', label: 'Item-Explorer aktivieren' },
-    { key: 'enableItemClick', label: 'Item-Klick → Navigation zur Aufgabe' },
-    { key: 'enableItemListFilter', label: 'Item-Explorer filtern erlauben' },
-    { key: 'enableItemListSort', label: 'Item-Explorer sortieren erlauben' },
-    { key: 'enableItemListTags', label: 'Item-Tagging erlauben' },
+    { key: 'enableItemClick', label: 'Aufgabe durch Klick auf ein Item öffnen' },
+    { key: 'enableItemListFilter', label: 'Items filtern erlauben' },
+    { key: 'enableItemListSort', label: 'Items sortieren erlauben' },
+    { key: 'enableItemListTags', label: 'Gemeinsame Item-Tags bearbeiten erlauben' },
   ];
 
   constructor(
@@ -1184,6 +1352,12 @@ export class AccessConfigComponent implements OnInit {
               label: String(entry?.label || ''),
             }))
           : [];
+        this.savedSettings = this.settingsSnapshot();
+        this.configLoaded = true;
+      },
+      error: () => {
+        this.saveError =
+          'Die Einstellungen konnten nicht geladen werden. Bitte laden Sie die Seite erneut.';
       },
     });
   }
@@ -1208,12 +1382,6 @@ export class AccessConfigComponent implements OnInit {
     }
   }
 
-  getBaseAccessLabel(): string {
-    if (this.accessModel === 'PUBLIC') return 'der öffentlichen Freigabe';
-    if (this.accessModel === 'CREDENTIALS_LIST') return 'der Zugangsliste';
-    return 'dem privaten Zugriff';
-  }
-
   validateDates(): boolean {
     if (this.accessModel !== 'CREDENTIALS_LIST') return true;
     if (!this.validFrom || !this.validUntil) {
@@ -1222,11 +1390,8 @@ export class AccessConfigComponent implements OnInit {
     }
     const from = new Date(this.validFrom);
     const until = new Date(this.validUntil);
-    const now = new Date();
-    // Allow starting from now (not strictly future)
-    const nowMinusOneMinute = new Date(now.getTime() - 60000);
-    if (from < nowMinusOneMinute) {
-      this.dateError = 'Startdatum darf nicht in der Vergangenheit liegen.';
+    if (Number.isNaN(from.getTime()) || Number.isNaN(until.getTime())) {
+      this.dateError = 'Bitte geben Sie gültige Datumswerte ein.';
       return false;
     }
     const maxEnd = new Date(from);
@@ -1243,25 +1408,13 @@ export class AccessConfigComponent implements OnInit {
     return true;
   }
 
-  saveAccess() {
-    if (!this.validateDates()) return;
-    const data: any = {
-      accessModel: this.accessModel,
-      allowRegistered: this.allowRegistered,
-    };
-    if (this.accessModel === 'CREDENTIALS_LIST') {
-      data.validFrom = this.dateTimeLocalToIso(this.validFrom);
-      data.validUntil = this.dateTimeLocalToIso(this.validUntil);
-    }
-    this.api.updateAccessConfig(this.acpId, data).subscribe({
-      next: () => {
-        this.accessSaved = true;
-        setTimeout(() => (this.accessSaved = false), 3000);
-      },
-    });
-  }
-
   saveFeatures() {
+    if (this.saving) return;
+    this.saveError = '';
+    if (!this.validateDates()) {
+      this.saveError = this.dateError;
+      return;
+    }
     this.applyFeatureConfigDefaults();
     this.featureConfig[this.itemSubIdLabelsKey] = Object.fromEntries(
       this.itemSubIdLabelEntries
@@ -1297,15 +1450,28 @@ export class AccessConfigComponent implements OnInit {
       data.validFrom = this.dateTimeLocalToIso(this.validFrom);
       data.validUntil = this.dateTimeLocalToIso(this.validUntil);
     }
+    const snapshot = this.settingsSnapshot();
+    this.saving = true;
+    this.featuresSaved = false;
     this.api.updateAccessConfig(this.acpId, data).subscribe({
       next: () => {
+        this.savedSettings = snapshot;
+        this.saving = false;
         this.featuresSaved = true;
-        setTimeout(() => (this.featuresSaved = false), 3000);
+      },
+      error: () => {
+        this.saving = false;
+        this.saveError =
+          'Die Änderungen konnten nicht gespeichert werden. Bitte versuchen Sie es erneut.';
       },
     });
   }
 
   private applyFeatureConfigDefaults() {
+    // Match the viewer API: existing ACPs without this flag allow the Explorer.
+    if (this.featureConfig['enableItemList'] === undefined) {
+      this.featureConfig['enableItemList'] = true;
+    }
     this.featureConfig['showItemExplorerOnStartPage'] =
       this.featureConfig['showItemExplorerOnStartPage'] !== false;
     this.featureConfig['showUnitListOnStartPage'] =

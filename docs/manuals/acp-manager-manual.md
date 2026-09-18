@@ -236,22 +236,21 @@ noch brauchen.
 Im Bereich `Zugriffskonfiguration` verwalten Sie sowohl das Zugriffsmodell als auch die
 Nur-Lese-Features fuer andere Nutzerinnen und Nutzer.
 
-Wichtig: Es gibt zwei getrennte Speichervorgaenge.
-
-- `Zugriffsmodell speichern` speichert nur das Zugriffsmodell.
-- `Features speichern` speichert nur die Feature-Konfiguration.
+Die Aktion `Änderungen speichern` speichert Zugangsart, Funktionen und Darstellung gemeinsam.
+Die Speicherleiste zeigt ungespeicherte Änderungen und Fehler an. Technische Optionen
+stehen im eingeklappten Bereich `Erweiterte Einstellungen`.
 
 ### Zugriffsmodell waehlen
 
 Sie koennen eines der Basismodelle waehlen:
 
-- `Privat`
-- `Oeffentlich (Public)`
-- `Zugangsliste`
+- `Nur zugewiesene Personen`
+- `Öffentlich – ohne Anmeldung`
+- `Zugang mit ACP-Zugangsdaten`
 
-Zusatzoption:
-
-- `Registrierte Nutzer` zusaetzlich zu oben
+App-Admins und Personen mit zugewiesener ACP-Rolle haben unabhängig von der
+Zugangsart Zugriff. Eine Registrierung allein reicht nicht. Die Rollen werden
+unter `Personen und Rollen verwalten` auf der ACP-Übersicht gepflegt.
 
 #### 1. Privat
 

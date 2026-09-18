@@ -20,7 +20,7 @@ async function openExplorer(page: Page): Promise<void> {
 }
 
 async function saveFeatureConfig(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Features speichern' }).click();
+  await page.getByRole('button', { name: 'Änderungen speichern' }).click();
   await expect(page.getByText('✓ Gespeichert').last()).toBeVisible();
 }
 
@@ -327,16 +327,18 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await login(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/manage/${ACP_ID}/access`);
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
   await expect(page.getByRole('heading', { name: 'Zugriff & Funktionen' })).toBeVisible();
   await expect(page.getByLabel('ID der zusätzlichen Spalte 1')).toHaveValue('customQuality');
   await expect(page.getByLabel('Name der zusätzlichen Spalte 1')).toHaveValue(
     'Eigene Qualitätsspalte',
   );
   await expect(page.getByLabel('Allgemeine Kodierungshinweise anzeigen')).not.toBeChecked();
-  await expect(
-    page.getByLabel('Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden'),
-  ).toBeChecked();
-  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').check();
+  await expect(page.getByLabel('Manuelle Kodieranweisungen bevorzugt anzeigen')).toBeChecked();
+  await page.getByLabel('Persönliche Kategorien, Markierungen und Notizen aktivieren').check();
   await saveFeatureConfig(page);
 
   await openExplorer(page);
@@ -567,7 +569,11 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   ).toHaveCount(0);
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').uncheck();
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
+  await page.getByLabel('Persönliche Kategorien, Markierungen und Notizen aktivieren').uncheck();
   await saveFeatureConfig(page);
 });
 
@@ -599,8 +605,12 @@ test('applies coding configuration defaults and the alternative combinations in 
   await page.getByRole('button', { name: /Schließen/ }).click();
 
   await page.goto(`/manage/${ACP_ID}/access`);
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
   const preferManualCodingInstructions = page.getByLabel(
-    'Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden',
+    'Manuelle Kodieranweisungen bevorzugt anzeigen',
   );
   const showGeneralCodingInstructions = page.getByLabel('Allgemeine Kodierungshinweise anzeigen');
   await expect(preferManualCodingInstructions).toBeChecked();

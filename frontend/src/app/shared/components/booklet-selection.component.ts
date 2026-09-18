@@ -14,20 +14,9 @@ export interface BookletSelectionItem {
   template: `
     <div class="booklet-toolbar">
       <label>
-        <span>Testhefte filtern</span>
+        <span>Testhefte durchsuchen</span>
         <input type="search" [(ngModel)]="searchQuery" placeholder="Bezeichnung oder Booklet-ID" />
       </label>
-      @if (labelOptions.length > 1) {
-        <label>
-          <span>Bezeichnung</span>
-          <select [(ngModel)]="selectedLabel">
-            <option value="">Alle Bezeichnungen</option>
-            @for (label of labelOptions; track label) {
-              <option [value]="label">{{ label }}</option>
-            }
-          </select>
-        </label>
-      }
       <span class="result-count">{{ filteredCount }} von {{ booklets.length }} Testheften</span>
     </div>
 
@@ -35,8 +24,10 @@ export interface BookletSelectionItem {
       @for (booklet of filteredBooklets; track booklet.id) {
         <li>
           <div class="booklet-identity">
-            <span class="booklet-name">{{ displayName(booklet) }}</span>
-            <code>{{ booklet.id }}</code>
+            <code class="booklet-id">{{ booklet.id }}</code>
+            @if (hasDistinctName(booklet)) {
+              <span class="booklet-name">{{ displayName(booklet) }}</span>
+            }
           </div>
           <a
             [routerLink]="['/view', acpId, 'sequence', booklet.id]"
@@ -72,8 +63,7 @@ export interface BookletSelectionItem {
         margin: 0;
         font-weight: 600;
       }
-      .booklet-toolbar input,
-      .booklet-toolbar select {
+      .booklet-toolbar input {
         width: 100%;
         padding: 0.55rem 0.7rem;
         border: 1px solid var(--color-border);
@@ -116,14 +106,17 @@ export interface BookletSelectionItem {
       }
       .booklet-name {
         overflow: hidden;
-        font-weight: 600;
+        color: var(--color-text-secondary);
+        font-size: 0.82rem;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .booklet-identity code {
+      .booklet-id {
         overflow-wrap: anywhere;
-        color: var(--color-text-secondary);
-        font-size: 0.78rem;
+        color: inherit;
+        font-family: inherit;
+        font-size: 0.95rem;
+        font-weight: 700;
       }
       .booklet-list a {
         flex: 0 0 auto;
@@ -146,15 +139,12 @@ export class BookletSelectionComponent {
   @Input() actionLabel = 'Prüfansicht öffnen';
 
   searchQuery = '';
-  selectedLabel = '';
 
   get filteredBooklets(): BookletSelectionItem[] {
     const query = this.normalize(this.searchQuery);
-    const label = this.normalize(this.selectedLabel);
     return [...this.booklets]
       .filter((item) => {
         const displayName = this.displayName(item);
-        if (label && this.normalize(displayName) !== label) return false;
         if (!query) return true;
         return (
           this.normalize(displayName).includes(query) || this.normalize(item.id).includes(query)
@@ -167,14 +157,12 @@ export class BookletSelectionComponent {
     return this.filteredBooklets.length;
   }
 
-  get labelOptions(): string[] {
-    return Array.from(new Set(this.booklets.map((item) => this.displayName(item)))).sort(
-      (left, right) => left.localeCompare(right, 'de', { numeric: true }),
-    );
-  }
-
   displayName(booklet: BookletSelectionItem): string {
     return booklet.name?.trim() || booklet.id;
+  }
+
+  hasDistinctName(booklet: BookletSelectionItem): boolean {
+    return !!booklet.name?.trim() && booklet.name.trim() !== booklet.id;
   }
 
   private normalize(value: string): string {

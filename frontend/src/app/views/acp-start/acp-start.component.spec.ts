@@ -219,7 +219,8 @@ describe('AcpStartComponent', () => {
           featureConfig: { enableReview: true, enableSequenceNavigation: true },
           units: [],
           sequences: [
-            { id: 'booklet-1', name: 'Testheft A', kind: 'booklet' },
+            { id: 'booklet-10', name: 'Teil 2', kind: 'booklet' },
+            { id: 'booklet-2', name: 'Teil 1', kind: 'booklet' },
             { id: 'sequence-1', name: 'Folge A' },
           ],
         }),
@@ -240,15 +241,25 @@ describe('AcpStartComponent', () => {
     fixture.detectChanges();
     const element = fixture.nativeElement as HTMLElement;
 
-    const links = Array.from(element.querySelectorAll('a'));
+    const reviewLinks = Array.from(element.querySelectorAll('.review-card a'));
     expect(
-      links.some(
+      reviewLinks.some(
         (link) =>
-          link.getAttribute('href') === '/view/acp-1/sequence/booklet-1?kind=booklet' &&
-          link.textContent?.includes('im Review öffnen'),
+          link.getAttribute('href') === '/view/acp-1/sequence/booklet-2?kind=booklet' &&
+          link.textContent?.includes('Review öffnen'),
       ),
     ).toBe(true);
-    expect(element.textContent?.match(/Testheft A/g)).toHaveLength(1);
+    expect(
+      Array.from(element.querySelectorAll('.booklet-id')).map((node) => node.textContent),
+    ).toEqual(['booklet-2', 'booklet-10']);
+    expect(
+      Array.from(element.querySelectorAll('.booklet-name')).map((node) => node.textContent),
+    ).toEqual(['Teil 1', 'Teil 2']);
+    expect(
+      element.querySelector('input[placeholder="Bezeichnung oder Booklet-ID"]'),
+    ).not.toBeNull();
+    expect(element.querySelector('.review-card select')).toBeNull();
+    expect(element.textContent).toContain('2 von 2 Testheften');
     expect(element.textContent).toContain('Folge A');
   });
 

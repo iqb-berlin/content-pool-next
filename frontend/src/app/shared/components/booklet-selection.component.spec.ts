@@ -15,7 +15,6 @@ describe('BookletSelectionComponent', () => {
       { id: 'alpha-2', name: 'Gemeinsame Bezeichnung' },
       { id: 'beta-1', name: 'Andere Bezeichnung' },
     ]);
-    expect(component.labelOptions).toEqual(['Andere Bezeichnung', 'Gemeinsame Bezeichnung']);
     expect(component.filteredCount).toBe(3);
   });
 
@@ -33,24 +32,19 @@ describe('BookletSelectionComponent', () => {
     expect(component.filteredBooklets).toEqual([{ id: 'instrument-02', name: 'Überprüfung' }]);
   });
 
-  it('offers an explicit label filter without treating labels as groups', () => {
-    const component = new BookletSelectionComponent();
-    component.booklets = [
-      { id: 'booklet-2', name: 'Teil 2' },
-      { id: 'booklet-1', name: 'Teil 1' },
-      { id: 'booklet-3', name: 'Teil 2' },
-    ];
-
-    component.selectedLabel = 'Teil 2';
-
-    expect(component.filteredBooklets.map((item) => item.id)).toEqual(['booklet-2', 'booklet-3']);
-  });
-
   it('uses the ID as a fallback for a missing name', () => {
     const component = new BookletSelectionComponent();
     component.booklets = [{ id: 'booklet-without-name' }];
 
     expect(component.displayName(component.booklets[0])).toBe('booklet-without-name');
+    expect(component.hasDistinctName(component.booklets[0])).toBe(false);
     expect(component.filteredBooklets[0].id).toBe('booklet-without-name');
+  });
+
+  it('shows a name only when it adds information to the ID', () => {
+    const component = new BookletSelectionComponent();
+
+    expect(component.hasDistinctName({ id: 'booklet-1', name: 'Teil 1' })).toBe(true);
+    expect(component.hasDistinctName({ id: 'booklet-1', name: 'booklet-1' })).toBe(false);
   });
 });

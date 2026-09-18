@@ -5,11 +5,12 @@ import { Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 @Component({
   selector: 'app-acp-start',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent],
+  imports: [RouterLink, BreadcrumbComponent, BookletSelectionComponent],
   template: `
     @if (data) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -39,19 +40,11 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               >
             }
             <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
-            <div class="seq-list">
-              @for (booklet of reviewBooklets; track booklet.id) {
-                <a
-                  [routerLink]="['/view', acpId, 'sequence', booklet.id]"
-                  [queryParams]="{ kind: 'booklet' }"
-                  class="seq-link"
-                >
-                  {{ sequenceLabel(booklet) }} im Review öffnen
-                </a>
-              } @empty {
-                <span class="download-info">Noch kein Booklet verfügbar.</span>
-              }
-            </div>
+            <app-booklet-selection
+              [acpId]="acpId"
+              [booklets]="reviewBooklets"
+              actionLabel="Review öffnen"
+            />
           </section>
         }
         <!-- Item Explorer — availability and start-page visibility are configured separately -->
@@ -191,6 +184,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         color: var(--color-text-secondary);
         font-size: 0.9rem;
         line-height: 1.5;
+      }
+      .review-card {
+        grid-column: 1 / -1;
       }
 
       .seq-list {

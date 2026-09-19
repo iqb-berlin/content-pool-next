@@ -8,6 +8,13 @@ All notable changes to ContentPool are documented in this file. Releases use
 
 ### Changes
 
+- Preserve existing item/unit commenting when the new Review entry point is disabled.
+- Honor the ACP Item Explorer switch for participants with existing capability grants.
+- Respect metadata and coding visibility during ordinary booklet navigation.
+- Apply published booklet-label restrictions to start-page and sequence summaries.
+- Backfill existing grants and comment targets before development schema synchronization,
+  preserve deliberate grant removal on restart, and install review revision/vote triggers.
+
 - Separate Review and Item Explorer permissions for credentials and signed-in users.
 - Import CSV credential lists with permission profiles, preview and atomic validation.
 - Add a Review entry point for all ACP booklets and management controls.

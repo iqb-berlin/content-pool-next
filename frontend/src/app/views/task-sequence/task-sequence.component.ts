@@ -9,7 +9,16 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { combineLatest, distinctUntilChanged, map, Subject, switchMap, takeUntil } from 'rxjs';
+import {
+  catchError,
+  of,
+  combineLatest,
+  distinctUntilChanged,
+  map,
+  Subject,
+  switchMap,
+  takeUntil,
+} from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { FeatureConfig, TaskSequence } from '../../core/models/api.models';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
@@ -30,7 +39,7 @@ interface ReviewBookletOption {
     @if (sequence) {
       <app-breadcrumb [items]="breadcrumbs" />
 
-      @if (!isBookletReview) {
+      @if (!isBooklet) {
         <div class="seq-header">
           <h1>{{ sequence.name || sequence.id }}</h1>
           <div class="seq-actions">
@@ -47,7 +56,7 @@ interface ReviewBookletOption {
         </div>
       }
 
-      @if (showCommentBtn && !isBookletReview) {
+      @if (showCommentBtn && !isBooklet) {
         <app-item-comment-thread
           [acpId]="acpId"
           [targetType]="'BOOKLET'"
@@ -83,7 +92,7 @@ interface ReviewBookletOption {
             </button>
           </div>
           <div class="workspace-actions">
-            @if (isBookletReview && reviewBooklets.length > 1) {
+            @if (isBooklet && reviewBooklets.length > 1) {
               <button
                 class="btn btn-outline btn-sm btn-state"
                 (click)="toggleBookletList()"
@@ -107,7 +116,7 @@ interface ReviewBookletOption {
                 <span aria-hidden="true">▾</span>
               </button>
             }
-            @if (showDownloadBtn && isBookletReview) {
+            @if (showDownloadBtn && isBooklet) {
               <button
                 class="btn btn-outline btn-sm"
                 (click)="downloadSequence()"
@@ -140,7 +149,7 @@ interface ReviewBookletOption {
               [unitId]="currentUnit.id"
               [bookletId]="sequenceId"
               [embedded]="true"
-              [reviewMode]="isBookletReview"
+              [reviewMode]="isBooklet && canReview"
               [featureConfigOverride]="featureConfig"
             />
           </div>
@@ -486,6 +495,7 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
   acpId = '';
   sequenceId = '';
   sequenceKind?: 'booklet';
+  canReview = false;
   sequence: TaskSequence | null = null;
   currentIndex = 0;
   breadcrumbs: BreadcrumbItem[] = [];
@@ -524,6 +534,17 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
     document.addEventListener('fullscreenchange', this.fullscreenChangeHandler);
     document.addEventListener('keydown', this.fullscreenKeyHandler);
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
+
+    this.api
+      .getCapabilities(this.acpId)
+      .pipe(
+        catchError(() => of({ canReview: false })),
+        takeUntil(this.destroy$),
+      )
+      .subscribe((capabilities) => {
+        this.canReview = capabilities.canReview === true;
+        this.changeDetector.markForCheck();
+      });
 
     this.api
       .getAcpStartPage(this.acpId)
@@ -575,7 +596,7 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
           { label: 'Assessment Content Pool', route: ['/'] },
           { label: 'ACP', route: ['/view', this.acpId] },
           {
-            label: this.isBookletReview ? this.sequenceId : this.sequence.name || 'Aufgabenfolge',
+            label: this.isBooklet ? this.sequenceId : this.sequence.name || 'Aufgabenfolge',
           },
         ];
       });
@@ -592,7 +613,7 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
     return !!this.sequence?.units?.length;
   }
 
-  get isBookletReview(): boolean {
+  get isBooklet(): boolean {
     return this.sequenceKind === 'booklet';
   }
 
@@ -716,7 +737,7 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
       commentTargets.includes('BOOKLET')
     );
     this.showDownloadBtn = !!featureConfig.allowUnitDownload;
-    this.showUnitListBtn = this.isBookletReview || featureConfig.enableSequenceNavigation !== false;
+    this.showUnitListBtn = this.isBooklet || featureConfig.enableSequenceNavigation !== false;
   }
 
   private normalizeSequence(raw: TaskSequence | null | undefined): TaskSequence {

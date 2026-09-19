@@ -10,6 +10,40 @@ const policy = (...visible: string[]) =>
   });
 
 describe("Reviewer column information boundary", () => {
+  it("projects start-page and standalone sequence summaries without leaking labels", () => {
+    const sequences = [
+      {
+        id: "B",
+        kind: "booklet",
+        name: "Hidden name",
+        instrumentName: "Hidden instrument",
+        bookletDefinitionId: "Hidden.xml",
+      },
+      { id: "M", name: "Hidden module" },
+    ];
+    const expected = [{ id: "B", kind: "booklet" }, { id: "M" }];
+    expect(policy().projectResponse({ sequences })).toEqual({
+      sequences: expected,
+    });
+    expect(policy().projectResponse(sequences, "sequences")).toEqual(expected);
+    expect(policy("metadata:booklet").projectResponse({ sequences })).toEqual({
+      sequences,
+    });
+    expect(sequences[0].name).toBe("Hidden name");
+    const legacy = {
+      id: "M",
+      name: "Hidden module",
+      units: [{ id: "U", name: "Unit name" }],
+    };
+    expect(policy().projectResponse(legacy, "sequences")).toEqual({
+      id: "M",
+      units: [{ id: "U" }],
+    });
+    expect(
+      policy("system:unitLabel").projectResponse(legacy, "sequences"),
+    ).toEqual({ id: "M", units: [{ id: "U", name: "Unit name" }] });
+  });
+
   it("preserves existing payloads when disabled", () => {
     const payload = { items: [{ itemId: "I", empiricalDifficulty: 12 }] };
     expect(new ReviewerColumnPolicy().projectResponse(payload)).toBe(payload);

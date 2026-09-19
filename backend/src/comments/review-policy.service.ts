@@ -205,9 +205,8 @@ export class ReviewPolicyService {
         config?.featureConfig?.enableReview === true &&
         config?.featureConfig?.enableCommenting === true &&
         config?.featureConfig?.commentVisibilityMode === "SHARED";
-      if (config?.featureConfig?.enableReview !== true && !actor.isManager) {
-        throw new ForbiddenException("Review ist deaktiviert");
-      }
+      // Review activation controls the booklet workspace, not existing comments.
+      // Participation, target selection and commenting remain separate checks.
       actor.ungroupedShared =
         config?.featureConfig?.ungroupedVisibilityMode === "SHARED";
       actor.groups = (config?.reviewGroups || []).filter(

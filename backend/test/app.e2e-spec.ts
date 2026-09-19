@@ -63,11 +63,17 @@ describe("ContentPool API (e2e)", () => {
     assessmentParts: [
       {
         id: "part-1",
+        name: [{ lang: "de", value: "Teil 1" }],
         units: [
           {
             id: "U1",
             name: "Unit 1",
-            dependencies: [],
+            dependencies: [
+              {
+                id: "unit.xml",
+                type: "UNIT_INDEX",
+              },
+            ],
             items: [
               {
                 id: "I1",
@@ -87,7 +93,7 @@ describe("ContentPool API (e2e)", () => {
         instruments: [
           {
             id: "INST-1",
-            name: "Instrument 1",
+            name: [{ lang: "de", value: "Instrument 1" }],
             testcenterBooklet: [
               {
                 definitionId: "booklet.xml",

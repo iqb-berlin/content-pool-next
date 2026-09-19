@@ -337,5 +337,14 @@ describe('UnitViewComponent', () => {
         'unitId'
       ],
     ).toBe('u2');
+
+    // Returning to ordinary booklet navigation must restore the ACP's hidden
+    // metadata and coding settings even after review data has been loaded.
+    fixture.componentRef.setInput('reviewMode', false);
+    fixture.detectChanges();
+    expect(component.showMetadata).toBe(false);
+    expect(component.showCodingScheme).toBe(false);
+    expect(fixture.nativeElement.querySelector('.meta-dl')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.coding-variable')).toBeNull();
   });
 });

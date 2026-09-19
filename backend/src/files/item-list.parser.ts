@@ -386,6 +386,7 @@ export class ItemListParser {
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
               textComplexity: optionalText("textComplexity"),
+              competenceLevel: optionalText("competenceLevel"),
               itemTimeSeconds:
                 optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
               stimulusTimeSeconds:

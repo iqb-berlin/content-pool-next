@@ -30,6 +30,7 @@ export interface ItemData {
   discrimination?: number;
   solutionRate?: number;
   textComplexity?: string;
+  competenceLevel?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
@@ -104,6 +105,7 @@ export class ItemsService {
               discrimination: fileRow.discrimination,
               solutionRate: fileRow.solutionRate,
               textComplexity: fileRow.textComplexity,
+              competenceLevel: fileRow.competenceLevel,
               itemTimeSeconds: fileRow.itemTimeSeconds,
               stimulusTimeSeconds: fileRow.stimulusTimeSeconds,
               bookletOccurrences: fileRow.bookletOccurrences,
@@ -139,6 +141,11 @@ export class ItemsService {
             : {}),
           ...(this.toNonEmptyText(props.textComplexity) !== undefined
             ? { textComplexity: this.toNonEmptyText(props.textComplexity) }
+            : {}),
+          ...(this.toNonEmptyText(props.competenceLevel) !== undefined
+            ? {
+                competenceLevel: this.toNonEmptyText(props.competenceLevel),
+              }
             : {}),
           ...(this.toFiniteNumber(props.itemTimeSeconds) !== undefined
             ? { itemTimeSeconds: this.toFiniteNumber(props.itemTimeSeconds) }

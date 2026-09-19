@@ -335,5 +335,6 @@ describe('Booklet navigation', () => {
     expect(component.currentIndex).toBe(0);
     expect(component.currentUnit?.id).toBe('u3');
     expect(component.currentBookletPosition).toBe(2);
+    expect(component.breadcrumbs.at(-1)?.label).toBe('booklet-2');
   });
 });

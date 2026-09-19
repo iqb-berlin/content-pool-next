@@ -574,7 +574,9 @@ export class TaskSequenceComponent implements OnInit, OnDestroy {
         this.breadcrumbs = [
           { label: 'Assessment Content Pool', route: ['/'] },
           { label: 'ACP', route: ['/view', this.acpId] },
-          { label: this.sequence.name || 'Aufgabenfolge' },
+          {
+            label: this.isBookletReview ? this.sequenceId : this.sequence.name || 'Aufgabenfolge',
+          },
         ];
       });
   }

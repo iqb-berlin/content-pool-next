@@ -312,6 +312,15 @@ type UnitPagingMode =
                     [(ngModel)]="codingFilterText"
                   />
                 </label>
+                @if (hiddenCodingVariableCount > 0) {
+                  <label class="coding-visibility-toggle">
+                    <input type="checkbox" [(ngModel)]="showAllCodingVariables" />
+                    <span>
+                      Alle Variablen anzeigen
+                      <small>({{ hiddenCodingVariableCount }} weitere)</small>
+                    </span>
+                  </label>
+                }
                 @if (visibleCodingSchemeAsText.length) {
                   @for (coding of visibleCodingSchemeAsText; track coding.id) {
                     <section class="coding-variable">
@@ -620,6 +629,18 @@ type UnitPagingMode =
         border-radius: 6px;
         font: inherit;
       }
+      .coding-visibility-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -2px 0 12px;
+        color: var(--color-text-secondary);
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      .coding-visibility-toggle input {
+        margin: 0;
+      }
       .coding-variable {
         padding: 12px;
         border: 1px solid var(--color-border);
@@ -768,6 +789,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   showAudioVideoCodingVariables = true;
   commentScope: 'unit' | 'booklet' = 'unit';
   codingFilterText = '';
+  showAllCodingVariables = false;
   unitMetadata: FilePreviewVomdData['unitProfiles'] = [];
   metadataLoading = false;
   metadataError = '';
@@ -812,11 +834,9 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get visibleCodingSchemeAsText(): CodingAsText[] {
-    const codings = this.codingSchemeAsText || [];
-    const hideAudioVideoVariables = this.reviewMode || !this.showAudioVideoCodingVariables;
-    const visibleCodings = hideAudioVideoVariables
-      ? codings.filter((coding) => !this.isAudioVideoCodingVariable(coding))
-      : codings;
+    const visibleCodings = this.showAllCodingVariables
+      ? this.availableCodingSchemeAsText
+      : this.availableCodingSchemeAsText.filter((coding) => this.isRelevantCodingVariable(coding));
     const term = this.codingFilterText.trim().toLowerCase();
     if (!term) return visibleCodings;
     return visibleCodings.filter((coding) => {
@@ -835,6 +855,20 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
         .toLowerCase();
       return searchableText.includes(term);
     });
+  }
+
+  get hiddenCodingVariableCount(): number {
+    return this.availableCodingSchemeAsText.filter(
+      (coding) => !this.isRelevantCodingVariable(coding),
+    ).length;
+  }
+
+  private get availableCodingSchemeAsText(): CodingAsText[] {
+    const codings = this.codingSchemeAsText || [];
+    const hideAudioVideoVariables = this.reviewMode || !this.showAudioVideoCodingVariables;
+    return hideAudioVideoVariables
+      ? codings.filter((coding) => !this.isAudioVideoCodingVariable(coding))
+      : codings;
   }
 
   get resolvedPanelMode(): 'split' | 'overlay' {
@@ -926,6 +960,7 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
     this.codingSchemeLoading = false;
     this.codingSchemeError = '';
     this.codingFilterText = '';
+    this.showAllCodingVariables = false;
     this.unitRequest = this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
       if (requestToken !== this.unitLoadToken) return;
       this.unit = u;
@@ -1267,6 +1302,12 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
       id.includes('video') ||
       label.includes('audio') ||
       label.includes('video')
+    );
+  }
+
+  private isRelevantCodingVariable(coding: CodingAsText): boolean {
+    return Boolean(
+      coding.codes.length || coding.hasManualInstruction || (coding as any).manualInstructionText,
     );
   }
 

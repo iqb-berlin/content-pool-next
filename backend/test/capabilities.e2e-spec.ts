@@ -167,12 +167,10 @@ describe("Capability and import API integration", () => {
       .getRepository(AcpCredential)
       .update(credentialId, { capabilities: ["review:participate"] });
     try {
-      await db
-        .getRepository(AcpAccessConfig)
-        .save({
-          id: configId,
-          featureConfig: { ...config.featureConfig, enableReview: false },
-        });
+      await db.getRepository(AcpAccessConfig).save({
+        id: configId,
+        featureConfig: { ...config.featureConfig, enableReview: false },
+      });
       for (const token of [userToken, credentialToken]) {
         const auth = { Authorization: "Bearer " + token };
         const created = await request(server)

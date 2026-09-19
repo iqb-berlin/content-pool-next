@@ -2,7 +2,7 @@ import { Injectable, OnDestroy, Optional } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
 import { ApiService } from '../../core/services/api.service';
-import { VoudService } from '../../core/services/voud.service';
+import { PlayerResponseTarget, VoudService } from '../../core/services/voud.service';
 import {
   GEOGEBRA_PLAYER_RESOURCE_BASE,
   rewriteGeoGebraAssetUrls,
@@ -44,6 +44,8 @@ import type {
 import {
   CodingVariableFocusResolution,
   CodingVariableFocusStatus,
+  CodingInformation,
+  CodingInformationAnswer,
   DeepReadonly,
   ExplorerItem,
   ExplorerUiStatus,
@@ -88,6 +90,11 @@ import {
   mergePlayerSolutionIntoDataParts,
   PlayerSolutionPrefill,
 } from './item-explorer-solution-prefill';
+import {
+  CodingVariableLike,
+  deriveSolutionAnalysis,
+  DerivedSolutionAnswer,
+} from './item-explorer-solution-analysis';
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -447,6 +454,13 @@ export class ItemExplorerFacade implements OnDestroy {
     status: 'unavailable',
     responses: [],
     message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+  };
+  codingInformation: CodingInformation = {
+    status: 'unavailable',
+    title: 'Keine eindeutige richtige Antwort',
+    message: 'Für dieses Item wurde noch keine Kodierinformation ermittelt.',
+    answers: [],
+    ruleGroups: [],
   };
   private restoreResponseDataAfterSolution = false;
   showRawDataOverlay = false;
@@ -3117,6 +3131,13 @@ export class ItemExplorerFacade implements OnDestroy {
       responses: [],
       message: 'Die Kodierung und Player-Daten für die Musterlösung werden geladen.',
     };
+    this.codingInformation = {
+      status: 'unavailable',
+      title: 'Kodierinformation wird geladen',
+      message: 'Die Kodierung für dieses Item wird geladen.',
+      answers: [],
+      ruleGroups: [],
+    };
 
     // Load unit metadata and coding scheme from cache
     this.currentUnitMetadata = this.unitMetadataCache[item.unitId] || [];
@@ -3130,6 +3151,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.currentCodingSchemeAsText = null;
     }
     this.syncPreviewTargetResolution(item);
+    this.refreshCorrectSolutionPrefill();
 
     if (!this.canPreviewItem(item)) {
       this.previewCoordinator.markUnavailable(this.getMissingPreviewTargetMessage());
@@ -3168,7 +3190,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.applyPreviewAssets(result.assets);
     }
     this.applyResponseStateResult(result.responseState);
-    this.refreshCorrectSolutionPrefill();
+    this.refreshCodingInformation();
 
     if (this.previewCoordinator.status.kind !== 'ready') {
       this.previewUserFacingMessage =
@@ -3853,7 +3875,7 @@ export class ItemExplorerFacade implements OnDestroy {
       : [];
   }
 
-  private refreshCorrectSolutionPrefill(): void {
+  private refreshCodingInformation(): void {
     const variables = this.getCurrentCodingVariables();
     const variableMatch = this.resolveItemCodingVariable(this.selectedItem, variables);
     if (variableMatch.status !== 'unique' || !variableMatch.variable) {
@@ -3862,38 +3884,238 @@ export class ItemExplorerFacade implements OnDestroy {
         responses: [],
         message: 'Für dieses Item konnte keine eindeutige Kodiervariable ermittelt werden.',
       };
+      this.codingInformation = {
+        status: 'unavailable',
+        title: 'Keine eindeutige Kodiervariable',
+        message: 'Für dieses Item konnte keine eindeutige Kodiervariable ermittelt werden.',
+        answers: [],
+        ruleGroups: [],
+      };
       return;
     }
-    if (!this.definitionContent) {
+
+    const selectedVariable = variableMatch.variable as CodingVariableLike;
+    const analysis = deriveSolutionAnalysis(selectedVariable, variables);
+    const ruleGroups = this.getRelevantCodingRuleGroups(selectedVariable, variables).filter(
+      (coding) => this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding),
+    );
+    if (this.definitionContent) {
+      this.correctSolutionPrefill = derivePlayerSolutionPrefill(
+        selectedVariable,
+        variables,
+        (variable) => this.resolvePlayerResponseTarget(variable),
+      );
+    } else {
       this.correctSolutionPrefill = {
         status: 'unavailable',
         responses: [],
         message: 'Für dieses Item ist keine auswertbare Player-Definition verfügbar.',
       };
+    }
+
+    const hasAutomaticRules = ruleGroups.some((coding) =>
+      coding.codes.some((code) => code.ruleSetDescriptions.length > 0),
+    );
+    const hasCodeManualInformation = ruleGroups.some((coding) =>
+      coding.codes.some((code) => Boolean((code as any).manualInstructionText)),
+    );
+    const hasVisibleGeneralInstruction =
+      this.showGeneralCodingInstructions &&
+      ruleGroups.some((coding) => Boolean((coding as any).generalInstructionText));
+    const hasVisibleManualInformation = hasCodeManualInformation || hasVisibleGeneralInstruction;
+    const preferredManualInstruction =
+      analysis.status === 'exact' &&
+      this.preferManualCodingInstructions &&
+      this.hasPreferredManualInstruction(
+        selectedVariable,
+        analysis.selectedCodeId,
+        analysis.answers,
+        variables,
+      );
+
+    if (analysis.status === 'exact' && !preferredManualInstruction) {
+      this.codingInformation = {
+        status: 'exact',
+        title: 'Richtige Antwort',
+        message: analysis.message,
+        answers: analysis.answers.map((answer) => this.toCodingInformationAnswer(answer)),
+        ruleGroups,
+      };
       return;
     }
 
-    this.correctSolutionPrefill = derivePlayerSolutionPrefill(
-      variableMatch.variable,
-      variables,
-      (variable) => {
-        const candidates = Array.from(
-          new Set(
-            [variable?.['alias'], variable?.['id']]
-              .map((value) => String(value || '').trim())
-              .filter((value) => value.length > 0),
-          ),
-        );
-        for (const candidate of candidates) {
-          const target = this.voudService.resolvePlayerResponseTarget(
-            this.definitionContent!,
-            candidate,
-          );
-          if (target) return target;
-        }
-        return undefined;
-      },
+    if (
+      preferredManualInstruction ||
+      (this.preferManualCodingInstructions && hasCodeManualInformation)
+    ) {
+      this.codingInformation = {
+        status: 'rules',
+        title: 'Manuelle Kodieranweisung',
+        message: preferredManualInstruction
+          ? 'Für die richtige Bewertung ist eine manuelle Kodieranweisung hinterlegt.'
+          : analysis.message,
+        answers: [],
+        ruleGroups,
+      };
+      return;
+    }
+
+    if (analysis.status === 'multiple') {
+      this.codingInformation = {
+        status: 'multiple',
+        title: 'Mehrere gültige Antworten',
+        message: analysis.message,
+        answers: [],
+        ruleGroups,
+      };
+      return;
+    }
+
+    if (hasAutomaticRules) {
+      this.codingInformation = {
+        status: 'rules',
+        title: 'Kodierinformation aus dem Codebook',
+        message:
+          analysis.status === 'rules'
+            ? analysis.message
+            : 'Die vorhandenen Regeln beschreiben die Bewertung, ergeben aber keine eindeutige Musterlösung.',
+        answers: [],
+        ruleGroups,
+      };
+      return;
+    }
+
+    if (hasVisibleManualInformation) {
+      this.codingInformation = {
+        status: 'rules',
+        title: 'Manuelle Kodieranweisung',
+        message: analysis.message,
+        answers: [],
+        ruleGroups,
+      };
+      return;
+    }
+
+    this.codingInformation = {
+      status: 'unavailable',
+      title: 'Keine eindeutige richtige Antwort',
+      message:
+        'Aus der vorhandenen Kodierung kann keine eindeutige richtige Antwort ermittelt werden.',
+      answers: [],
+      ruleGroups,
+    };
+  }
+
+  private refreshCorrectSolutionPrefill(): void {
+    this.refreshCodingInformation();
+  }
+
+  private resolvePlayerResponseTarget(
+    variable: CodingVariableLike,
+  ): PlayerResponseTarget | undefined {
+    if (!this.definitionContent) return undefined;
+    const candidates = Array.from(
+      new Set(
+        [variable?.alias, variable?.id]
+          .map((value) => String(value || '').trim())
+          .filter((value) => value.length > 0),
+      ),
     );
+    for (const candidate of candidates) {
+      const target = this.voudService.resolvePlayerResponseTarget(
+        this.definitionContent,
+        candidate,
+      );
+      if (target) return target;
+    }
+    return undefined;
+  }
+
+  private toCodingInformationAnswer(answer: DerivedSolutionAnswer): CodingInformationAnswer {
+    const target = this.resolvePlayerResponseTarget(answer.variable);
+    const responseId = String(
+      target?.responseId || answer.variable.alias || answer.variable.id || '',
+    ).trim();
+    const playerValue =
+      this.correctSolutionPrefill.status === 'available'
+        ? this.correctSolutionPrefill.responses.find(
+            (response) => response.id.toLowerCase() === responseId.toLowerCase(),
+          )?.value
+        : undefined;
+    const value = playerValue ?? answer.value;
+    const elementType = String(target?.elementType || '')
+      .trim()
+      .toLowerCase();
+    let valueLabel = String(value);
+    if (
+      ['radio', 'radio-group-images', 'dropdown', 'toggle-button'].includes(elementType) &&
+      typeof value === 'number'
+    ) {
+      valueLabel =
+        target?.options?.find((option) => option.position === value)?.label || `Option ${value}`;
+    } else if (elementType === 'checkbox' || typeof value === 'boolean') {
+      const selected =
+        typeof value === 'boolean'
+          ? value
+          : ['true', '1'].includes(String(value).trim().toLowerCase());
+      valueLabel = selected ? 'ausgewählt' : 'nicht ausgewählt';
+    }
+
+    const rawLabel = String((answer.variable as any)?.label || '').trim();
+    return {
+      responseId,
+      label: target?.label || rawLabel || responseId || 'Antwort',
+      valueLabel,
+    };
+  }
+
+  private hasPreferredManualInstruction(
+    selectedVariable: CodingVariableLike,
+    selectedCodeId: string,
+    answers: DerivedSolutionAnswer[],
+    variables: CodingVariableLike[],
+  ): boolean {
+    const hasManualCode = (variable: CodingVariableLike, codeIds: string[]): boolean => {
+      const index = variables.indexOf(variable);
+      const coding = index >= 0 ? this.currentCodingSchemeAsText?.[index] : undefined;
+      const isVisible = Boolean(
+        coding && (this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding)),
+      );
+      return (
+        isVisible &&
+        (Array.isArray(variable.codes) ? variable.codes : []).some(
+          (code) =>
+            codeIds.includes(String(code.id)) &&
+            Boolean(this.sanitizeManualInstruction(code.manualInstruction)),
+        )
+      );
+    };
+    return (
+      hasManualCode(selectedVariable, [selectedCodeId]) ||
+      answers.some((answer) => hasManualCode(answer.variable, answer.codeIds))
+    );
+  }
+
+  private getRelevantCodingRuleGroups(
+    selectedVariable: CodingVariableLike,
+    variables: CodingVariableLike[],
+  ): CodingAsText[] {
+    const indices: number[] = [];
+    const visited = new Set<number>();
+    const collect = (variable: CodingVariableLike) => {
+      const index = variables.indexOf(variable);
+      if (index < 0 || visited.has(index)) return;
+      visited.add(index);
+      indices.push(index);
+      for (const source of Array.isArray(variable.deriveSources) ? variable.deriveSources : []) {
+        const match = this.resolveCodingVariableReference(String(source || ''), variables, true);
+        if (match.status === 'unique' && match.variable) collect(match.variable);
+      }
+    };
+    collect(selectedVariable);
+    return indices
+      .map((index) => this.currentCodingSchemeAsText?.[index])
+      .filter((coding): coding is CodingAsText => Boolean(coding));
   }
 
   private createCodingSchemeAsText(codings: any[]): CodingAsText[] {
@@ -6879,6 +7101,13 @@ export class ItemExplorerFacade implements OnDestroy {
       status: 'unavailable',
       responses: [],
       message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
+    };
+    this.codingInformation = {
+      status: 'unavailable',
+      title: 'Keine eindeutige richtige Antwort',
+      message: 'Für dieses Item wurde noch keine Kodierinformation ermittelt.',
+      answers: [],
+      ruleGroups: [],
     };
     this.restoreResponseDataAfterSolution = false;
     this.selectedPreviewTargetId = '';

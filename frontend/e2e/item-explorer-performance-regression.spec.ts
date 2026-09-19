@@ -317,7 +317,7 @@ test('keeps coding, draft, published and read-only perspectives functional', asy
   await expect(codingFocus).not.toContainText('Player-/Anzeige-Ziel');
   await expect(page.getByRole('heading', { name: 'Kodiervariable V1' })).toBeVisible();
   await expect(page.getByText('Bezeichnung: Direkte Antwort', { exact: true })).toBeVisible();
-  await expect(page.getByText('Richtig')).toBeVisible();
+  await expect(page.getByText('Richtig', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Schließen/ }).click();
 
   const patchResponse = page.waitForResponse(

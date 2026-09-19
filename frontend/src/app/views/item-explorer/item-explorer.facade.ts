@@ -3897,8 +3897,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const selectedVariable = variableMatch.variable as CodingVariableLike;
     const analysis = deriveSolutionAnalysis(selectedVariable, variables);
     const ruleGroups = this.getRelevantCodingRuleGroups(selectedVariable, variables).filter(
-      (coding) =>
-        this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding),
+      (coding) => this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding),
     );
     if (this.definitionContent) {
       this.correctSolutionPrefill = derivePlayerSolutionPrefill(
@@ -4080,8 +4079,7 @@ export class ItemExplorerFacade implements OnDestroy {
       const index = variables.indexOf(variable);
       const coding = index >= 0 ? this.currentCodingSchemeAsText?.[index] : undefined;
       const isVisible = Boolean(
-        coding &&
-          (this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding)),
+        coding && (this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding)),
       );
       return (
         isVisible &&

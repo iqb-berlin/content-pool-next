@@ -352,7 +352,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await expect(dialog).toContainText('Kompetenzstufe');
   await dialog.getByLabel('Breite für Eigene Qualitätsspalte').fill('260');
   await dialog.getByLabel('Breite für Aufgabe').fill('310');
-  await dialog.getByLabel('Breite für Kompetenzstufe').fill('230');
+  await dialog.getByLabel('Breite für Kompetenzstufe', { exact: true }).fill('230');
 
   await Promise.all([
     page.waitForResponse(
@@ -374,7 +374,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     'width',
     '310px',
   );
-  await expect(page.getByRole('columnheader', { name: /^Kompetenzstufe(?:\s|$)/ })).toHaveCSS(
+  await expect(page.getByRole('columnheader', { name: 'Kompetenzstufe', exact: true })).toHaveCSS(
     'width',
     '230px',
   );
@@ -438,7 +438,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   );
   await expect(reorderedTaskHeader).toHaveCSS('width', '310px');
   const reorderedCompetenceHeader = page.getByRole('columnheader', {
-    name: /^Kompetenzstufe(?:\s|$)/,
+    name: 'Kompetenzstufe',
+    exact: true,
   });
   const expectedCompetenceCellIndex = await reorderedCompetenceHeader.evaluate(
     (header) => (header as HTMLTableCellElement).cellIndex,
@@ -462,7 +463,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     .poll(() => readOnlyTaskHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex))
     .toBe(expectedTaskCellIndex);
   const readOnlyCompetenceHeader = page.getByRole('columnheader', {
-    name: /^Kompetenzstufe(?:\s|$)/,
+    name: 'Kompetenzstufe',
+    exact: true,
   });
   await expect(readOnlyCompetenceHeader).toHaveCSS('width', '230px');
   await expect

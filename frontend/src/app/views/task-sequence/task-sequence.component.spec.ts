@@ -1,7 +1,7 @@
 import { NO_ERRORS_SCHEMA, provideZonelessChangeDetection } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { BehaviorSubject, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
@@ -43,6 +43,43 @@ describe('Booklet navigation', () => {
   afterEach(() => TestBed.resetTestingModule());
 
   it('renders block paths and selects repeated unit occurrences independently', async () => {
+    const routeParamMap = new BehaviorSubject(
+      convertToParamMap({ acpId: 'acp-1', sequenceId: 'booklet-1' }),
+    );
+    const routeQueryParamMap = new BehaviorSubject(convertToParamMap({ kind: 'booklet' }));
+    const sequences = {
+      'booklet-1': {
+        id: 'booklet-1',
+        name: 'Review-Booklet',
+        units: [
+          {
+            id: 'u1',
+            name: 'Aufgabe 1',
+            occurrenceId: 'first',
+            alias: 'A',
+            blockPath: ['Mathematik'],
+          },
+          {
+            id: 'u1',
+            name: 'Aufgabe 1 erneut',
+            occurrenceId: 'second',
+            alias: 'B',
+            blockPath: ['Mathematik', 'Geometrie'],
+          },
+          {
+            id: 'u2',
+            name: 'Aufgabe 2',
+            occurrenceId: 'third',
+            blockPath: ['Mathematik', 'Zahlen'],
+          },
+        ],
+      },
+      'booklet-2': {
+        id: 'booklet-2',
+        name: 'Zweites Testheft',
+        units: [{ id: 'u3', name: 'Andere Aufgabe', occurrenceId: 'only' }],
+      },
+    };
     await TestBed.configureTestingModule({
       imports: [TaskSequenceComponent],
       schemas: [NO_ERRORS_SCHEMA],
@@ -65,6 +102,8 @@ describe('Booklet navigation', () => {
               paramMap: { get: (key: string) => (key === 'acpId' ? 'acp-1' : 'booklet-1') },
               queryParamMap: { get: () => 'booklet' },
             },
+            paramMap: routeParamMap,
+            queryParamMap: routeQueryParamMap,
           },
         },
         {
@@ -78,43 +117,27 @@ describe('Booklet navigation', () => {
                   enableCommenting: true,
                   commentTargets: ['BOOKLET', 'UNIT'],
                 },
-              }),
-            ),
-            getViewSequence: vi.fn().mockReturnValue(
-              of({
-                id: 'booklet-1',
-                name: 'Review-Booklet',
-                units: [
-                  {
-                    id: 'u1',
-                    name: 'Aufgabe 1',
-                    occurrenceId: 'first',
-                    alias: 'A',
-                    blockPath: ['Mathematik'],
-                  },
-                  {
-                    id: 'u1',
-                    name: 'Aufgabe 1 erneut',
-                    occurrenceId: 'second',
-                    alias: 'B',
-                    blockPath: ['Mathematik', 'Geometrie'],
-                  },
-                  {
-                    id: 'u2',
-                    name: 'Aufgabe 2',
-                    occurrenceId: 'third',
-                    blockPath: ['Mathematik', 'Zahlen'],
-                  },
+                sequences: [
+                  { id: 'booklet-1', name: 'Review-Booklet', kind: 'booklet' },
+                  { id: 'booklet-2', name: 'Zweites Testheft', kind: 'booklet' },
+                  { id: 'sequence-1', name: 'Aufgabenfolge', kind: 'sequence' },
                 ],
               }),
             ),
+            getViewSequence: vi
+              .fn()
+              .mockImplementation((_acpId: string, sequenceId: keyof typeof sequences) =>
+                of(sequences[sequenceId]),
+              ),
           },
         },
       ],
     }).compileComponents();
     const fixture = TestBed.createComponent(TaskSequenceComponent);
-    fixture.detectChanges();
     const component = fixture.componentInstance;
+    fixture.detectChanges();
+    await vi.waitFor(() => expect(component.hasUnits).toBe(true));
+    fixture.detectChanges();
     expect(TestBed.inject(ApiService).getViewSequence).toHaveBeenCalledWith(
       'acp-1',
       'booklet-1',
@@ -183,5 +206,134 @@ describe('Booklet navigation', () => {
     expect(component.currentUnit?.occurrenceId).toBe('second');
     component.prev();
     expect(component.currentUnit?.occurrenceId).toBe('first');
+  });
+
+  it('filters and switches between test booklets in the same review', async () => {
+    const routeParamMap = new BehaviorSubject(
+      convertToParamMap({ acpId: 'acp-1', sequenceId: 'booklet-1' }),
+    );
+    const routeQueryParamMap = new BehaviorSubject(convertToParamMap({ kind: 'booklet' }));
+    const sequences = {
+      'booklet-1': {
+        id: 'booklet-1',
+        name: 'Erstes Testheft',
+        units: [
+          { id: 'u1', name: 'Aufgabe 1' },
+          { id: 'u2', name: 'Aufgabe 2' },
+        ],
+      },
+      'booklet-2': {
+        id: 'booklet-2',
+        name: 'Zweites Testheft',
+        units: [{ id: 'u3', name: 'Andere Aufgabe' }],
+      },
+    };
+    const api = {
+      appendAuthToken: vi.fn((url: string) => url),
+      getAcpStartPage: vi.fn().mockReturnValue(
+        of({
+          featureConfig: {},
+          sequences: [
+            { id: 'booklet-1', name: 'Erstes Testheft', kind: 'booklet' },
+            { id: 'booklet-2', name: 'Zweites Testheft', kind: 'booklet' },
+          ],
+        }),
+      ),
+      getViewSequence: vi
+        .fn()
+        .mockImplementation((_acpId: string, sequenceId: keyof typeof sequences) =>
+          of(sequences[sequenceId]),
+        ),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [TaskSequenceComponent],
+      schemas: [NO_ERRORS_SCHEMA],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        {
+          provide: AuthService,
+          useValue: {
+            isLoggedIn: false,
+            isAdmin: false,
+            currentUser$: of(null),
+            hasAcpRole: vi.fn().mockReturnValue(false),
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: {
+              paramMap: { get: (key: string) => (key === 'acpId' ? 'acp-1' : 'booklet-1') },
+              queryParamMap: { get: () => 'booklet' },
+            },
+            paramMap: routeParamMap,
+            queryParamMap: routeQueryParamMap,
+          },
+        },
+        { provide: ApiService, useValue: api },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(TaskSequenceComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+    expect(component.currentUnit?.id).toBe('u1');
+    component.next();
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(component.currentIndex).toBe(1);
+
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const bookletButton = fixture.nativeElement.querySelector(
+      'button[aria-controls="review-booklet-list"]',
+    ) as HTMLButtonElement;
+    expect(bookletButton.textContent).toContain('booklet-1');
+    expect(bookletButton.textContent).toContain('1/2');
+    expect(bookletButton.getAttribute('aria-label')).toContain(
+      'Testheft wechseln, aktuell booklet-1',
+    );
+    bookletButton.click();
+    fixture.detectChanges();
+
+    const currentBooklet = fixture.nativeElement.querySelector(
+      '.booklet-list-item.active',
+    ) as HTMLButtonElement;
+    expect(currentBooklet.getAttribute('aria-current')).toBe('page');
+    expect(currentBooklet.querySelector('.booklet-id')?.textContent).toContain('booklet-1');
+    expect(currentBooklet.textContent).toContain('Aktuell geöffnet');
+    expect(currentBooklet.textContent?.indexOf('booklet-1')).toBeLessThan(
+      currentBooklet.textContent?.indexOf('Erstes Testheft') ?? -1,
+    );
+
+    const bookletSearch = fixture.nativeElement.querySelector(
+      '.booklet-search input',
+    ) as HTMLInputElement;
+    bookletSearch.value = 'zweites';
+    bookletSearch.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    const bookletChoices = fixture.nativeElement.querySelectorAll(
+      '.booklet-list-item',
+    ) as NodeListOf<HTMLButtonElement>;
+    expect(bookletChoices.length).toBe(1);
+    expect(bookletChoices[0].textContent).toContain('Zweites Testheft');
+    expect(bookletChoices[0].textContent).toContain('booklet-2');
+    expect(bookletChoices[0].textContent?.indexOf('booklet-2')).toBeLessThan(
+      bookletChoices[0].textContent?.indexOf('Zweites Testheft') ?? -1,
+    );
+    bookletChoices[0].click();
+    expect(navigate).toHaveBeenCalledWith(['/view', 'acp-1', 'sequence', 'booklet-2'], {
+      queryParams: { kind: 'booklet' },
+    });
+
+    routeParamMap.next(convertToParamMap({ acpId: 'acp-1', sequenceId: 'booklet-2' }));
+    fixture.detectChanges();
+    expect(api.getViewSequence).toHaveBeenLastCalledWith('acp-1', 'booklet-2', 'booklet');
+    expect(component.sequenceId).toBe('booklet-2');
+    expect(component.currentIndex).toBe(0);
+    expect(component.currentUnit?.id).toBe('u3');
+    expect(component.currentBookletPosition).toBe(2);
   });
 });

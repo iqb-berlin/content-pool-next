@@ -48,6 +48,7 @@ const IDENTITY_FIELDS = new Set([
   "variableReadOnlyId",
   "useUnitAliasAsPrefix",
   "previewTargetId",
+  "previewStart",
   "excluded",
 ]);
 const PERSONAL_EXPORT_FIELDS = new Set([

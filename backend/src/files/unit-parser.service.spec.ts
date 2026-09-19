@@ -799,6 +799,7 @@ describe("UnitParserService", () => {
           discrimination: 0.41,
           solutionRate: 0.68,
           textComplexity: "anspruchsvoll",
+          competenceLevel: "III",
           itemTimeSeconds: 33,
           stimulusTimeSeconds: 12,
           bookletOccurrences: [
@@ -821,6 +822,7 @@ describe("UnitParserService", () => {
         discrimination: 0.41,
         solutionRate: 0.68,
         textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         itemTimeSeconds: 33,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
@@ -895,6 +897,7 @@ describe("UnitParserService", () => {
 
     const result = await service.getItemListFromFiles("acp-1", {
       itemPropertiesOverride: {
+        "uuid-1": { competenceLevel: "III" },
         "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
         "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
       },
@@ -904,6 +907,7 @@ describe("UnitParserService", () => {
       expect.objectContaining({
         uuid: "uuid-1",
         rowKey: "uuid-1::A",
+        competenceLevel: "III",
         itemTimeSeconds: 30,
         stimulusTimeSeconds: 90,
         metadata: expect.objectContaining({ iqb_time_item: "00:30" }),
@@ -911,6 +915,7 @@ describe("UnitParserService", () => {
       expect.objectContaining({
         uuid: "uuid-1",
         rowKey: "uuid-1::B",
+        competenceLevel: "III",
         itemTimeSeconds: 30,
         stimulusTimeSeconds: 90,
       }),

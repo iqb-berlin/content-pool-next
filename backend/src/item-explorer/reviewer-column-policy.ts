@@ -19,6 +19,7 @@ const FIELD_COLUMNS: Record<string, string> = {
   discrimination: "metadata:discrimination",
   solutionRate: "metadata:solutionRate",
   textComplexity: "metadata:textComplexity",
+  competenceLevel: "metadata:competenceLevel",
   itemTimeSeconds: "metadata:itemTimeSeconds",
   stimulusTimeSeconds: "metadata:stimulusTimeSeconds",
   booklets: "metadata:booklet",
@@ -54,7 +55,7 @@ const PERSONAL_EXPORT_FIELDS = new Set([
   "markers",
   "note",
   "category",
-  "competenceLevel",
+  "personalCompetenceLevel",
 ]);
 const POSITION_COLUMN_LAYOUT_SCHEMA_VERSION = 3;
 const record = (value: unknown): Record<string, any> =>

@@ -136,6 +136,7 @@ const IMPORTED_PARAMETER_COLUMNS: MetadataColumn[] = [
   { id: 'discrimination', label: 'Trennschärfe', kind: 'number' },
   { id: 'solutionRate', label: 'Lösungshäufigkeit', kind: 'number' },
   { id: 'textComplexity', label: 'Textkomplexität', kind: 'text' },
+  { id: 'competenceLevel', label: 'Kompetenzstufe', kind: 'text' },
   { id: 'itemTimeSeconds', label: 'Itemzeit (s)', kind: 'number' },
   { id: 'stimulusTimeSeconds', label: 'Stimuluszeit (s)', kind: 'number' },
   { id: 'booklet', label: 'Booklet', kind: 'booklet' },
@@ -151,6 +152,8 @@ const UPLOAD_FIELD_LABELS: Record<string, string> = {
   solutionRate: 'Lösungshäufigkeit',
   text_complexity: 'Textkomplexität',
   textComplexity: 'Textkomplexität',
+  kstufe: 'Kompetenzstufe',
+  competenceLevel: 'Kompetenzstufe',
   item_time_s: 'Itemzeit (s)',
   itemTimeSeconds: 'Itemzeit (s)',
   stimulus_time_s: 'Stimuluszeit (s)',
@@ -1470,8 +1473,12 @@ export class ItemExplorerFacade implements OnDestroy {
           this.itemSubIdLabel = String(fc.itemSubIdLabel || 'Sub-ID').trim() || 'Sub-ID';
           this.enablePersonalItemData = fc.enablePersonalItemData === true;
           this.enableItemCollections = fc.enableItemCollections === true;
-          this.personalItemCategoryLabel =
+          const configuredPersonalCategoryLabel =
             String(fc.personalItemCategoryLabel || 'Kompetenzstufe').trim() || 'Kompetenzstufe';
+          this.personalItemCategoryLabel =
+            configuredPersonalCategoryLabel.toLocaleLowerCase('de-DE') === 'kompetenzstufe'
+              ? 'Kompetenzstufe (persönlich)'
+              : configuredPersonalCategoryLabel;
           this.personalItemCategoryValues = this.normalizeStringList(fc.personalItemCategoryValues);
           this.personalItemTagLabel =
             String(fc.personalItemTagLabel || 'Markierungen').trim() || 'Markierungen';
@@ -1785,6 +1792,8 @@ export class ItemExplorerFacade implements OnDestroy {
         return item.solutionRate;
       case 'textComplexity':
         return item.textComplexity;
+      case 'competenceLevel':
+        return item.competenceLevel;
       case 'itemTimeSeconds':
         return item.itemTimeSeconds;
       case 'stimulusTimeSeconds':

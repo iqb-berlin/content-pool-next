@@ -205,6 +205,11 @@ describe("Reviewer column information boundary", () => {
     expect(restricted.allowsExportField("subId")).toBe(false);
     expect(policy("system:subId").allowsExportField("subId")).toBe(true);
     expect(restricted.allowsExportField("empiricalDifficulty")).toBe(false);
+    expect(restricted.allowsExportField("competenceLevel")).toBe(false);
+    expect(restricted.allowsExportField("personalCompetenceLevel")).toBe(true);
+    expect(
+      policy("metadata:competenceLevel").allowsExportField("competenceLevel"),
+    ).toBe(true);
   });
 
   it("separates booklet names from positions and removes raw metadata dependencies", () => {

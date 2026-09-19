@@ -6998,6 +6998,7 @@ describe('ItemExplorerFacade', () => {
       'discrimination',
       'solutionRate',
       'textComplexity',
+      'competenceLevel',
       'itemTimeSeconds',
       'stimulusTimeSeconds',
       'booklet',
@@ -7113,13 +7114,68 @@ describe('ItemExplorerFacade', () => {
     expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
   });
 
+  it('filters and sorts the shared competence level as imported text', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([]);
+    const competenceLevelColumn = columns.find(
+      (column: { id: string }) => column.id === 'competenceLevel',
+    );
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        competenceLevel: 'IV',
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        competenceLevel: 'II',
+      },
+    ];
+    component.allColumns = columns;
+    component.columnFilters = { competenceLevel: 'IV' };
+
+    expect(competenceLevelColumn).toEqual({
+      id: 'competenceLevel',
+      label: 'Kompetenzstufe',
+      kind: 'text',
+    });
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+
+    component.columnFilters = {};
+    component.applyFilter(false);
+    component.sortBy('competenceLevel');
+    expect(component.filteredItems.map((item) => item.competenceLevel)).toEqual(['II', 'IV']);
+  });
+
   it('formats wide and legacy upload successes without losing imported details', () => {
     const component = createFacade();
     const wideSuccess = {
       unitId: 'unit-1',
       itemId: 'item-1',
       subId: 'A',
-      fields: ['bista', 'infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
+      fields: [
+        'bista',
+        'infit',
+        'discrimination',
+        'text_complexity',
+        'kstufe',
+        'booklet',
+        'position',
+      ],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
         { booklet: 'B2', position: null },
@@ -7127,7 +7183,7 @@ describe('ItemExplorerFacade', () => {
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
-      'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Booklet / Position',
+      'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Kompetenzstufe, Booklet / Position',
     );
     expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2');
     const clearedBooklets = {

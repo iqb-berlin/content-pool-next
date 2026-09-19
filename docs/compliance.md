@@ -10,7 +10,22 @@ The `Compliance` workflow runs when a dependency manifest, lockfile, license,
 or the workflow itself changes. It creates CycloneDX JSON SBOMs for the
 backend, frontend, and Keycloak extension. The resulting `dependency-sboms`
 artifact is retained for 30 days. The same job verifies that the canonical
-Apache-2.0 license text and package declarations remain consistent.
+Apache-2.0 license text and package declarations remain consistent. It also
+enforces `compliance/dependency-license-policy.json` against every component in
+the three SBOMs. A dependency with missing metadata or without at least one
+reviewed license choice blocks the pull request. Version-specific metadata
+overrides and reviewed exceptions are explicit; an update to such a component
+therefore requires another review instead of silently inheriting the decision.
+The same generator and policy check run in the CI security job required by the
+protected `release-gate`, so a license-policy failure cannot be bypassed merely
+because the separate artifact workflow is not a required check.
+
+Dependabot checks npm, Maven, Python, Docker and GitHub Actions every Monday.
+Minor and patch updates are grouped per ecosystem and manifest directory;
+major updates remain separate. Security updates are grouped separately from
+routine version updates. External GitHub Actions are pinned to immutable full
+commit SHAs, while comments retain the readable release tag. Dependabot updates
+the SHA when a new Action release is selected.
 
 ## External code provenance (SCANOSS)
 

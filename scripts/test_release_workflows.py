@@ -35,7 +35,7 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertEqual(self.candidate.count("timeout-minutes: 45"), 2)
 
     def test_release_sboms_cover_both_images_and_platforms(self) -> None:
-        self.assertIn("anchore/sbom-action/download-syft@v0.24.2", self.candidate)
+        self.assertIn("uses: anchore/sbom-action/download-syft@", self.candidate)
         self.assertIn("syft-version: v1.51.1", self.candidate)
         self.assertIn("for platform in linux/amd64 linux/arm64", self.candidate)
         self.assertIn('"${BACKEND_IMAGE}@${BACKEND_DIGEST}"', self.candidate)

@@ -294,6 +294,17 @@ export class ReviewerColumnPolicy {
         draftState: published,
       };
     }
+    // Summary endpoints carry labels outside the full review manifest. Keep only
+    // navigation identities when the corresponding booklet column is hidden.
+    if (context === "sequences" && !this.allows("metadata:booklet")) {
+      return {
+        id: value.id,
+        ...(value.kind ? { kind: value.kind } : {}),
+        ...(Array.isArray(value.units)
+          ? { units: this.projectResponse(value.units, "units") }
+          : {}),
+      };
+    }
     const result: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
       if (

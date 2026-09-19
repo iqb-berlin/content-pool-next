@@ -997,6 +997,7 @@ describe("Review visibility, groups and synchronization API", () => {
           await limited.getRepository(AcpFile).save({
             acpId: acp.id,
             originalName,
+            relativePath: originalName,
             filePath,
             fileSize: content.length,
           });

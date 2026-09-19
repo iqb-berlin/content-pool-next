@@ -9,10 +9,14 @@ import {
   AcpCredential,
   AppSettings,
   User,
+  AcpFile,
+  AcpExternalResourceCache,
 } from "../database/entities";
 import { AuthModule } from "../auth/auth.module";
 import { ItemExplorerModule } from "../item-explorer/item-explorer.module";
 import { AdminModule } from "../admin/admin.module";
+import { SnapshotsModule } from "../snapshots/snapshots.module";
+import { AcpIndexService } from "./acp-index.service";
 
 @Module({
   imports: [
@@ -23,13 +27,16 @@ import { AdminModule } from "../admin/admin.module";
       AcpCredential,
       AppSettings,
       User,
+      AcpFile,
+      AcpExternalResourceCache,
     ]),
     AuthModule,
     ItemExplorerModule,
     AdminModule,
+    SnapshotsModule,
   ],
   controllers: [AcpController],
-  providers: [AcpService],
-  exports: [AcpService],
+  providers: [AcpService, AcpIndexService],
+  exports: [AcpService, AcpIndexService],
 })
 export class AcpModule {}

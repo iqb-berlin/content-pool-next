@@ -46,8 +46,7 @@ export function getIndexUnits(index: unknown): any[] {
   const partUnits = getAssessmentParts(obj).flatMap((part) =>
     asArray(part?.units),
   );
-  const units = partUnits.length ? partUnits : asArray(obj.units);
-  return dedupeById(units);
+  return partUnits.length ? partUnits : dedupeById(asArray(obj.units));
 }
 
 export function getIndexScales(index: unknown): any[] {
@@ -55,8 +54,7 @@ export function getIndexScales(index: unknown): any[] {
   const partScales = getAssessmentParts(obj).flatMap((part) =>
     asArray(part?.scales),
   );
-  const scales = partScales.length ? partScales : asArray(obj.scales);
-  return dedupeById(scales);
+  return partScales.length ? partScales : dedupeById(asArray(obj.scales));
 }
 
 export function findUnitInIndex(
@@ -64,6 +62,26 @@ export function findUnitInIndex(
   unitId: string,
 ): any | undefined {
   return getIndexUnits(index).find((unit) => unit?.id === unitId);
+}
+
+export function findUnitsInIndex(
+  index: unknown,
+  unitId: string,
+): Array<{ partId: string; unit: any }> {
+  return getAssessmentParts(index).flatMap((part) =>
+    asArray(part?.units)
+      .filter((unit) => unit?.id === unitId)
+      .map((unit) => ({ partId: String(part?.id || ""), unit })),
+  );
+}
+
+export function findUnitInPart(
+  index: unknown,
+  partId: string,
+  unitId: string,
+): any | undefined {
+  const part = getAssessmentParts(index).find((entry) => entry?.id === partId);
+  return asArray(part?.units).find((unit) => unit?.id === unitId);
 }
 
 /**
@@ -89,39 +107,14 @@ export function toRuntimeAcpIndex(index: unknown): UnknownRecord {
 
 /**
  * Storage normalization:
- * - preserve incoming fields
- * - ensure assessmentParts can serve as canonical source for units/scales
+ * - preserve schema-defined incoming fields
+ * - remove legacy top-level units/scales; explicit migration places them in parts
  */
 export function normalizeIndexForStorage(index: unknown): UnknownRecord {
-  const runtime = toRuntimeAcpIndex(index);
-  const parts = getAssessmentParts(runtime).map((part) => ({ ...part }));
-  const units = getIndexUnits(runtime);
-  const scales = getIndexScales(runtime);
-
-  const hasUnitsInParts = parts.some((part) => asArray(part.units).length > 0);
-  const hasScalesInParts = parts.some(
-    (part) => asArray(part.scales).length > 0,
-  );
-
-  if (
-    (units.length && !hasUnitsInParts) ||
-    (scales.length && !hasScalesInParts)
-  ) {
-    if (!parts.length) {
-      parts.push({
-        id: "default-assessment-part",
-        name: [{ lang: "de", value: "Default Assessment Part" }],
-      });
-    }
-
-    const primary = { ...parts[0] };
-    if (!hasUnitsInParts) primary.units = units;
-    if (!hasScalesInParts && scales.length) primary.scales = scales;
-    parts[0] = primary;
-  }
-
-  return {
-    ...runtime,
-    assessmentParts: parts,
-  };
+  const source = asRecord(index);
+  const { units: _legacyUnits, scales: _legacyScales, ...canonical } = source;
+  const parts = getAssessmentParts(source).map((part) => ({ ...part }));
+  if (parts.length) canonical.assessmentParts = parts;
+  else delete canonical.assessmentParts;
+  return canonical;
 }

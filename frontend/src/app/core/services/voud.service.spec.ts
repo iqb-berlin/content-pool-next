@@ -73,6 +73,21 @@ describe('VoudService.getStartPage', () => {
     expect(service.getStartPage(definition, 'field-b-2')).toBe(1);
   });
 
+  it('prefers a matching alias over an earlier unrelated element id', () => {
+    const definition = JSON.stringify({
+      pages: [
+        { sections: [{ elements: [{ id: '07', alias: '04' }] }] },
+        { sections: [{ elements: [{ id: '11', alias: '07' }] }] },
+      ],
+    });
+
+    expect(service.resolvePlayerTargetLocation(definition, '07')).toEqual({
+      absolutePageIndex: 1,
+      scrollPageIndex: 1,
+      isAlwaysVisiblePage: false,
+    });
+  });
+
   it('returns undefined for targets on always-visible pages', () => {
     const definition = JSON.stringify({
       pages: [
@@ -110,6 +125,36 @@ describe('VoudService.getFocusIdentifiers', () => {
     expect(service.getFocusIdentifiers(definition, 'A1')).toEqual(['A1', 'text-field-1']);
   });
 
+  it('maps a stored element id back to the alias of the same node', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              elements: [{ alias: '02a', id: 'text_1764855140992_1' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.getFocusIdentifiers(definition, 'text_1764855140992_1')).toEqual([
+      'text_1764855140992_1',
+      '02a',
+    ]);
+  });
+
+  it('keeps equivalent identifiers on the alias-matched node during id collisions', () => {
+    const definition = JSON.stringify({
+      pages: [
+        { sections: [{ elements: [{ id: '07', alias: '04' }] }] },
+        { sections: [{ elements: [{ id: '11', alias: '07' }] }] },
+      ],
+    });
+
+    expect(service.getFocusIdentifiers(definition, '07')).toEqual(['07', '11']);
+  });
+
   it('matches identifiers case-insensitively and trims values', () => {
     const definition = JSON.stringify({
       pages: [
@@ -143,6 +188,63 @@ describe('VoudService.getFocusIdentifiers', () => {
       'visible-target',
       'text-field-3',
     ]);
+  });
+});
+
+describe('VoudService.resolvePlayerResponseTarget', () => {
+  const service = new VoudService();
+
+  it('returns the alias used by Aspect response states and the element type', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          sections: [
+            {
+              elements: [
+                {
+                  id: 'radio_1',
+                  alias: 'A1',
+                  type: 'radio',
+                  options: [{ text: 'A' }, { text: 'B' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'radio_1')).toEqual({
+      responseId: 'A1',
+      elementType: 'radio',
+      identifiers: ['radio_1', 'A1'],
+      optionCount: 2,
+    });
+  });
+
+  it('falls back to the internal id when the element has no alias', () => {
+    const definition = JSON.stringify({
+      pages: [{ elements: [{ id: 'checkbox_1', type: 'checkbox' }] }],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'checkbox_1')).toEqual({
+      responseId: 'checkbox_1',
+      elementType: 'checkbox',
+      identifiers: ['checkbox_1'],
+    });
+  });
+
+  it('does not treat references in visibility rules as response targets', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          visibilityRules: [{ id: 'RULE_ONLY' }],
+          elements: [{ id: 'field_1', alias: 'A1', type: 'text-field' }],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'RULE_ONLY')).toBeUndefined();
   });
 });
 

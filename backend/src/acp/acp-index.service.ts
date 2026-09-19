@@ -14,13 +14,12 @@ import { isIP } from "net";
 import * as ipaddr from "ipaddr.js";
 import { Repository } from "typeorm";
 import { Agent } from "undici";
-import {
-  Acp,
-  AcpExternalResourceCache,
-  AcpFile,
-} from "../database/entities";
+import { Acp, AcpExternalResourceCache, AcpFile } from "../database/entities";
 import { SnapshotsService } from "../snapshots/snapshots.service";
-import { getAssessmentParts, normalizeIndexForStorage } from "./acp-index.utils";
+import {
+  getAssessmentParts,
+  normalizeIndexForStorage,
+} from "./acp-index.utils";
 import {
   AcpExternalCheck,
   AcpIndexMigrationPreview,
@@ -29,11 +28,9 @@ import {
 } from "./acp-index.types";
 
 const ACP_SCHEMA_ID = "acp-index@0.5" as const;
-const RELEASED_STATUSES = new Set([
-  "RELEASED_PUBLIC",
-  "RELEASED_CONFIDENTIAL",
-]);
-const SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+const RELEASED_STATUSES = new Set(["RELEASED_PUBLIC", "RELEASED_CONFIDENTIAL"]);
+const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const NORMAL_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const PUBLISH_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_EXTERNAL_BYTES = 1024 * 1024;
@@ -59,7 +56,10 @@ export class AcpIndexService implements OnApplicationBootstrap {
     const scaleSchema = require("./schemas/acp-scale-0.2.schema.json");
     const indexSchema = require("./schemas/acp-index-0.5.schema.json");
     ajv.addSchema(metadataSchema);
-    ajv.addSchema(metadataSchema, "https://w3id.org/iqb/spec/metadata-values/3.0");
+    ajv.addSchema(
+      metadataSchema,
+      "https://w3id.org/iqb/spec/metadata-values/3.0",
+    );
     ajv.addSchema(unitSchema);
     ajv.addSchema(unitSchema, "https://w3id.org/iqb/spec/acp-unit/0.5");
     ajv.addSchema(scaleSchema);
@@ -71,14 +71,21 @@ export class AcpIndexService implements OnApplicationBootstrap {
     try {
       const acps = await this.acpRepository.find({ select: { id: true } });
       for (const acp of acps) {
-        await this.validateStoredIndex(acp.id, { external: false, persist: true });
+        await this.validateStoredIndex(acp.id, {
+          external: false,
+          persist: true,
+        });
       }
     } catch (error) {
-      this.logger.warn(`ACP index inventory could not be completed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(
+        `ACP index inventory could not be completed: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
-  createEmptyIndex(acp: Pick<Acp, "packageId" | "name" | "description">): Record<string, unknown> {
+  createEmptyIndex(
+    acp: Pick<Acp, "packageId" | "name" | "description">,
+  ): Record<string, unknown> {
     return {
       packageId: acp.packageId,
       version: "0.5.0",
@@ -92,7 +99,11 @@ export class AcpIndexService implements OnApplicationBootstrap {
 
   async validateStoredIndex(
     acpId: string,
-    options: { external?: boolean; forPublication?: boolean; persist?: boolean } = {},
+    options: {
+      external?: boolean;
+      forPublication?: boolean;
+      persist?: boolean;
+    } = {},
   ): Promise<AcpIndexValidationReport> {
     const acp = await this.getAcp(acpId);
     const report = await this.validateCandidate(acpId, acp.acpIndex, options);
@@ -113,20 +124,47 @@ export class AcpIndexService implements OnApplicationBootstrap {
     if (!schemaValid) {
       issues.push(...this.mapSchemaErrors(this.validateSchema.errors || []));
     }
-    if (typeof candidate.version === "string" && !SEMVER_PATTERN.test(candidate.version)) {
-      issues.push(this.issue("INVALID_SEMVER", "schema", "error", "/version", "version muss SemVer entsprechen."));
+    if (
+      typeof candidate.version === "string" &&
+      !SEMVER_PATTERN.test(candidate.version)
+    ) {
+      issues.push(
+        this.issue(
+          "INVALID_SEMVER",
+          "schema",
+          "error",
+          "/version",
+          "version muss SemVer entsprechen.",
+        ),
+      );
     }
 
     const files = await this.fileRepository.find({ where: { acpId } });
     this.validateSemantics(candidate, files, issues);
     if (options.external) {
-      await this.validateMetadata(candidate, issues, externalChecks, Boolean(options.forPublication));
+      await this.validateMetadata(
+        candidate,
+        issues,
+        externalChecks,
+        Boolean(options.forPublication),
+      );
     }
-    const errorCount = issues.filter((entry) => entry.severity === "error").length;
+    const errorCount = issues.filter(
+      (entry) => entry.severity === "error",
+    ).length;
     return {
       schemaId: ACP_SCHEMA_ID,
-      valid: schemaValid && !issues.some((entry) => entry.scope === "schema" && entry.severity === "error"),
-      publishable: schemaValid && errorCount === 0 && externalChecks.every((entry) => entry.status === "valid" || entry.status === "cached"),
+      valid:
+        schemaValid &&
+        !issues.some(
+          (entry) => entry.scope === "schema" && entry.severity === "error",
+        ),
+      publishable:
+        schemaValid &&
+        errorCount === 0 &&
+        externalChecks.every(
+          (entry) => entry.status === "valid" || entry.status === "cached",
+        ),
       checkedAt: new Date().toISOString(),
       issues,
       externalChecks,
@@ -147,34 +185,61 @@ export class AcpIndexService implements OnApplicationBootstrap {
     const acp = await this.getAcp(acpId);
     this.assertExpectedUpdatedAt(acp, expectedUpdatedAt);
     if (RELEASED_STATUSES.has(String(acp.acpIndex?.status || ""))) {
-      throw new ConflictException("Published ACP must be reopened before it can be changed");
+      throw new ConflictException(
+        "Published ACP must be reopened before it can be changed",
+      );
     }
     const candidate = normalizeIndexForStorage(candidateInput);
     if (candidate.packageId !== acp.packageId) {
-      throw new UnprocessableEntityException("packageId must match the ACP packageId");
+      throw new UnprocessableEntityException(
+        "packageId must match the ACP packageId",
+      );
     }
-    if (!options.allowReleasedStatus && RELEASED_STATUSES.has(String(candidate.status || ""))) {
-      throw new UnprocessableEntityException("Released status can only be set through the publish endpoint");
+    if (
+      !options.allowReleasedStatus &&
+      RELEASED_STATUSES.has(String(candidate.status || ""))
+    ) {
+      throw new UnprocessableEntityException(
+        "Released status can only be set through the publish endpoint",
+      );
     }
     const report = await this.validateCandidate(acpId, candidate);
     if (!report.valid) {
-      throw new UnprocessableEntityException({ message: "ACP index violates acp-index@0.5", report });
+      throw new UnprocessableEntityException({
+        message: "ACP index violates acp-index@0.5",
+        report,
+      });
     }
-    return this.saveLocked(acpId, expectedUpdatedAt || acp.updatedAt.toISOString(), (locked) => {
-      if (RELEASED_STATUSES.has(String(locked.acpIndex?.status || ""))) {
-        throw new ConflictException("Published ACP must be reopened before it can be changed");
-      }
-      if (locked.packageId !== candidate.packageId) {
-        throw new UnprocessableEntityException("packageId must match the ACP packageId");
-      }
-      locked.acpIndex = candidate;
-      locked.acpIndexSchemaId = ACP_SCHEMA_ID;
-      locked.acpIndexValidationStatus = report.publishable ? "CONFORMANT" : "CONFORMANT_WITH_ISSUES";
-      locked.acpIndexValidationReport = report as unknown as Record<string, unknown>;
-      if (options.itemProperties) locked.itemProperties = options.itemProperties;
-      if (options.name !== undefined) locked.name = options.name;
-      if (options.description !== undefined) locked.description = options.description;
-    });
+    return this.saveLocked(
+      acpId,
+      expectedUpdatedAt || acp.updatedAt.toISOString(),
+      (locked) => {
+        if (RELEASED_STATUSES.has(String(locked.acpIndex?.status || ""))) {
+          throw new ConflictException(
+            "Published ACP must be reopened before it can be changed",
+          );
+        }
+        if (locked.packageId !== candidate.packageId) {
+          throw new UnprocessableEntityException(
+            "packageId must match the ACP packageId",
+          );
+        }
+        locked.acpIndex = candidate;
+        locked.acpIndexSchemaId = ACP_SCHEMA_ID;
+        locked.acpIndexValidationStatus = report.publishable
+          ? "CONFORMANT"
+          : "CONFORMANT_WITH_ISSUES";
+        locked.acpIndexValidationReport = report as unknown as Record<
+          string,
+          unknown
+        >;
+        if (options.itemProperties)
+          locked.itemProperties = options.itemProperties;
+        if (options.name !== undefined) locked.name = options.name;
+        if (options.description !== undefined)
+          locked.description = options.description;
+      },
+    );
   }
 
   async migrationPreview(acpId: string): Promise<AcpIndexMigrationPreview> {
@@ -182,25 +247,37 @@ export class AcpIndexService implements OnApplicationBootstrap {
     const candidate = structuredClone(acp.acpIndex || {});
     const changes: Array<{ path: string; message: string }> = [];
     const candidateItemProperties = structuredClone(acp.itemProperties || {});
-    const legacyUnits = Array.isArray((candidate as any).units) ? (candidate as any).units : [];
-    const legacyScales = Array.isArray((candidate as any).scales) ? (candidate as any).scales : [];
+    const legacyUnits = Array.isArray((candidate as any).units)
+      ? (candidate as any).units
+      : [];
+    const legacyScales = Array.isArray((candidate as any).scales)
+      ? (candidate as any).scales
+      : [];
     let parts = Array.isArray((candidate as any).assessmentParts)
       ? (candidate as any).assessmentParts
       : [];
 
     if ((legacyUnits.length || legacyScales.length) && !parts.length) {
-      parts = [{
-        id: "default-assessment-part",
-        name: [{ lang: "de", value: "Default Assessment Part" }],
-        units: legacyUnits,
-        ...(legacyScales.length ? { scales: legacyScales } : {}),
-        bookletModules: [],
-        instruments: [],
-      }];
-      changes.push({ path: "/assessmentParts", message: "Top-Level-Units und -Skalen in einen Assessment-Part verschoben." });
+      parts = [
+        {
+          id: "default-assessment-part",
+          name: [{ lang: "de", value: "Default Assessment Part" }],
+          units: legacyUnits,
+          ...(legacyScales.length ? { scales: legacyScales } : {}),
+          bookletModules: [],
+          instruments: [],
+        },
+      ];
+      changes.push({
+        path: "/assessmentParts",
+        message:
+          "Top-Level-Units und -Skalen in einen Assessment-Part verschoben.",
+      });
     } else if (parts.length) {
-      if (legacyUnits.length) parts[0].units = [...(parts[0].units || []), ...legacyUnits];
-      if (legacyScales.length) parts[0].scales = [...(parts[0].scales || []), ...legacyScales];
+      if (legacyUnits.length)
+        parts[0].units = [...(parts[0].units || []), ...legacyUnits];
+      if (legacyScales.length)
+        parts[0].scales = [...(parts[0].scales || []), ...legacyScales];
     }
     delete (candidate as any).units;
     delete (candidate as any).scales;
@@ -211,17 +288,29 @@ export class AcpIndexService implements OnApplicationBootstrap {
       for (const [unitIndex, unit] of (part.units || []).entries()) {
         if (unit.dependencies && !Array.isArray(unit.dependencies)) {
           unit.dependencies = [unit.dependencies];
-          changes.push({ path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`, message: "Dependency-Objekt in Array umgewandelt." });
+          changes.push({
+            path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`,
+            message: "Dependency-Objekt in Array umgewandelt.",
+          });
         }
         for (const dependency of unit.dependencies || []) {
           const mapped = this.mapLegacyDependencyType(dependency.type);
           if (mapped !== dependency.type) {
-            changes.push({ path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`, message: `${dependency.type} nach ${mapped} migriert.` });
+            changes.push({
+              path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`,
+              message: `${dependency.type} nach ${mapped} migriert.`,
+            });
             dependency.type = mapped;
           }
-          if (typeof dependency.id === "string" && dependency.id.startsWith("./")) {
+          if (
+            typeof dependency.id === "string" &&
+            dependency.id.startsWith("./")
+          ) {
             dependency.id = dependency.id.replace(/^\.\/+/, "");
-            changes.push({ path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`, message: "Relativen Dateipfad kanonisch normalisiert." });
+            changes.push({
+              path: `/assessmentParts/${partIndex}/units/${unitIndex}/dependencies`,
+              message: "Relativen Dateipfad kanonisch normalisiert.",
+            });
           }
         }
         for (const item of unit.items || []) {
@@ -232,25 +321,38 @@ export class AcpIndexService implements OnApplicationBootstrap {
               metadata: item.metadata,
             };
             delete item.metadata;
-            changes.push({ path: `/assessmentParts/${partIndex}/units/${unitIndex}/items`, message: `Item-Metadaten für ${key} nach itemProperties verschoben.` });
+            changes.push({
+              path: `/assessmentParts/${partIndex}/units/${unitIndex}/items`,
+              message: `Item-Metadaten für ${key} nach itemProperties verschoben.`,
+            });
           }
         }
       }
       for (const instrument of part.instruments || []) {
         for (const booklet of instrument.testcenterBooklet || []) {
-          if (typeof booklet.definitionId === "string" && booklet.definitionId.startsWith("./")) {
+          if (
+            typeof booklet.definitionId === "string" &&
+            booklet.definitionId.startsWith("./")
+          ) {
             booklet.definitionId = booklet.definitionId.replace(/^\.\/+/, "");
-            changes.push({ path: `/assessmentParts/${partIndex}/instruments`, message: "Booklet-Pfad kanonisch normalisiert." });
+            changes.push({
+              path: `/assessmentParts/${partIndex}/instruments`,
+              message: "Booklet-Pfad kanonisch normalisiert.",
+            });
           }
         }
       }
     }
-    const validation = await this.validateCandidate(acpId, candidate, { external: true });
+    const validation = await this.validateCandidate(acpId, candidate, {
+      external: true,
+    });
     return {
       candidateIndex: candidate,
       candidateItemProperties,
       changes,
-      unresolved: validation.issues.filter((entry) => entry.severity === "error"),
+      unresolved: validation.issues.filter(
+        (entry) => entry.severity === "error",
+      ),
       validation,
       sourceUpdatedAt: acp.updatedAt.toISOString(),
     };
@@ -259,12 +361,20 @@ export class AcpIndexService implements OnApplicationBootstrap {
   async migrate(acpId: string, expectedUpdatedAt: string): Promise<Acp> {
     const preview = await this.migrationPreview(acpId);
     if (!preview.validation.valid) {
-      throw new UnprocessableEntityException({ message: "Migration has unresolved schema errors", preview });
+      throw new UnprocessableEntityException({
+        message: "Migration has unresolved schema errors",
+        preview,
+      });
     }
     await this.snapshotsService.create(acpId, "ACP-Index 0.5 migration");
-    return this.saveCandidate(acpId, preview.candidateIndex, expectedUpdatedAt, {
-      itemProperties: preview.candidateItemProperties,
-    });
+    return this.saveCandidate(
+      acpId,
+      preview.candidateIndex,
+      expectedUpdatedAt,
+      {
+        itemProperties: preview.candidateItemProperties,
+      },
+    );
   }
 
   async publish(
@@ -273,21 +383,36 @@ export class AcpIndexService implements OnApplicationBootstrap {
     expectedUpdatedAt: string,
   ): Promise<Acp> {
     if (!RELEASED_STATUSES.has(status)) {
-      throw new UnprocessableEntityException("status must be RELEASED_PUBLIC or RELEASED_CONFIDENTIAL");
+      throw new UnprocessableEntityException(
+        "status must be RELEASED_PUBLIC or RELEASED_CONFIDENTIAL",
+      );
     }
     const acp = await this.getAcp(acpId);
     this.assertExpectedUpdatedAt(acp, expectedUpdatedAt);
     const candidate = { ...acp.acpIndex, status };
-    const report = await this.validateCandidate(acpId, candidate, { external: true, forPublication: true });
-    if (!report.publishable) {
-      throw new UnprocessableEntityException({ message: "ACP index is not publishable", report });
-    }
-    return this.saveLocked(acpId, expectedUpdatedAt || acp.updatedAt.toISOString(), (locked) => {
-      locked.acpIndex = { ...locked.acpIndex, status };
-      locked.acpIndexSchemaId = ACP_SCHEMA_ID;
-      locked.acpIndexValidationStatus = "CONFORMANT";
-      locked.acpIndexValidationReport = report as unknown as Record<string, unknown>;
+    const report = await this.validateCandidate(acpId, candidate, {
+      external: true,
+      forPublication: true,
     });
+    if (!report.publishable) {
+      throw new UnprocessableEntityException({
+        message: "ACP index is not publishable",
+        report,
+      });
+    }
+    return this.saveLocked(
+      acpId,
+      expectedUpdatedAt || acp.updatedAt.toISOString(),
+      (locked) => {
+        locked.acpIndex = { ...locked.acpIndex, status };
+        locked.acpIndexSchemaId = ACP_SCHEMA_ID;
+        locked.acpIndexValidationStatus = "CONFORMANT";
+        locked.acpIndexValidationReport = report as unknown as Record<
+          string,
+          unknown
+        >;
+      },
+    );
   }
 
   async reopen(acpId: string, expectedUpdatedAt: string): Promise<Acp> {
@@ -295,39 +420,108 @@ export class AcpIndexService implements OnApplicationBootstrap {
     this.assertExpectedUpdatedAt(acp, expectedUpdatedAt);
     if (!RELEASED_STATUSES.has(String(acp.acpIndex?.status || ""))) return acp;
     await this.snapshotsService.create(acpId, "ACP reopened for editing");
-    return this.saveLocked(acpId, expectedUpdatedAt || acp.updatedAt.toISOString(), (locked) => {
-      locked.acpIndex = { ...locked.acpIndex, status: "IN_DEVELOPMENT" };
-    });
+    return this.saveLocked(
+      acpId,
+      expectedUpdatedAt || acp.updatedAt.toISOString(),
+      (locked) => {
+        locked.acpIndex = { ...locked.acpIndex, status: "IN_DEVELOPMENT" };
+      },
+    );
   }
 
-  private validateSemantics(candidate: Record<string, unknown>, files: AcpFile[], issues: AcpIndexValidationIssue[]): void {
-    const filePaths = new Set(files.map((file) => file.relativePath || file.originalName));
+  private validateSemantics(
+    candidate: Record<string, unknown>,
+    files: AcpFile[],
+    issues: AcpIndexValidationIssue[],
+  ): void {
+    const filePaths = new Set(
+      files.map((file) => file.relativePath || file.originalName),
+    );
     const resolvesFile = (id: string) => filePaths.has(id);
 
     for (const [partIndex, part] of getAssessmentParts(candidate).entries()) {
       const partPath = `/assessmentParts/${partIndex}`;
       const unitIds = new Set<string>();
       for (const [unitIndex, unit] of (part.units || []).entries()) {
-        if (unitIds.has(unit.id)) issues.push(this.issue("DUPLICATE_UNIT_ID", "semantic", "error", `${partPath}/units/${unitIndex}/id`, `Unit-ID ${unit.id} ist innerhalb des Parts doppelt.`));
+        if (unitIds.has(unit.id))
+          issues.push(
+            this.issue(
+              "DUPLICATE_UNIT_ID",
+              "semantic",
+              "error",
+              `${partPath}/units/${unitIndex}/id`,
+              `Unit-ID ${unit.id} ist innerhalb des Parts doppelt.`,
+            ),
+          );
         unitIds.add(unit.id);
-        for (const [dependencyIndex, dependency] of (unit.dependencies || []).entries()) {
-          if (dependency?.id && !resolvesFile(dependency.id)) issues.push(this.issue("MISSING_FILE", "file", "error", `${partPath}/units/${unitIndex}/dependencies/${dependencyIndex}/id`, `Datei ${dependency.id} wurde nicht gefunden.`));
+        for (const [dependencyIndex, dependency] of (
+          unit.dependencies || []
+        ).entries()) {
+          if (dependency?.id && !resolvesFile(dependency.id))
+            issues.push(
+              this.issue(
+                "MISSING_FILE",
+                "file",
+                "error",
+                `${partPath}/units/${unitIndex}/dependencies/${dependencyIndex}/id`,
+                `Datei ${dependency.id} wurde nicht gefunden.`,
+              ),
+            );
         }
       }
-      const moduleIds = new Set((part.bookletModules || []).map((module: any) => module.id));
-      for (const [moduleIndex, module] of (part.bookletModules || []).entries()) {
+      const moduleIds = new Set(
+        (part.bookletModules || []).map((module: any) => module.id),
+      );
+      for (const [moduleIndex, module] of (
+        part.bookletModules || []
+      ).entries()) {
         for (const [refIndex, ref] of (module.units || []).entries()) {
-          if (!unitIds.has(ref.id)) issues.push(this.issue("UNKNOWN_UNIT_REFERENCE", "semantic", "error", `${partPath}/bookletModules/${moduleIndex}/units/${refIndex}/id`, `Unit ${ref.id} ist in diesem Part nicht definiert.`));
+          if (!unitIds.has(ref.id))
+            issues.push(
+              this.issue(
+                "UNKNOWN_UNIT_REFERENCE",
+                "semantic",
+                "error",
+                `${partPath}/bookletModules/${moduleIndex}/units/${refIndex}/id`,
+                `Unit ${ref.id} ist in diesem Part nicht definiert.`,
+              ),
+            );
         }
       }
-      for (const [instrumentIndex, instrument] of (part.instruments || []).entries()) {
-        for (const [bookletIndex, booklet] of (instrument.testcenterBooklet || []).entries()) {
-          if (!resolvesFile(booklet.definitionId)) issues.push(this.issue("MISSING_BOOKLET_FILE", "file", "error", `${partPath}/instruments/${instrumentIndex}/testcenterBooklet/${bookletIndex}/definitionId`, `Booklet ${booklet.definitionId} wurde nicht gefunden.`));
-          for (const [moduleRefIndex, moduleRef] of (booklet.modules || []).entries()) {
-            if (!moduleIds.has(moduleRef.moduleId)) issues.push(this.issue("UNKNOWN_MODULE_REFERENCE", "semantic", "error", `${partPath}/instruments/${instrumentIndex}/testcenterBooklet/${bookletIndex}/modules/${moduleRefIndex}/moduleId`, `Modul ${moduleRef.moduleId} ist in diesem Part nicht definiert.`));
+      for (const [instrumentIndex, instrument] of (
+        part.instruments || []
+      ).entries()) {
+        for (const [bookletIndex, booklet] of (
+          instrument.testcenterBooklet || []
+        ).entries()) {
+          if (!resolvesFile(booklet.definitionId))
+            issues.push(
+              this.issue(
+                "MISSING_BOOKLET_FILE",
+                "file",
+                "error",
+                `${partPath}/instruments/${instrumentIndex}/testcenterBooklet/${bookletIndex}/definitionId`,
+                `Booklet ${booklet.definitionId} wurde nicht gefunden.`,
+              ),
+            );
+          for (const [moduleRefIndex, moduleRef] of (
+            booklet.modules || []
+          ).entries()) {
+            if (!moduleIds.has(moduleRef.moduleId))
+              issues.push(
+                this.issue(
+                  "UNKNOWN_MODULE_REFERENCE",
+                  "semantic",
+                  "error",
+                  `${partPath}/instruments/${instrumentIndex}/testcenterBooklet/${bookletIndex}/modules/${moduleRefIndex}/moduleId`,
+                  `Modul ${moduleRef.moduleId} ist in diesem Part nicht definiert.`,
+                ),
+              );
           }
         }
-        for (const [handoutIndex, handout] of (instrument.handOutsForTestTaker || []).entries()) {
+        for (const [handoutIndex, handout] of (
+          instrument.handOutsForTestTaker || []
+        ).entries()) {
           this.validateFileReferenceTree(
             handout.file,
             `${partPath}/instruments/${instrumentIndex}/handOutsForTestTaker/${handoutIndex}/file`,
@@ -336,7 +530,9 @@ export class AcpIndexService implements OnApplicationBootstrap {
           );
         }
       }
-      for (const [documentIndex, document] of (part.additionalDocuments || []).entries()) {
+      for (const [documentIndex, document] of (
+        part.additionalDocuments || []
+      ).entries()) {
         this.validateFileReferenceTree(
           document.file,
           `${partPath}/additionalDocuments/${documentIndex}/file`,
@@ -344,18 +540,57 @@ export class AcpIndexService implements OnApplicationBootstrap {
           issues,
         );
       }
-      const itemIds = new Set((part.units || []).flatMap((unit: any) => (unit.items || []).map((item: any) => item.id)));
-      const scaleIds = new Set((part.scales || []).map((scale: any) => scale.id));
+      const itemIds = new Set(
+        (part.units || []).flatMap((unit: any) =>
+          (unit.items || []).map((item: any) => item.id),
+        ),
+      );
+      const scaleIds = new Set(
+        (part.scales || []).map((scale: any) => scale.id),
+      );
       for (const [scaleIndex, scale] of (part.scales || []).entries()) {
-        for (const [itemIndex, item] of (scale.typeParameters?.items || []).entries()) {
-          if (item.id && !itemIds.has(item.id)) issues.push(this.issue("UNKNOWN_SCALE_ITEM", "semantic", "error", `${partPath}/scales/${scaleIndex}/typeParameters/items/${itemIndex}/id`, `Skalen-Item ${item.id} ist nicht auflösbar.`));
+        for (const [itemIndex, item] of (
+          scale.typeParameters?.items || []
+        ).entries()) {
+          if (item.id && !itemIds.has(item.id))
+            issues.push(
+              this.issue(
+                "UNKNOWN_SCALE_ITEM",
+                "semantic",
+                "error",
+                `${partPath}/scales/${scaleIndex}/typeParameters/items/${itemIndex}/id`,
+                `Skalen-Item ${item.id} ist nicht auflösbar.`,
+              ),
+            );
         }
-        if (scale.scaleType === "DERIVED" && scale.typeParameters?.source && !scaleIds.has(scale.typeParameters.source)) {
-          issues.push(this.issue("UNKNOWN_SCALE_REFERENCE", "semantic", "error", `${partPath}/scales/${scaleIndex}/typeParameters/source`, `Skala ${scale.typeParameters.source} ist in diesem Part nicht definiert.`));
+        if (
+          scale.scaleType === "DERIVED" &&
+          scale.typeParameters?.source &&
+          !scaleIds.has(scale.typeParameters.source)
+        ) {
+          issues.push(
+            this.issue(
+              "UNKNOWN_SCALE_REFERENCE",
+              "semantic",
+              "error",
+              `${partPath}/scales/${scaleIndex}/typeParameters/source`,
+              `Skala ${scale.typeParameters.source} ist in diesem Part nicht definiert.`,
+            ),
+          );
         }
-        for (const [sourceIndex, source] of (scale.typeParameters?.sources || []).entries()) {
+        for (const [sourceIndex, source] of (
+          scale.typeParameters?.sources || []
+        ).entries()) {
           if (source.id && !scaleIds.has(source.id)) {
-            issues.push(this.issue("UNKNOWN_SCALE_REFERENCE", "semantic", "error", `${partPath}/scales/${scaleIndex}/typeParameters/sources/${sourceIndex}/id`, `Skala ${source.id} ist in diesem Part nicht definiert.`));
+            issues.push(
+              this.issue(
+                "UNKNOWN_SCALE_REFERENCE",
+                "semantic",
+                "error",
+                `${partPath}/scales/${scaleIndex}/typeParameters/sources/${sourceIndex}/id`,
+                `Skala ${source.id} ist in diesem Part nicht definiert.`,
+              ),
+            );
           }
         }
       }
@@ -394,39 +629,82 @@ export class AcpIndexService implements OnApplicationBootstrap {
     }
   }
 
-  private async validateMetadata(candidate: Record<string, unknown>, issues: AcpIndexValidationIssue[], checks: AcpExternalCheck[], forPublication: boolean): Promise<void> {
+  private async validateMetadata(
+    candidate: Record<string, unknown>,
+    issues: AcpIndexValidationIssue[],
+    checks: AcpExternalCheck[],
+    forPublication: boolean,
+  ): Promise<void> {
     const metadataNodes: Array<{ path: string; value: any }> = [];
     const visit = (value: unknown, path: string) => {
       if (!value || typeof value !== "object") return;
-      if (!Array.isArray(value) && typeof (value as any).profileId === "string") metadataNodes.push({ path, value });
-      if (Array.isArray(value)) value.forEach((entry, index) => visit(entry, `${path}/${index}`));
-      else Object.entries(value).forEach(([key, entry]) => visit(entry, `${path}/${key}`));
+      if (!Array.isArray(value) && typeof (value as any).profileId === "string")
+        metadataNodes.push({ path, value });
+      if (Array.isArray(value))
+        value.forEach((entry, index) => visit(entry, `${path}/${index}`));
+      else
+        Object.entries(value).forEach(([key, entry]) =>
+          visit(entry, `${path}/${key}`),
+        );
     };
     visit(candidate, "");
     const vocabularies = new Map<string, Record<string, unknown> | undefined>();
     for (const node of metadataNodes) {
-      const resource = await this.loadExternalJson(node.value.profileId, forPublication);
+      const resource = await this.loadExternalJson(
+        node.value.profileId,
+        forPublication,
+      );
       checks.push(resource.check);
       if (!resource.payload) {
-        issues.push(this.issue("PROFILE_UNAVAILABLE", "vocabulary", "error", `${node.path}/profileId`, `Metadatenprofil ${node.value.profileId} ist nicht verfügbar.`));
+        issues.push(
+          this.issue(
+            "PROFILE_UNAVAILABLE",
+            "vocabulary",
+            "error",
+            `${node.path}/profileId`,
+            `Metadatenprofil ${node.value.profileId} ist nicht verfügbar.`,
+          ),
+        );
         continue;
       }
       const profileEntries = this.collectProfileEntries(resource.payload);
-      if ((resource.payload as any).id !== node.value.profileId || profileEntries.size === 0) {
+      if (
+        (resource.payload as any).id !== node.value.profileId ||
+        profileEntries.size === 0
+      ) {
         resource.check.status = "invalid";
-        issues.push(this.issue("INVALID_PROFILE_STRUCTURE", "vocabulary", "error", `${node.path}/profileId`, `Metadatenprofil ${node.value.profileId} hat keine passende ID oder keine Einträge.`));
+        issues.push(
+          this.issue(
+            "INVALID_PROFILE_STRUCTURE",
+            "vocabulary",
+            "error",
+            `${node.path}/profileId`,
+            `Metadatenprofil ${node.value.profileId} hat keine passende ID oder keine Einträge.`,
+          ),
+        );
         continue;
       }
       for (const [entryIndex, entry] of (node.value.entries || []).entries()) {
         const definition = profileEntries.get(entry.id);
         if (!definition) {
-          issues.push(this.issue("UNKNOWN_PROFILE_ENTRY", "vocabulary", "error", `${node.path}/entries/${entryIndex}/id`, `Eintrag ${entry.id} existiert nicht im Profil.`));
+          issues.push(
+            this.issue(
+              "UNKNOWN_PROFILE_ENTRY",
+              "vocabulary",
+              "error",
+              `${node.path}/entries/${entryIndex}/id`,
+              `Eintrag ${entry.id} existiert nicht im Profil.`,
+            ),
+          );
           continue;
         }
         const vocabularyUrl = definition?.parameters?.url;
         if (typeof vocabularyUrl === "string" && Array.isArray(entry.value)) {
           if (!vocabularies.has(vocabularyUrl)) {
-            const vocabulary = await this.loadExternalJson(vocabularyUrl, forPublication);
+            const vocabulary = await this.loadExternalJson(
+              vocabularyUrl,
+              forPublication,
+            );
             checks.push(vocabulary.check);
             vocabularies.set(vocabularyUrl, vocabulary.payload);
             if (
@@ -435,12 +713,28 @@ export class AcpIndexService implements OnApplicationBootstrap {
               !Array.isArray((vocabulary.payload as any).concepts)
             ) {
               vocabulary.check.status = "invalid";
-              issues.push(this.issue("INVALID_VOCABULARY_STRUCTURE", "vocabulary", "error", `${node.path}/entries/${entryIndex}/value`, `Vokabular ${vocabularyUrl} enthält keine Konzepteinträge.`));
+              issues.push(
+                this.issue(
+                  "INVALID_VOCABULARY_STRUCTURE",
+                  "vocabulary",
+                  "error",
+                  `${node.path}/entries/${entryIndex}/value`,
+                  `Vokabular ${vocabularyUrl} enthält keine Konzepteinträge.`,
+                ),
+              );
             }
           }
           const vocabulary = vocabularies.get(vocabularyUrl);
           if (!vocabulary) {
-            issues.push(this.issue("VOCABULARY_UNAVAILABLE", "vocabulary", "error", `${node.path}/entries/${entryIndex}/value`, `Vokabular ${vocabularyUrl} ist nicht verfügbar.`));
+            issues.push(
+              this.issue(
+                "VOCABULARY_UNAVAILABLE",
+                "vocabulary",
+                "error",
+                `${node.path}/entries/${entryIndex}/value`,
+                `Vokabular ${vocabularyUrl} ist nicht verfügbar.`,
+              ),
+            );
           }
           const vocabularyEntries = new Map<string, any>(
             [
@@ -456,33 +750,87 @@ export class AcpIndexService implements OnApplicationBootstrap {
               (!vocabularyEntry.id.startsWith(vocabularyUrl) ||
                 (vocabulary && !vocabularyEntries.has(vocabularyEntry.id)))
             ) {
-              issues.push(this.issue("WRONG_VOCABULARY", "vocabulary", "error", `${node.path}/entries/${entryIndex}/value/${valueIndex}/id`, `${vocabularyEntry.id} gehört nicht zu ${vocabularyUrl}.`));
-            } else if (vocabularyEntry?.label && vocabularyEntries.has(vocabularyEntry.id)) {
-              const canonical = vocabularyEntries.get(vocabularyEntry.id)?.prefLabel;
-              const supplied = Object.fromEntries((vocabularyEntry.label || []).map((label: any) => [label.lang, label.value]));
-              if (canonical && Object.entries(supplied).some(([lang, value]) => canonical[lang] && canonical[lang] !== value)) {
-                issues.push(this.issue("VOCABULARY_LABEL_MISMATCH", "vocabulary", "warning", `${node.path}/entries/${entryIndex}/value/${valueIndex}/label`, `Label für ${vocabularyEntry.id} weicht vom Vokabular ab.`));
+              issues.push(
+                this.issue(
+                  "WRONG_VOCABULARY",
+                  "vocabulary",
+                  "error",
+                  `${node.path}/entries/${entryIndex}/value/${valueIndex}/id`,
+                  `${vocabularyEntry.id} gehört nicht zu ${vocabularyUrl}.`,
+                ),
+              );
+            } else if (
+              vocabularyEntry?.label &&
+              vocabularyEntries.has(vocabularyEntry.id)
+            ) {
+              const canonical = vocabularyEntries.get(
+                vocabularyEntry.id,
+              )?.prefLabel;
+              const supplied = Object.fromEntries(
+                (vocabularyEntry.label || []).map((label: any) => [
+                  label.lang,
+                  label.value,
+                ]),
+              );
+              if (
+                canonical &&
+                Object.entries(supplied).some(
+                  ([lang, value]) =>
+                    canonical[lang] && canonical[lang] !== value,
+                )
+              ) {
+                issues.push(
+                  this.issue(
+                    "VOCABULARY_LABEL_MISMATCH",
+                    "vocabulary",
+                    "warning",
+                    `${node.path}/entries/${entryIndex}/value/${valueIndex}/label`,
+                    `Label für ${vocabularyEntry.id} weicht vom Vokabular ab.`,
+                  ),
+                );
               }
             }
           }
         }
-        if (entry.label && definition.label && JSON.stringify(entry.label) !== JSON.stringify(definition.label)) {
-          issues.push(this.issue("PROFILE_LABEL_MISMATCH", "vocabulary", "warning", `${node.path}/entries/${entryIndex}/label`, `Label für ${entry.id} weicht vom Profil ab.`));
+        if (
+          entry.label &&
+          definition.label &&
+          JSON.stringify(entry.label) !== JSON.stringify(definition.label)
+        ) {
+          issues.push(
+            this.issue(
+              "PROFILE_LABEL_MISMATCH",
+              "vocabulary",
+              "warning",
+              `${node.path}/entries/${entryIndex}/label`,
+              `Label für ${entry.id} weicht vom Profil ab.`,
+            ),
+          );
         }
       }
     }
   }
 
-  private collectProfileEntries(profile: Record<string, unknown>): Map<string, any> {
+  private collectProfileEntries(
+    profile: Record<string, unknown>,
+  ): Map<string, any> {
     const entries = new Map<string, any>();
-    for (const group of Array.isArray((profile as any).groups) ? (profile as any).groups : []) {
-      for (const entry of Array.isArray(group?.entries) ? group.entries : []) if (typeof entry?.id === "string") entries.set(entry.id, entry);
+    for (const group of Array.isArray((profile as any).groups)
+      ? (profile as any).groups
+      : []) {
+      for (const entry of Array.isArray(group?.entries) ? group.entries : [])
+        if (typeof entry?.id === "string") entries.set(entry.id, entry);
     }
     return entries;
   }
 
-  private async loadExternalJson(urlValue: string, forPublication: boolean): Promise<{ payload?: Record<string, unknown>; check: AcpExternalCheck }> {
-    const cached = await this.cacheRepository.findOne({ where: { url: urlValue } });
+  private async loadExternalJson(
+    urlValue: string,
+    forPublication: boolean,
+  ): Promise<{ payload?: Record<string, unknown>; check: AcpExternalCheck }> {
+    const cached = await this.cacheRepository.findOne({
+      where: { url: urlValue },
+    });
     const cacheAge = cached?.lastSuccessAt
       ? Date.now() - cached.lastSuccessAt.getTime()
       : Number.POSITIVE_INFINITY;
@@ -553,18 +901,25 @@ export class AcpIndexService implements OnApplicationBootstrap {
         cached.lastSuccessAt = now;
         cached.lastError = undefined;
         cached.etag = response.headers.get("etag") || cached.etag;
-        cached.lastModified = response.headers.get("last-modified") || cached.lastModified;
+        cached.lastModified =
+          response.headers.get("last-modified") || cached.lastModified;
         await this.cacheRepository.save(cached);
         return {
           payload: cached.payload,
-          check: { url: urlValue, status: "valid", checkedAt: now.toISOString() },
+          check: {
+            url: urlValue,
+            status: "valid",
+            checkedAt: now.toISOString(),
+          },
         };
       }
       if (!response.ok) {
         await response.body?.cancel();
         throw new Error(`HTTP ${response.status}`);
       }
-      const declaredLength = Number(response.headers.get("content-length") || "0");
+      const declaredLength = Number(
+        response.headers.get("content-length") || "0",
+      );
       if (declaredLength > MAX_EXTERNAL_BYTES) {
         await response.body?.cancel();
         throw new Error("INVALID_RESOURCE: Resource exceeds 1 MB");
@@ -576,7 +931,8 @@ export class AcpIndexService implements OnApplicationBootstrap {
       } catch {
         throw new Error("INVALID_RESOURCE: Resource is not valid JSON");
       }
-      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("INVALID_RESOURCE: Resource is not a JSON object");
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        throw new Error("INVALID_RESOURCE: Resource is not a JSON object");
       const jsonObject = payload as Record<string, unknown>;
       const now = new Date();
       const entity = cached || this.cacheRepository.create({ url: urlValue });
@@ -587,7 +943,10 @@ export class AcpIndexService implements OnApplicationBootstrap {
       entity.etag = response.headers.get("etag") || undefined;
       entity.lastModified = response.headers.get("last-modified") || undefined;
       await this.cacheRepository.save(entity);
-      return { payload: jsonObject, check: { url: urlValue, status: "valid", checkedAt: now.toISOString() } };
+      return {
+        payload: jsonObject,
+        check: { url: urlValue, status: "valid", checkedAt: now.toISOString() },
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const invalidResource = message.startsWith("INVALID_RESOURCE:");
@@ -622,8 +981,13 @@ export class AcpIndexService implements OnApplicationBootstrap {
 
   private assertSafeHttpsUrl(value: string): URL {
     let url: URL;
-    try { url = new URL(value); } catch { throw new Error("Invalid URL"); }
-    if (url.protocol !== "https:" || url.username || url.password) throw new Error("Only credential-free HTTPS URLs are allowed");
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error("Invalid URL");
+    }
+    if (url.protocol !== "https:" || url.username || url.password)
+      throw new Error("Only credential-free HTTPS URLs are allowed");
     return url;
   }
 
@@ -687,20 +1051,36 @@ export class AcpIndexService implements OnApplicationBootstrap {
   }
 
   private mapLegacyDependencyType(type: string): string {
-    return ({ UNIT_DEFINITION: "UNIT_UI_DEFINITION", CODING_SCHEME: "UNIT_CODING_SCHEME", METADATA: "UNIT_METADATA" } as Record<string, string>)[type] || type;
+    return (
+      (
+        {
+          UNIT_DEFINITION: "UNIT_UI_DEFINITION",
+          CODING_SCHEME: "UNIT_CODING_SCHEME",
+          METADATA: "UNIT_METADATA",
+        } as Record<string, string>
+      )[type] || type
+    );
   }
 
   private mapSchemaErrors(errors: ErrorObject[]): AcpIndexValidationIssue[] {
-    return errors.map((error) => this.issue(
-      `SCHEMA_${error.keyword.toUpperCase()}`,
-      "schema",
-      "error",
-      error.instancePath || "/",
-      error.message || "Schema validation failed",
-    ));
+    return errors.map((error) =>
+      this.issue(
+        `SCHEMA_${error.keyword.toUpperCase()}`,
+        "schema",
+        "error",
+        error.instancePath || "/",
+        error.message || "Schema validation failed",
+      ),
+    );
   }
 
-  private issue(code: string, scope: AcpIndexValidationIssue["scope"], severity: AcpIndexValidationIssue["severity"], path: string, message: string): AcpIndexValidationIssue {
+  private issue(
+    code: string,
+    scope: AcpIndexValidationIssue["scope"],
+    severity: AcpIndexValidationIssue["severity"],
+    path: string,
+    message: string,
+  ): AcpIndexValidationIssue {
     return { code, scope, severity, path, message };
   }
 
@@ -767,6 +1147,11 @@ export class AcpIndexService implements OnApplicationBootstrap {
   }
 
   private assertExpectedUpdatedAt(acp: Acp, expected?: string): void {
-    if (expected && acp.updatedAt.toISOString() !== expected) throw new ConflictException({ message: "ACP has changed since preview", expectedUpdatedAt: expected, actualUpdatedAt: acp.updatedAt.toISOString() });
+    if (expected && acp.updatedAt.toISOString() !== expected)
+      throw new ConflictException({
+        message: "ACP has changed since preview",
+        expectedUpdatedAt: expected,
+        actualUpdatedAt: acp.updatedAt.toISOString(),
+      });
   }
 }

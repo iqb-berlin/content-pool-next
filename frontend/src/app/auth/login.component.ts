@@ -1,78 +1,23 @@
 import { Component, OnInit } from '@angular/core';
-import { Router, ActivatedRoute } from '@angular/router';
-import { FormsModule } from '@angular/forms';
-import { CommonModule } from '@angular/common';
+import { ActivatedRoute } from '@angular/router';
 import { AuthService } from '../core/services/auth.service';
-import { AuthContext, OidcConfig } from '../core/models/api.models';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule, CommonModule],
   template: `
     <div class="login-wrapper">
       <div class="card login-card">
-        <h1>{{ getTitle() }}</h1>
-        <p class="subtitle">{{ getSubtitle() }}</p>
+        <h1>Anmelden</h1>
+        <p class="subtitle">Assessment Content Pool</p>
 
         @if (error) {
           <div class="alert alert-error">{{ error }}</div>
-        }
-
-        @if (message) {
-          <div class="alert alert-success">{{ message }}</div>
-        }
-
-        @if (loading) {
-          <div class="loading">Lade...</div>
-        }
-
-        @if (!loading && authContext) {
-          <!-- OIDC Button: Show for admin context or when OIDC is enabled and not acp-only -->
-          @if (showOidcButton()) {
-            <button
-              type="button"
-              class="btn btn-secondary oidc-btn"
-              (click)="loginWithOidc()"
-              [disabled]="loading"
-            >
-              <span class="oidc-icon">🔐</span> Mit Keycloak anmelden
-            </button>
-          }
-
-          <!-- Local Login Form: Show for credentials access or default when OIDC disabled -->
-          @if (showLocalForm()) {
-            @if (showOidcButton()) {
-              <div class="divider"><span>oder</span></div>
-            }
-
-            <form (ngSubmit)="onSubmit()">
-              <div class="form-group">
-                <label for="username">Benutzername</label>
-                <input id="username" [(ngModel)]="username" name="username" required autofocus />
-              </div>
-              <div class="form-group">
-                <label for="password">Kennwort</label>
-                <input
-                  id="password"
-                  type="password"
-                  [(ngModel)]="password"
-                  name="password"
-                  required
-                />
-              </div>
-              <button type="submit" class="btn btn-primary" style="width:100%" [disabled]="loading">
-                {{ loading ? 'Anmelden...' : 'Anmelden' }}
-              </button>
-            </form>
-          }
-
-          <!-- No methods available -->
-          @if (authContext.allowedMethods.length === 0) {
-            <div class="alert alert-error">
-              {{ authContext.message }}
-            </div>
-          }
+          <button type="button" class="btn btn-primary" (click)="startLogin()">
+            Erneut versuchen
+          </button>
+        } @else {
+          <div class="loading" aria-live="polite">Weiterleitung zu Keycloak...</div>
         }
       </div>
     </div>
@@ -93,192 +38,55 @@ import { AuthContext, OidcConfig } from '../core/models/api.models';
         color: var(--color-text-secondary);
         margin-bottom: 24px;
       }
-      .oidc-btn {
-        width: 100%;
-        margin-bottom: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-      }
-      .oidc-icon {
-        font-size: 1.2em;
-      }
-      .divider {
-        text-align: center;
-        margin: 16px 0;
-        position: relative;
-      }
-      .divider::before,
-      .divider::after {
-        content: '';
-        position: absolute;
-        top: 50%;
-        width: 40%;
-        height: 1px;
-        background: var(--color-border);
-      }
-      .divider::before {
-        left: 0;
-      }
-      .divider::after {
-        right: 0;
-      }
-      .divider span {
-        color: var(--color-text-secondary);
-        font-size: 0.85rem;
-        padding: 0 8px;
-        background: white;
-      }
       .loading {
         text-align: center;
         padding: 20px;
         color: var(--color-text-secondary);
       }
-      .alert-success {
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-        padding: 12px;
-        border-radius: 4px;
-        margin-bottom: 16px;
-      }
     `,
   ],
 })
 export class LoginComponent implements OnInit {
-  username = '';
-  password = '';
-  loading = false;
   error = '';
-  message = '';
   nextUrl = '';
-  authContext: AuthContext | null = null;
-  oidcConfig: OidcConfig | null = null;
-  forType: 'admin' | 'acp' | null = null;
 
   constructor(
-    private auth: AuthService,
-    private router: Router,
-    private route: ActivatedRoute,
+    private readonly auth: AuthService,
+    private readonly route: ActivatedRoute,
   ) {}
 
-  ngOnInit() {
-    // Get context from query params
-    this.route.queryParams.subscribe((params) => {
-      if (params['error']) {
-        this.error = params['error'];
-      }
-      if (params['message']) {
-        this.message = params['message'];
-      }
+  ngOnInit(): void {
+    this.route.queryParamMap.subscribe((params) => {
+      this.nextUrl = this.normalizeNextUrl(params.get('next'));
+      const callbackError = params.get('error')?.trim() || '';
 
-      const forParam = params['for'];
-      if (forParam === 'admin' || forParam === 'acp') {
-        this.forType = forParam;
-      }
-
-      const nextParam = String(params['next'] || '').trim();
-      this.nextUrl = this.normalizeNextUrl(nextParam);
-
-      // Load auth context
-      this.loadAuthContext();
-    });
-  }
-
-  private loadAuthContext() {
-    this.loading = true;
-
-    this.auth.getAuthContext(this.forType).subscribe({
-      next: (context) => {
-        this.authContext = context;
-        this.loading = false;
-      },
-      error: () => {
-        this.authContext = {
-          allowedMethods: ['credentials'],
-          oidcEnabled: false,
-          message: 'Bitte wählen Sie eine Anmeldemethode',
-        };
-        this.loading = false;
-      },
-    });
-
-    // Also load OIDC config for display
-    this.auth.getOidcConfig().subscribe({
-      next: (config) => {
-        this.oidcConfig = config;
-      },
-      error: () => {
-        this.oidcConfig = {
-          enabled: false,
-          issuerUrl: null,
-          clientId: null,
-          redirectUri: '',
-          scope: '',
-        };
-      },
-    });
-  }
-
-  getTitle(): string {
-    switch (this.forType) {
-      case 'admin':
-        return 'Admin-Anmeldung';
-      case 'acp':
-        return 'ACP-Zugang';
-      default:
-        return 'Anmelden';
-    }
-  }
-
-  getSubtitle(): string {
-    switch (this.forType) {
-      case 'admin':
-        return 'Assessment Content Pool - Administration';
-      case 'acp':
-        return 'Geschützter ACP-Zugang';
-      default:
-        return 'Assessment Content Pool';
-    }
-  }
-
-  showOidcButton(): boolean {
-    if (!this.authContext) return false;
-    return this.authContext.allowedMethods.includes('oidc');
-  }
-
-  showLocalForm(): boolean {
-    if (!this.authContext) return false;
-    return this.authContext.allowedMethods.includes('credentials');
-  }
-
-  loginWithOidc() {
-    this.auth.initiateOidcLogin(this.nextUrl || undefined);
-  }
-
-  onSubmit() {
-    this.loading = true;
-    this.error = '';
-    this.auth.login(this.username, this.password).subscribe({
-      next: () => {
-        if (this.nextUrl) {
-          this.router.navigateByUrl(this.nextUrl);
-        } else {
-          this.router.navigate(['/']);
+      if (callbackError) {
+        if (!this.nextUrl) {
+          this.nextUrl = this.normalizeNextUrl(sessionStorage.getItem('oidc_redirect_url'));
         }
-        this.loading = false;
-      },
-      error: (err) => {
-        this.error = err.error?.message || 'Anmeldung fehlgeschlagen';
-        this.loading = false;
-      },
+        this.error = callbackError;
+        return;
+      }
+
+      void this.startLogin();
     });
   }
 
-  private normalizeNextUrl(value: string): string {
-    if (!value.startsWith('/')) return '';
-    if (value.startsWith('//')) return '';
-    return value;
+  async startLogin(): Promise<void> {
+    this.error = '';
+    try {
+      await this.auth.initiateOidcLogin(this.nextUrl || undefined);
+    } catch (error) {
+      this.error =
+        error instanceof Error && error.message
+          ? error.message
+          : 'Die Keycloak-Anmeldung konnte nicht gestartet werden.';
+    }
+  }
+
+  private normalizeNextUrl(value: string | null): string {
+    const trimmed = value?.trim() || '';
+    if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return '';
+    return trimmed;
   }
 }

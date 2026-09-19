@@ -21,14 +21,11 @@ describe("AuthService", () => {
   const mockUser = {
     id: "user-1",
     username: "testuser",
-    passwordHash: "",
     displayName: "Test User",
     isAppAdmin: false,
   };
 
   beforeEach(async () => {
-    mockUser.passwordHash = await bcrypt.hash("password123", 12);
-
     userRepo = {
       findOne: jest.fn(),
     };
@@ -59,29 +56,6 @@ describe("AuthService", () => {
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-  });
-
-  describe("login", () => {
-    it("should return token on valid credentials", async () => {
-      userRepo.findOne.mockResolvedValue(mockUser);
-      const result = await service.login("testuser", "password123");
-      expect(result.accessToken).toBe("mock-jwt-token");
-      expect(result.user.username).toBe("testuser");
-    });
-
-    it("should throw on invalid username", async () => {
-      userRepo.findOne.mockResolvedValue(null);
-      await expect(service.login("bad", "password123")).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it("should throw on wrong password", async () => {
-      userRepo.findOne.mockResolvedValue(mockUser);
-      await expect(service.login("testuser", "wrong")).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
   });
 
   describe("credentialLogin", () => {

@@ -1,3 +1,5 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
+import { ReviewManifestService } from "../review/review-manifest.service";
 import {
   BadRequestException,
   ConflictException,
@@ -70,6 +72,7 @@ export class ViewsService {
     private readonly itemPreferenceRepository: Repository<AcpItemPreference>,
     private readonly itemExplorerStateService: ItemExplorerStateService,
     private readonly unitParserService: UnitParserService,
+    private readonly reviewManifestService: ReviewManifestService,
   ) {}
 
   /**
@@ -244,7 +247,27 @@ export class ViewsService {
         }
       }
     }
-    const sequences = Array.from(sequenceMap.values());
+    const manifest = await this.reviewManifestService.getManifest(acpId);
+    const booklets = manifest.booklets.filter((booklet) => !booklet.legacy);
+    const definitions = new Set(
+      booklets.map((booklet) => booklet.definitionId).filter(Boolean),
+    );
+    const assignedModuleIds = new Set(
+      booklets.flatMap((booklet) => booklet.moduleIds || []),
+    );
+    const sequences = [
+      ...booklets.map(({ id, name, definitionId }) => ({
+        id,
+        name,
+        bookletDefinitionId: definitionId,
+        kind: "booklet",
+      })),
+      ...Array.from(sequenceMap.values()).filter(
+        (sequence) =>
+          !definitions.has(sequence.bookletDefinitionId) &&
+          !assignedModuleIds.has(sequence.id),
+      ),
+    ];
 
     return {
       id: acp.id,
@@ -268,7 +291,11 @@ export class ViewsService {
   /**
    * Get unit view data including player reference.
    */
-  async getUnitViewData(acpId: string, unitId: string, partId?: string): Promise<any> {
+  async getUnitViewData(
+    acpId: string,
+    unitId: string,
+    partId?: string,
+  ): Promise<any> {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
 
@@ -304,7 +331,9 @@ export class ViewsService {
 
     return {
       id: unit.id,
-      ...(partId || matches[0]?.partId ? { partId: partId || matches[0]?.partId } : {}),
+      ...(partId || matches[0]?.partId
+        ? { partId: partId || matches[0]?.partId }
+        : {}),
       name: unit.name,
       description: unit.description,
       lang: unit.lang,
@@ -373,7 +402,19 @@ export class ViewsService {
   /**
    * Get task sequence (ordered list of units from a booklet module).
    */
-  async getTaskSequence(acpId: string, sequenceId: string): Promise<any> {
+  async getTaskSequence(
+    acpId: string,
+    sequenceId: string,
+    kind?: "booklet",
+  ): Promise<any> {
+    if (kind === "booklet") {
+      const manifest = await this.reviewManifestService.getManifest(acpId);
+      return (
+        manifest.booklets.find(
+          (entry) => !entry.legacy && entry.id === sequenceId,
+        ) || null
+      );
+    }
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
     if (!acp) return null;
 
@@ -384,7 +425,7 @@ export class ViewsService {
     for (const part of parts) {
       for (const module of part.bookletModules || []) {
         if (module.id === sequenceId) {
-          const unitIds = (module.units || [])
+          const unitIds = [...(module.units || [])]
             .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
             .map((u: any) => u.id);
 
@@ -523,6 +564,7 @@ export class ViewsService {
     identity: StablePreferenceIdentity | null,
     rawRowKeys: string[],
     canEditExplorerState = false,
+    columnPolicy?: ReviewerColumnPolicy,
   ): Promise<Buffer> {
     const rowKeys = this.normalizeExportRowKeys(rawRowKeys);
     const [preferences, explorerState, accessConfig] = await Promise.all([
@@ -547,6 +589,9 @@ export class ViewsService {
     const personalTagColors = this.getPersonalTagColors(
       accessConfig?.featureConfig,
     );
+    const personalCategoryLabel = this.getPersonalCategoryExportLabel(
+      accessConfig?.featureConfig,
+    );
 
     const rows = items.map((item, index) => {
       const projection = projectItemExportRow({
@@ -559,17 +604,30 @@ export class ViewsService {
         ...projection,
         sequenceNumber: index + 1,
         markers: this.formatPersonalMarkers(projection.tags, personalTagColors),
-        competenceLevel: projection.category,
+        personalCompetenceLevel: projection.category,
       };
     });
 
-    return this.buildPersonalItemDataXlsx(rows);
+    return this.buildPersonalItemDataXlsx(
+      rows,
+      columnPolicy ||
+        new ReviewerColumnPolicy(
+          canEditExplorerState
+            ? undefined
+            : explorerState.publishedState.metadataColumns,
+        ),
+      personalCategoryLabel,
+    );
   }
 
   async exportAllPersonalItemDataCsv(
     acpId: string,
     canEditExplorerState = false,
+    collectionRowKeys?: readonly string[],
   ): Promise<Buffer> {
+    // An empty collection must stay empty; only an omitted filter exports all rows.
+    const includedRows =
+      collectionRowKeys === undefined ? null : new Set(collectionRowKeys);
     const [preferenceRecords, explorerState] = await Promise.all([
       this.itemPreferenceRepository.find({
         where: { acpId, viewId: "item-explorer" },
@@ -596,8 +654,9 @@ export class ViewsService {
       if (!participant) return [];
 
       const preferences = normalizeItemPreferences(record.preferences);
-      return Object.entries(preferences.rowData).map(
-        ([rowKey, personalRow]) => {
+      return Object.entries(preferences.rowData)
+        .filter(([rowKey]) => includedRows === null || includedRows.has(rowKey))
+        .map(([rowKey, personalRow]) => {
           const item = itemsByRowKey.get(rowKey);
           const projection = projectItemExportRow({
             rowKey,
@@ -610,8 +669,7 @@ export class ViewsService {
             participant,
             itemOrder: itemOrder.get(rowKey) ?? Number.MAX_SAFE_INTEGER,
           };
-        },
-      );
+        });
     });
 
     rows.sort(
@@ -767,6 +825,18 @@ export class ViewsService {
     return colors;
   }
 
+  private getPersonalCategoryExportLabel(rawFeatureConfig: unknown): string {
+    const featureConfig = normalizeFeatureConfig(
+      this.isRecord(rawFeatureConfig) ? rawFeatureConfig : {},
+    ) as Record<string, unknown>;
+    const configuredLabel =
+      this.normalizePlainText(featureConfig.personalItemCategoryLabel, 100) ||
+      "Kompetenzstufe";
+    return configuredLabel.toLocaleLowerCase("de-DE") === "kompetenzstufe"
+      ? "Kompetenzstufe (persönlich)"
+      : configuredLabel;
+  }
+
   private formatPersonalMarkers(
     tags: string[],
     tagColors: Map<string, string>,
@@ -785,9 +855,11 @@ export class ViewsService {
       ItemExportProjection & {
         sequenceNumber: number;
         markers: string | null;
-        competenceLevel: string | null;
+        personalCompetenceLevel: string | null;
       }
     >,
+    policy = new ReviewerColumnPolicy(),
+    personalCategoryLabel = "Kompetenzstufe (persönlich)",
   ): Promise<Buffer> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
@@ -800,12 +872,19 @@ export class ViewsService {
       ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
       { header: "Markierung/Farbe", key: "markers", width: 32 },
       { header: "Notiz", key: "note", width: 50 },
-      { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
+      {
+        header: personalCategoryLabel,
+        key: "personalCompetenceLevel",
+        width: 28,
+      },
       ...ITEM_EXPORT_PARAMETER_COLUMNS,
       MEAN_DIFFICULTY_EXPORT_COLUMN,
-    ];
+    ].filter((column) => policy.allowsExportField(column.key));
     sheet.views = [{ state: "frozen", ySplit: 1 }];
-    sheet.autoFilter = { from: "A1", to: "S1" };
+    sheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: sheet.columnCount },
+    };
 
     const headerRow = sheet.getRow(1);
     headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
@@ -825,7 +904,7 @@ export class ViewsService {
       ...ITEM_EXPORT_PARAMETER_COLUMNS,
       MEAN_DIFFICULTY_EXPORT_COLUMN,
     ]) {
-      if (column.numeric) {
+      if (column.numeric && policy.allowsExportField(column.key)) {
         sheet.getColumn(column.key).numFmt = "0.############";
       }
     }

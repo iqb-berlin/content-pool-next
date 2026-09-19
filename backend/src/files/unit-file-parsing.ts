@@ -1,7 +1,24 @@
 import type { Logger } from "@nestjs/common";
+import { SaxesParser } from "saxes";
 import type { UnitXmlData } from "./unit-parser.types";
 
 type ParsingLogger = Pick<Logger, "error">;
+
+export function getXmlRootElement(xmlContent: string): string | undefined {
+  let rootElement: string | undefined;
+  const parser = new SaxesParser({ xmlns: false });
+  parser.on("opentag", (tag) => {
+    rootElement ??= tag.name;
+  });
+
+  try {
+    parser.write(xmlContent).close();
+  } catch {
+    return undefined;
+  }
+
+  return rootElement;
+}
 
 export function parseUnitXml(
   xmlContent: string,
@@ -134,4 +151,30 @@ export function extractValueText(valueAsText: any): string {
     return valueAsText.value;
   }
   return "";
+}
+
+export function extractVomdTimeSeconds(
+  profiles: unknown,
+  entryId: "iqb_time_item" | "iqb_item_time" | "iqb_time_stimulus",
+): number | undefined {
+  if (!Array.isArray(profiles)) return undefined;
+
+  for (const profile of profiles) {
+    if (!isRecord(profile) || !Array.isArray(profile.entries)) continue;
+
+    for (const entry of profile.entries) {
+      if (!isRecord(entry) || entry.id !== entryId) continue;
+      const rawValue = entry.value;
+      if (
+        typeof rawValue !== "number" &&
+        (typeof rawValue !== "string" || rawValue.trim().length === 0)
+      ) {
+        continue;
+      }
+      const seconds = Number(rawValue);
+      if (Number.isFinite(seconds) && seconds >= 0) return seconds;
+    }
+  }
+
+  return undefined;
 }

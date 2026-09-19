@@ -16,6 +16,25 @@ export interface MetadataColumn {
   kind?: 'text' | 'number' | 'booklet' | 'position';
 }
 
+export type ItemExplorerTableColumnSource = 'system' | 'metadata' | 'personal';
+
+export interface ItemExplorerTableColumn {
+  key: string;
+  id: string;
+  label: string;
+  source: ItemExplorerTableColumnSource;
+  defaultWidth: number;
+  metadataColumn?: MetadataColumn;
+}
+
+export interface TableColumnLayoutSettings {
+  visible: string[];
+  order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
+  schemaVersion?: number;
+}
+
 export interface ExplorerItem {
   itemId: string;
   uuid: string;
@@ -29,15 +48,20 @@ export interface ExplorerItem {
   description: string;
   variableId: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
+  useUnitAliasAsPrefix?: boolean;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  bista?: number;
   meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
+  competenceLevel?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
   previewTargetId?: string;
   excluded?: boolean;
@@ -46,8 +70,13 @@ export interface ExplorerItem {
 export type ReadonlyExplorerItem = DeepReadonly<ExplorerItem>;
 
 export interface MetadataSettings {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
+  referenceNumberVisible?: boolean;
+  layout?: TableColumnLayoutSettings;
 }
 
 export interface PersonalItemTagConfig {
@@ -79,7 +108,12 @@ export interface ItemParameterUploadSuccess {
   subId?: string;
   value?: number;
   fields?: string[];
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
+}
+
+export interface ItemParameterUploadWarning {
+  code: 'BOOKLET_OCCURRENCES_SKIPPED';
+  message: string;
 }
 
 export type ReadonlyItemParameterUploadSuccess = DeepReadonly<ItemParameterUploadSuccess>;
@@ -88,6 +122,8 @@ export interface ItemParameterUploadResult {
   updated: number;
   failed: Array<{ csvRow: string; reason: string }>;
   successes: ItemParameterUploadSuccess[];
+  warnings?: ItemParameterUploadWarning[];
+  requiresConfirmation?: boolean;
   showOnlyItemsWithEmpiricalDifficulty?: boolean;
 }
 
@@ -103,6 +139,8 @@ export interface PreviewTargetOption {
 export interface PreviewTargetResolution {
   itemTarget: string;
   isDerived: boolean;
+  isAmbiguous?: boolean;
+  blocksAutomaticTarget?: boolean;
   options: PreviewTargetOption[];
   defaultTargetId: string;
 }
@@ -112,7 +150,11 @@ export type CodingVariableFocusStatus = 'unique' | 'missing-target' | 'not-found
 export interface CodingVariableFocusResolution {
   status: CodingVariableFocusStatus;
   targetId: string;
+  internalId: string;
   codingId: string;
+  playerTargetId: string;
+  usedLegacyFallback: boolean;
+  requestedInternalId: string;
   matches: CodingAsText[];
   isDerived: boolean;
   sourceIds: string[];

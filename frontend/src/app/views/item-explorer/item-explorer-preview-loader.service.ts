@@ -50,7 +50,7 @@ export class ItemExplorerPreviewLoader {
     unitId: string,
     partId?: string,
   ): Observable<ItemExplorerPreviewAssets> {
-    const key = `${acpId}:${perspective}:${partId || "legacy"}:${unitId}`;
+    const key = `${acpId}:${perspective}:${partId || 'legacy'}:${unitId}`;
     const cached = this.unitCache.get(key);
     if (cached) {
       const cacheStatus = cached.settled ? 'hit' : 'coalesced';

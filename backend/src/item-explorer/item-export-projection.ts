@@ -11,9 +11,12 @@ export interface ItemExportProjection {
   tags: string[];
   note: string | null;
   empiricalDifficulty: number | null;
+  bista: number | null;
   infit: number | null;
   discrimination: number | null;
   solutionRate: number | null;
+  textComplexity: string | null;
+  competenceLevel: string | null;
   itemTimeSeconds: number | null;
   stimulusTimeSeconds: number | null;
   booklets: string | null;
@@ -60,6 +63,7 @@ export const ITEM_EXPORT_PARAMETER_COLUMNS: readonly ItemExportColumnDefinition[
       width: 30,
       numeric: true,
     },
+    { header: "BiSta-Wert", key: "bista", width: 16, numeric: true },
     { header: "Infit", key: "infit", width: 16, numeric: true },
     {
       header: "Trennschärfe",
@@ -72,6 +76,16 @@ export const ITEM_EXPORT_PARAMETER_COLUMNS: readonly ItemExportColumnDefinition[
       key: "solutionRate",
       width: 22,
       numeric: true,
+    },
+    {
+      header: "Textkomplexität",
+      key: "textComplexity",
+      width: 30,
+    },
+    {
+      header: "Kompetenzstufe",
+      key: "competenceLevel",
+      width: 22,
     },
     {
       header: "Itemzeit (s)",
@@ -122,16 +136,23 @@ export function projectItemExportRow(input: {
       : [],
     note: typeof personalRow.note === "string" ? personalRow.note : null,
     empiricalDifficulty: item?.empiricalDifficulty ?? null,
+    bista: item?.bista ?? null,
     infit: item?.infit ?? null,
     discrimination: item?.discrimination ?? null,
     solutionRate: item?.solutionRate ?? null,
+    textComplexity: item?.textComplexity ?? null,
+    competenceLevel: item?.competenceLevel ?? null,
     itemTimeSeconds: item?.itemTimeSeconds ?? null,
     stimulusTimeSeconds: item?.stimulusTimeSeconds ?? null,
     booklets: occurrences.length
       ? occurrences.map((occurrence) => occurrence.booklet).join(" | ")
       : null,
     bookletPositions: occurrences.length
-      ? occurrences.map((occurrence) => String(occurrence.position)).join(" | ")
+      ? occurrences
+          .map((occurrence) =>
+            occurrence.position === null ? "" : String(occurrence.position),
+          )
+          .join(" | ")
       : null,
     meanTaskDifficulty: item?.meanTaskDifficulty ?? null,
   };

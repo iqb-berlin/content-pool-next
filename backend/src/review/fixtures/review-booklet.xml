@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Booklet>
+  <Metadata><Id>review-1</Id><Label>Review &amp; Navigation</Label></Metadata>
+  <Units>
+    <Unit id="intro" label="Einführung"/>
+    <Testlet id="math" label="Mathematik">
+      <Unit id="task-1" label="Aufgabe 1" alias="first"/>
+      <Testlet id="geometry" label="Geometrie">
+        <ProgressStart id="section-1" label="Erster Abschnitt"/>
+        <Unit id="task-2" label="Aufgabe 2"/>
+        <ProgressEnd id="section-1"/>
+      </Testlet>
+      <Unit id="task-1" label="Aufgabe 1 erneut" alias="repeat"/>
+    </Testlet>
+  </Units>
+</Booklet>

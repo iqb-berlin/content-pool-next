@@ -39,6 +39,12 @@ import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { FileProcessingJobsService } from "./file-processing-jobs.service";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
+import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
+import { hasCapability } from "../auth/capabilities/acp-capabilities";
+import {
+  ExplorerReadGuard,
+  ExplorerEditGuard,
+} from "../auth/capabilities/explorer-access.guard";
 import { UuidParam } from "../common/uuid-param";
 import { IndexGenerationService } from "./index-generation.service";
 
@@ -53,7 +59,9 @@ export class FilesController {
     private readonly validationService: ValidationService,
     private readonly fileProcessingJobsService: FileProcessingJobsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
-    @Optional() private readonly indexGenerationService?: IndexGenerationService,
+    private readonly capabilities: AcpCapabilitiesService,
+    @Optional()
+    private readonly indexGenerationService?: IndexGenerationService,
   ) {}
 
   @Get()
@@ -94,7 +102,13 @@ export class FilesController {
         ? partId
           ? await this.filesService.createUnitZip(acpId, unitId, partId)
           : await this.filesService.createUnitZip(acpId, unitId)
-        : await this.filesService.createSequenceZip(acpId, sequenceId!);
+        : req?.query?.kind === "booklet"
+          ? await this.filesService.createSequenceZip(
+              acpId,
+              sequenceId!,
+              "booklet",
+            )
+          : await this.filesService.createSequenceZip(acpId, sequenceId!);
 
       res?.setHeader("Content-Type", "application/zip");
       res?.setHeader(
@@ -148,7 +162,7 @@ export class FilesController {
   }
 
   @Get("item-list")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Extract item list with metadata from .vomd files" })
   async getItemList(
     @UuidParam("acpId") acpId: string,
@@ -158,7 +172,7 @@ export class FilesController {
   ) {
     const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
-    if (!isManager) {
+    if (!hasCapability(req.acpCapabilities || [], "item-explorer:view")) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
       if (featureConfig.enableItemList === false) {
         throw new ForbiddenException("Item list is not enabled for this ACP");
@@ -197,8 +211,7 @@ export class FilesController {
   }
 
   @Post("item-list/renumber")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Recalculate stable Item Explorer row numbers",
@@ -219,11 +232,15 @@ export class FilesController {
     @Query("perspective") perspective?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    await this.capabilities.resolve(req);
     const startedAt = performance.now();
     const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
-      if (featureConfig.enableUnitView === false) {
+      if (
+        featureConfig.enableUnitView === false &&
+        !this.canUseReview(req, featureConfig)
+      ) {
         throw new ForbiddenException("Unit view is not enabled for this ACP");
       }
     }
@@ -259,7 +276,9 @@ export class FilesController {
 
   @Get("unit-view/:partId/:unitId")
   @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: "Get uploaded unit view scoped to an assessment part" })
+  @ApiOperation({
+    summary: "Get uploaded unit view scoped to an assessment part",
+  })
   async getPartUnitView(
     @UuidParam("acpId") acpId: string,
     @Param("partId") partId: string,
@@ -270,9 +289,16 @@ export class FilesController {
     const isManager = this.isManagerViewContext(req, perspective);
     if (!isManager) {
       const featureConfig = await this.filesService.getFeatureConfig(acpId);
-      if (featureConfig.enableUnitView === false) throw new ForbiddenException("Unit view is not enabled for this ACP");
+      if (featureConfig.enableUnitView === false)
+        throw new ForbiddenException("Unit view is not enabled for this ACP");
     }
-    return this.unitParserService.getUnitViewFromFiles(acpId, unitId, undefined, "", partId);
+    return this.unitParserService.getUnitViewFromFiles(
+      acpId,
+      unitId,
+      undefined,
+      "",
+      partId,
+    );
   }
 
   @Get("jobs/:jobId")
@@ -604,22 +630,31 @@ export class FilesController {
     }
 
     const featureConfig = await this.filesService.getFeatureConfig(acpId);
-    const isDependency = await this.filesService.isUnitDependencyFile(
-      acpId,
-      originalName,
-    );
+    const isDependency = req.reviewerColumnPolicy?.restricted
+      ? await this.filesService.isRuntimeDependencyFile(acpId, originalName)
+      : await this.filesService.isUnitDependencyFile(acpId, originalName);
+    await this.capabilities.resolve(req);
     const canDownloadForView =
-      featureConfig.enableUnitView !== false && isDependency;
+      isDependency &&
+      (featureConfig.enableUnitView !== false ||
+        this.canUseReview(req, featureConfig));
 
     if (!featureConfig.allowFileDownload && !canDownloadForView) {
       throw new ForbiddenException("File download is not enabled for this ACP");
     }
   }
 
+  private canUseReview(req: any, config: Record<string, any>): boolean {
+    const grants = req?.acpCapabilities || [];
+    return (
+      config.enableReview === true &&
+      (hasCapability(grants, "review:participate") ||
+        hasCapability(grants, "review:manage"))
+    );
+  }
+
   private isManagerViewContext(req: any, perspective?: string): boolean {
-    const isManager =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
-    if (!isManager) {
+    if (!hasCapability(req?.acpCapabilities || [], "item-explorer:edit")) {
       return false;
     }
 

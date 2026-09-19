@@ -39,7 +39,8 @@ export class FileProcessingJobsService {
     private readonly filesService: FilesService,
     private readonly unitParserService: UnitParserService,
     private readonly validationService: ValidationService,
-    @Optional() private readonly indexGenerationService?: IndexGenerationService,
+    @Optional()
+    private readonly indexGenerationService?: IndexGenerationService,
   ) {}
 
   async createAndStartJob(

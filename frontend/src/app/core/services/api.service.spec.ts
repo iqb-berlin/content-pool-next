@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import { Acp, User, AppSettings, AcpFile } from '../models/api.models';
 
@@ -33,6 +33,15 @@ describe('ApiService', () => {
     expect(service).toBeTruthy();
   });
 
+  it('distinguishes booklet requests from legacy module requests with the same ID', () => {
+    service.getViewSequence('acp-1', 'same');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith('/api/view/acp/acp-1/sequences/same');
+    service.getViewSequence('acp-1', 'same', 'booklet');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith(
+      '/api/view/acp/acp-1/sequences/same?kind=booklet',
+    );
+  });
+
   describe('Users', () => {
     it('should get users', () => {
       const mockUsers: User[] = [
@@ -48,7 +57,7 @@ describe('ApiService', () => {
     });
 
     it('should create user', () => {
-      const userData = { username: 'newuser', password: 'pass' };
+      const userData = { username: 'newuser', displayName: 'New User' };
       const mockUser: User = {
         id: '2',
         username: 'newuser',
@@ -825,6 +834,98 @@ describe('ApiService', () => {
         responseType: 'blob',
       });
     });
+
+    it('reuses only the supplied visible snapshot on HTTP 304 and propagates revoked access', () => {
+      const previous: any = {
+        revision: 'visible-a',
+        target: { unitId: 'U', itemId: 'I' },
+        visibilityMode: 'GROUP',
+        comments: [{ id: 'own-group' }],
+      };
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 304 })));
+      let result: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe((snapshot) => (result = snapshot));
+      expect(result).toBe(previous);
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        params: { unitId: 'U', itemId: 'I' },
+        headers: { 'If-None-Match': '"visible-a"' },
+      });
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 403 })));
+      let failure: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe({ error: (error) => (failure = error) });
+      expect(failure.status).toBe(403);
+    });
+
+    it('should load and mutate item comment threads', () => {
+      httpClientMock.get.mockReturnValue(
+        of({ revision: '1', visibilityMode: 'SHARED', comments: [] }),
+      );
+      httpClientMock.post.mockReturnValue(of({ id: 'c1' }));
+      httpClientMock.patch.mockReturnValue(of({ id: 'c1', version: 2 }));
+      httpClientMock.delete.mockReturnValue(of({ success: true }));
+
+      service.getItemCommentThread('acp1', 'unit1', 'item1').subscribe();
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        params: { unitId: 'unit1', itemId: 'item1' },
+      });
+
+      service.getItemCommentCounts('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments/counts');
+
+      service
+        .createItemComment('acp1', {
+          unitId: 'unit1',
+          itemId: 'item1',
+          commentText: 'Hallo',
+          parentCommentId: 'parent1',
+        })
+        .subscribe();
+      expect(httpClientMock.post).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        unitId: 'unit1',
+        itemId: 'item1',
+        commentText: 'Hallo',
+        parentCommentId: 'parent1',
+      });
+
+      service.updateItemComment('acp1', 'c1', { commentText: 'Neu', version: 1 }).subscribe();
+      expect(httpClientMock.patch).toHaveBeenCalledWith('/api/acp/acp1/review/comments/c1', {
+        commentText: 'Neu',
+        version: 1,
+      });
+
+      service.deleteItemComment('acp1', 'c1', 2).subscribe();
+      expect(httpClientMock.delete).toHaveBeenCalledWith('/api/acp/acp1/review/comments/c1', {
+        params: { version: 2 },
+      });
+    });
+
+    it('uses explicit personal and administrative review export paths', () => {
+      const blob = new Blob(['export']);
+      httpClientMock.get.mockReturnValue(of(blob));
+
+      service.exportMyReviewCommentsCsv('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        1,
+        '/api/acp/acp1/review/comments/export/mine.csv',
+        { params: {}, responseType: 'blob' },
+      );
+      service.exportMyReviewCommentsXlsx('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        2,
+        '/api/acp/acp1/review/comments/export/mine.xlsx',
+        { params: {}, responseType: 'blob' },
+      );
+      service.exportAllReviewCommentsXlsx('acp1').subscribe();
+      expect(httpClientMock.get).toHaveBeenNthCalledWith(
+        3,
+        '/api/acp/acp1/review/comments/export/all.xlsx',
+        { responseType: 'blob' },
+      );
+    });
   });
 
   describe('Public Views', () => {
@@ -960,6 +1061,65 @@ describe('ApiService', () => {
       );
     });
 
+    it('sends the selected collection identifier for the aggregate CSV export', () => {
+      httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));
+      service.exportAllViewPersonalItemDataCsv('acp1', 'editor', 'collection-1').subscribe();
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/preferences/export-all.csv',
+        { perspective: 'editor', collectionId: 'collection-1' },
+        { responseType: 'blob' },
+      );
+    });
+
+    it('should persist the active personal item list view mode', () => {
+      const payload = {
+        activeCollectionId: 'collection-1',
+        collectionViewMode: 'active' as const,
+        collections: [],
+      };
+      httpClientMock.put.mockReturnValue(of(payload));
+
+      service
+        .activateItemCollection('acp1', 'collection-1', 'read-only', 'active')
+        .subscribe((result) => expect(result).toEqual(payload));
+
+      expect(httpClientMock.put).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/active',
+        {
+          collectionId: 'collection-1',
+          perspective: 'read-only',
+          collectionViewMode: 'active',
+        },
+      );
+    });
+
+    it('should mutate collection rows without sending the complete collection', () => {
+      const result = {
+        collectionId: 'collection-1',
+        version: 3,
+        updatedAt: '2026-07-22T10:00:00.000Z',
+        summary: { rowCount: 2 },
+      };
+      httpClientMock.patch.mockReturnValue(of(result));
+
+      service
+        .mutateItemCollectionRows('acp1', 'collection-1', {
+          baseVersion: 2,
+          removeRowKeys: ['uuid::1'],
+          perspective: 'read-only',
+        })
+        .subscribe((response) => expect(response).toBe(result));
+
+      expect(httpClientMock.patch).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/collection-1/rows',
+        {
+          baseVersion: 2,
+          removeRowKeys: ['uuid::1'],
+          perspective: 'read-only',
+        },
+      );
+    });
+
     it('should get view sequences', () => {
       httpClientMock.get.mockReturnValue(of([]));
 
@@ -1006,7 +1166,9 @@ describe('ApiService', () => {
         expect((result as any).version).toBe(1);
       });
 
-      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state');
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state', {
+        params: {},
+      });
     });
 
     it('should patch explorer draft', () => {
@@ -1078,20 +1240,51 @@ describe('ApiService', () => {
       );
     });
 
+    it('should confirm warning-gated item parameter imports explicitly', () => {
+      httpClientMock.post.mockReturnValue(of({ updated: 1, failed: [], successes: [] }));
+
+      const file = new File(['item;est;booklet\nx;0.5;B1'], 'parameters.csv', {
+        type: 'text/csv',
+      });
+      service
+        .uploadItemParameters('acp1', file, {
+          draft: true,
+          baseVersion: 7,
+          confirmWarnings: true,
+        })
+        .subscribe();
+
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/acp/acp1/items/upload-item-parameters?draft=true&baseVersion=7&confirmWarnings=true',
+        expect.any(FormData),
+      );
+    });
+
     it('should update and export personal item collections', () => {
       httpClientMock.patch.mockReturnValue(of({ activeCollectionId: 'c1', collections: [] }));
       httpClientMock.post.mockReturnValue(of(new Blob(['csv'])));
 
       service
-        .updateItemCollection('acp1', 'c1', { baseVersion: 2, rowKeys: ['uuid-1'] }, 'editor')
+        .updateItemCollection(
+          'acp1',
+          'c1',
+          { baseVersion: 2, rowKeys: ['uuid-1'], shared: true },
+          'editor',
+        )
         .subscribe();
+      service.copyItemCollection('acp1', 'shared-1', 'read-only').subscribe();
       service.exportItemCollectionCsv('acp1', 'c1', 'editor').subscribe();
 
       expect(httpClientMock.patch).toHaveBeenCalledWith('/api/view/acp/acp1/items/collections/c1', {
         baseVersion: 2,
         rowKeys: ['uuid-1'],
+        shared: true,
         perspective: 'editor',
       });
+      expect(httpClientMock.post).toHaveBeenCalledWith(
+        '/api/view/acp/acp1/items/collections/shared-1/copy',
+        { perspective: 'read-only' },
+      );
       expect(httpClientMock.post).toHaveBeenCalledWith(
         '/api/view/acp/acp1/items/collections/c1/export.csv?perspective=editor',
         {},

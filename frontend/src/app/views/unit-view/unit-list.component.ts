@@ -32,7 +32,13 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
               </td>
               <td>{{ unit.name }}</td>
               <td>
-                <a [routerLink]="unit.partId ? ['/view', acpId, 'part', unit.partId, 'unit', unit.id] : ['/view', acpId, 'unit', unit.id]" class="btn btn-sm btn-primary"
+                <a
+                  [routerLink]="
+                    unit.partId
+                      ? ['/view', acpId, 'part', unit.partId, 'unit', unit.id]
+                      : ['/view', acpId, 'unit', unit.id]
+                  "
+                  class="btn btn-sm btn-primary"
                   >Ansehen</a
                 >
               </td>

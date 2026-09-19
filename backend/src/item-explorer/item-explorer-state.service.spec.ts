@@ -20,7 +20,7 @@ describe("ItemExplorerStateService", () => {
   const baseSharedState = {
     ui: {},
     tags: {},
-    metadataColumns: { visible: [], order: [] },
+    metadataColumns: { visible: [], order: [], configured: false, widths: {} },
     itemOrder: [],
     itemProperties: {},
   };
@@ -374,6 +374,143 @@ describe("ItemExplorerStateService", () => {
     expect(changeLogRepo.save).toHaveBeenCalledTimes(1);
   });
 
+  it("preserves an explicitly empty column selection and configured widths", async () => {
+    const record = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:00:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        metadataColumns: {
+          visible: [],
+          order: [],
+          configured: true,
+          widths: { subject: 245 },
+        },
+      },
+      { baseVersion: 1, changeType: "METADATA_COLUMNS_CHANGED" },
+    );
+
+    expect(envelope.draftState.metadataColumns).toEqual({
+      visible: [],
+      order: [],
+      configured: true,
+      widths: { subject: 245 },
+    });
+  });
+
+  it("persists and normalizes the unified table layout in draft state", async () => {
+    const record = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:02:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        metadataColumns: {
+          visible: ["custom"],
+          order: ["custom"],
+          configured: true,
+          widths: { custom: 220 },
+          layout: {
+            visible: ["system:unitLabel", "metadata:custom"],
+            order: ["metadata:custom", "system:unitLabel"],
+            configured: true,
+            widths: { "system:unitLabel": 310, "personal:category": 900 },
+            schemaVersion: 2,
+          },
+        },
+      },
+      { baseVersion: 1, changeType: "METADATA_COLUMNS_CHANGED" },
+    );
+
+    expect(envelope.draftState.metadataColumns.layout).toEqual({
+      visible: ["system:unitLabel", "metadata:custom"],
+      order: ["metadata:custom", "system:unitLabel"],
+      configured: true,
+      widths: { "system:unitLabel": 310, "personal:category": 600 },
+      schemaVersion: 2,
+    });
+  });
+
+  it("keeps widths for all unified columns and full namespaced metadata keys", async () => {
+    const record = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:02:30.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+    const widths = Object.fromEntries(
+      Array.from({ length: 110 }, (_, index) => [
+        `metadata:column-${index}`,
+        200 + index,
+      ]),
+    );
+    const longMetadataKey = `metadata:${"x".repeat(200)}`;
+    widths[longMetadataKey] = 333;
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        metadataColumns: {
+          layout: {
+            visible: ["system:itemId"],
+            order: ["system:itemId"],
+            configured: true,
+            widths,
+          },
+        },
+      },
+      { baseVersion: 1, changeType: "METADATA_COLUMNS_CHANGED" },
+    );
+    const normalizedWidths =
+      envelope.draftState.metadataColumns.layout?.widths || {};
+
+    expect(Object.keys(normalizedWidths)).toHaveLength(111);
+    expect(normalizedWidths[longMetadataKey]).toBe(333);
+  });
+
+  it("preserves an explicitly empty unified table selection", async () => {
+    const record = buildStateRecord();
+    stateRepo.findOne.mockResolvedValue(record);
+    stateRepo.save.mockImplementation(async (entity: any) => ({
+      ...entity,
+      updatedAt: new Date("2026-04-19T11:03:00.000Z"),
+    }));
+    changeLogRepo.save.mockResolvedValue(undefined);
+
+    const envelope = await service.patchDraft(
+      "acp-1",
+      {
+        metadataColumns: {
+          visible: [],
+          order: [],
+          configured: true,
+          widths: {},
+          layout: {
+            visible: [],
+            order: ["system:referenceNumber"],
+            configured: true,
+            widths: {},
+          },
+        },
+      },
+      { baseVersion: 1, changeType: "METADATA_COLUMNS_CHANGED" },
+    );
+
+    expect(envelope.draftState.metadataColumns.layout?.visible).toEqual([]);
+  });
+
   it("normalizes persisted preview targets in item property patches", async () => {
     const record = buildStateRecord();
     stateRepo.findOne.mockResolvedValue(record);
@@ -490,7 +627,7 @@ describe("ItemExplorerStateService", () => {
     );
   });
 
-  it("preserves explicit empty overrides for partial-credit rows", async () => {
+  it("preserves explicit empty tag overrides for regular and partial-credit rows", async () => {
     const record = buildStateRecord({
       draftState: {
         ...baseSharedState,
@@ -519,10 +656,13 @@ describe("ItemExplorerStateService", () => {
       "acp-1",
       {
         tags: {
-          "uuid-1": ["base"],
+          "uuid-1": [],
           "uuid-1::1": [],
         },
         itemPropertiesPatch: {
+          "uuid-1": {
+            tags: [],
+          },
           "uuid-1::1": {
             tags: [],
             excluded: false,
@@ -536,7 +676,11 @@ describe("ItemExplorerStateService", () => {
       },
     );
 
+    expect(envelope.draftState.tags["uuid-1"]).toEqual([]);
     expect(envelope.draftState.tags["uuid-1::1"]).toEqual([]);
+    expect(envelope.draftState.itemProperties["uuid-1"]).toEqual(
+      expect.objectContaining({ tags: [] }),
+    );
     expect(envelope.draftState.itemProperties["uuid-1::1"]).toEqual(
       expect.objectContaining({
         tags: [],
@@ -591,7 +735,11 @@ describe("ItemExplorerStateService", () => {
     expect(accessConfigRepo.save).toHaveBeenCalledWith(
       expect.objectContaining({
         featureConfig: expect.objectContaining({
-          metadataColumns: draftState.metadataColumns,
+          metadataColumns: expect.objectContaining({
+            visible: draftState.metadataColumns.visible,
+            order: draftState.metadataColumns.order,
+            configured: true,
+          }),
         }),
       }),
     );
@@ -727,6 +875,7 @@ describe("ItemExplorerStateService", () => {
       "acp-1",
       {
         item1: [" new ", "new"],
+        item2: [],
         "uuid-1::1": [],
       },
       {
@@ -737,12 +886,14 @@ describe("ItemExplorerStateService", () => {
 
     expect(result.tags).toEqual({
       item1: ["new"],
+      item2: [],
       "uuid-1::1": [],
     });
     expect(result.state.publishedState.tags).toEqual(result.tags);
     expect(result.state.draftState.tags).toEqual(result.tags);
     expect(result.state.publishedState.itemProperties).toEqual({
       item1: { empiricalDifficulty: 0.2, tags: ["new"] },
+      item2: { tags: [] },
       "uuid-1::1": {
         itemUuid: "uuid-1",
         subId: "1",

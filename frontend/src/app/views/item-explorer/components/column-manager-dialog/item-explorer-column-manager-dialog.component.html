@@ -7,12 +7,38 @@
           <span class="drawer-icon" style="background: var(--color-primary)">👁️</span>
           <div>
             <h2>Spalten verwalten</h2>
-            <small>Wählen Sie die Metadaten-Spalten für die Tabelle aus</small>
+            <small>Breite, Sichtbarkeit und Reihenfolge aller fachlichen Spalten festlegen</small>
           </div>
         </div>
         <button class="btn btn-sm btn-outline" (click)="vm.closeColumnManager()">✕</button>
       </div>
       <div class="overlay-content">
+        @let visibleColumns = vm.tableColumns;
+        @let allColumns = vm.allTableColumns;
+        <h3>Tabellenspalten</h3>
+        @if (vm.canEditExplorer) {
+          <label>
+            <input
+              type="checkbox"
+              [ngModel]="vm.metadataSettings.restrictReviewerColumnsToManagerSelection === true"
+              (ngModelChange)="vm.setRestrictReviewerColumns($event)"
+            />
+            Ausgeblendete Spalten für Reviewer sperren
+          </label>
+          @if (vm.metadataSettings.restrictReviewerColumnsToManagerSelection) {
+            <p>
+              Nach der Veröffentlichung sind nur freigegebene Informationen zugänglich, auch in
+              Exporten. Rohdaten-Downloads werden eingeschränkt. Eigene persönliche Spalten bleiben
+              verfügbar.
+            </p>
+          }
+        }
+        @if (vm.reviewerColumnsRestricted) {
+          <p role="note">
+            Die verfügbaren Spalten sind durch die veröffentlichte ACP-Konfiguration begrenzt.
+            Eigene persönliche Spalten bleiben verfügbar.
+          </p>
+        }
         <div class="column-manager-toolbar">
           <div class="search-container">
             <input
@@ -25,23 +51,29 @@
           <button
             class="btn btn-outline btn-sm"
             (click)="vm.resetToDefault()"
-            [disabled]="!vm.metadataSettings.visible.length"
+            [disabled]="!vm.canResetMetadataSettings"
           >
             🔄 Standard
           </button>
         </div>
 
         <div class="column-grid">
-          @for (col of vm.filteredAllColumns; track col.id) {
+          @for (col of vm.filteredAllColumns; track col.key) {
             <div
               class="column-tile"
-              [class.active]="vm.metadataSettings.visible.includes(col.id)"
+              [class.active]="vm.isColumnVisible(col)"
               (click)="vm.toggleColumnVisibility(col)"
             >
               <div class="tile-check">
                 <input
                   type="checkbox"
-                  [checked]="vm.metadataSettings.visible.includes(col.id)"
+                  [checked]="vm.isColumnVisible(col)"
+                  [disabled]="
+                    col.key === 'system:itemId' &&
+                    (vm.reviewerColumnsRestricted ||
+                      vm.metadataSettings.restrictReviewerColumnsToManagerSelection === true)
+                  "
+                  [attr.aria-label]="col.label"
                   (click)="$event.stopPropagation()"
                   (change)="vm.toggleColumnVisibility(col)"
                 />
@@ -50,12 +82,25 @@
                 <span class="tile-label">{{ col.label }}</span>
                 <span class="tile-id">ID: {{ col.id }}</span>
               </div>
-              @if (vm.metadataSettings.visible.includes(col.id)) {
+              <label class="tile-width" (click)="$event.stopPropagation()">
+                <span>Breite</span>
+                <input
+                  type="number"
+                  min="80"
+                  max="600"
+                  step="10"
+                  [ngModel]="vm.getColumnWidth(col)"
+                  (ngModelChange)="vm.setColumnWidth(col, $event)"
+                  [attr.aria-label]="'Breite für ' + col.label"
+                />
+                <span>px</span>
+              </label>
+              @if (vm.isColumnVisible(col)) {
                 <div class="tile-actions" (click)="$event.stopPropagation()">
                   <button
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnUp(col)"
-                    [disabled]="vm.metadataSettings.order[0] === col.id"
+                    [disabled]="!vm.canMoveTableColumn(col, -1)"
                     title="Nach oben"
                   >
                     ↑
@@ -63,9 +108,7 @@
                   <button
                     class="btn btn-xs btn-outline"
                     (click)="vm.moveColumnDown(col)"
-                    [disabled]="
-                      vm.metadataSettings.order[vm.metadataSettings.order.length - 1] === col.id
-                    "
+                    [disabled]="!vm.canMoveTableColumn(col, 1)"
                     title="Nach unten"
                   >
                     ↓
@@ -83,7 +126,8 @@
 
         <div class="column-manager-footer">
           <div class="selection-info">
-            {{ vm.metadataSettings.visible.length }} von {{ vm.allColumns.length }} Spalten gewählt
+            {{ visibleColumns.length }}
+            von {{ allColumns.length }} Spalten gewählt
           </div>
           <div class="footer-actions">
             <button class="btn btn-outline" (click)="vm.closeColumnManager()">Abbrechen</button>

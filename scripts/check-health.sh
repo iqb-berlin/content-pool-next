@@ -7,6 +7,8 @@ ENV="${1:-dev}"
 KEYCLOAK_URL="${2:-http://localhost:8080}"
 API_URL="${3:-http://localhost:3000/api}"
 FRONTEND_URL="${4:-http://localhost:4201}"
+EXPECTED_RELEASE="${5:-}"
+EXPECTED_COMMIT="${6:-}"
 FAILURES=0
 
 echo "=== ContentPool Health Check ==="
@@ -51,6 +53,36 @@ check_url "API OIDC config" "${API_URL%/}/auth/oidc-config"
 # Check Frontend
 check_url "Frontend" "${FRONTEND_URL%/}/"
 
+if [[ -n "$EXPECTED_RELEASE" || -n "$EXPECTED_COMMIT" ]]; then
+    echo -n "Checking deployed release identity... "
+    BACKEND_VERSION="$(mktemp "${TMPDIR:-/tmp}/content-pool-backend-version.XXXXXX")"
+    FRONTEND_VERSION="$(mktemp "${TMPDIR:-/tmp}/content-pool-frontend-version.XXXXXX")"
+    trap 'rm -f "$BACKEND_VERSION" "$FRONTEND_VERSION"' EXIT
+    if curl -fsS "${API_URL%/}/version" -o "$BACKEND_VERSION" && \
+       curl -fsS "${FRONTEND_URL%/}/version.json" -o "$FRONTEND_VERSION" && \
+       python3 - "$BACKEND_VERSION" "$FRONTEND_VERSION" "$EXPECTED_RELEASE" "$EXPECTED_COMMIT" <<'PY'
+import json
+import sys
+
+backend = json.load(open(sys.argv[1], encoding="utf-8"))
+frontend = json.load(open(sys.argv[2], encoding="utf-8"))
+expected_release, expected_commit = sys.argv[3], sys.argv[4]
+for field in ("version", "commit", "builtAt"):
+    if backend.get(field) != frontend.get(field):
+        raise SystemExit(f"frontend/backend {field} mismatch")
+if expected_release and backend.get("version") != expected_release:
+    raise SystemExit("unexpected release version")
+if expected_commit and backend.get("commit") != expected_commit:
+    raise SystemExit("unexpected release commit")
+PY
+    then
+        echo -e "${GREEN}OK${NC}"
+    else
+        echo -e "${RED}FAILED${NC}"
+        FAILURES=$((FAILURES + 1))
+    fi
+fi
+
 echo ""
 echo "=== Docker Container Status ==="
 
@@ -61,6 +93,8 @@ elif [ "$ENV" = "prod-traefik" ]; then
 elif [ "$ENV" = "server" ]; then
     docker compose -f docker-compose.server.yml ps
 elif [ "$ENV" = "server-traefik" ]; then
+    docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml ps
+elif [ "$ENV" = "traefik" ]; then
     docker compose -f docker-compose.server.yml -f docker-compose.traefik.yml ps
 else
     docker compose ps

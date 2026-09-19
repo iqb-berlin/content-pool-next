@@ -1,5 +1,6 @@
-import { Component, Input } from '@angular/core';
+import { Component, inject, Input } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { AcpNavigationService } from '../../core/services/acp-navigation.service';
 
 export interface BreadcrumbItem {
   label: string;
@@ -12,7 +13,7 @@ export interface BreadcrumbItem {
   imports: [RouterLink],
   template: `
     <nav class="breadcrumb" aria-label="Breadcrumb">
-      @for (item of items; track item.label; let last = $last) {
+      @for (item of resolvedItems; track item.label; let last = $last) {
         @if (item.route && !last) {
           <a [routerLink]="item.route" class="breadcrumb-link">{{ item.label }}</a>
           <span class="breadcrumb-sep">›</span>
@@ -50,5 +51,15 @@ export interface BreadcrumbItem {
   ],
 })
 export class BreadcrumbComponent {
+  private readonly navigation = inject(AcpNavigationService);
+
+  get resolvedItems(): BreadcrumbItem[] {
+    return this.items.map((item) =>
+      item.route?.length === 2 && item.route[0] === '/view'
+        ? { ...item, label: 'ACP-Übersicht', route: this.navigation.overviewRoute(item.route[1]) }
+        : item,
+    );
+  }
+
   @Input() items: BreadcrumbItem[] = [];
 }

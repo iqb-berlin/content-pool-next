@@ -116,4 +116,170 @@ describe("normalizeFeatureConfig", () => {
       },
     });
   });
+
+  it("keeps reference-number visibility opt-in for existing ACPs", () => {
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          visible: [],
+          order: [],
+          referenceNumberVisible: true,
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        visible: [],
+        order: [],
+        referenceNumberVisible: true,
+      },
+    });
+
+    expect(normalizeFeatureConfig({ enableItemList: true })).not.toHaveProperty(
+      "metadataColumns.referenceNumberVisible",
+    );
+  });
+
+  it("applies the ACP coding display defaults", () => {
+    expect(normalizeFeatureConfig({})).toMatchObject({
+      showGeneralCodingInstructions: false,
+      preferManualCodingInstructions: true,
+    });
+    expect(
+      normalizeFeatureConfig({
+        showGeneralCodingInstructions: true,
+        preferManualCodingInstructions: false,
+      }),
+    ).toMatchObject({
+      showGeneralCodingInstructions: true,
+      preferManualCodingInstructions: false,
+    });
+  });
+
+  it("keeps explicit empty column selections, definitions and bounded widths", () => {
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          visible: [],
+          order: [],
+          configured: true,
+          definitions: [
+            { id: " custom ", label: " Eigene Spalte " },
+            { id: "custom", label: "Duplikat" },
+            { id: "", label: "Ungültig" },
+          ],
+          widths: { custom: 720, narrow: 20, invalid: "x" },
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        visible: [],
+        order: [],
+        configured: true,
+        definitions: [{ id: "custom", label: "Eigene Spalte" }],
+        widths: { custom: 600, narrow: 80 },
+      },
+    });
+  });
+
+  it("normalizes the unified table layout without changing legacy metadata settings", () => {
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          visible: ["custom"],
+          order: ["custom"],
+          widths: { custom: 210 },
+          layout: {
+            visible: ["system:unitLabel", "metadata:custom"],
+            order: ["metadata:custom", "system:unitLabel"],
+            configured: true,
+            widths: {
+              "system:unitLabel": 320,
+              "personal:category": 700,
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        visible: ["custom"],
+        order: ["custom"],
+        widths: { custom: 210 },
+        layout: {
+          visible: ["system:unitLabel", "metadata:custom"],
+          order: ["metadata:custom", "system:unitLabel"],
+          configured: true,
+          widths: {
+            "system:unitLabel": 320,
+            "personal:category": 600,
+          },
+        },
+      },
+    });
+
+    expect(
+      normalizeFeatureConfig({
+        metadataColumns: {
+          layout: {
+            visible: [],
+            order: ["system:referenceNumber"],
+            configured: true,
+          },
+        },
+      }),
+    ).toMatchObject({
+      metadataColumns: {
+        layout: {
+          visible: [],
+          order: ["system:referenceNumber"],
+          configured: true,
+        },
+      },
+    });
+  });
+
+  it("preserves widths for every supported unified table column and long metadata keys", () => {
+    const widths = Object.fromEntries(
+      Array.from({ length: 110 }, (_, index) => [
+        `metadata:column-${index}`,
+        200 + index,
+      ]),
+    );
+    const longMetadataKey = `metadata:${"x".repeat(200)}`;
+    widths[longMetadataKey] = 333;
+
+    const normalized = normalizeFeatureConfig({
+      metadataColumns: {
+        layout: {
+          visible: ["system:itemId"],
+          order: ["system:itemId"],
+          configured: true,
+          widths,
+        },
+      },
+    });
+    const normalizedWidths = (
+      normalized.metadataColumns as {
+        layout: { widths: Record<string, number> };
+      }
+    ).layout.widths;
+
+    expect(Object.keys(normalizedWidths)).toHaveLength(111);
+    expect(normalizedWidths[longMetadataKey]).toBe(333);
+  });
+
+  it("keeps existing ACP comments private unless sharing is explicitly enabled", () => {
+    expect(normalizeFeatureConfig({ enableCommenting: true })).toMatchObject({
+      enableCommenting: true,
+      commentVisibilityMode: "PRIVATE",
+    });
+    expect(
+      normalizeFeatureConfig({
+        enableCommenting: true,
+        commentVisibilityMode: "SHARED",
+      }),
+    ).toMatchObject({
+      enableCommenting: true,
+      commentVisibilityMode: "SHARED",
+    });
+  });
 });

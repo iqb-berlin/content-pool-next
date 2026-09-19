@@ -13,7 +13,10 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { RolesGuard } from "../auth/guards/roles.guard";
 import { Roles } from "../auth/roles.decorator";
 import { UuidParam } from "../common/uuid-param";
-import { IndexGenerationOptions, IndexGenerationService } from "./index-generation.service";
+import {
+  IndexGenerationOptions,
+  IndexGenerationService,
+} from "./index-generation.service";
 
 class IndexGenerationOptionsDto implements IndexGenerationOptions {
   @IsOptional()
@@ -54,7 +57,9 @@ export class IndexGenerationController {
   }
 
   @Post("apply")
-  @ApiOperation({ summary: "Apply an unchanged, snapshot-backed generation preview" })
+  @ApiOperation({
+    summary: "Apply an unchanged, snapshot-backed generation preview",
+  })
   apply(
     @UuidParam("acpId") acpId: string,
     @Body() input: ApplyIndexGenerationDto,

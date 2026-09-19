@@ -1,0 +1,165 @@
+name: Promote Release Core
+
+on:
+  workflow_call:
+    inputs:
+      candidate:
+        required: true
+        type: string
+      validation_mode:
+        required: true
+        type: string
+      validation_evidence:
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/content-pool-frontend
+
+jobs:
+  promote:
+    name: Promote tested digests
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      issues: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve and validate candidate
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          VALIDATION_MODE: ${{ inputs.validation_mode }}
+          VALIDATION_EVIDENCE: ${{ inputs.validation_evidence }}
+        run: |
+          [[ "$VALIDATION_EVIDENCE" =~ [^[:space:]]{5,} ]] || {
+            echo "Validation evidence must contain a meaningful URL or record identifier" >&2
+            exit 1
+          }
+          [[ "$CANDIDATE" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-rc\.[1-9][0-9]*$ ]] || {
+            echo "Invalid candidate: ${CANDIDATE}" >&2
+            exit 1
+          }
+          stable="v${BASH_REMATCH[1]}"
+          echo "stable=${stable}" >> "$GITHUB_OUTPUT"
+          echo "validation_mode=${VALIDATION_MODE}" >> "$GITHUB_OUTPUT"
+          mkdir -p dist
+          gh release download "$CANDIDATE" --dir dist
+          (cd dist && sha256sum --check SHA256SUMS)
+          validation_args=(
+            --manifest dist/release-manifest.json
+            --expected-release "$CANDIDATE"
+            --runtime-archive "dist/$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field runtime.archive)"
+          )
+          case "$VALIDATION_MODE" in
+            staging)
+              ./scripts/release_manifest.py validate "${validation_args[@]}" --environment staging
+              ;;
+            production-exception)
+              prefix="https://github.com/${GITHUB_REPOSITORY}/issues/"
+              [[ "$VALIDATION_EVIDENCE" == "${prefix}"* ]] || {
+                echo "Production exception evidence must be an issue in ${GITHUB_REPOSITORY}" >&2
+                exit 1
+              }
+              issue_number="${VALIDATION_EVIDENCE#"$prefix"}"
+              [[ "$issue_number" =~ ^[1-9][0-9]*$ ]]
+              gh issue view "$issue_number" --json state,body | \
+                python3 scripts/production_exception.py validate \
+                  --repository "$GITHUB_REPOSITORY" \
+                  --issue-url "$VALIDATION_EVIDENCE"
+              ./scripts/release_manifest.py validate "${validation_args[@]}"
+              ;;
+            *)
+              echo "Unsupported validation mode: ${VALIDATION_MODE}" >&2
+              exit 1
+              ;;
+          esac
+          test "$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field migrations.classification)" != manual || {
+            echo "Manual/incompatible migrations cannot use the normal promotion workflow" >&2
+            exit 1
+          }
+          source_commit="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field sourceCommit)"
+          tag_commit="$(git rev-list -n 1 "$CANDIDATE")"
+          test "$source_commit" = "$tag_commit"
+          if git ls-remote --exit-code --tags origin "refs/tags/${stable}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${stable}:refs/tags/${stable}"
+            test "$(git rev-list -n 1 "$stable")" = "$source_commit" || {
+              echo "Stable tag ${stable} belongs to a different commit" >&2
+              exit 1
+            }
+            if gh release view "$stable" >/dev/null 2>&1; then
+              echo "Stable release ${stable} is already published" >&2
+              exit 1
+            fi
+            echo "Retrying ${stable} after an incomplete publication"
+          fi
+          expected_version="${stable#v}"
+          test "$(git show "${source_commit}:VERSION" | tr -d '[:space:]')" = "$expected_version"
+      - name: Promote image manifests without rebuilding
+        env:
+          STABLE: ${{ steps.release.outputs.stable }}
+        run: |
+          backend="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field images.backend)"
+          frontend="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field images.frontend)"
+          ensure_promoted_tag() {
+            local stable_ref="$1" source_ref="$2" expected="${2##*@}" actual
+            if docker buildx imagetools inspect "$stable_ref" >/dev/null 2>&1; then
+              actual="$(docker buildx imagetools inspect "$stable_ref" --format '{{json .Manifest}}' | jq -r .digest)"
+              test "$actual" = "$expected" || {
+                echo "${stable_ref} is already assigned to ${actual}, expected ${expected}" >&2
+                return 1
+              }
+            else
+              docker buildx imagetools create --tag "$stable_ref" "$source_ref"
+            fi
+          }
+          ensure_promoted_tag "${BACKEND_IMAGE}:${STABLE}" "$backend"
+          ensure_promoted_tag "${FRONTEND_IMAGE}:${STABLE}" "$frontend"
+          test "$(docker buildx imagetools inspect "${BACKEND_IMAGE}:${STABLE}" --format '{{json .Manifest}}' | jq -r .digest)" = "${backend##*@}"
+          test "$(docker buildx imagetools inspect "${FRONTEND_IMAGE}:${STABLE}" --format '{{json .Manifest}}' | jq -r .digest)" = "${frontend##*@}"
+      - name: Create stable manifest and checksums
+        env:
+          STABLE: ${{ steps.release.outputs.stable }}
+        run: |
+          ./scripts/release_manifest.py promote \
+            --manifest dist/release-manifest.json \
+            --release "$STABLE" \
+            --output dist/release-manifest.stable.json
+          mv dist/release-manifest.stable.json dist/release-manifest.json
+          archive="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field runtime.archive)"
+          (cd dist && sha256sum "$archive" release-manifest.json > SHA256SUMS)
+      - name: Publish stable tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE: ${{ inputs.candidate }}
+          STABLE: ${{ steps.release.outputs.stable }}
+          VALIDATION_MODE: ${{ steps.release.outputs.validation_mode }}
+          VALIDATION_EVIDENCE: ${{ inputs.validation_evidence }}
+        run: |
+          source_commit="$(./scripts/release_manifest.py get --manifest dist/release-manifest.json --field sourceCommit)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse --verify "refs/tags/${STABLE}" >/dev/null 2>&1; then
+            test "$(git rev-list -n 1 "$STABLE")" = "$source_commit"
+          else
+            git tag -a "$STABLE" "$source_commit" -m "Release ${STABLE} promoted from ${CANDIDATE}"
+            git push origin "refs/tags/${STABLE}"
+          fi
+          gh release create "$STABLE" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --notes "Promoted from \`${CANDIDATE}\`. Validation mode: \`${VALIDATION_MODE}\`. Evidence: ${VALIDATION_EVIDENCE}" \
+            --title "ContentPool ${STABLE}"

@@ -2,7 +2,6 @@ import { NestFactory } from "@nestjs/core";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { DataSource } from "typeorm";
-import * as bcrypt from "bcryptjs";
 import { AppModule } from "../../src/app.module";
 import {
   AccessModel,
@@ -19,7 +18,6 @@ import {
 const ACP_ID = "20000000-0000-4000-8000-000000000001";
 const MANAGER_ID = "20000000-0000-4000-8000-000000000002";
 const MANAGER_USERNAME = "benchmark-manager";
-const MANAGER_PASSWORD = "Benchmark-E2E-123!";
 const UNIT_COUNT = 50;
 const ITEMS_PER_UNIT = 40;
 const EXPECTED_FILE_COUNT = 151;
@@ -106,6 +104,18 @@ function createUnitFiles(unit: BenchmarkUnit) {
   ];
 }
 
+async function addBaselineCompatibilityColumns(
+  dataSource: DataSource,
+): Promise<void> {
+  // The benchmark runs the current test harness against an older application
+  // checkout whose User entity still selects this column. It is intentionally
+  // kept only in the disposable benchmark schema and is unused by the candidate.
+  await dataSource.query(`
+    ALTER TABLE "users"
+    ADD COLUMN IF NOT EXISTS "password_hash" character varying NOT NULL DEFAULT ''
+  `);
+}
+
 async function seed(): Promise<void> {
   const database = process.env.DB_DATABASE || "";
   if (
@@ -123,6 +133,7 @@ async function seed(): Promise<void> {
   try {
     const dataSource = app.get(DataSource);
     await dataSource.synchronize(true);
+    await addBaselineCompatibilityColumns(dataSource);
 
     const units = createUnits();
     const acp = await dataSource.getRepository(Acp).save(
@@ -159,7 +170,6 @@ async function seed(): Promise<void> {
       dataSource.getRepository(User).create({
         id: MANAGER_ID,
         username: MANAGER_USERNAME,
-        passwordHash: await bcrypt.hash(MANAGER_PASSWORD, 4),
         displayName: "Benchmark Manager",
         isAppAdmin: false,
       }),

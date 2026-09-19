@@ -8,6 +8,16 @@ export interface User {
   updatedAt?: string;
 }
 
+export interface CreateUserRequest {
+  username: string;
+  displayName?: string;
+  isAppAdmin?: boolean;
+}
+
+export interface UpdateUserRequest {
+  displayName?: string;
+}
+
 export interface LoginResponse {
   accessToken: string;
   user: User;
@@ -247,6 +257,21 @@ export interface ValidateUnitsResponse {
   validationSummary: UploadValidationSummary;
 }
 
+export interface ReviewReadiness {
+  stale?: boolean;
+  status: 'READY' | 'WARNING' | 'BLOCKED';
+  checkedAt: string;
+  blockers: string[];
+  warnings: string[];
+  summary: {
+    totalFiles: number;
+    validFiles: number;
+    invalidFiles: number;
+    bookletCount: number;
+    unitCount: number;
+  };
+}
+
 export type FilePreviewMode =
   | 'text'
   | 'image'
@@ -281,6 +306,8 @@ export interface FilePreviewVomdData {
     id: string;
     description: string;
     variableId?: string;
+    sourceVariable?: string;
+    variableReadOnlyId?: string;
     metadata: Record<string, string>;
   }[];
 }
@@ -391,13 +418,27 @@ export interface AccessConfig {
 }
 
 export interface Credential {
+  capabilities?: string[];
   id: string;
   username: string;
 }
 
 export interface MetadataColumnsConfig {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible?: string[];
   order?: string[];
+  configured?: boolean;
+  referenceNumberVisible?: boolean;
+  definitions?: Array<{ id: string; label: string }>;
+  widths?: Record<string, number>;
+  layout?: ItemExplorerTableColumnLayout;
+}
+
+export interface ItemExplorerTableColumnLayout {
+  visible?: string[];
+  order?: string[];
+  configured?: boolean;
+  widths?: Record<string, number>;
 }
 
 export interface FeatureConfig {
@@ -410,8 +451,13 @@ export interface FeatureConfig {
   showCodingScheme?: boolean;
   enableUnitListNavigation?: boolean;
   enableSequenceNavigation?: boolean;
+  showItemExplorerOnStartPage?: boolean;
+  showUnitListOnStartPage?: boolean;
+  showSequencesOnStartPage?: boolean;
+  showIndexOnStartPage?: boolean;
   enableCommenting?: boolean;
   commentTargets?: string[];
+  commentVisibilityMode?: 'PRIVATE' | 'SHARED';
   enableItemList?: boolean;
   metadataColumns?: MetadataColumnsConfig;
   // Legacy key (read-only compatibility)
@@ -422,6 +468,8 @@ export interface FeatureConfig {
   enableItemListTags?: boolean;
   showOnlyItemsWithEmpiricalDifficulty?: boolean;
   showAudioVideoCodingVariables?: boolean;
+  showGeneralCodingInstructions?: boolean;
+  preferManualCodingInstructions?: boolean;
   enableItemExplorerConditionalVisibility?: boolean;
   enablePlayerFocusHighlight?: boolean;
   showItemExplorerPlayerTargetInfo?: boolean;
@@ -437,15 +485,56 @@ export interface FeatureConfig {
   persistUserPreferences?: boolean;
 }
 
+export type CommentTargetType = 'BOOKLET' | 'UNIT' | 'ITEM' | 'CODING' | 'TASK_SEQUENCE';
+
+export interface ReviewCommentTarget {
+  targetType: Exclude<CommentTargetType, 'TASK_SEQUENCE'>;
+  bookletId?: string;
+  unitId?: string;
+  itemId?: string;
+}
+
 export interface Comment {
   id: string;
   acpId: string;
   userId?: string;
   credentialUsername?: string;
-  targetType: 'UNIT' | 'ITEM' | 'TASK_SEQUENCE';
+  credentialId?: string;
+  targetType: CommentTargetType;
   targetId: string;
+  bookletId?: string | null;
+  unitId?: string | null;
+  itemId?: string | null;
+  parentCommentId?: string | null;
+  parentVisible?: boolean;
+  groupId?: string | null;
+  groupName?: string | null;
   commentText: string;
+  authorLabel?: string;
   createdAt: string;
+  updatedAt?: string;
+  version?: number;
+  isOwn?: boolean;
+  isDeleted?: boolean;
+  legacyReadOnly?: boolean;
+  upvotes?: number;
+  downvotes?: number;
+  myVote?: 'UP' | 'DOWN' | null;
+  canVote?: boolean;
+}
+
+export interface CommentThreadSnapshot {
+  target: ReviewCommentTarget;
+  revision: string;
+  visibilityMode: 'PRIVATE' | 'SHARED' | 'GROUP';
+  defaultGroupId?: string | null;
+  groups?: { id: string; name: string; archived: boolean }[];
+  comments: Comment[];
+}
+
+export interface ItemCommentCountsSnapshot {
+  revision: string;
+  counts: Array<{ unitId: string; itemId: string; count: number; codingCount: number }>;
 }
 
 export interface AppSettings {
@@ -486,7 +575,7 @@ export interface UnitViewData {
   lang?: string;
   items: any[];
   dependencies: FileDependency[];
-  codingScheme?: string;
+  codingScheme?: unknown;
   richText?: string;
 }
 
@@ -509,6 +598,8 @@ export interface SimpleItemListEntry {
   unitName: string;
   name?: string;
   sourceVariable?: string;
+  variableId?: string;
+  variableReadOnlyId?: string;
   meanTaskDifficulty?: number;
 }
 
@@ -535,16 +626,38 @@ export interface ItemCollection {
   updatedAt: string;
   unavailableRowKeys: string[];
   summary: ItemCollectionSummary;
+  shared: boolean;
+  ownedByCurrentUser: boolean;
+  ownerLabel: string;
 }
 
 export interface ItemCollectionsPayload {
   activeCollectionId: string | null;
+  collectionViewMode: 'all' | 'active';
   collections: ItemCollection[];
+  sharedCollectionsTruncated: boolean;
+}
+
+export type ItemCollectionRowsMutation =
+  | { baseVersion: number; addRowKeys: string[]; perspective: ItemExplorerPerspective }
+  | { baseVersion: number; removeRowKeys: string[]; perspective: ItemExplorerPerspective }
+  | { baseVersion: number; clear: true; perspective: ItemExplorerPerspective };
+
+export interface ItemCollectionRowsMutationResult {
+  collectionId: string;
+  version: number;
+  updatedAt: string;
+  summary: ItemCollectionSummary;
 }
 
 export interface ItemExplorerMetadataColumns {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible?: string[];
   order?: string[];
+  configured?: boolean;
+  referenceNumberVisible?: boolean;
+  widths?: Record<string, number>;
+  layout?: ItemExplorerTableColumnLayout;
 }
 
 export interface ItemExplorerSharedState {
@@ -587,7 +700,13 @@ export interface ItemExplorerChangeLogEntry {
 export interface TaskSequence {
   id: string;
   name: any;
-  units: { id: string; name: string }[];
+  units: {
+    id: string;
+    name: string;
+    occurrenceId?: string;
+    alias?: string;
+    blockPath?: string[];
+  }[];
 }
 
 export interface OidcConfig {
@@ -598,8 +717,8 @@ export interface OidcConfig {
   scope: string;
 }
 
-export interface AuthContext {
-  allowedMethods: ('oidc' | 'credentials')[];
-  oidcEnabled: boolean;
-  message: string;
+export interface BuildVersion {
+  version: string;
+  commit: string;
+  builtAt: string;
 }

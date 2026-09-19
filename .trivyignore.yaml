@@ -1,0 +1,10 @@
+vulnerabilities:
+  - id: CVE-2026-14257
+    purls:
+      - "pkg:npm/brace-expansion@1.1.18"
+      - "pkg:npm/brace-expansion@2.1.4"
+    expired_at: 2026-08-31
+    statement: >-
+      These releases contain the upstream fixes backported to the 1.x and 2.x
+      API lines, but the advisory currently lists only 5.0.8 as the first
+      patched version and therefore misclassifies the fixed backports.

@@ -36,19 +36,19 @@ describe('UsersComponent', () => {
   it('creates user and resets form state', () => {
     const component = new UsersComponent(api as any);
     component.showCreate = true;
-    const payload = { username: 'new-user', password: 'Secret123!', displayName: 'Neue Person' };
+    const payload = { username: 'new-user', displayName: 'Neue Person' };
     component.newUser = { ...payload };
 
     component.createUser();
 
     expect(api.createUser).toHaveBeenCalledWith(payload);
     expect(component.showCreate).toBe(false);
-    expect(component.newUser).toEqual({ username: '', password: '', displayName: '' });
+    expect(component.newUser).toEqual({ username: '', displayName: '' });
   });
 
   it('blocks create when required fields are missing', () => {
     const component = new UsersComponent(api as any);
-    component.newUser = { username: ' ', password: '', displayName: '' };
+    component.newUser = { username: ' ', displayName: '' };
 
     component.createUser();
 

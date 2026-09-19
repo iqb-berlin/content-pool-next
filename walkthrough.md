@@ -13,8 +13,8 @@ backend/
 │   ├── app.module.ts                    # Root module wiring
 │   ├── auth/                            # JWT auth + 3 guard types
 │   │   ├── auth.module.ts
-│   │   ├── auth.service.ts              # User + credential login
-│   │   ├── auth.controller.ts           # POST /auth/login, /credential-login
+│   │   ├── auth.service.ts              # Keycloak/OIDC + ACP credential login
+│   │   ├── auth.controller.ts           # OIDC callback + credential login
 │   │   ├── guards/
 │   │   │   ├── jwt-auth.guard.ts
 │   │   │   ├── roles.guard.ts           # APP_ADMIN role check
@@ -40,8 +40,8 @@ backend/
 
 | Feature | Module | Status |
 |---------|--------|--------|
-| JWT Authentication (user + credential login) | `auth` | ✅ |
-| User CRUD + Admin seeding | `users` | ✅ |
+| JWT Authentication (OIDC users + ACP credential login) | `auth` | ✅ |
+| User CRUD for pre-provisioned Keycloak identities | `users` | ✅ |
 | ACP CRUD + ACP-Index import/export | `acp` | ✅ |
 | 3 access models (Public/Registered/Credentials) | `acp` | ✅ |
 | File upload/download with SHA-256 checksums | `files` | ✅ |
@@ -75,7 +75,7 @@ npm run start:dev
 
 # API will be at http://localhost:3000/api
 # Swagger docs at http://localhost:3000/api/docs
-# Default admin: username=admin, password=admin
+# Users authenticate through the configured Keycloak; no local default admin is seeded
 ```
 
 **Remaining work:**

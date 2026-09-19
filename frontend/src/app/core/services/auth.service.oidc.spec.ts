@@ -104,14 +104,10 @@ describe('AuthService OIDC and Crypto Paths', () => {
     vi.useRealTimers();
   });
 
-  it('builds OIDC config and context endpoints', () => {
+  it('loads the OIDC configuration endpoint', () => {
     service.getOidcConfig().subscribe();
-    service.getAuthContext().subscribe();
-    service.getAuthContext('admin').subscribe();
 
     expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/oidc-config');
-    expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/context');
-    expect(httpClientMock.get).toHaveBeenCalledWith('/api/auth/context?type=admin');
   });
 
   it('marks OIDC users from auth type flag', () => {
@@ -120,11 +116,31 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(service.isOidcUser).toBe(true);
   });
 
-  it('stores redirect target on initiateOidcLogin and noops when config disabled', () => {
+  it('stores redirect target and rejects when Keycloak is disabled', async () => {
     httpClientMock.get.mockReturnValueOnce(of({ ...oidcConfig, enabled: false }));
-    service.initiateOidcLogin('/admin');
+
+    await expect(service.initiateOidcLogin('/admin')).rejects.toThrow(
+      'Die Keycloak-Anmeldung ist nicht konfiguriert.',
+    );
 
     expect(sessionStorage.getItem('oidc_redirect_url')).toBe('/admin');
+  });
+
+  it('clears a stale redirect target when a new login has no target', async () => {
+    sessionStorage.setItem('oidc_redirect_url', '/stale');
+    httpClientMock.get.mockReturnValueOnce(of({ ...oidcConfig, enabled: false }));
+
+    await expect(service.initiateOidcLogin()).rejects.toThrow();
+
+    expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
+  });
+
+  it('reports a user-facing error when the OIDC configuration cannot be loaded', async () => {
+    httpClientMock.get.mockReturnValueOnce(throwError(() => new Error('network details')));
+
+    await expect(service.initiateOidcLogin()).rejects.toThrow(
+      'Die Keycloak-Konfiguration konnte nicht geladen werden.',
+    );
   });
 
   it('rejects authorization code flow for invalid state', async () => {
@@ -299,6 +315,44 @@ describe('AuthService OIDC and Crypto Paths', () => {
     expect(sessionStorage.getItem('oidc_redirect_url')).toBeNull();
     expect(sessionStorage.getItem('oidc_state')).toBeNull();
     expect(sessionStorage.getItem('oidc_code_verifier')).toBeNull();
+  });
+
+  it('uses the installer-approved login URL for the Keycloak logout redirect', () => {
+    const navigateSpy = vi
+      .spyOn(service as any, 'navigateBrowserTo')
+      .mockImplementation(() => undefined);
+
+    (service as any).redirectToKeycloakLogout('id-token');
+
+    const logoutUrl = new URL(navigateSpy.mock.calls[0][0]);
+    expect(logoutUrl.pathname).toBe('/protocol/openid-connect/logout');
+    expect(logoutUrl.searchParams.get('post_logout_redirect_uri')).toBe(
+      `${window.location.origin}/login`,
+    );
+    expect(logoutUrl.searchParams.get('client_id')).toBe(oidcConfig.clientId);
+    expect(logoutUrl.searchParams.get('id_token_hint')).toBe('id-token');
+  });
+
+  it('falls back to the public start page when the logout configuration cannot be loaded', () => {
+    httpClientMock.get.mockReturnValueOnce(throwError(() => new Error('network failure')));
+    const navigateSpy = vi
+      .spyOn(service as any, 'navigateBrowserTo')
+      .mockImplementation(() => undefined);
+
+    (service as any).redirectToKeycloakLogout('id-token');
+
+    expect(navigateSpy).toHaveBeenCalledWith(`${window.location.origin}/`);
+  });
+
+  it('falls back to the public start page when Keycloak logout is not configured', () => {
+    httpClientMock.get.mockReturnValueOnce(of({ ...oidcConfig, enabled: false }));
+    const navigateSpy = vi
+      .spyOn(service as any, 'navigateBrowserTo')
+      .mockImplementation(() => undefined);
+
+    (service as any).redirectToKeycloakLogout('id-token');
+
+    expect(navigateSpy).toHaveBeenCalledWith(`${window.location.origin}/`);
   });
 
   it('restores an OIDC session by refreshing tokens when the app token is missing', async () => {

@@ -1,3 +1,4 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
 import {
   Injectable,
   NotFoundException,
@@ -77,6 +78,8 @@ export interface FilePreviewVomdData {
     id: string;
     description: string;
     variableId?: string;
+    sourceVariable?: string;
+    variableReadOnlyId?: string;
     metadata: Record<string, string>;
   }[];
 }
@@ -165,6 +168,7 @@ export class FilesService {
     private readonly validationService: ValidationService,
     private readonly fileMutationService: FileMutationService,
     private readonly fileStorageService: FileStorageService,
+    private readonly reviewManifestService: ReviewManifestService,
   ) {
     this.storagePath = this.configService.get<string>(
       "FILE_STORAGE_PATH",
@@ -538,7 +542,13 @@ export class FilesService {
   ): Promise<{ buffer: Buffer; fileName: string }> {
     const index = await this.getAcpIndex(acpId);
     const allFiles = await this.findByAcp(acpId);
-    const unitFiles = this.collectUnitFiles(index, allFiles, unitId, true, partId);
+    const unitFiles = this.collectUnitFiles(
+      index,
+      allFiles,
+      unitId,
+      true,
+      partId,
+    );
     if (!unitFiles.length) {
       throw new NotFoundException(`No files found for unit "${unitId}"`);
     }
@@ -553,10 +563,29 @@ export class FilesService {
   async createSequenceZip(
     acpId: string,
     sequenceId: string,
+    kind?: "booklet",
   ): Promise<{ buffer: Buffer; fileName: string }> {
     const index = await this.getAcpIndex(acpId);
     const allFiles = await this.findByAcp(acpId);
-    const sequence = this.resolveSequenceUnitIds(index, sequenceId);
+    const sequence =
+      kind === "booklet"
+        ? {
+            partId: getAssessmentParts(index).find((part: any) =>
+              (part.instruments || []).some((instrument: any) =>
+                (instrument.testcenterBooklet || []).some(
+                  (booklet: any) => booklet.id === sequenceId,
+                ),
+              ),
+            )?.id,
+            unitIds: [
+              ...new Set(
+                (await this.reviewManifestService.getManifest(acpId)).booklets
+                  .find((entry) => !entry.legacy && entry.id === sequenceId)
+                  ?.units.map((unit) => unit.id) || [],
+              ),
+            ],
+          }
+        : this.resolveSequenceUnitIds(index, sequenceId);
 
     if (!sequence.unitIds.length) {
       throw new NotFoundException(`Sequence "${sequenceId}" not found`);
@@ -638,6 +667,28 @@ export class FilesService {
       string,
       any
     >;
+  }
+
+  async isRuntimeDependencyFile(
+    acpId: string,
+    fileName: string,
+  ): Promise<boolean> {
+    const units = getIndexUnits(await this.getAcpIndex(acpId));
+    const isRuntime = (dependency: any) =>
+      ["PLAYER", "UNIT_DEFINITION", "CODING_SCHEME"].includes(
+        dependency?.type,
+      ) &&
+      (dependency.id === fileName || dependency.originalName === fileName);
+    for (const unit of units) {
+      if ((unit.dependencies || []).some(isRuntime)) return true;
+      // The uploaded Unit XML can be newer than the stored index dependency list.
+      const view = await this.unitParserService.getUnitViewFromFiles(
+        acpId,
+        unit.id,
+      );
+      if ((view?.dependencies || []).some(isRuntime)) return true;
+    }
+    return false;
   }
 
   async isUnitDependencyFile(
@@ -783,9 +834,9 @@ export class FilesService {
         return {
           id: String(item?.id || ""),
           description: String(item?.description || item?.label || ""),
-          variableId: this.pickFirstNonEmptyString([
-            item?.sourceVariable,
-            item?.variableId,
+          variableId: this.pickFirstNonEmptyString([item?.variableId]),
+          sourceVariable: this.pickFirstNonEmptyString([item?.sourceVariable]),
+          variableReadOnlyId: this.pickFirstNonEmptyString([
             item?.variableReadOnlyId,
           ]),
           metadata,
@@ -1217,13 +1268,13 @@ export class FilesService {
           return {
             partId: part.id,
             unitIds: (module.units || [])
-            .slice()
-            .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
-            .map((u: any) => u.id)
-            .filter(
-              (id: unknown): id is string =>
-                typeof id === "string" && id.length > 0,
-            ),
+              .slice()
+              .sort((a: any, b: any) => (a.order || 0) - (b.order || 0))
+              .map((u: any) => u.id)
+              .filter(
+                (id: unknown): id is string =>
+                  typeof id === "string" && id.length > 0,
+              ),
           };
         }
       }

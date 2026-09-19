@@ -17,9 +17,23 @@ export interface PlayerTargetLocation {
   isAlwaysVisiblePage: boolean;
 }
 
+export interface PlayerResponseTarget {
+  responseId: string;
+  elementType: string;
+  identifiers: string[];
+  optionCount?: number;
+}
+
 interface IdentifierBearingNode {
   id?: unknown;
   alias?: unknown;
+  type?: unknown;
+  options?: unknown;
+}
+
+interface IdentifierNodeMatch {
+  pageIndex: number;
+  node: IdentifierBearingNode;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -122,27 +136,19 @@ export class VoudService {
 
     try {
       const unitDefinition = this.parseDefinition(definition);
-      const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
-      const targetLower = target.toLowerCase();
-      let scrollPageIndex = 0;
+      const pages: any[] = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
+      const match = this.findTargetNode(pages, target);
+      if (!match) return undefined;
 
-      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
-        const page = pages[pageIndex];
-        const pageRefs = this.getPageVariableRefs(page);
-        const isAlwaysVisiblePage = this.isPageAlwaysVisible(page);
-        if (pageRefs.some((ref) => ref === target || ref.toLowerCase() === targetLower)) {
-          return {
-            absolutePageIndex: pageIndex,
-            scrollPageIndex: isAlwaysVisiblePage ? undefined : scrollPageIndex,
-            isAlwaysVisiblePage,
-          };
-        }
-
-        if (!isAlwaysVisiblePage) {
-          scrollPageIndex += 1;
-        }
-      }
-      return undefined;
+      const isAlwaysVisiblePage = this.isPageAlwaysVisible(pages[match.pageIndex]);
+      const scrollPageIndex = pages
+        .slice(0, match.pageIndex)
+        .filter((page) => !this.isPageAlwaysVisible(page)).length;
+      return {
+        absolutePageIndex: match.pageIndex,
+        scrollPageIndex: isAlwaysVisiblePage ? undefined : scrollPageIndex,
+        isAlwaysVisiblePage,
+      };
     } catch (e) {
       console.error('Error resolving player target location from VOUD:', e);
       return undefined;
@@ -167,22 +173,49 @@ export class VoudService {
 
     try {
       const unitDefinition = this.parseDefinition(definition);
-      const identifiers = new Set<string>([target]);
-      const normalizedTarget = target.toLowerCase();
-
-      this.visitNodes(unitDefinition, (node) => {
-        const nodeIdentifiers = this.getNodeIdentifiers(node);
-        if (!nodeIdentifiers.length) return;
-
-        if (nodeIdentifiers.some((identifier) => identifier.toLowerCase() === normalizedTarget)) {
-          nodeIdentifiers.forEach((identifier) => identifiers.add(identifier));
-        }
-      });
-
-      return Array.from(identifiers);
+      const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
+      const match = this.findTargetNode(pages, target);
+      return match
+        ? Array.from(new Set([target, ...this.getNodeIdentifiers(match.node)]))
+        : [target];
     } catch (e) {
       console.error('Error resolving focus identifiers from VOUD:', e);
       return [target];
+    }
+  }
+
+  /**
+   * Resolves the identifier and element type expected in Aspect's `elementCodes` data part.
+   * The player serializes responses by alias and falls back to the internal element id when
+   * no alias is present.
+   */
+  resolvePlayerResponseTarget(
+    definition: string,
+    variableId: string,
+  ): PlayerResponseTarget | undefined {
+    const target = String(variableId || '').trim();
+    if (!target) return undefined;
+
+    try {
+      const unitDefinition = this.parseDefinition(definition);
+      const pages = Array.isArray(unitDefinition?.pages) ? unitDefinition.pages : [];
+      const match = this.findTargetNode(pages, target);
+      if (!match) return undefined;
+
+      const identifiers = this.getNodeIdentifiers(match.node);
+      const responseId = String(match.node.alias || match.node.id || '').trim();
+      if (!responseId) return undefined;
+      const optionCount = Array.isArray(match.node.options) ? match.node.options.length : undefined;
+
+      return {
+        responseId,
+        elementType: String(match.node.type || '').trim(),
+        identifiers,
+        ...(optionCount !== undefined ? { optionCount } : {}),
+      };
+    } catch (e) {
+      console.error('Error resolving player response target from VOUD:', e);
+      return undefined;
     }
   }
 
@@ -201,16 +234,26 @@ export class VoudService {
     }
   }
 
-  private getPageVariableRefs(page: any): string[] {
-    const aliases = this.listSimplify(this.getDeepestElements(page, 'alias', ['visibilityRules']));
-    const ids = this.listSimplify(this.getDeepestElements(page, 'id', ['visibilityRules']));
-    return Array.from(
-      new Set(
-        [...aliases, ...ids]
-          .map((value) => String(value || '').trim())
-          .filter((value) => value.length > 0),
-      ),
-    );
+  private findTargetNode(pages: any[], target: string): IdentifierNodeMatch | undefined {
+    const normalizedTarget = target.toLowerCase();
+    const findBy = (key: 'alias' | 'id'): IdentifierNodeMatch | undefined => {
+      for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
+        let matchingNode: IdentifierBearingNode | undefined;
+        this.visitNodes(pages[pageIndex], (node) => {
+          if (matchingNode) return;
+          const value = String(node[key] || '').trim();
+          if (value && value.toLowerCase() === normalizedTarget) {
+            matchingNode = node;
+          }
+        });
+        if (matchingNode) return { pageIndex, node: matchingNode };
+      }
+      return undefined;
+    };
+
+    // Item and coding references use VOUD aliases. Generated element IDs are
+    // a compatibility fallback for manually stored targets.
+    return findBy('alias') || findBy('id');
   }
 
   private isPageAlwaysVisible(page: any): boolean {

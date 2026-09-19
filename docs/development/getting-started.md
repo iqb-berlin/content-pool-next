@@ -135,9 +135,8 @@ The usual happy path is:
 
 ## Local Identity and Login Notes
 
-The application supports several login paths:
+The application supports two login paths:
 
-- local username/password login,
 - OIDC login via Keycloak,
 - ACP credential login for restricted viewers.
 

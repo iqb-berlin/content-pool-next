@@ -39,7 +39,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       };
     }
 
-    // Load full user with roles from database for regular users
+    // Reject local user tokens issued by older releases immediately.
+    if (payload.type !== "oidc" || payload.authType !== "oidc") {
+      return null;
+    }
+
+    // Load full user with roles from database for OIDC users.
     const user = await this.userRepository.findOne({
       where: { id: payload.sub },
       relations: ["acpRoles", "acpRoles.acp"],

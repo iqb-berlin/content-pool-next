@@ -52,6 +52,11 @@ export class NumberedItemListCache {
           subIdLabels: {},
           unitMetadata: {},
           codingSchemes: {},
+          variableIdentityConsistency: {
+            checkedItemCount: 0,
+            collisionCount: 0,
+            collisions: [],
+          },
         },
         rowRevision: initialRevision,
         rowNumberingMs: 0,

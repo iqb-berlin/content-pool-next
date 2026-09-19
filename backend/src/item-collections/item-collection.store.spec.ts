@@ -16,6 +16,7 @@ describe("ItemCollectionStore", () => {
     };
     repository = {
       findOne: jest.fn(),
+      query: jest.fn().mockResolvedValue([]),
       manager: {
         transaction: jest.fn(async (operation) => operation(manager)),
       },
@@ -55,6 +56,37 @@ describe("ItemCollectionStore", () => {
     });
   });
 
+  it("reads only projected shared collections with a bounded database query", async () => {
+    repository.query.mockResolvedValue([
+      {
+        collection: { id: "shared", shared: true },
+        ownerLabel: " Charlotte ",
+      },
+    ]);
+
+    await expect(
+      store.readSharedCollections(
+        "acp-1",
+        {
+          kind: "user",
+          userId: "user-1",
+        },
+        1001,
+      ),
+    ).resolves.toEqual([
+      {
+        collection: { id: "shared", shared: true },
+        ownerLabel: "Charlotte",
+      },
+    ]);
+    expect(repository.query).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /jsonb_array_elements[\s\S]*collection ->> 'shared' = 'true'[\s\S]*LIMIT \$3/,
+      ),
+      ["acp-1", "user-1", 1001],
+    );
+  });
+
   it("locks the owner row and updates only collection-owned JSON fields", async () => {
     repository.findOne.mockResolvedValue({
       id: "preference-1",
@@ -81,6 +113,7 @@ describe("ItemCollectionStore", () => {
           },
         ],
         activeCollectionId: "collection-1",
+        collectionViewMode: "active",
       }),
     );
 
@@ -95,12 +128,13 @@ describe("ItemCollectionStore", () => {
     });
     expect(manager.query).toHaveBeenCalledWith(
       expect.stringMatching(
-        /UPDATE "acp_item_preferences"[\s\S]*jsonb_typeof\("preferences"\) = 'object'[\s\S]*ELSE '\{\}'::jsonb[\s\S]*'\{collections\}'[\s\S]*'\{activeCollectionId\}'/,
+        /UPDATE "acp_item_preferences"[\s\S]*jsonb_typeof\("preferences"\) = 'object'[\s\S]*ELSE '\{\}'::jsonb[\s\S]*'\{collections\}'[\s\S]*'\{activeCollectionId\}'[\s\S]*'\{collectionViewMode\}'/,
       ),
       [
         "preference-1",
         expect.stringContaining('"collection-1"'),
         JSON.stringify("collection-1"),
+        JSON.stringify("active"),
         null,
       ],
     );
@@ -119,7 +153,11 @@ describe("ItemCollectionStore", () => {
       false,
       (preferences) => {
         expect(preferences).toEqual({});
-        return { collections: [], activeCollectionId: null };
+        return {
+          collections: [],
+          activeCollectionId: null,
+          collectionViewMode: "all",
+        };
       },
     );
 
@@ -140,7 +178,11 @@ describe("ItemCollectionStore", () => {
         credentialUsername: "reader-a",
       },
       true,
-      () => ({ collections: [], activeCollectionId: null }),
+      () => ({
+        collections: [],
+        activeCollectionId: null,
+        collectionViewMode: "all",
+      }),
     );
 
     expect(manager.query).toHaveBeenNthCalledWith(
@@ -159,6 +201,7 @@ describe("ItemCollectionStore", () => {
       store.mutate("acp-1", { kind: "user", userId: "user-1" }, false, () => ({
         collections: [],
         activeCollectionId: null,
+        collectionViewMode: "all",
       })),
     ).rejects.toThrow(NotFoundException);
     expect(manager.query).not.toHaveBeenCalled();

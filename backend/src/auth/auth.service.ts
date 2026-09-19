@@ -14,8 +14,8 @@ export interface JwtPayload {
   sub: string;
   username: string;
   isAppAdmin: boolean;
-  type: "user" | "credential" | "oidc";
-  authType?: "local" | "oidc";
+  type: "credential" | "oidc";
+  authType?: "oidc";
   acpId?: string;
 }
 
@@ -53,43 +53,6 @@ export class AuthService {
     private readonly accessConfigRepository: Repository<AcpAccessConfig>,
     private readonly jwtService: JwtService,
   ) {}
-
-  async validateUser(username: string, password: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { username } });
-    if (!user) {
-      throw new UnauthorizedException("Invalid credentials");
-    }
-    const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isPasswordValid) {
-      throw new UnauthorizedException("Invalid credentials");
-    }
-    return user;
-  }
-
-  async login(username: string, password: string) {
-    const user = await this.validateUser(username, password);
-
-    // Admin users must use OIDC
-    if (user.isAppAdmin) {
-      throw new UnauthorizedException("Admin users must login via OIDC");
-    }
-
-    const payload: JwtPayload = {
-      sub: user.id,
-      username: user.username,
-      isAppAdmin: user.isAppAdmin,
-      type: "user",
-    };
-    return {
-      accessToken: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        isAppAdmin: user.isAppAdmin,
-      },
-    };
-  }
 
   async credentialLogin(
     acpId: string,

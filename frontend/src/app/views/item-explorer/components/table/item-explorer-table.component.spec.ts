@@ -4,11 +4,59 @@ import { ItemExplorerTableComponent } from './item-explorer-table.component';
 import template from './item-explorer-table.component.html?raw';
 
 describe('ItemExplorerTableComponent', () => {
+  it('applies the global item search without persisting shared UI state', () => {
+    expect(template).toContain('(input)="vm.applyFilter(false)"');
+  });
+
+  it('exposes the excluded-item filter as a semantic state button', () => {
+    expect(template).toContain('class="btn btn-outline btn-sm btn-state"');
+    expect(template).toContain('[attr.aria-pressed]="vm.showExcludedItems"');
+    expect(template).not.toContain('btn-state-indicator');
+  });
+
   it('names shared tag and personal category selectors per item', () => {
     expect(template).toContain("[attr.aria-label]=\"'Tag für ' + item.itemId + ' hinzufügen'\"");
     expect(template).toContain(
       '[attr.aria-label]="vm.personalItemCategoryLabel + \' für \' + item.itemId"',
     );
+  });
+
+  it('renders a gapless view position and the configured unified table columns', () => {
+    expect(template).toContain('@let tableColumns = vm.tableColumns;');
+    expect(template).toContain('@for (col of tableColumns; track col.key)');
+    expect(template).toContain('vm.isStickyTableColumn(col, tableColumns)');
+    expect(template).toContain('[class.has-collection-selection]="vm.enableItemCollections"');
+    expect(template).toContain("@case ('system:position')");
+    expect(template).toContain('{{ i + 1 }}');
+    expect(template).toContain("@case ('system:referenceNumber')");
+    expect(template).toContain('{{ item.rowNumber }}');
+    expect(template).toContain('[style.width.px]="vm.getColumnWidth(col)"');
+  });
+
+  it('distinguishes unavailable comment counts from a confirmed zero count', () => {
+    expect(template).toContain('@if (!vm.itemCommentCountsAvailable)');
+    expect(template).toContain("'Kommentaranzahl wird geladen'");
+    expect(template).toContain("'Kommentaranzahl unbekannt'");
+    expect(template).toContain('aria-label="Keine Kommentare"');
+  });
+
+  it('offers a dedicated empty state for an empty active selection list', () => {
+    expect(template).toContain('Diese Auswahlliste ist noch leer.');
+    expect(template).toContain('(click)="vm.setCollectionViewMode(\'all\')"');
+  });
+
+  it('preserves native keyboard actions on controls inside the table', () => {
+    const onTableKeydown = vi.fn();
+    const component = new ItemExplorerTableComponent({
+      registerTableDom: vi.fn(),
+      tableViewModel: { onTableKeydown },
+    } as any);
+    for (const tag of ['input', 'select', 'textarea', 'button', 'a', 'summary']) {
+      component.onTableKeydown({ target: document.createElement(tag) } as any);
+    }
+    expect(onTableKeydown).not.toHaveBeenCalled();
+    component.onTableKeydown({ target: document.createElement('td') } as any);
+    expect(onTableKeydown).toHaveBeenCalledTimes(1);
   });
 
   it('owns filter focus and selection scrolling', () => {

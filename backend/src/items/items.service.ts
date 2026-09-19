@@ -5,7 +5,6 @@ import { Acp, AcpAccessConfig, AccessModel } from "../database/entities";
 import { UnitParserService, VomdItemData } from "../files/unit-parser.service";
 import { getIndexUnits } from "../acp/acp-index.utils";
 import { normalizeFeatureConfig } from "../acp/feature-config.utils";
-import { parseItemRowKeyParts } from "./item-row-key.util";
 import { ItemParameterImportPipeline } from "./item-parameter-import.pipeline";
 
 const SHOW_ONLY_ITEMS_WITH_EMPIRICAL_DIFFICULTY_KEY =
@@ -21,15 +20,20 @@ export interface ItemData {
   unitId: string;
   unitName: string;
   name: string;
+  variableId?: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
   metadata?: Record<string, any>;
   empiricalDifficulty?: number;
+  bista?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
+  competenceLevel?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences?: Array<{ booklet: string; position: number }>;
+  bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
 }
 
@@ -87,15 +91,21 @@ export class ItemsService {
               unitId: unit.id,
               unitName: unit.name,
               name: item.name || fileRow.description || item.id,
+              variableId: fileRow.variableId || item.variableId,
               sourceVariable: fileRow.sourceVariable || item.sourceVariable,
+              variableReadOnlyId:
+                fileRow.variableReadOnlyId || item.variableReadOnlyId,
               metadata: {
                 ...(item.metadata || {}),
                 ...(fileRow.metadata || {}),
               },
               empiricalDifficulty: fileRow.empiricalDifficulty,
+              bista: fileRow.bista,
               infit: fileRow.infit,
               discrimination: fileRow.discrimination,
               solutionRate: fileRow.solutionRate,
+              textComplexity: fileRow.textComplexity,
+              competenceLevel: fileRow.competenceLevel,
               itemTimeSeconds: fileRow.itemTimeSeconds,
               stimulusTimeSeconds: fileRow.stimulusTimeSeconds,
               bookletOccurrences: fileRow.bookletOccurrences,
@@ -112,9 +122,14 @@ export class ItemsService {
           unitId: unit.id,
           unitName: unit.name,
           name: item.name || item.id,
+          variableId: item.variableId,
           sourceVariable: item.sourceVariable,
+          variableReadOnlyId: item.variableReadOnlyId,
           metadata: item.metadata,
           empiricalDifficulty: props.empiricalDifficulty,
+          ...(this.toFiniteNumber(props.bista) !== undefined
+            ? { bista: this.toFiniteNumber(props.bista) }
+            : {}),
           ...(this.toFiniteNumber(props.infit) !== undefined
             ? { infit: this.toFiniteNumber(props.infit) }
             : {}),
@@ -123,6 +138,14 @@ export class ItemsService {
             : {}),
           ...(this.toFiniteNumber(props.solutionRate) !== undefined
             ? { solutionRate: this.toFiniteNumber(props.solutionRate) }
+            : {}),
+          ...(this.toNonEmptyText(props.textComplexity) !== undefined
+            ? { textComplexity: this.toNonEmptyText(props.textComplexity) }
+            : {}),
+          ...(this.toNonEmptyText(props.competenceLevel) !== undefined
+            ? {
+                competenceLevel: this.toNonEmptyText(props.competenceLevel),
+              }
             : {}),
           ...(this.toFiniteNumber(props.itemTimeSeconds) !== undefined
             ? { itemTimeSeconds: this.toFiniteNumber(props.itemTimeSeconds) }
@@ -199,6 +222,7 @@ export class ItemsService {
     options: {
       persist?: boolean;
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
+      confirmWarnings?: boolean;
     } = {},
   ) {
     return this.uploadItemParameters(acpId, fileBuffer, {
@@ -219,6 +243,7 @@ export class ItemsService {
       persist?: boolean;
       itemPropertiesOverride?: Record<string, Record<string, unknown>>;
       requireEmpiricalDifficulty?: boolean;
+      confirmWarnings?: boolean;
     } = {},
   ) {
     const acp = await this.acpRepository.findOne({ where: { id: acpId } });
@@ -231,9 +256,14 @@ export class ItemsService {
       itemProperties:
         options.itemPropertiesOverride || acp.itemProperties || {},
       requireEmpiricalDifficulty: options.requireEmpiricalDifficulty,
+      confirmWarnings: options.confirmWarnings,
     });
 
-    if (result.updated > 0 && options.persist !== false) {
+    if (
+      result.updated > 0 &&
+      result.requiresConfirmation !== true &&
+      options.persist !== false
+    ) {
       acp.itemProperties = result.nextItemProperties;
       await this.acpRepository.save(acp);
     }
@@ -250,9 +280,15 @@ export class ItemsService {
       : numberValue;
   }
 
+  private toNonEmptyText(value: unknown): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    const text = String(value).trim();
+    return text || undefined;
+  }
+
   private normalizeBookletOccurrences(
     value: unknown,
-  ): Array<{ booklet: string; position: number }> {
+  ): Array<{ booklet: string; position: number | null }> {
     if (!Array.isArray(value)) return [];
     return value
       .map((entry) => {
@@ -260,23 +296,36 @@ export class ItemsService {
           entry && typeof entry === "object" && "booklet" in entry
             ? String((entry as { booklet?: unknown }).booklet || "").trim()
             : "";
-        const position =
+        const rawPosition =
           entry && typeof entry === "object" && "position" in entry
-            ? Number((entry as { position?: unknown }).position)
-            : Number.NaN;
+            ? (entry as { position?: unknown }).position
+            : null;
+        const position =
+          rawPosition === null ||
+          rawPosition === undefined ||
+          rawPosition === ""
+            ? null
+            : Number(rawPosition);
         return { booklet, position };
       })
       .filter(
         (entry) =>
           entry.booklet.length > 0 &&
-          Number.isInteger(entry.position) &&
-          entry.position > 0,
+          (entry.position === null ||
+            (Number.isInteger(entry.position) && entry.position > 0)),
       )
-      .sort(
-        (left, right) =>
-          left.booklet.localeCompare(right.booklet, "de", { numeric: true }) ||
-          left.position - right.position,
-      );
+      .sort((left, right) => {
+        const bookletComparison = left.booklet.localeCompare(
+          right.booklet,
+          "de",
+          { numeric: true },
+        );
+        if (bookletComparison) return bookletComparison;
+        if (left.position === right.position) return 0;
+        if (left.position === null) return 1;
+        if (right.position === null) return -1;
+        return left.position - right.position;
+      });
   }
 
   /**
@@ -402,9 +451,7 @@ export class ItemsService {
     for (const [itemId, props] of Object.entries(itemProperties || {})) {
       if (!Array.isArray(props?.tags)) continue;
       const normalized = this.normalizeTagArray(props.tags);
-      if (normalized.length || parseItemRowKeyParts(itemId) !== null) {
-        tags[itemId] = normalized;
-      }
+      tags[itemId] = normalized;
     }
     return tags;
   }

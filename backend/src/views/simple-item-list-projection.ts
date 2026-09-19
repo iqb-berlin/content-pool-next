@@ -9,6 +9,8 @@ export interface SimpleItemListIndexItem {
   id: string;
   name?: string;
   sourceVariable?: string;
+  variableId?: string;
+  variableReadOnlyId?: string;
   useUnitAliasAsPrefix?: boolean;
 }
 
@@ -24,6 +26,8 @@ export function projectSimpleItemListEntry(
     unitName: unit.name || unit.id,
     name: item.name,
     sourceVariable: item.sourceVariable,
+    variableId: item.variableId,
+    variableReadOnlyId: item.variableReadOnlyId,
   };
 
   return meanTaskDifficulty === undefined

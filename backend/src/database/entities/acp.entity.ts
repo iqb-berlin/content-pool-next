@@ -35,7 +35,11 @@ export class Acp {
   @Column({ name: "acp_index_validation_status", default: "UNKNOWN" })
   acpIndexValidationStatus!: string;
 
-  @Column({ name: "acp_index_validation_report", type: "jsonb", nullable: true })
+  @Column({
+    name: "acp_index_validation_report",
+    type: "jsonb",
+    nullable: true,
+  })
   acpIndexValidationReport?: Record<string, unknown>;
 
   @Column({ name: "item_properties", type: "jsonb", default: {} })

@@ -1,6 +1,18 @@
+import { Component, provideZonelessChangeDetection } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
+import { ApiService } from '../../core/services/api.service';
+import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { AccessConfigComponent } from './access-config.component';
+
+@Component({
+  selector: 'app-acp-manager-context',
+  standalone: true,
+  template: '',
+})
+class AcpManagerContextStubComponent {}
 
 describe('AccessConfigComponent', () => {
   let api: {
@@ -35,7 +47,212 @@ describe('AccessConfigComponent', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    TestBed.resetTestingModule();
   });
+
+  it('renders and binds all four start-page visibility switches', async () => {
+    await TestBed.configureTestingModule({
+      imports: [AccessConfigComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        provideRouter([]),
+        { provide: ActivatedRoute, useValue: route },
+        { provide: ApiService, useValue: api },
+      ],
+    })
+      .overrideComponent(AccessConfigComponent, {
+        remove: { imports: [AcpManagerContextComponent] },
+        add: { imports: [AcpManagerContextStubComponent] },
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(AccessConfigComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const sections = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.feature-section'),
+    );
+    const startPageSection = sections.find((section) =>
+      section.querySelector('h3')?.textContent?.includes('Auf dieser Startseite anzeigen'),
+    );
+    const labels = Array.from(startPageSection?.querySelectorAll('label') || []).map((label) =>
+      label.textContent?.trim(),
+    );
+    const checkboxes = Array.from(
+      startPageSection?.querySelectorAll<HTMLInputElement>('input[type="checkbox"]') || [],
+    );
+
+    expect(labels).toEqual([
+      'Item-Explorer',
+      'Aufgaben ansehen',
+      'Testhefte und Aufgabenfolgen',
+      'Paketstruktur (ACP-Index)',
+    ]);
+    expect(checkboxes).toHaveLength(4);
+    expect(checkboxes.every((checkbox) => checkbox.checked)).toBe(true);
+
+    checkboxes[3].click();
+    await fixture.whenStable();
+    expect(fixture.componentInstance.featureConfig.showIndexOnStartPage).toBe(false);
+  });
+
+  it('keeps start-page entries visible by default and preserves an explicit false value', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { showIndexOnStartPage: false },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+
+    component.loadConfig();
+
+    expect(component.featureConfig).toEqual(
+      expect.objectContaining({
+        showItemExplorerOnStartPage: true,
+        showUnitListOnStartPage: true,
+        showSequencesOnStartPage: true,
+        showIndexOnStartPage: false,
+      }),
+    );
+  });
+
+  it('migrates the legacy unit-list visibility into the new start-page setting', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { enableUnitListNavigation: false },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+
+    component.loadConfig();
+
+    expect(component.featureConfig.showUnitListOnStartPage).toBe(false);
+  });
+
+  it('saves access and features together and clears the dirty state after success', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    expect(component.hasUnsavedChanges).toBe(false);
+    component.accessModel = 'PRIVATE';
+    component.featureConfig.enableCommenting = true;
+    expect(component.hasUnsavedChanges).toBe(true);
+    component.saveFeatures();
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      '',
+      expect.objectContaining({
+        accessModel: 'PRIVATE',
+        featureConfig: expect.objectContaining({ enableCommenting: true }),
+      }),
+    );
+    expect(component.hasUnsavedChanges).toBe(false);
+    expect(component.featuresSaved).toBe(true);
+  });
+
+  it('keeps changes made during a pending save dirty and prevents duplicate requests', () => {
+    const response = new Subject<any>();
+    api.updateAccessConfig.mockReturnValue(response);
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    component.accessModel = 'PRIVATE';
+    component.saveFeatures();
+    component.saveFeatures();
+    expect(api.updateAccessConfig).toHaveBeenCalledTimes(1);
+    component.accessModel = 'PUBLIC';
+    response.next({});
+    expect(component.hasUnsavedChanges).toBe(true);
+    expect(component.saving).toBe(false);
+  });
+
+  it('retains unsaved changes and allows retry after a failed save', () => {
+    api.updateAccessConfig.mockReturnValue(throwError(() => new Error('offline')));
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.loadConfig();
+    component.availableTags.push('Prüfen');
+    component.saveFeatures();
+    expect(component.hasUnsavedChanges).toBe(true);
+    expect(component.saveError).toContain('nicht gespeichert');
+    expect(component.saving).toBe(false);
+    expect(component.featuresSaved).toBe(false);
+  });
+
+  it.each([
+    ['', ''],
+    ['invalid', 'invalid'],
+    ['2026-09-16T10:00', '2026-09-15T10:00'],
+    ['2026-09-16T10:00', '2027-01-16T10:00'],
+  ])('does not save an invalid credential window %s to %s', (from, until) => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.accessModel = 'CREDENTIALS_LIST';
+    component.validFrom = from;
+    component.validUntil = until;
+    component.saveFeatures();
+    expect(api.updateAccessConfig).not.toHaveBeenCalled();
+    expect(component.saveError).not.toBe('');
+  });
+
+  it.each([undefined, true, false])(
+    'renders and saves the effective Explorer setting for %s without blocking shared display controls',
+    async (configured) => {
+      api.getAccessConfig.mockReturnValue(
+        of({
+          accessModel: 'PUBLIC',
+          featureConfig: configured === undefined ? {} : { enableItemList: configured },
+        }),
+      );
+      await TestBed.configureTestingModule({
+        imports: [AccessConfigComponent],
+        providers: [
+          provideZonelessChangeDetection(),
+          provideRouter([]),
+          { provide: ActivatedRoute, useValue: route },
+          { provide: ApiService, useValue: api },
+        ],
+      })
+        .overrideComponent(AccessConfigComponent, {
+          remove: { imports: [AcpManagerContextComponent] },
+          add: { imports: [AcpManagerContextStubComponent] },
+        })
+        .compileComponents();
+      const fixture = TestBed.createComponent(AccessConfigComponent);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const root: HTMLElement = fixture.nativeElement;
+      const enabled = configured !== false;
+      expect(root.querySelector('.settings-overview')?.textContent).toContain(
+        `Item-Explorer ${enabled ? 'aktiviert' : 'deaktiviert'}`,
+      );
+      const checkbox = (label: string): HTMLInputElement => {
+        const element = [...root.querySelectorAll('label')].find((el) =>
+          el.textContent?.includes(label),
+        );
+        return element!.querySelector('input')!;
+      };
+      expect(checkbox('Item-Explorer aktivieren').checked).toBe(enabled);
+      expect(fixture.componentInstance.hasUnsavedChanges).toBe(false);
+      const highlight = checkbox('Item im Player hervorheben');
+      expect(highlight.matches(':disabled')).toBe(false);
+      highlight.click();
+      fixture.detectChanges();
+      expect(fixture.componentInstance.hasUnsavedChanges).toBe(true);
+      fixture.componentInstance.saveFeatures();
+      expect(api.updateAccessConfig).toHaveBeenCalledWith(
+        'acp-1',
+        expect.objectContaining({
+          featureConfig: expect.objectContaining({
+            enableItemList: enabled,
+            enablePlayerFocusHighlight: true,
+          }),
+        }),
+      );
+      fixture.destroy();
+    },
+  );
 
   it('defaults showAudioVideoCodingVariables to true when flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);
@@ -70,13 +287,13 @@ describe('AccessConfigComponent', () => {
     expect(component.featureConfig[component.showAudioVideoCodingVariablesKey]).toBe(false);
   });
 
-  it('defaults showItemExplorerPlayerTargetInfo to true when flag is missing', () => {
+  it('defaults showItemExplorerPlayerTargetInfo to false when flag is missing', () => {
     const component = new AccessConfigComponent(route as any, api as any);
     component.acpId = 'acp-1';
 
     component.loadConfig();
 
-    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(true);
+    expect(component.featureConfig[component.showItemExplorerPlayerTargetInfoKey]).toBe(false);
   });
 
   it('defaults player focus highlight to false when the flag is missing', () => {
@@ -329,6 +546,45 @@ describe('AccessConfigComponent', () => {
         validFrom: new Date(2026, 6, 13, 10, 0).toISOString(),
         validUntil: new Date(2026, 7, 13, 10, 0).toISOString(),
         featureConfig: expect.objectContaining({ enablePersonalItemData: true }),
+      }),
+    );
+  });
+
+  it('defaults existing comment configurations to private visibility', () => {
+    api.getAccessConfig.mockReturnValue(
+      of({
+        accessModel: 'PUBLIC',
+        allowRegistered: false,
+        featureConfig: { enableCommenting: true, commentTargets: ['ITEM'] },
+      }),
+    );
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+
+    component.loadConfig();
+
+    expect(component.featureConfig['commentVisibilityMode']).toBe('PRIVATE');
+  });
+
+  it('persists explicitly shared item comments', () => {
+    const component = new AccessConfigComponent(route as any, api as any);
+    component.acpId = 'acp-1';
+    component.featureConfig = {
+      enableCommenting: true,
+      commentVisibilityMode: 'SHARED',
+    };
+    component.commentTargets = ['ITEM'];
+
+    component.saveFeatures();
+
+    expect(api.updateAccessConfig).toHaveBeenCalledWith(
+      'acp-1',
+      expect.objectContaining({
+        featureConfig: expect.objectContaining({
+          enableCommenting: true,
+          commentTargets: ['ITEM'],
+          commentVisibilityMode: 'SHARED',
+        }),
       }),
     );
   });

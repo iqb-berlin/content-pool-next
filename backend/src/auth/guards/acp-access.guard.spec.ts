@@ -3,7 +3,12 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { AcpAccessGuard } from "./acp-access.guard";
-import { AcpAccessConfig, AcpRole, AcpUserRole } from "../../database/entities";
+import {
+  AcpCredential,
+  AcpAccessConfig,
+  AcpRole,
+  AcpUserRole,
+} from "../../database/entities";
 import { User } from "../../database/entities/user.entity";
 
 describe("AcpAccessGuard", () => {
@@ -38,6 +43,14 @@ describe("AcpAccessGuard", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AcpAccessGuard,
+        {
+          provide: getRepositoryToken(AcpCredential),
+          useValue: {
+            findOne: jest.fn().mockResolvedValue({
+              accessConfig: { acpId, accessModel: "CREDENTIALS_LIST" },
+            }),
+          },
+        },
         {
           provide: getRepositoryToken(AcpUserRole),
           useValue: acpUserRoleRepository,
@@ -136,6 +149,27 @@ describe("AcpAccessGuard", () => {
     expect(userRepository.findOne).not.toHaveBeenCalled();
     expect(acpUserRoleRepository.findOne).not.toHaveBeenCalled();
     expect(request.acpAccessLevel).toBe("MANAGER");
+  });
+
+  it("rejects legacy local bearer tokens before resolving the user", async () => {
+    jwtService.verifyAsync.mockResolvedValue({
+      sub: "legacy-user-id",
+      username: "legacy",
+      type: "user",
+      authType: "local",
+    });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+
+    const request: any = {
+      params: { acpId },
+      headers: { authorization: "Bearer legacy-token" },
+      query: {},
+    };
+
+    await expect(guard.canActivate(createContext(request))).rejects.toThrow(
+      "Authentication required",
+    );
+    expect(userRepository.findOne).not.toHaveBeenCalled();
   });
 
   it("does not reuse a role for a different ACP", async () => {

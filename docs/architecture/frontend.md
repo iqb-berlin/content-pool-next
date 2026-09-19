@@ -111,7 +111,7 @@ The central service is [`frontend/src/app/core/services/auth.service.ts`](../../
 
 It handles:
 
-- local JWT storage,
+- app-issued JWT storage,
 - OIDC PKCE redirect setup,
 - OIDC code exchange,
 - storing both the app JWT and OIDC tokens,

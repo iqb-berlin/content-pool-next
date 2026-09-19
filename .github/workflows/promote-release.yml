@@ -1,0 +1,30 @@
+name: Promote Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Release candidate tag, for example v0.2.0-rc.1
+        required: true
+        type: string
+      staging_evidence:
+        description: Link or identifier for the successful staging checklist
+        required: true
+        type: string
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    permissions:
+      contents: write
+      issues: read
+      packages: write
+    uses: ./.github/workflows/promote-release-core.yml
+    with:
+      candidate: ${{ inputs.candidate }}
+      validation_mode: staging
+      validation_evidence: ${{ inputs.staging_evidence }}
+    secrets: inherit

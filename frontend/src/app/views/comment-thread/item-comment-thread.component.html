@@ -1,0 +1,269 @@
+@if (hasTarget) {
+  <section class="comment-thread-shell">
+    @if (!hideToggle) {
+      <button
+        type="button"
+        class="btn btn-outline btn-sm btn-state comment-toggle"
+        (click)="toggleOpen()"
+        [attr.aria-expanded]="open"
+        [attr.aria-controls]="panelId"
+      >
+        💬 Kommentare ({{ commentCount }})
+      </button>
+    }
+
+    @if (open) {
+      <div
+        [id]="panelId"
+        class="comment-panel card"
+        role="region"
+        [attr.aria-label]="panelAriaLabel"
+      >
+        <div class="comment-panel-header">
+          <div>
+            <strong>{{ commentHeading }}</strong>
+            <span class="visibility-badge">{{ visibilityLabel }}</span>
+          </div>
+          @if (error) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              (click)="loadThread()"
+              [disabled]="loading || busy"
+              aria-label="Kommentare erneut laden"
+            >
+              Erneut versuchen
+            </button>
+          }
+        </div>
+
+        @if (snapshot?.visibilityMode === 'GROUP') {
+          <p class="comment-status">Bewertungen sind nur im geteilten Modus verfügbar.</p>
+        }
+        <div class="new-comment-form">
+          @if (snapshot?.visibilityMode === 'GROUP') {
+            <label
+              >Review-Gruppe
+              <select [(ngModel)]="selectedGroupId">
+                <option value="">Bitte Gruppe wählen</option>
+                @for (group of snapshot?.groups || []; track group.id) {
+                  @if (!group.archived) {
+                    <option [value]="group.id">{{ group.name }}</option>
+                  }
+                }
+              </select>
+            </label>
+          }
+          <textarea
+            rows="3"
+            maxlength="10000"
+            [placeholder]="newCommentPlaceholder"
+            [(ngModel)]="newCommentText"
+          ></textarea>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            [disabled]="!snapshot || !newCommentText.trim() || busy"
+            (click)="submitComment()"
+          >
+            Kommentieren
+          </button>
+        </div>
+
+        @if (editingCommentId && editAccessLost) {
+          <label
+            >Ungespeicherter Bearbeitungsentwurf – der Kommentar ist nicht mehr zugänglich.
+            <textarea
+              rows="3"
+              [(ngModel)]="editText"
+              aria-label="Bearbeitungsentwurf ohne Zugriff"
+            ></textarea>
+          </label>
+        }
+        @if (error) {
+          <div class="alert alert-error">{{ error }}</div>
+        }
+        @if (loading && !snapshot) {
+          <p class="comment-status">Kommentare werden geladen …</p>
+        } @else if (threadGroups.length === 0) {
+          <p class="comment-status">{{ emptyStateText }}</p>
+        } @else {
+          <div class="thread-list">
+            @for (thread of threadGroups; track thread.id) {
+              <article class="comment-thread">
+                @if (thread.root; as root) {
+                  @if (root.groupName) {
+                    <span class="visibility-badge">{{ root.groupName }}</span>
+                  }
+                  <ng-container
+                    *ngTemplateOutlet="commentCard; context: { $implicit: root, isReply: false }"
+                  ></ng-container>
+                } @else {
+                  <div class="comment-card deleted-comment">
+                    Ursprungskommentar ist in der aktuellen Sicht nicht verfügbar.
+                  </div>
+                }
+
+                <div class="thread-actions">
+                  @if (thread.replies.length > 0) {
+                    <button
+                      type="button"
+                      class="link-button"
+                      (click)="toggleReplies(thread.id)"
+                      [attr.aria-expanded]="repliesExpanded(thread.id)"
+                      [attr.aria-controls]="'comment-replies-' + thread.id"
+                    >
+                      {{
+                        repliesExpanded(thread.id)
+                          ? 'Antworten einklappen'
+                          : thread.replies.length + ' Antworten aufklappen'
+                      }}
+                    </button>
+                  }
+                  @if (thread.root && !thread.root.isDeleted) {
+                    <button type="button" class="link-button" (click)="startReply(thread.id)">
+                      Antworten
+                    </button>
+                  }
+                </div>
+
+                @if (replyingTo === thread.id) {
+                  <div class="reply-form">
+                    <textarea
+                      rows="2"
+                      maxlength="10000"
+                      placeholder="Antwort schreiben …"
+                      [ngModel]="replyText(thread.id)"
+                      (ngModelChange)="setReplyText(thread.id, $event)"
+                    ></textarea>
+                    <div>
+                      <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        [disabled]="!replyText(thread.id).trim() || busy"
+                        (click)="submitComment(thread.id)"
+                      >
+                        Antworten
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-outline btn-sm"
+                        (click)="replyingTo = null"
+                      >
+                        Abbrechen
+                      </button>
+                    </div>
+                  </div>
+                }
+
+                @if (repliesExpanded(thread.id)) {
+                  <div class="reply-list" [id]="'comment-replies-' + thread.id">
+                    @for (reply of thread.replies; track reply.id) {
+                      <ng-container
+                        *ngTemplateOutlet="
+                          commentCard;
+                          context: { $implicit: reply, isReply: true }
+                        "
+                      ></ng-container>
+                    }
+                  </div>
+                }
+              </article>
+            }
+          </div>
+        }
+      </div>
+    }
+  </section>
+}
+
+<ng-template #commentCard let-comment let-isReply="isReply">
+  <div
+    class="comment-card"
+    [class.reply-card]="isReply"
+    [class.deleted-comment]="comment.isDeleted"
+  >
+    <div class="comment-meta">
+      <span class="author-initials" [title]="comment.authorLabel">
+        {{ authorInitials(comment.authorLabel) }}
+      </span>
+      <strong>{{ comment.authorLabel }}</strong>
+      <time [attr.datetime]="comment.createdAt">
+        {{ comment.createdAt | date: 'dd.MM.yyyy, HH:mm' }}
+      </time>
+      @if (wasEdited(comment)) {
+        <span class="edited-label"
+          >geändert {{ comment.updatedAt | date: 'dd.MM.yyyy, HH:mm' }}</span
+        >
+      }
+    </div>
+    @if (comment.isDeleted) {
+      <p class="comment-text">Dieser Kommentar wurde gelöscht.</p>
+    } @else if (editingCommentId === comment.id) {
+      <div class="edit-form">
+        <textarea rows="3" maxlength="10000" [(ngModel)]="editText"></textarea>
+        <div>
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            [disabled]="!editText.trim() || busy"
+            (click)="saveEdit(comment)"
+          >
+            Speichern
+          </button>
+          <button type="button" class="btn btn-outline btn-sm" (click)="cancelEdit()">
+            Abbrechen
+          </button>
+        </div>
+      </div>
+    } @else {
+      <p class="comment-text">{{ comment.commentText }}</p>
+      @if (snapshot?.visibilityMode === 'SHARED' && !comment.legacyReadOnly) {
+        <div class="comment-votes" role="group" aria-label="Kommentarbewertung">
+          @if (comment.canVote) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'UP'"
+              [attr.aria-label]="
+                'Upvotes ' +
+                (comment.upvotes || 0) +
+                (comment.myVote === 'UP' ? ': Upvote entfernen' : ': Upvote geben')
+              "
+              (click)="vote(comment, 'UP')"
+            >
+              ↑ Upvotes {{ comment.upvotes || 0 }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'DOWN'"
+              [attr.aria-label]="
+                'Downvotes ' +
+                (comment.downvotes || 0) +
+                (comment.myVote === 'DOWN' ? ': Downvote entfernen' : ': Downvote geben')
+              "
+              (click)="vote(comment, 'DOWN')"
+            >
+              ↓ Downvotes {{ comment.downvotes || 0 }}
+            </button>
+          } @else {
+            <span
+              >↑ Upvotes {{ comment.upvotes || 0 }} · ↓ Downvotes {{ comment.downvotes || 0 }}</span
+            >
+          }
+        </div>
+      }
+      @if (comment.isOwn) {
+        <div class="own-comment-actions">
+          <button type="button" class="link-button" (click)="startEdit(comment)">Bearbeiten</button>
+          <button type="button" class="link-button danger-link" (click)="deleteComment(comment)">
+            Löschen
+          </button>
+        </div>
+      }
+    }
+  </div>
+</ng-template>

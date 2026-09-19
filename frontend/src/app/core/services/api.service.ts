@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpResponse } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, catchError, of, throwError } from 'rxjs';
 import {
   Acp,
   AccessConfig,
@@ -8,12 +8,18 @@ import {
   SnapshotCurrentDiff,
   AcpFile,
   Comment,
+  CommentThreadSnapshot,
+  ItemCommentCountsSnapshot,
+  ReviewCommentTarget,
+  ReviewReadiness,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
   CreatedApplicationToken,
   CreateApplicationTokenRequest,
   User,
+  CreateUserRequest,
+  UpdateUserRequest,
   PublicAcp,
   UnitViewData,
   TaskSequence,
@@ -30,11 +36,14 @@ import {
   FilePreviewResponse,
   FileDeletionResponse,
   ItemCollectionsPayload,
+  ItemCollectionRowsMutation,
+  ItemCollectionRowsMutationResult,
   ItemExplorerPerspective,
   SimpleItemListEntry,
   AcpIndexValidationReport,
   AcpIndexMigrationPreview,
   AcpIndexGenerationPreview,
+  BuildVersion,
 } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
@@ -43,14 +52,22 @@ export class ApiService {
 
   constructor(private http: HttpClient) {}
 
+  getBackendVersion(): Observable<BuildVersion> {
+    return this.http.get<BuildVersion>(`${this.API}/version`);
+  }
+
+  getFrontendVersion(): Observable<BuildVersion> {
+    return this.http.get<BuildVersion>('/version.json');
+  }
+
   // Users
   getUsers(): Observable<User[]> {
     return this.http.get<User[]>(`${this.API}/users`);
   }
-  createUser(data: any): Observable<User> {
+  createUser(data: CreateUserRequest): Observable<User> {
     return this.http.post<User>(`${this.API}/users`, data);
   }
-  updateUser(id: string, data: any): Observable<User> {
+  updateUser(id: string, data: UpdateUserRequest): Observable<User> {
     return this.http.patch<User>(`${this.API}/users/${id}`, data);
   }
   deleteUser(id: string): Observable<void> {
@@ -184,7 +201,10 @@ export class ApiService {
     return this.http.post<AcpIndexValidationReport>(`${this.API}/acp/${id}/index/validate`, {});
   }
   previewAcpIndexMigration(id: string): Observable<AcpIndexMigrationPreview> {
-    return this.http.post<AcpIndexMigrationPreview>(`${this.API}/acp/${id}/index/migration-preview`, {});
+    return this.http.post<AcpIndexMigrationPreview>(
+      `${this.API}/acp/${id}/index/migration-preview`,
+      {},
+    );
   }
   migrateAcpIndex(id: string, expectedUpdatedAt: string): Observable<Acp> {
     return this.http.post<Acp>(`${this.API}/acp/${id}/index/migrate`, { expectedUpdatedAt });
@@ -240,6 +260,62 @@ export class ApiService {
     return this.http.get<User[]>(`${this.API}/acp/${acpId}/assignable-users`);
   }
 
+  updateRoleCapabilities(acpId: string, userId: string, capabilities: string[]): Observable<any> {
+    return this.http.patch(`${this.API}/acp/${acpId}/roles/${userId}/capabilities`, {
+      capabilities,
+    });
+  }
+  getCapabilities(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/capabilities`);
+  }
+  getReview(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review`);
+  }
+  getReviewConfig(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review/config`);
+  }
+  getReviewMembers(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/review/members`);
+  }
+  getVisibleReviewComments(acpId: string): Observable<Comment[]> {
+    return this.http.get<Comment[]>(`${this.API}/acp/${acpId}/review/comments/visible`);
+  }
+  exportVisibleReviewComments(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/visible.xlsx`, {
+      responseType: 'blob',
+      params: filters,
+    });
+  }
+  configureReview(acpId: string, config: any): Observable<any> {
+    return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, config);
+  }
+  getReviewReadiness(acpId: string): Observable<ReviewReadiness | null> {
+    return this.http.get<ReviewReadiness | null>(`${this.API}/view/acp/${acpId}/review/readiness`);
+  }
+  checkReviewReadiness(acpId: string): Observable<ReviewReadiness> {
+    return this.http.post<ReviewReadiness>(`${this.API}/view/acp/${acpId}/review/readiness`, {});
+  }
+  importCredentialFile(
+    acpId: string,
+    file: File,
+    mode: string,
+    profile: string,
+    capabilities: string[],
+    preview = false,
+  ): Observable<any> {
+    const body = new FormData();
+    body.append('file', file);
+    body.append('profile', profile);
+    body.append('capabilities', JSON.stringify(capabilities));
+    return this.http.post(
+      `${this.API}/acp/${acpId}/access/credentials/file?mode=${mode}&preview=${preview}`,
+      body,
+    );
+  }
+
   // ACP Access
   getAccessConfig(id: string): Observable<AccessConfig> {
     return this.http.get<AccessConfig>(`${this.API}/acp/${id}/access`);
@@ -257,16 +333,22 @@ export class ApiService {
   getCredentials(id: string): Observable<Credential[]> {
     return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
   }
-  createCredential(acpId: string, username: string, password: string): Observable<Credential> {
+  createCredential(
+    acpId: string,
+    username: string,
+    password: string,
+    capabilities: string[] = [],
+  ): Observable<Credential> {
     return this.http.post<Credential>(`${this.API}/acp/${acpId}/access/credentials/single`, {
       username,
       password,
+      capabilities,
     });
   }
   updateCredential(
     acpId: string,
     credentialId: string,
-    data: { username?: string; password?: string },
+    data: { username?: string; password?: string; capabilities?: string[] },
   ): Observable<Credential> {
     return this.http.patch<Credential>(
       `${this.API}/acp/${acpId}/access/credentials/${credentialId}`,
@@ -462,11 +544,115 @@ export class ApiService {
   createComment(acpId: string, data: any): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/comments`, data);
   }
+  getItemCommentThread(
+    acpId: string,
+    unitId: string,
+    itemId: string,
+    previous?: CommentThreadSnapshot | null,
+  ): Observable<CommentThreadSnapshot> {
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { unitId, itemId },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
+  }
+  getReviewCommentThread(
+    acpId: string,
+    target: ReviewCommentTarget,
+    previous?: CommentThreadSnapshot | null,
+  ): Observable<CommentThreadSnapshot> {
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { ...target },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
+  }
+  getItemCommentCounts(acpId: string): Observable<ItemCommentCountsSnapshot> {
+    return this.http.get<ItemCommentCountsSnapshot>(
+      `${this.API}/acp/${acpId}/review/comments/counts`,
+    );
+  }
+  createItemComment(
+    acpId: string,
+    data: {
+      unitId: string;
+      itemId: string;
+      commentText: string;
+      parentCommentId?: string;
+      groupId?: string;
+    },
+  ): Observable<Comment> {
+    return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
+  }
+  createReviewComment(
+    acpId: string,
+    data: ReviewCommentTarget & { commentText: string; parentCommentId?: string; groupId?: string },
+  ): Observable<Comment> {
+    return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
+  }
+  updateItemComment(
+    acpId: string,
+    commentId: string,
+    data: { commentText: string; version: number },
+  ): Observable<Comment> {
+    return this.http.patch<Comment>(`${this.API}/acp/${acpId}/review/comments/${commentId}`, data);
+  }
+  deleteItemComment(
+    acpId: string,
+    commentId: string,
+    version: number,
+  ): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(
+      `${this.API}/acp/${acpId}/review/comments/${commentId}`,
+      {
+        params: { version },
+      },
+    );
+  }
   exportComments(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/acp/${acpId}/comments/export`);
   }
   exportCommentsXlsx(acpId: string): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/comments/export.xlsx`, { responseType: 'blob' });
+  }
+  setCommentVote(
+    acpId: string,
+    commentId: string,
+    value: 'UP' | 'DOWN' | null,
+  ): Observable<unknown> {
+    const url = `${this.API}/acp/${acpId}/review/comments/${commentId}/vote`;
+    return value === null ? this.http.delete(url) : this.http.put(url, { value });
+  }
+
+  exportMyReviewCommentsCsv(acpId: string, filters: Record<string, string> = {}): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.csv`, {
+      responseType: 'blob',
+      params: filters,
+    });
+  }
+  exportMyReviewCommentsXlsx(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.xlsx`, {
+      responseType: 'blob',
+      params: filters,
+    });
+  }
+  exportAllReviewCommentsXlsx(acpId: string): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/all.xlsx`, {
+      responseType: 'blob',
+    });
   }
 
   // Public Views
@@ -531,18 +717,21 @@ export class ApiService {
   exportAllViewPersonalItemDataCsv(
     acpId: string,
     perspective: ItemExplorerPerspective,
+    collectionId?: string,
   ): Observable<Blob> {
     return this.http.post(
       `${this.API}/view/acp/${acpId}/items/preferences/export-all.csv`,
-      { perspective },
+      { perspective, ...(collectionId === undefined ? {} : { collectionId }) },
       { responseType: 'blob' },
     );
   }
   getViewSequences(acpId: string): Observable<any[]> {
     return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/sequences`);
   }
-  getViewSequence(acpId: string, seqId: string): Observable<TaskSequence> {
-    return this.http.get<TaskSequence>(`${this.API}/view/acp/${acpId}/sequences/${seqId}`);
+  getViewSequence(acpId: string, seqId: string, kind?: 'booklet'): Observable<TaskSequence> {
+    return this.http.get<TaskSequence>(
+      `${this.API}/view/acp/${acpId}/sequences/${encodeURIComponent(seqId)}${kind === 'booklet' ? '?kind=booklet' : ''}`,
+    );
   }
   getViewIndex(acpId: string): Observable<any> {
     return this.http.get(`${this.API}/view/acp/${acpId}/index`);
@@ -552,9 +741,13 @@ export class ApiService {
     return `${this.API}/view/acp/${acpId}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
 
-  getItemExplorerState(acpId: string): Observable<ItemExplorerStateEnvelope> {
+  getItemExplorerState(
+    acpId: string,
+    perspective?: ItemExplorerPerspective,
+  ): Observable<ItemExplorerStateEnvelope> {
     return this.http.get<ItemExplorerStateEnvelope>(
       `${this.API}/view/acp/${acpId}/item-explorer/state`,
+      { params: perspective ? { perspective } : {} },
     );
   }
 
@@ -606,11 +799,13 @@ export class ApiService {
   uploadItemParameters(
     acpId: string,
     file: File,
-    options?: { draft?: boolean; baseVersion?: number },
+    options?: { draft?: boolean; baseVersion?: number; confirmWarnings?: boolean },
   ): Observable<{
     updated: number;
-    failed: any[];
+    failed: Array<{ csvRow: string; reason: string }>;
     successes: any[];
+    warnings?: Array<{ code: 'BOOKLET_OCCURRENCES_SKIPPED'; message: string }>;
+    requiresConfirmation?: boolean;
     showOnlyItemsWithEmpiricalDifficulty?: boolean;
     explorerState?: ItemExplorerStateEnvelope;
   }> {
@@ -621,11 +816,14 @@ export class ApiService {
     if (typeof options?.baseVersion === 'number') {
       query.push(`baseVersion=${encodeURIComponent(String(options.baseVersion))}`);
     }
+    if (options?.confirmWarnings) query.push('confirmWarnings=true');
     const queryString = query.length ? `?${query.join('&')}` : '';
     return this.http.post<{
       updated: number;
-      failed: any[];
+      failed: Array<{ csvRow: string; reason: string }>;
       successes: any[];
+      warnings?: Array<{ code: 'BOOKLET_OCCURRENCES_SKIPPED'; message: string }>;
+      requiresConfirmation?: boolean;
       showOnlyItemsWithEmpiricalDifficulty?: boolean;
       explorerState?: ItemExplorerStateEnvelope;
     }>(`${this.API}/acp/${acpId}/items/upload-item-parameters${queryString}`, formData);
@@ -683,7 +881,7 @@ export class ApiService {
   updateItemCollection(
     acpId: string,
     collectionId: string,
-    update: { baseVersion: number; name?: string; rowKeys?: string[] },
+    update: { baseVersion: number; name?: string; rowKeys?: string[]; shared?: boolean },
     perspective: ItemExplorerPerspective,
   ): Observable<ItemCollectionsPayload> {
     return this.http.patch<ItemCollectionsPayload>(
@@ -692,14 +890,37 @@ export class ApiService {
     );
   }
 
+  copyItemCollection(
+    acpId: string,
+    collectionId: string,
+    perspective: ItemExplorerPerspective,
+  ): Observable<ItemCollectionsPayload> {
+    return this.http.post<ItemCollectionsPayload>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}/copy`,
+      { perspective },
+    );
+  }
+
+  mutateItemCollectionRows(
+    acpId: string,
+    collectionId: string,
+    mutation: ItemCollectionRowsMutation,
+  ): Observable<ItemCollectionRowsMutationResult> {
+    return this.http.patch<ItemCollectionRowsMutationResult>(
+      `${this.API}/view/acp/${acpId}/items/collections/${encodeURIComponent(collectionId)}/rows`,
+      mutation,
+    );
+  }
+
   activateItemCollection(
     acpId: string,
     collectionId: string | null,
     perspective: ItemExplorerPerspective,
+    collectionViewMode?: 'all' | 'active',
   ): Observable<ItemCollectionsPayload> {
     return this.http.put<ItemCollectionsPayload>(
       `${this.API}/view/acp/${acpId}/items/collections/active`,
-      { collectionId, perspective },
+      { collectionId, perspective, collectionViewMode },
     );
   }
 

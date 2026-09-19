@@ -20,7 +20,8 @@ The explorer state payload can include:
 
 - UI state,
 - item tags,
-- metadata column visibility and order,
+- table-column visibility, order, and widths (including system, metadata, tag, and personal
+  columns),
 - manual item ordering,
 - per-item properties such as empirical difficulty or exclusion flags.
 
@@ -88,6 +89,10 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 - In fullscreen mode the explorer keeps the same split view, dialogs, and overlays, but hides the
   breadcrumb to maximize usable space.
 - `Escape` leaves fullscreen when no dialog or overlay is currently open.
+- The player preview has its own fullscreen action. It enlarges the existing player container
+  without recreating the iframe, so the selected item and current player state are retained.
+- The player fullscreen can be closed with its visible action or `Escape`. Browsers without an
+  available Fullscreen API use a viewport-filling fallback.
 
 ### Focus model
 
@@ -106,6 +111,11 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 
 ### Editing shortcuts
 
+- **Manuell sortieren** toggles manual ordering. Switching it off restores the previous
+  sort column and direction without discarding the manual item order. After reloading in
+  manual mode, it falls back to task-label sorting in ascending order.
+- The up/down movement buttons are only shown in manual mode. They are disabled without
+  a selected item or when the corresponding end of the shared item order is reached.
 - `Ctrl+S` / `Cmd+S` opens the existing draft save preview instead of triggering the browser's
   page-save dialog.
 - In manual ordering mode, `Ctrl+ArrowUp` / `Cmd+ArrowUp` and
@@ -266,6 +276,66 @@ Publishing the explorer draft updates:
 This means column choices are not just temporary UI preferences. They become part of the
 ACP's published shared configuration.
 
+## Item Comment Threads
+
+Authenticated ACP users can comment directly below the selected Item Explorer preview when
+commenting is enabled for the `ITEM` target. The thread is identified by `unitId` and `itemId`;
+partial-credit rows with different Sub-IDs therefore use the same thread.
+
+Managers choose the visibility explicitly in the ACP feature configuration:
+
+- `PRIVATE` keeps the existing behavior and shows users only their own comments,
+- `SHARED` makes item comments and replies visible to all authenticated users of the ACP.
+
+Existing ACPs default to `PRIVATE`. Every comment shows an author label and creation time. Users
+may edit or delete only their own comments; concurrent edits are rejected through a version check.
+Replies have one level and are grouped below their root comment. Deleting a root with replies keeps
+a neutral placeholder so the remaining conversation is understandable.
+
+The UI loads only the selected item's thread and protects quick item changes from stale responses.
+While the Item Explorer tab is visible, it refreshes visible comment counts and the selected thread
+every five seconds in both visibility modes. Returning to the tab or focusing the window triggers
+an immediate refresh. Background tabs pause polling; pending requests are not duplicated and
+requests time out after ten seconds so a later poll can recover. Leaving the explorer or ending
+the comment session removes the timer and listeners.
+
+The regular refresh buttons are replaced by automatic updates. A retry action remains available
+when loading fails. Background updates preserve new-comment and reply drafts, open reply forms,
+and active edits. An active edit keeps the original comment version so a concurrent change still
+produces a version conflict instead of silently overwriting newer text.
+Unsaved main-comment and reply drafts remain assigned to their item while navigating. JSON and
+XLSX comment exports include `unitId`, `itemId`, `threadId`, `parentCommentId`, and the updated
+timestamp. The original `/api/acp/:acpId/comments` endpoints remain available; the threaded Item
+Explorer UI uses `/api/acp/:acpId/review/comments`.
+
+The ACP start page does not offer a context-free comment action. It links to the Item Explorer
+when item comments are enabled and keeps the XLSX export and recent-comment summary available.
+The legacy create endpoint rejects `target_id = acp_id` with `400 Bad Request`, including for
+managers and app admins. Before releasing this safeguard, the affected existing rows can be counted
+read-only with:
+
+```sql
+SELECT COUNT(*) AS invalid_acp_target_comments
+FROM comments
+WHERE target_type = 'UNIT'
+  AND target_id = acp_id::text;
+```
+
+This audit query does not update or delete comments. Any cleanup requires a separate, explicitly
+approved procedure.
+
+The legacy ACP-wide `DELETE /api/acp/:acpId/comments` endpoint removes only unreferenced,
+non-item legacy rows. Its response reports both `deletedCount` and `retainedCount` plus the
+restricted deletion scope, so callers cannot mistake it for deleting every comment in the ACP.
+
+Ownership and personal exports use stable user or credential IDs, never display names. A central
+review policy contains the temporary ACP permission mapping so future review capabilities can
+replace it without changing the thread API. Snapshot revisions are calculated only from the
+comments visible to the requester and can later be used for polling or ETags. Legacy comments with
+an unambiguous unit-qualified target remain available in their item thread; ambiguous raw target
+IDs stay readable through the legacy list and export endpoints instead of appearing under multiple
+items.
+
 ## Item Tags
 
 Tags can come from two places:
@@ -329,9 +399,24 @@ toolbar. The endpoint rejects read-only users, credential logins, and public acc
 stored personal row across participants, using a stable participant identifier and including unit,
 item, Sub-ID, stable row key, category, tags, note, empirical difficulty, and mean unit difficulty.
 When present, both personal and manager exports also contain Infit, discrimination, solution rate,
-item/stimulus times, and paired booklet positions.
+item/stimulus times, booklet assignments, and their optional positions.
 Participants without stored rows are skipped without failing the export. Note line breaks are
 written as literal `\\n` sequences so every personal entry remains on one CSV row.
+
+With item collections enabled, select an own or shared collection and use
+**↓ CSV** next to the collection management controls to download all participants' stored entries
+for that complete collection. The selected list determines the item row keys, not the participants.
+Search filters and table pagination do not narrow this export. The toolbar's **Teilnehmendendaten (CSV) ▾** menu
+provides **Gesamtdaten exportieren** for all stored entries and **Auswahlliste „[name]“ exportieren**
+for the current collection. Both collection entry points use the same export function. The scoped
+filename includes the collection name and ID; an empty
+collection or one without stored entries produces a CSV containing only the usual header.
+
+The aggregate export accepts an optional `collectionId`. The server resolves its row keys using
+the caller's identity and the existing own/shared collection access rules. Missing or inaccessible
+collections fail without falling back to the full export. Manager/admin authorization and the
+personal-data feature gate also apply to scoped exports. The ordinary collection CSV continues to
+include only the caller's own personal data.
 
 ## Empirical Difficulty Import
 
@@ -357,14 +442,35 @@ The same distinction exists when clearing empirical difficulty values.
 
 Managers can also upload a semicolon-separated wide CSV through the Item Explorer. Its canonical
 headers are `item`, `sub_id`, `est`, `infit`, `discrimination`, `solution_rate`, `item_time_s`,
-`stimulus_time_s`, `booklet`, and `position`. Only `item` and at least one parameter column are
-required. Time values are non-negative seconds; decimal point and decimal comma are accepted.
+`stimulus_time_s`, `text_complexity`, `kstufe`, `booklet`, and `position`. Only `item` and at least one
+parameter column are required. `text_complexity` is imported and filtered as free text, including
+content that looks numeric. `kstufe` accepts the shared competence levels `I` to `V`
+(case-insensitive) and is normalized to upper case. It belongs to the item, so all partial-credit
+rows inherit the same value; conflicting values for the same item are rejected. An empty `kstufe`
+cell clears the value, while omitting the column preserves it. Time values are non-negative seconds;
+decimal point and decimal comma are accepted.
+
+Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
+item profile and `iqb_time_stimulus` from the VOMD unit profile. The legacy item property
+`iqb_item_time` is used as a fallback when `iqb_time_item` is absent. If both item properties exist,
+`iqb_time_item` wins. The unit value is shared by every item row in that unit, and partial-credit
+rows inherit both values. Explicit Explorer values remain the higher-priority override. Empty,
+negative, and non-numeric VOMD values are treated as missing; the formatted `valueAsText` remains
+available as raw metadata and is not parsed as seconds. The column manager maps these VOMD
+properties to the canonical numeric `Itemzeit (s)` and `Stimuluszeit (s)` columns instead of
+offering the formatted metadata as duplicate columns.
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
-must agree, while `booklet` and `position` are collected as ordered 1:n metadata on the stable
-Explorer row. The occurrence columns must always be supplied and filled together. Columns that are
-absent leave stored values unchanged; a supplied but empty value clears that parameter in its
-defined scope:
+must agree, while `booklet` and the optional `position` are collected as ordered 1:n metadata on the
+stable Explorer row. A `booklet` column can be imported without `position`; new assignments then
+store a `null` position. If the same booklet already has a known position on the affected Explorer
+row, an import without a position retains that known value. An explicitly supplied position still
+replaces it. A position without a booklet is invalid: the server returns a warning without changing
+the Explorer draft, and managers can cancel or explicitly confirm a parameter-only import that
+preserves stored booklet occurrences. The same safeguard applies when a parameter CSV declares
+booklet columns but supplies no booklet values. A CSV containing only `booklet` (and optionally
+`position`) can still clear occurrences explicitly with empty values. Other columns that are absent
+leave stored values unchanged; a supplied but empty value clears that parameter in its defined scope:
 
 - difficulty, Infit, discrimination, solution rate, and booklet occurrences belong to the stable
   Explorer row,
@@ -378,9 +484,9 @@ conflict before any item property is changed. A standard row fans row-scoped val
 partial-credit rows; importing explicit Sub-IDs does not delete other partial-credit rows.
 
 Infit, discrimination, solution rate, item time, stimulus time, booklet, and position are built-in
-configurable Explorer columns. Numeric columns use numeric filtering and sorting. Booklet and
-position filters are paired, so a row only matches two simultaneous filters when one occurrence
-satisfies both.
+configurable Explorer columns. Numeric columns use numeric filtering and sorting. Missing booklet
+positions are displayed and exported as empty values. Booklet and position filters are paired, so a
+row only matches two simultaneous filters when one occurrence with a known position satisfies both.
 
 ### Partial-credit rows
 
@@ -407,7 +513,8 @@ item from overwriting one another and gives exports a unique identifier for ever
 
 When `enableItemCollections` is enabled, authenticated users and credential identities can maintain
 multiple named collections. Collections are stored in the existing `acp_item_preferences` JSONB
-record under the `item-explorer` view and are never exposed to other participants or managers.
+record under the `item-explorer` view. Private collections remain visible only to their owner;
+explicitly shared collections are available to other authorized participants in the same ACP.
 Every collection stores an ordered list of stable row keys and an optimistic-lock version.
 Non-manager collection access additionally requires the Item Explorer item list to be enabled.
 

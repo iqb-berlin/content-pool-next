@@ -21,19 +21,16 @@
                   </span>
                 }
               </div>
-              <div>
-                Zugeordnete Variable:
-                <code>{{ vm.codingVariableFocus.targetId }}</code>
-                @if (
-                  vm.codingVariableFocus.codingId &&
-                  vm.codingVariableFocus.codingId.toLowerCase() !==
-                    vm.codingVariableFocus.targetId.toLowerCase()
-                ) {
-                  · Anzeige im Kodierschema:
-                  <code>{{ vm.codingVariableFocus.codingId }}</code>
-                }
-              </div>
-              @if (vm.codingVariableFocus.isDerived) {
+              @if (vm.codingVariableFocus.usedLegacyFallback) {
+                <div class="coding-fallback-info" role="status">
+                  Der im Item gespeicherte interne Verweis
+                  <code>{{ vm.codingVariableFocus.requestedInternalId }}</code>
+                  fehlt im Kodierschema. Die Zuordnung wurde eindeutig über das Player-/Anzeige-Ziel
+                  <code>{{ vm.codingVariableFocus.playerTargetId }}</code>
+                  aufgelöst.
+                </div>
+              }
+              @if (vm.showPlayerTargetInfo && vm.codingVariableFocus.isDerived) {
                 <div class="coding-aggregation-info">
                   <strong>Abgeleitete/aggregierte Kodierung</strong>
                   @if (vm.codingVariableFocus.sourceIds.length) {
@@ -63,15 +60,17 @@
               </div>
               <div class="sort-actions">
                 <button
-                  class="btn btn-outline btn-sm"
+                  class="btn btn-outline btn-sm btn-state"
                   (click)="vm.toggleCodingSort('id')"
+                  [attr.aria-pressed]="vm.codingSortField === 'id'"
                   title="Nach ID sortieren"
                 >
                   ID {{ vm.getCodingSortIndicator('id') }}
                 </button>
                 <button
-                  class="btn btn-outline btn-sm"
+                  class="btn btn-outline btn-sm btn-state"
                   (click)="vm.toggleCodingSort('label')"
+                  [attr.aria-pressed]="vm.codingSortField === 'label'"
                   title="Nach Label sortieren"
                 >
                   Label {{ vm.getCodingSortIndicator('label') }}
@@ -84,17 +83,19 @@
             @for (coding of vm.filteredCodingSchemeAsText; track coding.id) {
               <div class="coding-item">
                 <div class="coding-item-header">
-                  <h4>{{ coding.label || coding.id }}</h4>
+                  <h4>Kodiervariable {{ coding.id }}</h4>
                   <div class="header-tags">
-                    <code class="variable-id">{{ coding.id }}</code>
+                    @if (vm.getCodingVariableDisplayLabel(coding); as displayLabel) {
+                      <span class="variable-label">Bezeichnung: {{ displayLabel }}</span>
+                    }
                   </div>
                 </div>
-                @if ($any(coding).manualInstructionText) {
+                @if (vm.shouldShowGeneralCodingInstruction(coding)) {
                   <div class="global-manual-instruction">
-                    <strong>📖 Variable-Instruktion:</strong>
+                    <strong>📖 Allgemeiner Kodierungshinweis:</strong>
                     <div
                       class="html-content"
-                      [innerHTML]="$any(coding).manualInstructionText"
+                      [innerHTML]="$any(coding).generalInstructionText"
                     ></div>
                   </div>
                 }
@@ -105,20 +106,20 @@
                         <span class="code-id">{{ code.id }}</span>
                         <span class="code-score">({{ code.score }})</span>
                         <span class="code-label">{{ code.label }}</span>
-                        @if (code.hasManualInstruction) {
+                        @if ($any(code).manualInstructionText) {
                           <span class="manual-icon" title="Manuelle Prüfung erforderlich">📝</span>
                         }
                       </div>
                       @if ($any(code).manualInstructionText) {
                         <div class="code-manual-instruction">
-                          <strong>Instruktion:</strong>
+                          <strong>Manuelle Kodieranweisung:</strong>
                           <div
                             class="html-content"
                             [innerHTML]="$any(code).manualInstructionText"
                           ></div>
                         </div>
                       }
-                      @if (code.ruleSetDescriptions.length) {
+                      @if (vm.shouldShowAutomaticCodingRules(code)) {
                         <ul class="rule-list">
                           @for (rule of code.ruleSetDescriptions; track rule) {
                             <li>{{ rule }}</li>
@@ -131,6 +132,20 @@
               </div>
             }
           </div>
+          @if (vm.codingCommentsEnabled && vm.selectedItem) {
+            <app-item-comment-thread
+              [acpId]="vm.acpId"
+              [targetType]="'CODING'"
+              [unitId]="vm.selectedItem.unitId"
+              [itemId]="vm.selectedItem.itemId"
+              [enabled]="vm.codingCommentsEnabled"
+              [refreshToken]="vm.itemCommentRefreshToken"
+              [sessionToken]="vm.itemCommentSessionToken"
+              [initiallyOpen]="true"
+              [hideToggle]="true"
+              (countChanged)="vm.updateItemCommentCount($event)"
+            />
+          }
         } @else {
           <p class="help-text">Keine Kodierung für diese Aufgabe verfügbar.</p>
         }

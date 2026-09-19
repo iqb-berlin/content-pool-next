@@ -1,4 +1,8 @@
 import {
+  ExplorerReadGuard,
+  ExplorerEditGuard,
+} from "../auth/capabilities/explorer-access.guard";
+import {
   Controller,
   Get,
   Param,
@@ -28,9 +32,6 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ItemsService } from "./items.service";
 import { ItemResponseStateService } from "./item-response-state.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
-import { RolesGuard } from "../auth/guards/roles.guard";
-import { Roles } from "../auth/roles.decorator";
 import { IsObject } from "class-validator";
 import { ItemExplorerStateService } from "../item-explorer/item-explorer-state.service";
 import { UuidParam } from "../common/uuid-param";
@@ -44,6 +45,7 @@ interface ItemParameterImportCommand {
   kind: ItemParameterImportKind;
   target: ItemParameterImportTarget;
   baseVersion?: number;
+  confirmWarnings?: boolean;
   user?: unknown;
 }
 
@@ -67,7 +69,7 @@ export class ItemsController {
   ) {}
 
   @Get()
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({
     summary: "List all items in an ACP (with optional filter/sort)",
   })
@@ -86,19 +88,23 @@ export class ItemsController {
   }
 
   @Get("tags")
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ExplorerReadGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Get persisted item tags for an ACP" })
   async getItemTags(@UuidParam("acpId") acpId: string, @Request() req: any) {
     const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
-    if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
+    if (
+      !req.acpCapabilities?.includes("item-explorer:edit") &&
+      !isManager &&
+      !(await this.itemsService.canUseItemTags(acpId))
+    ) {
       throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
     return this.itemsService.getItemTags(acpId);
   }
 
   @Put("tags")
-  @UseGuards(JwtAuthGuard, AcpAccessGuard)
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Persist item tags for an ACP" })
   async saveItemTags(
@@ -107,7 +113,11 @@ export class ItemsController {
     @Request() req: any,
   ) {
     const isManager = req.user?.isAppAdmin || req.acpAccessLevel === "MANAGER";
-    if (!isManager && !(await this.itemsService.canUseItemTags(acpId))) {
+    if (
+      !req.acpCapabilities?.includes("item-explorer:edit") &&
+      !isManager &&
+      !(await this.itemsService.canUseItemTags(acpId))
+    ) {
       throw new ForbiddenException("Item tags are not enabled for this ACP");
     }
     const actor = this.itemExplorerStateService.resolveActor(req?.user, acpId);
@@ -123,7 +133,7 @@ export class ItemsController {
   }
 
   @Get(":itemId")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Get a single item by ID" })
   async getItem(
     @UuidParam("acpId") acpId: string,
@@ -135,8 +145,7 @@ export class ItemsController {
   }
 
   @Post("upload-item-parameters")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Upload a wide CSV with empirical and additional item parameters",
@@ -157,6 +166,7 @@ export class ItemsController {
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
+    @Query("confirmWarnings") confirmWarnings?: string,
   ) {
     if (!file?.buffer) {
       throw new BadRequestException("A CSV file is required");
@@ -167,13 +177,13 @@ export class ItemsController {
       kind: "item-parameters",
       target: draft === "true" ? "draft" : "published",
       baseVersion: this.parseBaseVersion(baseVersion),
+      confirmWarnings: confirmWarnings === "true",
       user: req?.user,
     });
   }
 
   @Post("upload-empirical-difficulty")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Upload a CSV to match empirical item difficulties",
@@ -197,6 +207,7 @@ export class ItemsController {
     @Query("draft") draft?: string,
     @Query("baseVersion") baseVersion?: string,
     @Request() req?: any,
+    @Query("confirmWarnings") confirmWarnings?: string,
   ) {
     return this.runItemParameterImport({
       acpId,
@@ -204,13 +215,13 @@ export class ItemsController {
       kind: "empirical-difficulty",
       target: draft === "true" ? "draft" : "published",
       baseVersion: this.parseBaseVersion(baseVersion),
+      confirmWarnings: confirmWarnings === "true",
       user: req?.user,
     });
   }
 
   @Delete("empirical-difficulty")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Clear all empirical difficulties for an ACP" })
   async clearEmpiricalDifficulties(
@@ -294,8 +305,7 @@ export class ItemsController {
   }
 
   @Get("response-state/all")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({
     summary: "Get all response states for an ACP (Manager only)",
@@ -310,8 +320,7 @@ export class ItemsController {
   // Response State Endpoints
 
   @Post(":itemId/response-state")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Save response state for an item (Manager only)" })
   async saveResponseState(
@@ -336,7 +345,7 @@ export class ItemsController {
   }
 
   @Get(":itemId/response-state")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Get response state for an item" })
   async getResponseState(
     @UuidParam("acpId") acpId: string,
@@ -357,7 +366,7 @@ export class ItemsController {
   }
 
   @Post(":itemId/response-state/with-fallback")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({
     summary:
       "Get response state for an item with fallback to previous items in same unit",
@@ -382,8 +391,7 @@ export class ItemsController {
   }
 
   @Delete(":itemId/response-state")
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(JwtAuthGuard, ExplorerEditGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "Delete response state for an item (Manager only)" })
   async deleteResponseState(
@@ -423,13 +431,30 @@ export class ItemsController {
         ? await this.itemsService.uploadEmpiricalDifficulties(
             command.acpId,
             command.fileBuffer,
-            { persist: false, itemPropertiesOverride: itemProperties },
+            {
+              persist: false,
+              itemPropertiesOverride: itemProperties,
+              ...(command.confirmWarnings ? { confirmWarnings: true } : {}),
+            },
           )
         : await this.itemsService.uploadItemParameters(
             command.acpId,
             command.fileBuffer,
-            { persist: false, itemPropertiesOverride: itemProperties },
+            {
+              persist: false,
+              itemPropertiesOverride: itemProperties,
+              ...(command.confirmWarnings ? { confirmWarnings: true } : {}),
+            },
           );
+    if (uploadResult.requiresConfirmation) {
+      return {
+        updated: uploadResult.updated,
+        failed: uploadResult.failed,
+        successes: uploadResult.successes,
+        warnings: uploadResult.warnings,
+        requiresConfirmation: true,
+      };
+    }
     const importedEmpiricalDifficulty =
       command.kind === "empirical-difficulty"
         ? uploadResult.updated > 0
@@ -471,6 +496,8 @@ export class ItemsController {
         updated: 0,
         failed: uploadResult.failed,
         successes: uploadResult.successes,
+        warnings: uploadResult.warnings,
+        requiresConfirmation: uploadResult.requiresConfirmation,
         explorerState: currentState,
       };
     }
@@ -494,6 +521,8 @@ export class ItemsController {
       updated: uploadResult.updated,
       failed: uploadResult.failed,
       successes: uploadResult.successes,
+      warnings: uploadResult.warnings,
+      requiresConfirmation: uploadResult.requiresConfirmation,
       showOnlyItemsWithEmpiricalDifficulty,
       explorerState,
     };
@@ -517,7 +546,13 @@ export class ItemsController {
       req?.user?.isAppAdmin ||
       req?.acpAccessLevel === "MANAGER" ||
       req?.acpAccessLevel === "ADMIN";
-    if (!isManager && !(await this.itemsService.canUseItemList(acpId))) {
+    if (
+      !req?.acpCapabilities?.some((c: string) =>
+        c.startsWith("item-explorer:"),
+      ) &&
+      !isManager &&
+      !(await this.itemsService.canUseItemList(acpId))
+    ) {
       throw new ForbiddenException("Item list is not enabled for this ACP");
     }
   }

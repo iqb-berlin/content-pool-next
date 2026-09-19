@@ -64,6 +64,10 @@ describe("AcpService", () => {
       create: jest.fn().mockImplementation((dto) => dto),
       save: jest.fn().mockImplementation((entity) => Promise.resolve(entity)),
     };
+    accessConfigRepo.manager = {
+      transaction: async (fn: any) =>
+        fn({ getRepository: () => accessConfigRepo }),
+    };
     credentialRepo = {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
       create: jest.fn().mockImplementation((dto) => dto),
@@ -76,7 +80,10 @@ describe("AcpService", () => {
     };
     credentialRepo.manager = {
       transaction: jest.fn(async (callback) =>
-        callback({ getRepository: () => credentialRepo }),
+        callback({
+          getRepository: () => credentialRepo,
+          query: jest.fn().mockResolvedValue([]),
+        }),
       ),
     };
     settingsRepo = {
@@ -604,17 +611,27 @@ describe("AcpService", () => {
         acpId: "acp-1",
         accessModel: AccessModel.PRIVATE,
         featureConfig: expect.objectContaining({
-          metadataColumns: {
+          metadataColumns: expect.objectContaining({
             visible: ["a"],
             order: ["a"],
-          },
+            configured: true,
+          }),
         }),
       });
 
       acpRepo.findOne.mockResolvedValue(mockAcp);
       accessConfigRepo.findOne.mockResolvedValueOnce({
         acpId: "acp-1",
-        featureConfig: {},
+        featureConfig: {
+          metadataColumns: {
+            visible: ["old"],
+            order: ["old"],
+            configured: true,
+            definitions: [{ id: "custom", label: "Eigene Spalte" }],
+            widths: { custom: 260 },
+            referenceNumberVisible: true,
+          },
+        },
       });
 
       await service.updateMetadataColumns("acp-1", {
@@ -625,10 +642,14 @@ describe("AcpService", () => {
       expect(accessConfigRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           featureConfig: expect.objectContaining({
-            metadataColumns: {
+            metadataColumns: expect.objectContaining({
               visible: ["a", "b"],
               order: ["b", "a"],
-            },
+              configured: true,
+              definitions: [{ id: "custom", label: "Eigene Spalte" }],
+              widths: { custom: 260 },
+              referenceNumberVisible: true,
+            }),
           }),
         }),
       );
@@ -886,7 +907,7 @@ describe("AcpService", () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it("returns assignable non-admin users", async () => {
+    it("returns assignable users including admins needing explicit participation", async () => {
       acpRepo.findOne.mockResolvedValue(mockAcp);
       userRepo.find.mockResolvedValue([
         { id: "user-1", username: "u1", displayName: "User 1" },
@@ -896,7 +917,6 @@ describe("AcpService", () => {
         { id: "user-1", username: "u1", displayName: "User 1" },
       ]);
       expect(userRepo.find).toHaveBeenCalledWith({
-        where: { isAppAdmin: false },
         select: ["id", "username", "displayName"],
         order: { username: "ASC" },
       });

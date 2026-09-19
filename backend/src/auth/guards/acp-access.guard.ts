@@ -10,6 +10,7 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import {
   AcpUserRole,
+  AcpCredential,
   AcpRole,
   AcpAccessConfig,
   AccessModel,
@@ -35,6 +36,8 @@ export class AcpAccessGuard implements CanActivate {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    @InjectRepository(AcpCredential)
+    private readonly credentialRepository: Repository<AcpCredential>,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -62,12 +65,26 @@ export class AcpAccessGuard implements CanActivate {
 
       // Credential-based access
       if (user.type === "credential" && user.acpId === acpId) {
+        const credential = await this.credentialRepository.findOne({
+          where: { id: user.sub },
+          relations: ["accessConfig"],
+        });
+        const config = credential?.accessConfig;
+        if (
+          !config ||
+          config.acpId !== acpId ||
+          config.accessModel !== AccessModel.CREDENTIALS_LIST ||
+          (config.validFrom && config.validFrom > new Date()) ||
+          (config.validUntil && config.validUntil < new Date())
+        ) {
+          throw new ForbiddenException("Zugang ist nicht mehr gültig");
+        }
         request.acpAccessLevel = "CREDENTIAL";
         return true;
       }
 
-      // User role-based access (local users and OIDC users)
-      if (user.type === "user" || user.type === "oidc") {
+      // Role-based access for OIDC users.
+      if (user.type === "oidc") {
         const role = Object.prototype.hasOwnProperty.call(
           user,
           "resolvedAcpRole",
@@ -135,6 +152,10 @@ export class AcpAccessGuard implements CanActivate {
           acpId: payload.acpId,
           acpRoles: [],
         };
+      }
+
+      if (payload.type !== "oidc" || payload.authType !== "oidc") {
+        return null;
       }
 
       // Resolve the persisted user and the role relevant to this request in one

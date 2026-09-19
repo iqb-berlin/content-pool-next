@@ -42,10 +42,12 @@ export class UnitViewResolver {
       this.fileCatalogCache.get(acpId),
       Promise.resolve(explorerStateSignature),
     ]);
-    const cacheKey = `${acpId}:${partId || "legacy"}:${unitId}:${this.hashCanonicalValue({
-      files: catalog.signature,
-      explorerState: resolvedExplorerStateSignature,
-    })}`;
+    const cacheKey = `${acpId}:${partId || "legacy"}:${unitId}:${this.hashCanonicalValue(
+      {
+        files: catalog.signature,
+        explorerState: resolvedExplorerStateSignature,
+      },
+    )}`;
     const { value, status } = await this.cache.getOrLoad(cacheKey, () =>
       this.build(acpId, unitId, catalog.files, partId),
     );
@@ -75,13 +77,16 @@ export class UnitViewResolver {
       throw new ConflictException({
         message: `Unit ${unitId} exists in multiple assessment parts`,
         possibleParts: matchingXmlFiles
-          .map((file) => this.partFromUnitPath(file.relativePath || file.originalName))
+          .map((file) =>
+            this.partFromUnitPath(file.relativePath || file.originalName),
+          )
           .filter(Boolean),
       });
     }
     const xmlFile = partId
-      ? matchingXmlFiles.find((file) =>
-          this.partFromUnitPath(file.relativePath || file.originalName) ===
+      ? matchingXmlFiles.find(
+          (file) =>
+            this.partFromUnitPath(file.relativePath || file.originalName) ===
             normalizePartId(partId),
         )
       : matchingXmlFiles.length === 1
@@ -101,7 +106,9 @@ export class UnitViewResolver {
     }
 
     const dependencies: any[] = [];
-    const unitDirectory = path.posix.dirname(xmlFile.relativePath || xmlFile.originalName);
+    const unitDirectory = path.posix.dirname(
+      xmlFile.relativePath || xmlFile.originalName,
+    );
     const playerFileName = findPlayerFile(
       parsed.playerRef,
       allFiles.map((file) => file.originalName),
@@ -138,8 +145,13 @@ export class UnitViewResolver {
     );
 
     if (parsed.metadataRef) {
-      const metadataFile = this.findDependencyFile(allFiles, parsed.metadataRef, unitDirectory) ||
-        this.findDependencyFile(allFiles, `${parsed.metadataRef}.json`, unitDirectory);
+      const metadataFile =
+        this.findDependencyFile(allFiles, parsed.metadataRef, unitDirectory) ||
+        this.findDependencyFile(
+          allFiles,
+          `${parsed.metadataRef}.json`,
+          unitDirectory,
+        );
       if (metadataFile) {
         dependencies.push({
           type: "METADATA",
@@ -189,10 +201,13 @@ export class UnitViewResolver {
       path.posix.join(unitDirectory === "." ? "" : unitDirectory, originalName),
     );
     const local = allFiles.find(
-      (candidate) => (candidate.relativePath || candidate.originalName) === relativePath,
+      (candidate) =>
+        (candidate.relativePath || candidate.originalName) === relativePath,
     );
     if (local) return local;
-    const matches = allFiles.filter((candidate) => candidate.originalName === originalName);
+    const matches = allFiles.filter(
+      (candidate) => candidate.originalName === originalName,
+    );
     return matches.length === 1 ? matches[0] : undefined;
   }
 

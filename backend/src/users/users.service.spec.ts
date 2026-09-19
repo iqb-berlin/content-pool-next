@@ -14,7 +14,6 @@ describe("UsersService", () => {
     username: "john",
     displayName: "John Doe",
     isAppAdmin: false,
-    passwordHash: "hashed",
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -73,20 +72,24 @@ describe("UsersService", () => {
   });
 
   describe("create", () => {
-    it("should create a new user with hashed password", async () => {
+    it("should create a new user without local credentials", async () => {
       repo.findOne
         .mockResolvedValueOnce(null) // username check
         .mockResolvedValue({ ...mockUser, id: "new-id" }); // findById after save
-      await service.create({ username: "jane", password: "pass1234" });
-      expect(repo.create).toHaveBeenCalled();
+      await service.create({ username: "jane", displayName: "Jane Doe" });
+      expect(repo.create).toHaveBeenCalledWith({
+        username: "jane",
+        displayName: "Jane Doe",
+        isAppAdmin: false,
+      });
       expect(repo.save).toHaveBeenCalled();
     });
 
     it("should throw ConflictException for duplicate username", async () => {
       repo.findOne.mockResolvedValue(mockUser);
-      await expect(
-        service.create({ username: "john", password: "pass1234" }),
-      ).rejects.toThrow(ConflictException);
+      await expect(service.create({ username: "john" })).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -113,26 +116,6 @@ describe("UsersService", () => {
         .mockResolvedValue({ ...mockUser, isAppAdmin: true }); // findById after save
       await service.setAppAdmin("user-1", true);
       expect(repo.save).toHaveBeenCalled();
-    });
-  });
-
-  describe("seedInitialAdmin", () => {
-    it("should create admin user when no users exist", async () => {
-      repo.count.mockResolvedValue(0);
-      await service.seedInitialAdmin();
-      expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          username: "admin",
-          isAppAdmin: true,
-        }),
-      );
-      expect(repo.save).toHaveBeenCalled();
-    });
-
-    it("should skip when users already exist", async () => {
-      repo.count.mockResolvedValue(5);
-      await service.seedInitialAdmin();
-      expect(repo.create).not.toHaveBeenCalled();
     });
   });
 });

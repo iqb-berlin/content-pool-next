@@ -5,7 +5,18 @@ The repository is a split Angular frontend and NestJS backend that manages Asses
 Content Packages (ACPs), their files, access rules, review workflows, and external
 transfer APIs.
 
-## Start Here
+## Concepts
+
+- [Current high-level concept](concepts/GROBKONZEPT.md) (German)
+- [Detailed concept: documentation map](concepts/FEINKONZEPT.md) (German)
+- [Comparison with the original concept and open decisions](concepts/KONZEPTABGLEICH.md) (German)
+- [Historical concept and provenance](concepts/legacy/README.md)
+
+The historical concept is retained for traceability, not as the current target
+architecture. The comparison distinguishes implemented capabilities, changed
+approaches, and requirements that still need a decision.
+
+## Reading Order
 
 If you are new to the project, read the documentation in this order:
 
@@ -59,6 +70,8 @@ For ACP managers who need a task-oriented user guide, see:
 
 ### Operations
 
+- [Releases and Promotion](operations/releases.md)
+  SemVer, release candidates, staging evidence, digest promotion, rollback, and restore.
 - [Deployment](operations/deployment.md)
   Development, production, server-image, and single-domain Traefik deployment modes.
 - [Monitoring and Maintenance](operations/monitoring-and-maintenance.md)

@@ -277,6 +277,53 @@ describe("ItemsService", () => {
     expect(acpRepository.save).not.toHaveBeenCalled();
   });
 
+  it("does not persist a position-only import before warning confirmation", async () => {
+    const acp = {
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+        },
+      },
+    };
+    acpRepository.findOne.mockResolvedValue(acp);
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+    const csv = Buffer.from("item;est;position\nI1;0.5;4");
+
+    const preview = await service.uploadItemParameters("acp-1", csv);
+    expect(preview.requiresConfirmation).toBe(true);
+    expect(acpRepository.save).not.toHaveBeenCalled();
+    expect(acp.itemProperties).toEqual({
+      "uuid-1": {
+        bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+      },
+    });
+
+    const confirmed = await service.uploadItemParameters("acp-1", csv, {
+      confirmWarnings: true,
+    });
+    expect(confirmed.requiresConfirmation).toBe(false);
+    expect(acpRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        itemProperties: {
+          "uuid-1": {
+            empiricalDifficulty: 0.5,
+            bookletOccurrences: [{ booklet: "OLD", position: 4 }],
+          },
+        },
+      }),
+    );
+  });
+
   it("validates required CSV headers", async () => {
     acpRepository.findOne.mockResolvedValue({
       id: "acp-1",
@@ -394,9 +441,9 @@ describe("ItemsService", () => {
     });
 
     const csv = [
-      "item;sub_id;est;infit;discrimination;solution_rate;item_time_s;stimulus_time_s;booklet;position",
-      "I1;;0,25;1,05;0,42;0,73;35;12;B2;8",
-      "I1;;0.25;1.05;0.42;0.73;35;12;B1;3",
+      "item;sub_id;est;infit;discrimination;solution_rate;text_complexity;kstufe;item_time_s;stimulus_time_s;booklet;position",
+      "I1;;0,25;1,05;0,42;0,73;anspruchsvoll;iii;35;12;B2;8",
+      "I1;;0.25;1.05;0.42;0.73;anspruchsvoll;III;35;12;B1;3",
     ].join("\n");
     const result = await service.uploadItemParameters(
       "acp-1",
@@ -414,6 +461,8 @@ describe("ItemsService", () => {
           "solution_rate",
           "item_time_s",
           "stimulus_time_s",
+          "text_complexity",
+          "kstufe",
           "booklet",
           "position",
         ],
@@ -430,6 +479,8 @@ describe("ItemsService", () => {
         infit: 1.05,
         discrimination: 0.42,
         solutionRate: 0.73,
+        textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         itemTimeSeconds: 35,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
@@ -474,6 +525,49 @@ describe("ItemsService", () => {
         bookletOccurrences: [],
       }),
     ]);
+  });
+
+  it("persists a booklet without a position and retains a known matching position", async () => {
+    const acp = {
+      id: "acp-1",
+      itemProperties: {
+        "uuid-1": {
+          bookletOccurrences: [
+            { booklet: "B1", position: 3 },
+            { booklet: "OLD", position: 9 },
+          ],
+        },
+      },
+    };
+    acpRepository.findOne.mockResolvedValue(acp);
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [
+        {
+          uuid: "uuid-1",
+          itemId: "I-1",
+          unitId: "U-1",
+          unitLabel: "Aufgabe 1",
+        },
+      ],
+    });
+
+    const result = await service.uploadItemParameters(
+      "acp-1",
+      Buffer.from("item;booklet\nI1;B1\nI1;B2"),
+    );
+
+    expect(result.requiresConfirmation).toBeUndefined();
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": {
+        bookletOccurrences: [
+          { booklet: "B1", position: 3 },
+          { booklet: "B2", position: null },
+        ],
+      },
+    });
+    expect(acpRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ itemProperties: result.nextItemProperties }),
+    );
   });
 
   it("rejects conflicting scalar values and duplicate booklet occurrences", async () => {
@@ -987,6 +1081,7 @@ describe("ItemsService", () => {
 
     await expect(service.getItemTags("acp-1")).resolves.toEqual({
       itemA: ["tag-a", "tag-b"],
+      itemB: [],
       "uuid-1::1": [],
     });
   });

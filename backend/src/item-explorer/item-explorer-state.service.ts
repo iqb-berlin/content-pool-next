@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "./reviewer-column-policy";
 import {
   ConflictException,
   Injectable,
@@ -22,8 +23,21 @@ export interface ExplorerActor {
 }
 
 export interface ExplorerMetadataColumns {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
+  referenceNumberVisible?: boolean;
+  layout?: ExplorerTableColumnLayout;
+}
+
+export interface ExplorerTableColumnLayout {
+  visible: string[];
+  order: string[];
+  configured: boolean;
+  widths: Record<string, number>;
+  schemaVersion?: number;
 }
 
 export interface ExplorerSharedStatePayload {
@@ -100,6 +114,27 @@ export class ItemExplorerStateService {
   ): Promise<ExplorerStateEnvelope> {
     const state = await this.getCachedViewerState(acpId);
     return structuredClone(this.toViewerEnvelope(state, canEdit));
+  }
+
+  async getPublishedColumnPolicy(acpId: string): Promise<ReviewerColumnPolicy> {
+    const state = await this.getCachedViewerState(acpId);
+    return new ReviewerColumnPolicy(
+      state.publishedState.metadataColumns,
+      state.publishedVersion,
+    );
+  }
+
+  async assertColumnPolicyCurrent(
+    acpId: string,
+    policy?: ReviewerColumnPolicy,
+  ): Promise<void> {
+    if (policy?.publishedVersion === undefined) return;
+    const version = await this.getStateVersionForViewer(acpId, false);
+    if (version !== policy.publishedVersion) {
+      throw new ConflictException(
+        "Die veröffentlichte Spaltenfreigabe wurde geändert. Bitte neu laden.",
+      );
+    }
   }
 
   async getItemListStateProjection(
@@ -522,6 +557,8 @@ export class ItemExplorerStateService {
     let role = "READ_ONLY";
     if (user?.isAppAdmin) {
       role = "APP_ADMIN";
+    } else if (user?.type === "credential") {
+      role = "CREDENTIAL";
     } else if (Array.isArray(user?.acpRoles)) {
       const acpRole = user.acpRoles.find(
         (entry: any) => entry?.acpId === acpId,
@@ -529,13 +566,11 @@ export class ItemExplorerStateService {
       if (acpRole?.role === "ACP_MANAGER") {
         role = "ACP_MANAGER";
       }
-    } else if (user?.type === "credential") {
-      role = "CREDENTIAL";
     }
 
     const sub = typeof user?.sub === "string" ? user.sub : undefined;
     return {
-      userId: sub,
+      userId: user?.type === "credential" ? undefined : sub,
       username,
       role,
     };
@@ -648,9 +683,22 @@ export class ItemExplorerStateService {
 
     const visible = this.asStringArray(rawMetadataColumns.visible);
     const order = this.asStringArray(rawMetadataColumns.order);
+    const configured =
+      rawMetadataColumns.configured === true ||
+      visible.length > 0 ||
+      order.length > 0;
     const metadataColumns: ExplorerMetadataColumns = {
+      ...(rawMetadataColumns.restrictReviewerColumnsToManagerSelection === true
+        ? { restrictReviewerColumnsToManagerSelection: true }
+        : {}),
       visible: visible.length ? visible : order,
       order: order.length ? order : visible,
+      configured,
+      widths: this.normalizeMetadataColumnWidths(rawMetadataColumns.widths),
+      ...(rawMetadataColumns.referenceNumberVisible === true
+        ? { referenceNumberVisible: true }
+        : {}),
+      ...this.withTableColumnLayout(rawMetadataColumns.layout),
     };
 
     const itemProperties = this.normalizeItemProperties(acp.itemProperties);
@@ -705,11 +753,42 @@ export class ItemExplorerStateService {
     );
     const visible = this.asStringArray(state.metadataColumns?.visible);
     const order = this.asStringArray(state.metadataColumns?.order);
+    const widths = this.normalizeMetadataColumnWidths(
+      state.metadataColumns?.widths,
+    );
+    const existingMetadataColumns = this.asRecord(
+      normalizedFeatureConfig.metadataColumns,
+    );
+    const definitions = Array.isArray(existingMetadataColumns.definitions)
+      ? existingMetadataColumns.definitions
+      : [];
+    const layout = this.normalizeTableColumnLayout(
+      state.metadataColumns.layout,
+    );
 
-    if (visible.length || order.length) {
+    if (
+      state.metadataColumns.restrictReviewerColumnsToManagerSelection ||
+      state.metadataColumns.configured ||
+      visible.length ||
+      order.length ||
+      state.metadataColumns.referenceNumberVisible ||
+      Object.keys(widths).length ||
+      definitions.length ||
+      layout
+    ) {
       normalizedFeatureConfig.metadataColumns = {
+        ...(state.metadataColumns.restrictReviewerColumnsToManagerSelection
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured: state.metadataColumns.configured === true,
+        ...(definitions.length ? { definitions } : {}),
+        ...(Object.keys(widths).length ? { widths } : {}),
+        ...(state.metadataColumns.referenceNumberVisible
+          ? { referenceNumberVisible: true }
+          : {}),
+        ...(layout ? { layout } : {}),
       };
     } else {
       delete normalizedFeatureConfig.metadataColumns;
@@ -741,7 +820,7 @@ export class ItemExplorerStateService {
       updatedByRole: state.updatedByRole,
       activeState: canEdit ? state.draftState : state.publishedState,
       publishedState: state.publishedState,
-      draftState: state.draftState,
+      draftState: canEdit ? state.draftState : state.publishedState,
     };
   }
 
@@ -766,13 +845,27 @@ export class ItemExplorerStateService {
 
     const visible = this.asStringArray(metadataColumnsRaw.visible);
     const order = this.asStringArray(metadataColumnsRaw.order);
+    const configured =
+      metadataColumnsRaw.configured === true ||
+      visible.length > 0 ||
+      order.length > 0;
 
     return {
       ui: this.asRecord(payload.ui),
       tags: this.normalizeTags(payload.tags),
       metadataColumns: {
+        ...(metadataColumnsRaw.restrictReviewerColumnsToManagerSelection ===
+        true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured,
+        widths: this.normalizeMetadataColumnWidths(metadataColumnsRaw.widths),
+        ...(metadataColumnsRaw.referenceNumberVisible === true
+          ? { referenceNumberVisible: true }
+          : {}),
+        ...this.withTableColumnLayout(metadataColumnsRaw.layout),
       },
       itemOrder: this.asStringArray(payload.itemOrder),
       itemProperties: this.normalizeItemProperties(payload.itemProperties),
@@ -787,8 +880,18 @@ export class ItemExplorerStateService {
       ui: { ...current.ui },
       tags: this.normalizeTags(current.tags),
       metadataColumns: {
+        ...(current.metadataColumns
+          .restrictReviewerColumnsToManagerSelection === true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: [...current.metadataColumns.visible],
         order: [...current.metadataColumns.order],
+        configured: current.metadataColumns.configured,
+        widths: { ...current.metadataColumns.widths },
+        ...(current.metadataColumns.referenceNumberVisible
+          ? { referenceNumberVisible: true }
+          : {}),
+        ...this.withTableColumnLayout(current.metadataColumns.layout),
       },
       itemOrder: [...current.itemOrder],
       itemProperties: this.normalizeItemProperties(current.itemProperties),
@@ -808,9 +911,26 @@ export class ItemExplorerStateService {
     if (patch.metadataColumns) {
       const visible = this.asStringArray(patch.metadataColumns.visible);
       const order = this.asStringArray(patch.metadataColumns.order);
+      const configured =
+        patch.metadataColumns.configured === true ||
+        visible.length > 0 ||
+        order.length > 0;
       merged.metadataColumns = {
+        ...((patch.metadataColumns.restrictReviewerColumnsToManagerSelection ??
+          current.metadataColumns.restrictReviewerColumnsToManagerSelection) ===
+        true
+          ? { restrictReviewerColumnsToManagerSelection: true }
+          : {}),
         visible: visible.length ? visible : order,
         order: order.length ? order : visible,
+        configured,
+        widths: this.normalizeMetadataColumnWidths(
+          patch.metadataColumns.widths,
+        ),
+        ...(patch.metadataColumns.referenceNumberVisible === true
+          ? { referenceNumberVisible: true }
+          : {}),
+        ...this.withTableColumnLayout(patch.metadataColumns.layout),
       };
     }
 
@@ -963,12 +1083,10 @@ export class ItemExplorerStateService {
         continue;
       }
       const normalizedValues = this.normalizeTagArray(value);
-      if (
-        normalizedValues.length ||
-        parseItemRowKeyParts(normalizedItemKey) !== null
-      ) {
-        tags[normalizedItemKey] = normalizedValues;
-      }
+      // Explicit empty arrays are deletion tombstones. They must also be
+      // retained for regular (non partial-credit) rows so an imported tag
+      // cannot reappear after the draft is saved and reloaded.
+      tags[normalizedItemKey] = normalizedValues;
     }
 
     return tags;
@@ -998,7 +1116,6 @@ export class ItemExplorerStateService {
         continue;
       }
       const isPartialRow = parseItemRowKeyParts(normalizedKey) !== null;
-
       const itemValue = this.asRecord(value);
       const nextItemValue: Record<string, unknown> = { ...itemValue };
 
@@ -1006,10 +1123,8 @@ export class ItemExplorerStateService {
         const tags = this.normalizeTagArray(itemValue.tags);
         if (tags.length) {
           nextItemValue.tags = tags;
-        } else if (isPartialRow) {
-          nextItemValue.tags = [];
         } else {
-          delete nextItemValue.tags;
+          nextItemValue.tags = [];
         }
       }
 
@@ -1072,6 +1187,62 @@ export class ItemExplorerStateService {
           .filter((entry) => entry.length > 0),
       ),
     );
+  }
+
+  private normalizeMetadataColumnWidths(
+    value: unknown,
+  ): Record<string, number> {
+    const source = this.asRecord(value);
+    const widths: Record<string, number> = {};
+    for (const [rawId, rawWidth] of Object.entries(source).slice(0, 100)) {
+      const id = rawId.trim().slice(0, 200);
+      const width = Number(rawWidth);
+      if (!id || !Number.isFinite(width)) continue;
+      widths[id] = Math.min(600, Math.max(80, Math.round(width)));
+    }
+    return widths;
+  }
+
+  private normalizeTableColumnWidths(value: unknown): Record<string, number> {
+    const source = this.asRecord(value);
+    const widths: Record<string, number> = {};
+    for (const [rawKey, rawWidth] of Object.entries(source).slice(0, 120)) {
+      const key = rawKey.trim().slice(0, 220);
+      const width = Number(rawWidth);
+      if (!key || !Number.isFinite(width)) continue;
+      widths[key] = Math.min(600, Math.max(80, Math.round(width)));
+    }
+    return widths;
+  }
+
+  private normalizeTableColumnLayout(
+    value: unknown,
+  ): ExplorerTableColumnLayout | undefined {
+    const source = this.asRecord(value);
+    const visible = this.asStringArray(source.visible);
+    const order = this.asStringArray(source.order);
+    const configured =
+      source.configured === true || visible.length > 0 || order.length > 0;
+    const widths = this.normalizeTableColumnWidths(source.widths);
+    const schemaVersion = Number(source.schemaVersion);
+    if (!configured && Object.keys(widths).length === 0) return undefined;
+    return {
+      visible:
+        source.configured === true ? visible : visible.length ? visible : order,
+      order: order.length ? order : visible,
+      configured,
+      widths,
+      ...(Number.isInteger(schemaVersion) && schemaVersion > 0
+        ? { schemaVersion }
+        : {}),
+    };
+  }
+
+  private withTableColumnLayout(value: unknown): {
+    layout?: ExplorerTableColumnLayout;
+  } {
+    const layout = this.normalizeTableColumnLayout(value);
+    return layout ? { layout } : {};
   }
 
   private asRecord(value: unknown): Record<string, unknown> {

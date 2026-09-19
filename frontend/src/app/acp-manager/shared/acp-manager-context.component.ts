@@ -125,6 +125,6 @@ export class AcpManagerContextComponent implements OnInit {
     }
 
     this.backLink = ['/manage', this.acpId];
-    this.backLabel = '← Zur Übersicht';
+    this.backLabel = '← Zur ACP-Übersicht';
   }
 }

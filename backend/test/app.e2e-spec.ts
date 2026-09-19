@@ -3,16 +3,17 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import * as bcrypt from "bcryptjs";
 import * as request from "supertest";
 import {
   AcpFile,
+  AcpUserRole,
   AcpItemPreference,
   AcpItemRowNumber,
   User,
 } from "../src/database/entities";
 import { buildPatchPersonalItemPreferenceRowQuery } from "../src/views/personal-item-preferences.query";
 import { ItemRowNumberingService } from "../src/files/item-row-numbering.service";
+import { ReviewReadinessService } from "../src/review/review-readiness.service";
 
 if (!process.env.DB_HOST) process.env.DB_HOST = "localhost";
 if (!process.env.DB_PORT) process.env.DB_PORT = "5433";
@@ -105,6 +106,7 @@ describe("ContentPool API (e2e)", () => {
     enableSequenceNavigation: true,
     enableCommenting: true,
     commentTargets: ["UNIT", "ITEM", "TASK_SEQUENCE"],
+    commentVisibilityMode: "SHARED",
   };
 
   jest.setTimeout(60000);
@@ -113,7 +115,24 @@ describe("ContentPool API (e2e)", () => {
     const { AppModule } = await import("../src/app.module");
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ReviewReadinessService)
+      .useValue({
+        check: async () => ({
+          status: "READY",
+          checkedAt: new Date().toISOString(),
+          blockers: [],
+          warnings: [],
+          summary: {
+            totalFiles: 0,
+            validFiles: 0,
+            invalidFiles: 0,
+            bookletCount: 1,
+            unitCount: 1,
+          },
+        }),
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(
@@ -144,7 +163,6 @@ describe("ContentPool API (e2e)", () => {
     const adminUser = await userRepo.save(
       userRepo.create({
         username: adminUsername,
-        passwordHash: await bcrypt.hash("TempPassword123!", 10),
         isAppAdmin: true,
       }),
     );
@@ -153,7 +171,8 @@ describe("ContentPool API (e2e)", () => {
       sub: adminUser.id,
       username: adminUser.username,
       isAppAdmin: true,
-      type: "user",
+      type: "oidc",
+      authType: "oidc",
     });
   });
 
@@ -161,6 +180,17 @@ describe("ContentPool API (e2e)", () => {
     if (app) {
       await app.close();
     }
+  });
+
+  it("does not expose the removed local user login endpoint", async () => {
+    await request(server)
+      .post("/api/auth/login")
+      .send({ username: "legacy-user", password: "LegacyPassword123!" })
+      .expect(404);
+  });
+
+  it("does not expose the removed authentication context endpoint", async () => {
+    await request(server).get("/api/auth/context").expect(404);
   });
 
   it("creates ACP and baseline index", async () => {
@@ -175,6 +205,20 @@ describe("ContentPool API (e2e)", () => {
       .expect(201);
 
     acpId = createRes.body.id;
+    const adminId = app.get(JwtService).decode(authToken).sub;
+    await app
+      .get<Repository<AcpUserRole>>(getRepositoryToken(AcpUserRole))
+      .save({
+        acpId,
+        userId: adminId,
+        role: "ACP_MANAGER" as any,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
+      });
     expect(createRes.body.packageId).toBe(testPackageId);
 
     const accessConfigRes = await request(server)
@@ -407,12 +451,28 @@ describe("ContentPool API (e2e)", () => {
       })
       .expect(200);
 
+    const reviewConfig = await request(server)
+      .get(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    await request(server)
+      .put(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        enableReview: true,
+        visibilityMode: "SHARED",
+        configVersion: reviewConfig.body.configVersion,
+        confirmExistingComments: true,
+      })
+      .expect(200);
+
     const credentialRes = await request(server)
       .post(`/api/acp/${acpId}/access/credentials/single`)
       .set("Authorization", `Bearer ${authToken}`)
       .send({
         username: credentialUsername,
         password: credentialPassword,
+        capabilities: ["review:participate", "item-explorer:view"],
       })
       .expect(201);
     credentialId = credentialRes.body.id;
@@ -646,6 +706,20 @@ describe("ContentPool API (e2e)", () => {
       })
       .expect(201);
 
+    const mineRes = await request(server)
+      .get(`/api/acp/${acpId}/comments/mine`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(mineRes.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ commentText: "E2E comment" }),
+      ]),
+    );
+    expect(JSON.stringify(mineRes.body)).not.toContain("passwordHash");
+    expect(mineRes.body.every((comment: any) => !comment.credential)).toBe(
+      true,
+    );
+
     const exportJsonRes = await request(server)
       .get(`/api/acp/${acpId}/comments/export`)
       .set("Authorization", `Bearer ${credentialToken}`)
@@ -661,6 +735,208 @@ describe("ContentPool API (e2e)", () => {
 
     expect(exportXlsxRes.header["content-type"]).toContain(
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+  });
+
+  it("shares an item thread while keeping edits author-only", async () => {
+    const rootRes = await request(server)
+      .post(`/api/acp/${acpId}/review/comments`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .send({
+        unitId: "U1",
+        itemId: "U1_I1",
+        commentText: "Shared root",
+      })
+      .expect(201);
+
+    expect(rootRes.body).toMatchObject({
+      parentCommentId: null,
+      commentText: "Shared root",
+      authorLabel: credentialUsername,
+      unitId: "U1",
+      itemId: "I1",
+      isOwn: true,
+      version: 1,
+    });
+
+    const managerThreadRes = await request(server)
+      .get(`/api/acp/${acpId}/review/comments`)
+      .query({ unitId: "U1", itemId: "U1_I1" })
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(managerThreadRes.body).toMatchObject({ visibilityMode: "SHARED" });
+    expect(managerThreadRes.body.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: rootRes.body.id, isOwn: false }),
+      ]),
+    );
+
+    await request(server)
+      .patch(`/api/acp/${acpId}/review/comments/${rootRes.body.id}`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({ commentText: "Manager overwrite", version: 1 })
+      .expect(403);
+
+    const updatedRootRes = await request(server)
+      .patch(`/api/acp/${acpId}/review/comments/${rootRes.body.id}`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .send({ commentText: "Shared root updated", version: 1 })
+      .expect(200);
+    expect(updatedRootRes.body).toMatchObject({
+      commentText: "Shared root updated",
+      version: 2,
+    });
+
+    const replyRes = await request(server)
+      .post(`/api/acp/${acpId}/review/comments`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        unitId: "U1",
+        itemId: "U1_I1",
+        commentText: "Manager reply",
+        parentCommentId: rootRes.body.id,
+      })
+      .expect(201);
+    expect(replyRes.body.parentCommentId).toBe(rootRes.body.id);
+
+    const participantThreadRes = await request(server)
+      .get(`/api/acp/${acpId}/review/comments`)
+      .query({ unitId: "U1", itemId: "U1_I1" })
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(participantThreadRes.body.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: rootRes.body.id, isOwn: true }),
+        expect.objectContaining({
+          id: replyRes.body.id,
+          parentCommentId: rootRes.body.id,
+          isOwn: false,
+        }),
+      ]),
+    );
+
+    const countsRes = await request(server)
+      .get(`/api/acp/${acpId}/review/comments/counts`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(countsRes.body.counts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ unitId: "U1", itemId: "I1", count: 3 }),
+      ]),
+    );
+
+    const managerMineCsv = await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/mine.csv`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+        res.on("end", () => callback(null, Buffer.concat(chunks)));
+      })
+      .expect(200);
+    const managerMineText = Buffer.from(managerMineCsv.body).toString("utf8");
+    expect(managerMineText).toContain("Manager reply");
+    expect(managerMineText).not.toContain("Shared root updated");
+
+    await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/all.xlsx`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    await request(server)
+      .get(`/api/acp/${acpId}/review/comments/export/all.xlsx`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(403);
+
+    const personalExportRes = await request(server)
+      .get(`/api/acp/${acpId}/comments/export`)
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+    expect(personalExportRes.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          comment: "Shared root updated",
+          threadId: rootRes.body.id,
+        }),
+      ]),
+    );
+    expect(personalExportRes.body).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ comment: "Manager reply" }),
+      ]),
+    );
+
+    const exportRes = await request(server)
+      .get(`/api/acp/${acpId}/comments/export`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(exportRes.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          unitId: "U1",
+          itemId: "I1",
+          threadId: rootRes.body.id,
+          parentCommentId: "",
+          updatedAt: expect.any(String),
+        }),
+        expect.objectContaining({
+          threadId: rootRes.body.id,
+          parentCommentId: rootRes.body.id,
+        }),
+      ]),
+    );
+
+    const legacyDeleteRes = await request(server)
+      .delete(`/api/acp/${acpId}/comments`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(legacyDeleteRes.body).toEqual(
+      expect.objectContaining({
+        deletedCount: 0,
+        retainedCount: expect.any(Number),
+        scope: "UNRESOLVED_LEGACY_TASK_SEQUENCE",
+      }),
+    );
+    expect(legacyDeleteRes.body.retainedCount).toBeGreaterThanOrEqual(3);
+
+    const threadAfterLegacyDelete = await request(server)
+      .get(`/api/acp/${acpId}/review/comments`)
+      .query({ unitId: "U1", itemId: "I1" })
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(threadAfterLegacyDelete.body.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: rootRes.body.id }),
+        expect.objectContaining({ id: replyRes.body.id }),
+      ]),
+    );
+
+    await request(server)
+      .delete(`/api/acp/${acpId}/review/comments/${rootRes.body.id}`)
+      .query({ version: 2 })
+      .set("Authorization", `Bearer ${credentialToken}`)
+      .expect(200);
+
+    const tombstoneThreadRes = await request(server)
+      .get(`/api/acp/${acpId}/review/comments`)
+      .query({ unitId: "U1", itemId: "U1_I1" })
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    expect(tombstoneThreadRes.body.comments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: rootRes.body.id,
+          commentText: "",
+          authorLabel: "Gelöscht",
+          isDeleted: true,
+        }),
+        expect.objectContaining({
+          id: replyRes.body.id,
+          parentCommentId: rootRes.body.id,
+          parentVisible: true,
+          isDeleted: false,
+        }),
+      ]),
     );
   });
 

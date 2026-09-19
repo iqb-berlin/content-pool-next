@@ -32,7 +32,9 @@ describe("AcpIndexService", () => {
       name: [{ lang: "de", value: "Paket" }],
       status: "IN_DEVELOPMENT",
     };
-    await expect(service.validateCandidate("acp", empty)).resolves.toMatchObject({
+    await expect(
+      service.validateCandidate("acp", empty),
+    ).resolves.toMatchObject({
       schemaId: "acp-index@0.5",
       valid: true,
       publishable: true,
@@ -78,7 +80,15 @@ describe("AcpIndexService", () => {
               ],
               handOutsForTestTaker: [
                 {
-                  file: [[{ id: "missing-handout.pdf", lang: "de", label: "Handout" }]],
+                  file: [
+                    [
+                      {
+                        id: "missing-handout.pdf",
+                        lang: "de",
+                        label: "Handout",
+                      },
+                    ],
+                  ],
                 },
               ],
             },
@@ -87,7 +97,13 @@ describe("AcpIndexService", () => {
             {
               contentType: "STUDY_BACKGROUND",
               targeting: ["TEACHER"],
-              file: [{ id: "missing-background.pdf", lang: "de", label: "Hintergrund" }],
+              file: [
+                {
+                  id: "missing-background.pdf",
+                  lang: "de",
+                  label: "Hintergrund",
+                },
+              ],
             },
           ],
         },
@@ -145,7 +161,9 @@ describe("AcpIndexService", () => {
               {
                 id: "i",
                 name: [{ lang: "de", value: "I" }],
-                testcenterBooklet: [{ definitionId: "booklet.xml", modules: [{ moduleId: "m" }] }],
+                testcenterBooklet: [
+                  { definitionId: "booklet.xml", modules: [{ moduleId: "m" }] },
+                ],
               },
             ],
           },
@@ -169,7 +187,9 @@ describe("AcpIndexService", () => {
   });
 
   it("accepts a successful vocabulary cache for at most seven days on publish", async () => {
-    const fetchSpy = jest.spyOn(global, "fetch").mockRejectedValue(new Error("offline"));
+    const fetchSpy = jest
+      .spyOn(global, "fetch")
+      .mockRejectedValue(new Error("offline"));
     const url = "https://8.8.8.8/vocabulary";
     cacheRepository.findOne.mockResolvedValue({
       url,
@@ -228,9 +248,7 @@ describe("AcpIndexService", () => {
     const result = await (service as any).loadExternalJson(url, true);
 
     expect(result.check.status).toBe("valid");
-    expect(cached.lastSuccessAt.getTime()).toBeGreaterThan(
-      Date.now() - 60_000,
-    );
+    expect(cached.lastSuccessAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
     expect(cacheRepository.save).toHaveBeenCalledWith(cached);
     fetchSpy.mockRestore();
   });
@@ -292,6 +310,8 @@ describe("AcpIndexService", () => {
 
   it("blocks private IPv4-mapped IPv6 addresses", () => {
     expect((service as any).isPrivateAddress("::ffff:7f00:1")).toBe(true);
-    expect((service as any).isPrivateAddress("2001:4860:4860::8888")).toBe(false);
+    expect((service as any).isPrivateAddress("2001:4860:4860::8888")).toBe(
+      false,
+    );
   });
 });

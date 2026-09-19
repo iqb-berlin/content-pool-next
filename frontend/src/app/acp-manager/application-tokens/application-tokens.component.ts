@@ -35,7 +35,7 @@ const SCOPE_OPTIONS: ScopeOption[] = [
     <app-acp-manager-context />
 
     <div class="page-header">
-      <h1>Applikationstoken</h1>
+      <h1>API-Zugänge</h1>
       <div class="header-actions">
         <button class="btn btn-outline" (click)="load()" [disabled]="loading">Aktualisieren</button>
         <button class="btn btn-primary" (click)="openCreateForm()">+ Token anlegen</button>

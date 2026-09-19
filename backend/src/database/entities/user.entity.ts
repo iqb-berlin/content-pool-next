@@ -17,9 +17,6 @@ export class User {
   @Column({ unique: true })
   username!: string;
 
-  @Column({ name: "password_hash" })
-  passwordHash!: string;
-
   @Column({ name: "display_name", nullable: true })
   displayName?: string;
 

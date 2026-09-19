@@ -1,20 +1,27 @@
-import { Component, ElementRef, Inject, OnDestroy, ViewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, Inject, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ItemExplorerFacade } from '../../item-explorer.facade';
 import { ItemExplorerPreviewViewModel } from '../../item-explorer.view-models';
 import { ItemExplorerPlayerDomPort } from '../../item-explorer.dom-ports';
+import { ItemCommentThreadComponent } from '../../../comment-thread/item-comment-thread.component';
 
 @Component({
   selector: 'app-item-explorer-preview',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ItemCommentThreadComponent],
   templateUrl: './item-explorer-preview.component.html',
   styleUrl: './item-explorer-preview.component.css',
 })
 export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlayerDomPort {
   private frame?: ElementRef<HTMLIFrameElement>;
+  private playerContainer?: ElementRef<HTMLDivElement>;
+  private fullscreenToggle?: ElementRef<HTMLButtonElement>;
   private autoResizeInterval: ReturnType<typeof setInterval> | null = null;
+  private printLabelObserver: MutationObserver | null = null;
+  private printLabelOverrides = new Map<string, string>();
+  isPlayerFullscreen = false;
+  isPlayerFullscreenFallback = false;
   readonly vm: ItemExplorerPreviewViewModel;
   private readonly messageHandler = (event: MessageEvent) => {
     const frameWindow = this.frame?.nativeElement.contentWindow;
@@ -24,8 +31,21 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
 
   @ViewChild('playerFrame')
   set playerFrame(value: ElementRef<HTMLIFrameElement> | undefined) {
+    this.disconnectPrintLabelObserver();
     this.frame = value;
     this.feature.playerFrameChanged(Boolean(value));
+    this.observePrintLabels();
+  }
+
+  @ViewChild('playerContainer')
+  set playerContainerElement(value: ElementRef<HTMLDivElement> | undefined) {
+    this.playerContainer = value;
+    this.syncPlayerFullscreenState();
+  }
+
+  @ViewChild('fullscreenToggle')
+  set fullscreenToggleElement(value: ElementRef<HTMLButtonElement> | undefined) {
+    this.fullscreenToggle = value;
   }
 
   constructor(@Inject(ItemExplorerFacade) private readonly feature: ItemExplorerFacade) {
@@ -37,8 +57,56 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
   ngOnDestroy(): void {
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
+    this.disconnectPrintLabelObserver();
     this.frame = undefined;
     this.feature.unregisterPlayerDom(this);
+  }
+
+  @HostListener('document:fullscreenchange')
+  handlePlayerFullscreenChange(): void {
+    const wasFullscreen = this.isPlayerFullscreen;
+    this.syncPlayerFullscreenState();
+    if (wasFullscreen && !this.isPlayerFullscreen) this.restoreFullscreenToggleFocus();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  handlePlayerFullscreenKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !this.isPlayerFullscreenFallback) return;
+    this.closePlayerFullscreenFallback();
+  }
+
+  async togglePlayerFullscreen(): Promise<void> {
+    const container = this.playerContainer?.nativeElement;
+    if (!container) return;
+
+    if (this.isPlayerFullscreenFallback) {
+      this.closePlayerFullscreenFallback();
+      return;
+    }
+
+    if (document.fullscreenElement === container) {
+      try {
+        await document.exitFullscreen?.();
+      } catch {
+        this.syncPlayerFullscreenState();
+        return;
+      }
+      this.syncPlayerFullscreenState();
+      if (!this.isPlayerFullscreen) this.restoreFullscreenToggleFocus();
+      return;
+    }
+
+    try {
+      if (container.requestFullscreen) {
+        await container.requestFullscreen();
+      } else {
+        this.openPlayerFullscreenFallback();
+        return;
+      }
+      this.syncPlayerFullscreenState();
+    } catch {
+      this.openPlayerFullscreenFallback();
+    }
   }
 
   hasFrame(): boolean {
@@ -79,6 +147,14 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     return true;
   }
 
+  setPrintLabelOverrides(overrides: Readonly<Record<string, string>>): void {
+    this.printLabelOverrides = new Map(
+      Object.entries(overrides).map(([identifier, label]) => [identifier.toLowerCase(), label]),
+    );
+    this.applyPrintLabelOverrides();
+    this.observePrintLabels();
+  }
+
   startAutoResize(onHeightChange: (height: number) => void): void {
     this.stopAutoResize();
     this.autoResizeInterval = setInterval(() => {
@@ -99,9 +175,66 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     this.autoResizeInterval = null;
   }
 
+  private syncPlayerFullscreenState(): void {
+    this.isPlayerFullscreen =
+      this.isPlayerFullscreenFallback ||
+      document.fullscreenElement === this.playerContainer?.nativeElement;
+  }
+
+  private openPlayerFullscreenFallback(): void {
+    this.isPlayerFullscreenFallback = true;
+    this.isPlayerFullscreen = true;
+  }
+
+  private closePlayerFullscreenFallback(): void {
+    this.isPlayerFullscreenFallback = false;
+    this.isPlayerFullscreen = false;
+    this.restoreFullscreenToggleFocus();
+  }
+
+  private restoreFullscreenToggleFocus(): void {
+    this.fullscreenToggle?.nativeElement.focus({ preventScroll: true });
+  }
+
   private getPlayerDocument(): Document | null {
     const frame = this.frame?.nativeElement;
     return frame?.contentDocument || frame?.contentWindow?.document || null;
+  }
+
+  private observePrintLabels(): void {
+    const body = this.getPlayerDocument()?.body;
+    if (!body) return;
+
+    this.disconnectPrintLabelObserver();
+    this.applyPrintLabelOverrides();
+    this.printLabelObserver = new MutationObserver(() => this.applyPrintLabelOverrides());
+    this.printLabelObserver.observe(body, { childList: true, subtree: true });
+  }
+
+  private disconnectPrintLabelObserver(): void {
+    this.printLabelObserver?.disconnect();
+    this.printLabelObserver = null;
+  }
+
+  private applyPrintLabelOverrides(): void {
+    const doc = this.getPlayerDocument();
+    if (!doc) return;
+
+    doc.querySelectorAll<HTMLElement>('.element-label').forEach((labelElement) => {
+      const storedIdentifier = labelElement.dataset['cpOriginalPrintLabel'];
+      const currentText = (labelElement.textContent || '').trim();
+      const identifier = (storedIdentifier || currentText).trim();
+      if (!identifier) return;
+
+      const replacement = this.printLabelOverrides.get(identifier.toLowerCase());
+      if (replacement) {
+        labelElement.dataset['cpOriginalPrintLabel'] = identifier;
+        if (currentText !== replacement) labelElement.textContent = replacement;
+      } else if (storedIdentifier) {
+        labelElement.textContent = storedIdentifier;
+        delete labelElement.dataset['cpOriginalPrintLabel'];
+      }
+    });
   }
 
   private findElementByText(

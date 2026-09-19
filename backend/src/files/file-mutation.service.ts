@@ -58,10 +58,13 @@ export class FileMutationService {
     await this.getAcpOrFail(acpId);
     if (options.relativePaths) {
       if (options.relativePaths.length !== files.length) {
-        throw new BadRequestException("relativePaths must have the same number of entries as files");
+        throw new BadRequestException(
+          "relativePaths must have the same number of entries as files",
+        );
       }
       files.forEach((file, index) => {
-        (file as Express.Multer.File & { relativePath?: string }).relativePath = normalizeRelativePath(options.relativePaths![index]);
+        (file as Express.Multer.File & { relativePath?: string }).relativePath =
+          normalizeRelativePath(options.relativePaths![index]);
       });
     }
     const normalizedFiles =
@@ -161,7 +164,9 @@ export class FileMutationService {
         where: { acpId, id: In(normalizedIds) },
       });
       if (files.length !== normalizedIds.length) {
-        throw new NotFoundException("One or more files were not found in the ACP");
+        throw new NotFoundException(
+          "One or more files were not found in the ACP",
+        );
       }
       await repository.remove(files);
       acp.updatedAt = new Date();
@@ -247,7 +252,9 @@ export class FileMutationService {
   private groupByNormalizedName(files: AcpFile[]): Map<string, AcpFile[]> {
     const grouped = new Map<string, AcpFile[]>();
     for (const file of files) {
-      const key = this.normalizeFileName(file.relativePath || file.originalName);
+      const key = this.normalizeFileName(
+        file.relativePath || file.originalName,
+      );
       if (!key) {
         continue;
       }
@@ -259,7 +266,11 @@ export class FileMutationService {
   }
 
   private ensureKeepBothPaths(incoming: AcpFile[], existing: AcpFile[]): void {
-    const occupied = new Set(existing.map((file) => this.normalizeFileName(file.relativePath || file.originalName)));
+    const occupied = new Set(
+      existing.map((file) =>
+        this.normalizeFileName(file.relativePath || file.originalName),
+      ),
+    );
     for (const file of incoming) {
       let candidate = file.relativePath || file.originalName;
       if (occupied.has(this.normalizeFileName(candidate))) {

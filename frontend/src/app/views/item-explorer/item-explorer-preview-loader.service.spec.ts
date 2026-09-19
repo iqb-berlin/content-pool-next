@@ -199,9 +199,9 @@ describe('ItemExplorerPreviewLoader', () => {
 
     const subscription = loader.load('acp-1', 'editor', 'UNIT_1').subscribe();
     subscription.unsubscribe();
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(signals).toHaveLength(2);
-    expect(signals.every((signal) => signal.aborted)).toBe(true);
+    await vi.waitFor(() => {
+      expect(signals).toHaveLength(2);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    });
   });
 });

@@ -72,7 +72,9 @@ export class ArchiveExpansionService {
         continue;
       }
 
-      const originalEntryName = String(entry?.unsafeOriginalName || entry?.name || "");
+      const originalEntryName = String(
+        entry?.unsafeOriginalName || entry?.name || "",
+      );
       const relativePath = normalizeRelativePath(originalEntryName);
       const extractedName = this.getArchiveEntryFileName(relativePath);
       if (

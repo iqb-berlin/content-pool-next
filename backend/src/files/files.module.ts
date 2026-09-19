@@ -1,3 +1,4 @@
+import { ReviewManifestModule } from "../review/review-manifest.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { MulterModule } from "@nestjs/platform-express";
@@ -48,6 +49,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
     }),
     AuthModule,
     ValidationModule,
+    ReviewManifestModule,
     ItemExplorerModule,
     AcpModule,
     SnapshotsModule,
@@ -69,6 +71,7 @@ const MAX_UPLOAD_FILE_SIZE_BYTES = 512 * 1024 * 1024;
   ],
   exports: [
     FilesService,
+    FileCatalogCache,
     UnitParserService,
     FileProcessingJobsService,
     ItemRowNumberingService,

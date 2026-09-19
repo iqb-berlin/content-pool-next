@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
   ConflictException,
@@ -17,8 +18,12 @@ import {
 } from "../item-explorer/item-export-projection";
 import {
   ItemCollectionState,
+  ItemCollectionRowsMutation,
+  ItemCollectionRowsMutationResult,
   ItemCollectionSummary,
+  ItemCollectionViewMode,
   ItemCollectionsPayload,
+  SharedItemCollectionSource,
   StoredItemCollection,
 } from "./item-collection.models";
 import { ItemCollectionStore } from "./item-collection.store";
@@ -26,6 +31,7 @@ import { ItemCollectionStore } from "./item-collection.store";
 const MAX_COLLECTION_ROWS = 10_000;
 const MAX_ROW_KEY_LENGTH = 500;
 const MAX_ITEM_COLLECTIONS = 100;
+const MAX_SHARED_ITEM_COLLECTIONS = 1_000;
 
 @Injectable()
 export class ItemCollectionsService {
@@ -42,7 +48,7 @@ export class ItemCollectionsService {
   ): Promise<ItemCollectionsPayload> {
     const preferences = await this.store.readPreferences(acpId, identity);
     const state = this.normalizeState(preferences);
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async createItemCollection(
@@ -51,7 +57,7 @@ export class ItemCollectionsService {
     rawName?: string,
     canEditExplorerState = false,
   ): Promise<ItemCollectionsPayload> {
-    const name = this.normalizeName(rawName || "Meine Kollektion");
+    const name = this.normalizeName(rawName || "Meine Auswahlliste");
     const now = new Date().toISOString();
     const collection: StoredItemCollection = {
       id: uuidv4(),
@@ -60,6 +66,7 @@ export class ItemCollectionsService {
       version: 1,
       createdAt: now,
       updatedAt: now,
+      shared: false,
     };
     const state = await this.mutateState(
       acpId,
@@ -75,14 +82,65 @@ export class ItemCollectionsService {
         lockedState.activeCollectionId = collection.id;
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
+  }
+
+  async copyItemCollection(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    sourceCollectionId: string,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionsPayload> {
+    const ownPreferences = await this.store.readPreferences(acpId, identity);
+    const ownState = this.normalizeState(ownPreferences);
+    const ownSource = ownState.collections.find(
+      (collection) => collection.id === sourceCollectionId,
+    );
+    const sharedSource = ownSource
+      ? undefined
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+          (source) => source.collection.id === sourceCollectionId,
+        )?.collection;
+    const source = ownSource || sharedSource;
+    if (!source) throw new NotFoundException("Item collection not found");
+
+    const now = new Date().toISOString();
+    const copy: StoredItemCollection = {
+      id: uuidv4(),
+      name: this.normalizeName(`${source.name} (Kopie)`),
+      rowKeys: [...source.rowKeys],
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      shared: false,
+    };
+    const state = await this.mutateState(
+      acpId,
+      identity,
+      true,
+      (lockedState) => {
+        if (lockedState.collections.length >= MAX_ITEM_COLLECTIONS) {
+          throw new BadRequestException(
+            `At most ${MAX_ITEM_COLLECTIONS} item collections can be stored`,
+          );
+        }
+        lockedState.collections.push(copy);
+        lockedState.activeCollectionId = copy.id;
+      },
+    );
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async updateItemCollection(
     acpId: string,
     identity: StablePreferenceIdentity,
     collectionId: string,
-    update: { name?: unknown; rowKeys?: unknown; baseVersion?: unknown },
+    update: {
+      name?: unknown;
+      rowKeys?: unknown;
+      shared?: unknown;
+      baseVersion?: unknown;
+    },
     canEditExplorerState = false,
   ): Promise<ItemCollectionsPayload> {
     const normalizedName =
@@ -127,6 +185,8 @@ export class ItemCollectionsService {
           );
         }
         if (normalizedName !== undefined) collection.name = normalizedName;
+        if (update.shared !== undefined)
+          collection.shared = update.shared === true;
         if (normalizedRowKeys !== undefined && knownRowKeys) {
           const previouslyStored = new Set(collection.rowKeys);
           const invalidRowKey = normalizedRowKeys.find(
@@ -144,7 +204,129 @@ export class ItemCollectionsService {
         collection.updatedAt = new Date().toISOString();
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
+  }
+
+  async mutateItemCollectionRows(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    collectionId: string,
+    mutation: ItemCollectionRowsMutation,
+    canEditExplorerState = false,
+  ): Promise<ItemCollectionRowsMutationResult> {
+    const actions = [
+      mutation.addRowKeys !== undefined,
+      mutation.removeRowKeys !== undefined,
+      mutation.clear !== undefined,
+    ].filter(Boolean).length;
+    if (
+      actions !== 1 ||
+      (mutation.clear !== undefined && mutation.clear !== true)
+    ) {
+      throw new BadRequestException(
+        "Exactly one collection row mutation is required",
+      );
+    }
+
+    const addRowKeys =
+      mutation.addRowKeys === undefined
+        ? undefined
+        : this.normalizeRowKeys(mutation.addRowKeys);
+    const removeRowKeys =
+      mutation.removeRowKeys === undefined
+        ? undefined
+        : this.normalizeRowKeys(mutation.removeRowKeys);
+    let knownRowKeys: ReadonlySet<string> | undefined;
+    if (addRowKeys !== undefined) {
+      const explorerState =
+        await this.itemExplorerStateService.getStateForViewer(
+          acpId,
+          canEditExplorerState,
+        );
+      knownRowKeys = await this.unitParserService.getItemRowKeysFromFiles(
+        acpId,
+        {
+          itemPropertiesOverride: explorerState.activeState.itemProperties,
+          publishedItemPropertiesOverride:
+            explorerState.publishedState.itemProperties,
+        },
+      );
+    }
+
+    const baseVersion = Number(mutation.baseVersion);
+    const state = await this.mutateState(
+      acpId,
+      identity,
+      false,
+      (lockedState) => {
+        const collection = lockedState.collections.find(
+          (candidate) => candidate.id === collectionId,
+        );
+        if (!collection) {
+          throw new NotFoundException("Item collection not found");
+        }
+        if (
+          !Number.isInteger(baseVersion) ||
+          baseVersion !== collection.version
+        ) {
+          throw new ConflictException(
+            "The item collection changed concurrently",
+          );
+        }
+
+        let nextRowKeys = collection.rowKeys;
+        if (addRowKeys !== undefined && knownRowKeys) {
+          const existing = new Set(collection.rowKeys);
+          const additions = addRowKeys.filter(
+            (rowKey) => !existing.has(rowKey),
+          );
+          const invalidRowKey = additions.find(
+            (rowKey) => !knownRowKeys!.has(rowKey),
+          );
+          if (invalidRowKey) {
+            throw new BadRequestException(
+              "Collections can only add existing item rows",
+            );
+          }
+          if (
+            collection.rowKeys.length + additions.length >
+            MAX_COLLECTION_ROWS
+          ) {
+            throw new BadRequestException(
+              `At most ${MAX_COLLECTION_ROWS} item rows can be stored in a collection`,
+            );
+          }
+          if (additions.length)
+            nextRowKeys = [...collection.rowKeys, ...additions];
+        } else if (removeRowKeys !== undefined) {
+          const removals = new Set(removeRowKeys);
+          nextRowKeys = collection.rowKeys.filter(
+            (rowKey) => !removals.has(rowKey),
+          );
+        } else if (mutation.clear === true && collection.rowKeys.length) {
+          nextRowKeys = [];
+        }
+
+        const changed =
+          nextRowKeys.length !== collection.rowKeys.length ||
+          nextRowKeys.some(
+            (rowKey, index) => rowKey !== collection.rowKeys[index],
+          );
+        if (!changed) return;
+        collection.rowKeys = nextRowKeys;
+        collection.version += 1;
+        collection.updatedAt = new Date().toISOString();
+      },
+    );
+    const collection = state.collections.find(
+      (candidate) => candidate.id === collectionId,
+    );
+    if (!collection) throw new NotFoundException("Item collection not found");
+    return this.resolveRowsMutationResult(
+      acpId,
+      collection,
+      canEditExplorerState,
+    );
   }
 
   async activateItemCollection(
@@ -152,24 +334,38 @@ export class ItemCollectionsService {
     identity: StablePreferenceIdentity,
     collectionId: string | null,
     canEditExplorerState = false,
+    collectionViewMode?: ItemCollectionViewMode,
   ): Promise<ItemCollectionsPayload> {
+    const sharedCollectionIds = new Set(
+      (await this.getSharedCollectionSources(acpId, identity)).sources.map(
+        (source) => source.collection.id,
+      ),
+    );
     const state = await this.mutateState(
       acpId,
       identity,
-      false,
+      true,
       (lockedState) => {
         if (
           collectionId &&
           !lockedState.collections.some(
             (collection) => collection.id === collectionId,
-          )
+          ) &&
+          !sharedCollectionIds.has(collectionId)
         ) {
           throw new NotFoundException("Item collection not found");
         }
         lockedState.activeCollectionId = collectionId;
+        if (collectionViewMode) {
+          lockedState.collectionViewMode = collectionId
+            ? collectionViewMode
+            : "all";
+        } else if (!collectionId) {
+          lockedState.collectionViewMode = "all";
+        }
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
   }
 
   async deleteItemCollection(
@@ -193,9 +389,32 @@ export class ItemCollectionsService {
         if (lockedState.activeCollectionId === collectionId) {
           lockedState.activeCollectionId = collections[0]?.id || null;
         }
+        if (!lockedState.activeCollectionId) {
+          lockedState.collectionViewMode = "all";
+        }
       },
     );
-    return this.resolveViews(acpId, state, canEditExplorerState);
+    return this.resolveViews(acpId, state, identity, canEditExplorerState);
+  }
+
+  async getAccessibleCollectionRowKeys(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+    collectionId: string,
+  ): Promise<string[]> {
+    const state = this.normalizeState(
+      await this.store.readPreferences(acpId, identity),
+    );
+    const own = state.collections.find(
+      (collection) => collection.id === collectionId,
+    );
+    const collection =
+      own ??
+      (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+        (source) => source.collection.id === collectionId,
+      )?.collection;
+    if (!collection) throw new NotFoundException("Item collection not found");
+    return [...collection.rowKeys];
   }
 
   async exportItemCollectionCsv(
@@ -203,12 +422,19 @@ export class ItemCollectionsService {
     identity: StablePreferenceIdentity,
     collectionId: string,
     canEditExplorerState = false,
+    columnPolicy?: ReviewerColumnPolicy,
   ): Promise<Buffer> {
     const preferences = await this.store.readPreferences(acpId, identity);
     const state = this.normalizeState(preferences);
-    const collection = state.collections.find(
+    const ownCollection = state.collections.find(
       (candidate) => candidate.id === collectionId,
     );
+    const sharedCollection = ownCollection
+      ? undefined
+      : (await this.getSharedCollectionSources(acpId, identity)).sources.find(
+          (source) => source.collection.id === collectionId,
+        )?.collection;
+    const collection = ownCollection || sharedCollection;
     if (!collection) throw new NotFoundException("Item collection not found");
 
     const explorerState = await this.itemExplorerStateService.getStateForViewer(
@@ -224,11 +450,21 @@ export class ItemCollectionsService {
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
     const personalRows = normalizeItemPreferences(preferences).rowData;
+    const policy =
+      columnPolicy ||
+      new ReviewerColumnPolicy(
+        canEditExplorerState
+          ? undefined
+          : explorerState.publishedState.metadataColumns,
+      );
+    const exportColumns = [
+      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
+      ...ITEM_EXPORT_PARAMETER_COLUMNS,
+    ].filter((column) => policy.allowsExportField(column.key));
     const headers = [
       "Kollektion",
       "Reihenfolge",
-      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) => column.header),
-      ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
+      ...exportColumns.map((column) => column.header),
       "Kategorie",
       "Tags",
       "Notiz",
@@ -245,10 +481,7 @@ export class ItemCollectionsService {
         [
           collection.name,
           index + 1,
-          ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) =>
-            getItemExportCell(projection, column),
-          ),
-          ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) =>
+          ...exportColumns.map((column) =>
             getItemExportCell(projection, column),
           ),
           projection.category || "",
@@ -307,6 +540,7 @@ export class ItemCollectionsService {
                 rawCollection.updatedAt,
                 createdAt,
               ),
+              shared: rawCollection.shared === true,
             };
           })
           .filter(
@@ -317,13 +551,13 @@ export class ItemCollectionsService {
     const requestedActiveId = String(
       preferences.activeCollectionId || "",
     ).trim();
+    const activeCollectionId = requestedActiveId || collections[0]?.id || null;
+    const requestedViewMode: ItemCollectionViewMode =
+      preferences.collectionViewMode === "active" ? "active" : "all";
     return {
       collections,
-      activeCollectionId: collections.some(
-        (collection) => collection.id === requestedActiveId,
-      )
-        ? requestedActiveId
-        : collections[0]?.id || null,
+      activeCollectionId,
+      collectionViewMode: activeCollectionId ? requestedViewMode : "all",
     };
   }
 
@@ -364,9 +598,35 @@ export class ItemCollectionsService {
       : fallback || new Date().toISOString();
   }
 
+  private async getSharedCollectionSources(
+    acpId: string,
+    identity: StablePreferenceIdentity,
+  ): Promise<{ sources: SharedItemCollectionSource[]; truncated: boolean }> {
+    const rawSources = await this.store.readSharedCollections(
+      acpId,
+      identity,
+      MAX_SHARED_ITEM_COLLECTIONS + 1,
+    );
+    const sources = rawSources
+      .slice(0, MAX_SHARED_ITEM_COLLECTIONS)
+      .flatMap((source) => {
+        const collection = this.normalizeState({
+          collections: [source.collection],
+        }).collections[0];
+        return collection?.shared
+          ? [{ collection, ownerLabel: source.ownerLabel }]
+          : [];
+      });
+    return {
+      sources,
+      truncated: rawSources.length > MAX_SHARED_ITEM_COLLECTIONS,
+    };
+  }
+
   private async resolveViews(
     acpId: string,
     state: ItemCollectionState,
+    identity: StablePreferenceIdentity,
     canEditExplorerState: boolean,
   ): Promise<ItemCollectionsPayload> {
     const explorerState = await this.itemExplorerStateService.getStateForViewer(
@@ -381,9 +641,23 @@ export class ItemCollectionsService {
     const itemsByRowKey = new Map(
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
-    return {
-      activeCollectionId: state.activeCollectionId,
-      collections: state.collections.map((collection) => {
+    const sharedCollectionResult = await this.getSharedCollectionSources(
+      acpId,
+      identity,
+    );
+    const sources = [
+      ...state.collections.map((collection) => ({
+        collection,
+        ownerLabel: "Ich",
+        ownedByCurrentUser: true,
+      })),
+      ...sharedCollectionResult.sources.map((source) => ({
+        ...source,
+        ownedByCurrentUser: false,
+      })),
+    ];
+    const collections = sources.map(
+      ({ collection, ownerLabel, ownedByCurrentUser }) => {
         const unavailableRowKeys = collection.rowKeys.filter(
           (rowKey) => !itemsByRowKey.has(rowKey),
         );
@@ -392,10 +666,60 @@ export class ItemCollectionsService {
           .filter((item): item is VomdItemData => Boolean(item));
         return {
           ...collection,
+          shared: collection.shared === true,
+          ownerLabel,
+          ownedByCurrentUser,
           unavailableRowKeys,
           summary: this.calculateSummary(items, collection.rowKeys.length),
         };
-      }),
+      },
+    );
+    const requestedActiveId = state.activeCollectionId;
+    const requestedActiveFound = collections.some(
+      (collection) => collection.id === requestedActiveId,
+    );
+    const activeCollectionId = requestedActiveFound
+      ? requestedActiveId
+      : collections.find((collection) => collection.ownedByCurrentUser)?.id ||
+        null;
+    return {
+      activeCollectionId,
+      collectionViewMode:
+        state.collectionViewMode === "active" &&
+        requestedActiveFound &&
+        activeCollectionId
+          ? "active"
+          : "all",
+      collections,
+      sharedCollectionsTruncated: sharedCollectionResult.truncated,
+    };
+  }
+
+  private async resolveRowsMutationResult(
+    acpId: string,
+    collection: StoredItemCollection,
+    canEditExplorerState: boolean,
+  ): Promise<ItemCollectionRowsMutationResult> {
+    const explorerState = await this.itemExplorerStateService.getStateForViewer(
+      acpId,
+      canEditExplorerState,
+    );
+    const itemList = await this.unitParserService.getItemListFromFiles(acpId, {
+      itemPropertiesOverride: explorerState.activeState.itemProperties,
+      publishedItemPropertiesOverride:
+        explorerState.publishedState.itemProperties,
+    });
+    const itemsByRowKey = new Map(
+      itemList.items.map((item) => [item.rowKey, item] as const),
+    );
+    const items = collection.rowKeys
+      .map((rowKey) => itemsByRowKey.get(rowKey))
+      .filter((item): item is VomdItemData => Boolean(item));
+    return {
+      collectionId: collection.id,
+      version: collection.version,
+      updatedAt: collection.updatedAt,
+      summary: this.calculateSummary(items, collection.rowKeys.length),
     };
   }
 

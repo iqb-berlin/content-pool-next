@@ -164,8 +164,8 @@ for client `contentpool`.
 
 Example values:
 
-- `https://187.127.71.69/login`
-- `https://app.example.com/login`
+- `https://187.127.71.69/`
+- `https://app.example.com/`
 
 In exported JSON this is stored under:
 

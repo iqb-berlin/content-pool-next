@@ -100,7 +100,7 @@ export class ConfirmDialogComponent {
   @Input() open = false;
   @Input() title = 'Bestätigen';
   @Input() message = 'Sind Sie sicher?';
-  @Input() details: string[] = [];
+  @Input() details: readonly string[] = [];
   @Input() error = '';
   @Input() confirmLabel = 'Bestätigen';
   @Input() cancelLabel = 'Abbrechen';

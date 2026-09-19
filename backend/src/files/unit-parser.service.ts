@@ -1,3 +1,5 @@
+import { parseBookletXml } from "../review/booklet-parser";
+import { registerBooklets, UploadedBooklet } from "../review/register-booklets";
 import {
   ConflictException,
   Injectable,
@@ -9,7 +11,12 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { EntityManager, Repository } from "typeorm";
 import * as fs from "fs/promises";
 import { performance } from "perf_hooks";
-import { AcpFile, Acp, AcpAccessConfig } from "../database/entities";
+import {
+  AcpFile,
+  Acp,
+  AcpAccessConfig,
+  AcpItemRowNumber,
+} from "../database/entities";
 import {
   getAssessmentParts,
   normalizeIndexForStorage,
@@ -34,6 +41,7 @@ import { UnitViewResolver } from "./unit-view.resolver";
 import {
   extractValueText,
   findPlayerFile,
+  getXmlRootElement,
   isRecord,
   isValidVomdItem,
   parseUnitXml,
@@ -102,6 +110,7 @@ export class UnitParserService {
   private readonly logger = new Logger(UnitParserService.name);
   private readonly itemRowKeyCache = new Map<string, ItemRowKeyCacheEntry>();
   private readonly maxItemRowKeyCacheEntries = 100;
+  private readOnlyRowNumbers = false;
 
   constructor(
     @InjectRepository(AcpFile)
@@ -169,20 +178,17 @@ export class UnitParserService {
     const fileNames = allFiles.map((f) => f.originalName);
     const results: UnitValidationResult[] = [];
 
-    // Find all .xml files
-    const xmlFiles = allFiles.filter(
-      (f) =>
-        f.originalName.toLowerCase().endsWith(".xml") &&
-        !f.originalName.toLowerCase().startsWith("booklet") &&
-        !f.originalName.toLowerCase().startsWith("testtaker"),
+    const xmlFiles = allFiles.filter((f) =>
+      f.originalName.toLowerCase().endsWith(".xml"),
     );
 
     for (const xmlFile of xmlFiles) {
       try {
         const content = await fs.readFile(xmlFile.filePath, "utf-8");
 
-        // Only process Unit XML files (not booklet or testtaker XMLs)
-        if (!content.includes("<Unit")) continue;
+        // Classify by the XML root instead of relying on file-name prefixes.
+        // Booklets contain nested <Unit> references but are not Unit files.
+        if (getXmlRootElement(content) !== "Unit") continue;
 
         const parsed = this.parseUnitXml(content, xmlFile.originalName);
         if (!parsed) continue;
@@ -273,6 +279,9 @@ export class UnitParserService {
     const normalizedIndex = normalizeIndexForStorage(acp.acpIndex || {});
     const parts = getAssessmentParts(normalizedIndex).map((part: any) => ({
       ...part,
+      ...(Array.isArray(part?.instruments)
+        ? { instruments: structuredClone(part.instruments) }
+        : {}),
       units: Array.isArray(part?.units) ? [...part.units] : [],
     }));
 
@@ -302,18 +311,17 @@ export class UnitParserService {
       }
     }
 
-    const xmlFiles = allFiles.filter(
-      (f) =>
-        f.originalName.toLowerCase().endsWith(".xml") &&
-        !f.originalName.toLowerCase().startsWith("booklet") &&
-        !f.originalName.toLowerCase().startsWith("testtaker"),
+    const xmlFiles = allFiles.filter((f) =>
+      f.originalName.toLowerCase().endsWith(".xml"),
     );
+
+    const uploadedBooklets: UploadedBooklet[] = [];
 
     await progress?.startPhase("sync-index", xmlFiles.length, {
       message:
         xmlFiles.length > 0
-          ? "Unit-XML-Dateien werden in den ACP-Index eingelesen."
-          : "Keine Unit-XML-Dateien fuer die Synchronisierung gefunden.",
+          ? "Unit- und Booklet-XML-Dateien werden in den ACP-Index eingelesen."
+          : "Keine XML-Dateien fuer die Synchronisierung gefunden.",
     });
 
     for (const xmlFile of xmlFiles) {
@@ -329,7 +337,27 @@ export class UnitParserService {
         continue;
       }
 
-      if (!xmlContent.includes("<Unit")) {
+      if (/<Booklet(?:\s|>)/.test(xmlContent)) {
+        try {
+          const booklet = parseBookletXml(xmlContent, xmlFile.originalName);
+          uploadedBooklets.push({
+            id: booklet.id,
+            label: booklet.label,
+            definitionId: xmlFile.originalName,
+          });
+        } catch (error) {
+          warningSet.add(
+            `Booklet ${xmlFile.originalName} konnte nicht verknüpft werden: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        await progress?.advance({ message: xmlFile.originalName });
+        continue;
+      }
+
+      if (
+        xmlFile.originalName.toLowerCase().startsWith("testtaker") ||
+        !xmlContent.includes("<Unit")
+      ) {
         await progress?.advance({ message: xmlFile.originalName });
         continue;
       }
@@ -386,6 +414,16 @@ export class UnitParserService {
 
         if (!nextItem.sourceVariable && parsedItem.sourceVariable) {
           nextItem.sourceVariable = parsedItem.sourceVariable;
+          changed = true;
+        }
+
+        if (!nextItem.variableId && parsedItem.variableId) {
+          nextItem.variableId = parsedItem.variableId;
+          changed = true;
+        }
+
+        if (!nextItem.variableReadOnlyId && parsedItem.variableReadOnlyId) {
+          nextItem.variableReadOnlyId = parsedItem.variableReadOnlyId;
           changed = true;
         }
 
@@ -455,6 +493,7 @@ export class UnitParserService {
       await progress?.advance({ message: xmlFile.originalName });
     }
 
+    registerBooklets(parts, uploadedBooklets, warningSet);
     this.pruneMissingReferencesFromParts(parts, fileNameSet);
 
     const nextIndex = normalizeIndexForStorage({
@@ -548,7 +587,27 @@ export class UnitParserService {
       publishedStateSignature?: string;
       onDiagnostics?: (diagnostics: ItemExplorerLoadDiagnostics) => void;
     } = {},
+    manager?: EntityManager,
   ): Promise<ItemListResult> {
+    if (manager) {
+      // Share only the pure file parser. Database-backed in-flight caches must
+      // not wait for another transaction while this one holds the ACP lock.
+      const scoped = new UnitParserService(
+        manager.getRepository(AcpFile),
+        manager.getRepository(Acp),
+        manager.getRepository(AcpAccessConfig),
+        new ItemRowNumberingService(manager.getRepository(AcpItemRowNumber)),
+        this.itemExplorerStateService,
+        new FileCatalogCache(manager.getRepository(AcpFile)),
+        this.itemListParser,
+        new NumberedItemListCache(),
+        this.unitViewResolver,
+      );
+      // Review transactions already hold the configuration lock. Persisting
+      // missing numbers would also lock ACP and invert the Explorer save order.
+      scoped.readOnlyRowNumbers = true;
+      return scoped.getItemListFromFiles(acpId, options);
+    }
     const totalStartedAt = performance.now();
     const rowRevisionStartedAt = performance.now();
     const rowRevisionPromise = this.itemRowNumberingService
@@ -591,6 +650,29 @@ export class UnitParserService {
         ),
         parseMs: activeParse.parseMs + publishedParse.parseMs,
       };
+    }
+
+    if (this.readOnlyRowNumbers) {
+      const { rowNumberRevisionMs } = await rowRevisionPromise;
+      const rowNumberingStartedAt = performance.now();
+      const result = await this.applyItemRowNumbers(
+        acpId,
+        activeParse.itemList,
+        {
+          persistMissingRowNumbers: false,
+        },
+      );
+      options.onDiagnostics?.({
+        cacheStatus: parseDiagnostics.cacheStatus,
+        rowCacheStatus: "miss",
+        sourceReadMs: sourceContext.sourceReadMs,
+        fileSignatureMs: sourceContext.fileSignatureMs,
+        rowNumberRevisionMs,
+        parseMs: parseDiagnostics.parseMs,
+        rowNumberingMs: performance.now() - rowNumberingStartedAt,
+        totalMs: performance.now() - totalStartedAt,
+      });
+      return result;
     }
 
     if (
@@ -1266,6 +1348,8 @@ export class UnitParserService {
       id: string;
       name: string;
       sourceVariable?: string;
+      variableId?: string;
+      variableReadOnlyId?: string;
       metadata: Record<string, string>;
       useUnitAliasAsPrefix?: boolean;
     }>
@@ -1306,6 +1390,8 @@ export class UnitParserService {
       id: string;
       name: string;
       sourceVariable?: string;
+      variableId?: string;
+      variableReadOnlyId?: string;
       metadata: Record<string, string>;
       useUnitAliasAsPrefix?: boolean;
     }> = [];
@@ -1338,11 +1424,9 @@ export class UnitParserService {
       parsedItems.push({
         id: item.id,
         name: item.description || item.id,
-        sourceVariable:
-          item.sourceVariable ||
-          item.variableId ||
-          item.variableReadOnlyId ||
-          undefined,
+        sourceVariable: item.sourceVariable || undefined,
+        variableId: item.variableId || undefined,
+        variableReadOnlyId: item.variableReadOnlyId || undefined,
         metadata,
         useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
       });

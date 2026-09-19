@@ -16,10 +16,150 @@ function createPreview() {
 }
 
 describe('ItemExplorerPreviewComponent', () => {
+  it('exposes metadata and exclusion state with the matching semantics', () => {
+    expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(4);
+    expect(template).toContain('[attr.aria-expanded]="vm.showMetadataDrawer"');
+    expect(template).toContain('aria-controls="item-explorer-metadata-drawer"');
+    expect(template).toContain('[attr.aria-pressed]="vm.isItemExcluded(vm.selectedItem)"');
+    expect(template).not.toContain('btn-state-indicator');
+  });
+
   it('names the scroll region, player frame and paging selector', () => {
     expect(template).toContain('aria-label="Item-Vorschau"');
     expect(template).toContain('[title]="\'Player-Vorschau für Item \' + vm.selectedItem.itemId"');
-    expect(template).toContain('aria-label="Paging-Modus der Player-Vorschau"');
+    expect(template).toContain('aria-label="Seitendarstellung der Player-Vorschau"');
+  });
+
+  it('offers a dedicated fullscreen action for the player preview', () => {
+    expect(template).toContain('#playerContainer');
+    expect(template).toContain('(click)="togglePlayerFullscreen()"');
+    expect(template).toContain("'Player-Vorschau im Vollbild anzeigen'");
+    expect(template).toContain("'Vollbild der Player-Vorschau beenden'");
+  });
+
+  it('offers a labelled, non-persistent correct-solution mode', () => {
+    expect(template).toContain('(click)="vm.toggleCorrectSolution()"');
+    expect(template).toContain('[attr.aria-pressed]="vm.correctSolutionRequested"');
+    expect(template).toContain(
+      '[disabled]="!vm.canPreviewSelectedItem && !vm.correctSolutionRequested"',
+    );
+    expect(template).toContain('Musterlösung – nicht gespeichert');
+    expect(template).toContain('Keine eindeutige Musterlösung');
+    expect(template.replace(/\s+/g, ' ')).toContain(
+      'Aus den hinterlegten Bewertungsregeln lässt sich keine eindeutige Antwort ableiten.',
+    );
+    expect(template).toContain('<summary>Technische Details</summary>');
+    expect(template).toContain('<span>{{ vm.correctSolutionPrefill.message }}</span>');
+    expect(template).toContain('[disabled]="!vm.canSaveCurrentResponseState"');
+  });
+
+  it('opens and closes the existing player container with the Fullscreen API', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const toggle = document.createElement('button');
+    const focus = vi.spyOn(toggle, 'focus');
+    let fullscreenElement: Element | null = null;
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+    const requestFullscreen = vi.fn(async () => {
+      fullscreenElement = container;
+    });
+    const exitFullscreen = vi.fn(async () => {
+      fullscreenElement = null;
+    });
+    Object.defineProperty(container, 'requestFullscreen', { value: requestFullscreen });
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => fullscreenElement,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    component.playerContainerElement = new ElementRef(container);
+    component.fullscreenToggleElement = new ElementRef(toggle);
+
+    try {
+      await component.togglePlayerFullscreen();
+      expect(component.isPlayerFullscreen).toBe(true);
+      await component.togglePlayerFullscreen();
+      component.handlePlayerFullscreenChange();
+
+      expect(requestFullscreen).toHaveBeenCalledOnce();
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(component.isPlayerFullscreen).toBe(false);
+      expect(focus).toHaveBeenCalledOnce();
+    } finally {
+      component.ngOnDestroy();
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+      if (exitDescriptor) {
+        Object.defineProperty(document, 'exitFullscreen', exitDescriptor);
+      } else {
+        delete (document as any).exitFullscreen;
+      }
+    }
+  });
+
+  it('uses a closable fullscreen fallback when the browser API is unavailable', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const toggle = document.createElement('button');
+    const focus = vi.spyOn(toggle, 'focus');
+    component.playerContainerElement = new ElementRef(container);
+    component.fullscreenToggleElement = new ElementRef(toggle);
+
+    await component.togglePlayerFullscreen();
+
+    expect(component.isPlayerFullscreenFallback).toBe(true);
+    expect(component.isPlayerFullscreen).toBe(true);
+
+    component.handlePlayerFullscreenKeydown(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    expect(component.isPlayerFullscreenFallback).toBe(false);
+    expect(component.isPlayerFullscreen).toBe(false);
+    expect(focus).toHaveBeenCalledOnce();
+    component.ngOnDestroy();
+  });
+
+  it('does not activate the fallback when leaving native fullscreen fails', async () => {
+    const { component } = createPreview();
+    const container = document.createElement('div');
+    const fullscreenDescriptor = Object.getOwnPropertyDescriptor(document, 'fullscreenElement');
+    const exitDescriptor = Object.getOwnPropertyDescriptor(document, 'exitFullscreen');
+    const exitFullscreen = vi.fn().mockRejectedValue(new Error('fullscreen exit blocked'));
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => container,
+    });
+    Object.defineProperty(document, 'exitFullscreen', {
+      configurable: true,
+      value: exitFullscreen,
+    });
+    component.playerContainerElement = new ElementRef(container);
+
+    try {
+      await component.togglePlayerFullscreen();
+
+      expect(exitFullscreen).toHaveBeenCalledOnce();
+      expect(component.isPlayerFullscreen).toBe(true);
+      expect(component.isPlayerFullscreenFallback).toBe(false);
+    } finally {
+      component.ngOnDestroy();
+      if (fullscreenDescriptor) {
+        Object.defineProperty(document, 'fullscreenElement', fullscreenDescriptor);
+      } else {
+        delete (document as any).fullscreenElement;
+      }
+      if (exitDescriptor) {
+        Object.defineProperty(document, 'exitFullscreen', exitDescriptor);
+      } else {
+        delete (document as any).exitFullscreen;
+      }
+    }
   });
 
   it('owns iframe messages and ignores messages from other windows', () => {
@@ -69,6 +209,29 @@ describe('ItemExplorerPreviewComponent', () => {
     expect(target.classList.contains('cp-item-focus-highlight')).toBe(true);
     expect(scrollIntoView).toHaveBeenCalled();
     expect(focus).toHaveBeenCalled();
+
+    component.ngOnDestroy();
+    iframe.remove();
+  });
+
+  it('replaces Aspect print aliases without changing the underlying player model', () => {
+    const { component } = createPreview();
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    const label = iframe.contentDocument!.createElement('div');
+    label.className = 'element-label';
+    label.textContent = '04';
+    iframe.contentDocument!.body.appendChild(label);
+    component.playerFrame = new ElementRef(iframe);
+
+    component.setPrintLabelOverrides({ '04': 'DLB01303' });
+
+    expect(label.textContent).toBe('DLB01303');
+    expect(label.dataset['cpOriginalPrintLabel']).toBe('04');
+
+    component.setPrintLabelOverrides({});
+    expect(label.textContent).toBe('04');
+    expect(label.dataset['cpOriginalPrintLabel']).toBeUndefined();
 
     component.ngOnDestroy();
     iframe.remove();

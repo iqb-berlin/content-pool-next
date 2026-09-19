@@ -1,14 +1,52 @@
 # Build stage
-FROM node:20-alpine AS builder
+# The backend output and its production dependencies are architecture-neutral
+# JavaScript. Keep npm and the TypeScript compiler on the native build platform
+# so a multi-architecture image build does not execute Node through QEMU.
+FROM --platform=$BUILDPLATFORM node:22.23.1-alpine3.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build
+RUN npm prune --omit=dev --legacy-peer-deps
+# Copying build-platform node_modules into target-platform images is safe only
+# while production dependencies contain no native addons. Fail closed if that
+# contract changes instead of publishing an image for the wrong architecture.
+RUN native_addon="$(find node_modules -type f -name '*.node' -print -quit)" && \
+    test -z "$native_addon" || \
+    { echo "Native addon prevents architecture-neutral backend build: $native_addon" >&2; exit 1; }
 
 # Production stage
-FROM node:20-alpine
+FROM node:22.23.1-alpine3.24@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
+ARG APP_VERSION=0.0.0-dev
+ARG APP_COMMIT=local
+ARG APP_BUILT_AT=unknown
+ENV APP_VERSION=${APP_VERSION} \
+    APP_COMMIT=${APP_COMMIT} \
+    APP_BUILT_AT=${APP_BUILT_AT}
+LABEL org.opencontainers.image.version=${APP_VERSION} \
+      org.opencontainers.image.revision=${APP_COMMIT} \
+      org.opencontainers.image.created=${APP_BUILT_AT} \
+      org.opencontainers.image.source="https://github.com/iqb-berlin/content-pool-next"
 WORKDIR /app
+
+# The pinned Node base currently contains OpenSSL 3.5.7-r0. Require the Alpine
+# security update that fixes CVE-2026-14456 and fail the build if it is not
+# available for every target architecture.
+RUN apk add --no-cache 'libcrypto3>=3.5.8-r0' 'libssl3>=3.5.8-r0'
+
+# The runtime starts the compiled application directly and does not need a
+# package manager or its transitive dependency tree.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+    /usr/local/lib/node_modules/corepack \
+    /opt/yarn-v1.22.22 \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /usr/local/bin/corepack \
+    /usr/local/bin/yarn \
+    /usr/local/bin/yarnpkg \
+    /usr/local/bin/pnpm \
+    /usr/local/bin/pnpx
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs
@@ -26,4 +64,4 @@ RUN mkdir -p /app/uploads && chown -R nestjs:nodejs /app/uploads
 USER nestjs
 
 EXPOSE 3000
-CMD ["npm", "run", "start:prod"]
+CMD ["node", "dist/main.js"]

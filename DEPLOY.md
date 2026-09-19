@@ -67,10 +67,10 @@ Keycloak realm export, and validate the Compose config:
 
 ```bash
 # plain server deployment
-./scripts/install.sh --mode server
+./scripts/install.sh --mode server --environment production --release vX.Y.Z
 
 # deployment behind an existing Traefik stack
-./scripts/install.sh --mode traefik
+./scripts/install.sh --mode traefik --environment production --release vX.Y.Z
 ```
 
 The installer does not install Traefik. For Traefik mode, start the Traefik
@@ -78,7 +78,8 @@ stack separately and expose the configured Docker network, usually `ingress-net`
 To install into a separate deployment directory from a GitHub release/tag:
 
 ```bash
-./scripts/install.sh --mode traefik --dir /opt/content-pool --ref vX.Y.Z --download
+./scripts/install.sh --mode traefik --environment production \
+  --release vX.Y.Z --dir /opt/content-pool
 ```
 
 ## 3a. Migration strategy (required for production)
@@ -93,12 +94,14 @@ Use migrations as the only schema-change mechanism in production.
   - keep the same values (`false` / `true`)
   - deploy new image and verify logs for successful migration run
 
-Optional manual migration commands (inside API container):
+Optional reviewed forward-migration command (inside API container):
 
 ```bash
 docker compose -f docker-compose.server.yml exec content-pool-api npm run migration:run:dist
-docker compose -f docker-compose.server.yml exec content-pool-api npm run migration:revert:dist
 ```
+
+Do not use `migration:revert` during an application rollback. Use the complete
+downtime restore runbook when database recovery is required.
 
 ## 4. Adjust Keycloak client redirect/web origins
 
@@ -281,27 +284,18 @@ Login with `KEYCLOAK_ADMIN_USER` / `KEYCLOAK_ADMIN_PASSWORD`.
 ## 10. Updates
 
 ```bash
-# pre-built mode
-docker compose -f docker-compose.server.yml pull
-docker compose -f docker-compose.server.yml up -d
+# tested candidate on staging
+make staging-update RELEASE=vX.Y.Z-rc.N MODE=traefik
 
-# build mode
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
+# promoted stable release on production
+make production-update RELEASE=vX.Y.Z MODE=traefik
 ```
 
 For pre-built server deployments, prefer the safe updater because it backs up
 both databases, the upload directory, and the runtime config before restarting:
 
 ```bash
-# plain server deployment
-./scripts/update.sh --mode server
-
-# Traefik-backed deployment
-./scripts/update.sh --mode traefik
-
-# update to a specific published image tag
-./scripts/update.sh --mode traefik --image-version vX.Y.Z
+./scripts/update.sh --mode traefik --environment production --release vX.Y.Z
 ```
 
 The updater runs TypeORM migrations through the normal backend startup
@@ -312,13 +306,9 @@ intentional maintenance exception.
 
 ## 11. Backups (recommended)
 
-```bash
-mkdir -p backups
-docker exec content-pool-db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > backups/contentpool_$(date +%F_%H-%M-%S).sql
-docker exec keycloak-db pg_dump -U "$KEYCLOAK_DB_USER" "$KEYCLOAK_DB_NAME" > backups/keycloak_$(date +%F_%H-%M-%S).sql
-```
-
-Or use the scripted backup helper:
+Create the complete recovery point with the scripted helper. It captures both
+databases as PostgreSQL custom dumps, uploads, runtime files, and release
+metadata together:
 
 ```bash
 ./scripts/update.sh --mode traefik --backup-only
@@ -327,3 +317,5 @@ Or use the scripted backup helper:
 ## 12. Go/No-Go release checklist
 
 Use [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) before tagging or deploying a release candidate.
+The complete promotion and recovery process is documented in
+[`docs/operations/releases.md`](docs/operations/releases.md).

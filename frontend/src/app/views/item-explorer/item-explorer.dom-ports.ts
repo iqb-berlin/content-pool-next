@@ -19,6 +19,7 @@ export interface ItemExplorerPlayerDomPort {
     textCandidates: Array<string | undefined>,
     highlight: boolean,
   ): boolean;
+  setPrintLabelOverrides(overrides: Readonly<Record<string, string>>): void;
   startAutoResize(onHeightChange: (height: number) => void): void;
   stopAutoResize(): void;
 }

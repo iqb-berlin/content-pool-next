@@ -1,14 +1,16 @@
-import { Component, OnInit } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { sequenceLabel } from '../../shared/sequence-label';
+import { Component, Inject, OnDestroy, OnInit } from '@angular/core';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 @Component({
   selector: 'app-acp-start',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, CommentDialogComponent],
+  imports: [RouterLink, BreadcrumbComponent, BookletSelectionComponent],
   template: `
     @if (data) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -17,7 +19,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         <div class="acp-header-main">
           <h1>{{ data.name }}</h1>
           @if (canManageAcp) {
-            <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm">← Zur Verwaltung</a>
+            <a [routerLink]="['/manage', acpId]" class="btn btn-outline btn-sm"
+              >← Zur ACP-Übersicht</a
+            >
           }
         </div>
         @if (data.description) {
@@ -26,50 +30,51 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       </div>
 
       <div class="sections-grid">
-        <!-- ACP-Index — always available -->
-        <a [routerLink]="['/view', acpId, 'index']" class="card section-card">
-          <div class="section-icon">🗂️</div>
-          <h3>ACP-Index</h3>
-          <p>Paketstruktur interaktiv durchsuchen</p>
-        </a>
-
-        <!-- Units list — always available if units exist -->
-        @if (data.units?.length && fc.enableUnitListNavigation !== false) {
-          <a [routerLink]="['/view', acpId, 'units']" class="card section-card">
-            <div class="section-icon">📝</div>
-            <h3>Aufgaben</h3>
-            <p>{{ data.units.length }} Aufgaben verfügbar</p>
+        <!-- Item Explorer — availability and start-page visibility are configured separately -->
+        @if (capabilityAccess?.canViewExplorer && fc.showItemExplorerOnStartPage !== false) {
+          <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
+            <div class="section-icon">🔭</div>
+            <h3>Item-Explorer</h3>
+            <p>Items durchsuchen, prüfen und kommentieren</p>
           </a>
         }
 
-        <!-- Task sequences — only if enableSequenceNavigation -->
-        @if (data.sequences?.length && fc.enableSequenceNavigation !== false) {
+        <!-- Preserve the legacy navigation flag as fallback for existing ACPs. -->
+        @if (
+          data.units?.length &&
+          (fc.showUnitListOnStartPage ?? fc.enableUnitListNavigation) !== false
+        ) {
+          <a [routerLink]="['/view', acpId, 'units']" class="card section-card">
+            <div class="section-icon">📝</div>
+            <h3>Aufgaben ansehen</h3>
+            <p>
+              Vollständige Aufgaben öffnen · {{ data.units.length }}
+              {{ data.units.length === 1 ? 'Aufgabe' : 'Aufgaben' }}
+            </p>
+          </a>
+        }
+
+        <!-- Sequence availability and start-page visibility are configured separately. -->
+        @if (
+          visibleSequences.length &&
+          fc.enableSequenceNavigation !== false &&
+          fc.showSequencesOnStartPage !== false
+        ) {
           <div class="card section-card sequences-card">
             <div class="section-icon">📋</div>
-            <h3>Aufgabenfolgen</h3>
+            <h3>Testhefte und Aufgabenfolgen</h3>
             <div class="seq-list">
-              @for (seq of data.sequences; track seq.id) {
-                <a [routerLink]="['/view', acpId, 'sequence', seq.id]" class="seq-link">
+              @for (seq of visibleSequences; track seq.kind + ':' + seq.id) {
+                <a
+                  [queryParams]="seq.kind === 'booklet' ? { kind: 'booklet' } : {}"
+                  [routerLink]="['/view', acpId, 'sequence', seq.id]"
+                  class="seq-link"
+                >
                   {{ sequenceLabel(seq) }}
                 </a>
               }
             </div>
           </div>
-        }
-
-        <!-- Item list — only if enableItemList -->
-        @if (fc.enableItemList !== false) {
-          <a [routerLink]="['/view', acpId, 'items']" class="card section-card">
-            <div class="section-icon">📊</div>
-            <h3>Item-Liste</h3>
-            <p>Alle Items mit Metadaten anzeigen</p>
-          </a>
-
-          <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
-            <div class="section-icon">🔭</div>
-            <h3>Item-Explorer</h3>
-            <p>Items interaktiv durchsuchen und anzeigen</p>
-          </a>
         }
 
         <!-- Downloads — only if any download flag is enabled -->
@@ -84,57 +89,40 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
                 </button>
               }
               @if (fc.allowUnitDownload) {
-                <span class="download-info">Unit-Download verfügbar in Aufgabenansicht</span>
+                <span class="download-info">Aufgaben-Download verfügbar in Aufgabenansicht</span>
               }
             </div>
           </div>
         }
 
-        <!-- Commenting info -->
-        @if (fc.enableCommenting) {
-          <div class="card section-card">
+        @if (capabilityAccess?.canReview) {
+          <section class="card section-card review-card" aria-labelledby="review-heading">
             <div class="section-icon">💬</div>
-            <h3>Kommentare</h3>
-            @if (isLoggedIn) {
-              <div class="comment-actions">
-                <button class="btn btn-outline btn-sm" (click)="commentOpen = true">
-                  💬 Kommentar hinzufügen
-                </button>
-                <button class="btn btn-outline btn-sm" (click)="exportComments()">
-                  📄 Kommentare exportieren (XLSX)
-                </button>
-              </div>
-              @if (myComments.length > 0) {
-                <div class="my-comments">
-                  <h4>Meine letzten Kommentare:</h4>
-                  @for (c of myComments.slice(0, 3); track c.id) {
-                    <div class="comment-summary">
-                      <span class="badge badge-info">{{ c.targetType }}</span>
-                      <span class="comment-text">{{ c.commentText }}</span>
-                    </div>
-                  }
-                </div>
-              }
-            } @else {
-              <p class="download-info">Für Kommentare bitte anmelden.</p>
+            <h3 id="review-heading">Review</h3>
+            @if (capabilityAccess?.canManageReview) {
+              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
+                >Review verwalten</a
+              >
             }
-          </div>
+            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
+            <app-booklet-selection
+              [acpId]="acpId"
+              [booklets]="reviewBooklets"
+              actionLabel="Review öffnen"
+            />
+          </section>
         }
       </div>
+      @if (fc.showIndexOnStartPage !== false) {
+        <a class="index-link" [routerLink]="['/view', acpId, 'index']"
+          >Paketstruktur (ACP-Index) ansehen</a
+        >
+      }
     } @else {
       <div class="empty-state">
         <h3>Lade ACP-Daten...</h3>
       </div>
     }
-
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'UNIT'"
-      [targetId]="acpId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -159,9 +147,13 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         line-height: 1.6;
       }
 
+      .index-link {
+        display: inline-block;
+        margin-top: 20px;
+      }
       .sections-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
         gap: 20px;
       }
 
@@ -194,6 +186,9 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         font-size: 0.9rem;
         line-height: 1.5;
       }
+      .review-card {
+        grid-column: 1 / -1;
+      }
 
       .seq-list {
         display: flex;
@@ -224,134 +219,85 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         font-size: 0.8rem;
         color: var(--color-text-secondary);
       }
-
-      .comment-actions {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        margin-top: 12px;
-      }
-      .my-comments {
-        margin-top: 16px;
-        border-top: 1px solid var(--color-border);
-        padding-top: 12px;
-      }
-      .my-comments h4 {
-        font-size: 0.85rem;
-        margin-bottom: 8px;
-        color: var(--color-text-secondary);
-      }
-      .comment-summary {
-        font-size: 0.8rem;
-        padding: 4px 0;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .comment-text {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
     `,
   ],
 })
-export class AcpStartComponent implements OnInit {
+export class AcpStartComponent implements OnInit, OnDestroy {
   acpId = '';
   data: any = null;
   fc: any = {}; // feature config
   breadcrumbs: BreadcrumbItem[] = [];
   canManageAcp = false;
-  myComments: any[] = [];
-  commentOpen = false;
+  private readonly destroy$ = new Subject<void>();
 
   constructor(
-    private route: ActivatedRoute,
-    private api: ApiService,
-    private auth: AuthService,
+    @Inject(Router) private router: Router,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) private api: ApiService,
+    @Inject(AuthService) private auth: AuthService,
   ) {}
 
-  get isLoggedIn(): boolean {
-    return this.auth.isLoggedIn;
-  }
-
+  capabilityAccess: any;
   ngOnInit() {
     this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
-    this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
-
-    this.api.getAcpStartPage(this.acpId).subscribe((d) => {
-      this.data = d;
-      this.fc = d?.featureConfig || {};
-
-      const managerCrumb: BreadcrumbItem[] = this.canManageAcp
-        ? [{ label: 'Verwaltung', route: ['/manage', this.acpId] }]
-        : [];
-      this.breadcrumbs = [
-        { label: 'Assessment Content Pool', route: ['/'] },
-        ...managerCrumb,
-        { label: d?.name || 'ACP' },
-      ];
-
-      if (this.fc.enableCommenting && this.isLoggedIn) {
-        this.loadMyComments();
-      }
+    this.api
+      .getCapabilities(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((a) => (this.capabilityAccess = a));
+    this.updateManagerState();
+    this.auth.currentUser$.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.updateManagerState();
     });
+
+    this.api
+      .getAcpStartPage(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe((d) => {
+        this.data = d;
+        this.fc = d?.featureConfig || {};
+        this.updateBreadcrumbs();
+      });
   }
 
-  loadMyComments() {
-    this.api.getMyComments(this.acpId).subscribe((comments) => {
-      this.myComments = comments;
-    });
-  }
-
-  onCommentSubmitted(event: any) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-        this.loadMyComments();
-      },
-    });
-  }
-
-  exportComments() {
-    this.api.exportCommentsXlsx(this.acpId).subscribe((blob) => {
-      if (!blob || blob.size === 0) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `comments-${this.acpId}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   downloadIndex() {
     window.open(this.api.getViewIndexExportUrl(this.acpId), '_blank');
   }
 
-  sequenceLabel(sequence: any): string {
-    const name = this.textValue(sequence?.name);
-    if (name) return name;
+  sequenceLabel = sequenceLabel;
 
-    const instrumentName = this.textValue(sequence?.instrumentName);
-    if (instrumentName) return instrumentName;
-
-    return sequence?.id || '';
+  get reviewBooklets(): any[] {
+    return (this.data?.sequences || []).filter((sequence: any) => sequence.kind === 'booklet');
   }
 
-  private textValue(value: any): string {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) {
-      const de = value.find((entry: any) => entry && entry.lang === 'de');
-      if (de?.value) return String(de.value);
-      const first = value.find((entry: any) => entry && entry.value);
-      if (first?.value) return String(first.value);
-      return '';
+  get visibleSequences(): any[] {
+    const sequences = this.data?.sequences || [];
+    return this.capabilityAccess?.canReview
+      ? sequences.filter((sequence: any) => sequence.kind !== 'booklet')
+      : sequences;
+  }
+
+  private updateManagerState(): void {
+    this.canManageAcp = this.auth.hasAcpRole(this.acpId, 'ACP_MANAGER');
+    if (this.canManageAcp) {
+      void this.router.navigate(['/manage', this.acpId], { replaceUrl: true });
     }
-    if (value && typeof value === 'object') {
-      if (typeof value.de === 'string') return value.de;
-      if (typeof value.value === 'string') return value.value;
-    }
-    return '';
+    this.updateBreadcrumbs();
+  }
+
+  private updateBreadcrumbs(): void {
+    if (!this.data) return;
+    const managerCrumb: BreadcrumbItem[] = this.canManageAcp
+      ? [{ label: 'Verwaltung', route: ['/manage', this.acpId] }]
+      : [];
+    this.breadcrumbs = [
+      { label: 'Assessment Content Pool', route: ['/'] },
+      ...managerCrumb,
+      { label: this.data?.name || 'ACP' },
+    ];
   }
 }

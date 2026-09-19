@@ -1,10 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { expect, Page, test } from '@playwright/test';
+import { installOidcSession } from '../e2e/oidc-test-session';
 
 const ACP_ID = '20000000-0000-4000-8000-000000000001';
+const MANAGER_ID = '20000000-0000-4000-8000-000000000002';
 const MANAGER_USERNAME = 'benchmark-manager';
-const MANAGER_PASSWORD = 'Benchmark-E2E-123!';
 const SAMPLE_COUNT = 40;
 
 const rowIds = {
@@ -22,15 +23,7 @@ interface BenchmarkResult {
 }
 
 async function loginAsManager(page: Page): Promise<void> {
-  const response = await page.request.post('/api/auth/login', {
-    data: { username: MANAGER_USERNAME, password: MANAGER_PASSWORD },
-  });
-  expect(response.ok()).toBeTruthy();
-  const token = (await response.json()).accessToken as string;
-  await page.addInitScript((accessToken) => {
-    localStorage.setItem('cp_token', accessToken);
-    localStorage.setItem('cp_auth_type', 'local');
-  }, token);
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
 }
 
 async function selectItem(page: Page, rowSelector: string, itemId: string): Promise<void> {

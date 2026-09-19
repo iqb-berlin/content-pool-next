@@ -40,15 +40,20 @@ export interface VomdItemData {
   description: string;
   variableId: string;
   sourceVariable?: string;
+  variableReadOnlyId?: string;
+  useUnitAliasAsPrefix?: boolean;
   metadata: Record<string, string>;
   empiricalDifficulty?: number;
+  bista?: number;
   meanTaskDifficulty?: number;
   infit?: number;
   discrimination?: number;
   solutionRate?: number;
+  textComplexity?: string;
+  competenceLevel?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
-  bookletOccurrences: Array<{ booklet: string; position: number }>;
+  bookletOccurrences: Array<{ booklet: string; position: number | null }>;
   tags?: string[];
   rowNumber: number;
 }
@@ -60,6 +65,18 @@ export interface ItemListResult {
   subIdLabels: Record<string, string>;
   unitMetadata: Record<string, any[]>;
   codingSchemes: Record<string, any>;
+  variableIdentityConsistency: {
+    checkedItemCount: number;
+    collisionCount: number;
+    collisions: Array<{
+      unitId: string;
+      itemId: string;
+      variableId: string;
+      variableReadOnlyId: string;
+      resolvedVariableId: string;
+      legacyResolvedVariableId: string;
+    }>;
+  };
 }
 
 export type ItemExplorerCacheStatus = AsyncCacheStatus;

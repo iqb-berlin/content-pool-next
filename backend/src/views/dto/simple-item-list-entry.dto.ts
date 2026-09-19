@@ -16,6 +16,12 @@ export class SimpleItemListEntryDto {
   @ApiPropertyOptional()
   sourceVariable?: string;
 
+  @ApiPropertyOptional()
+  variableId?: string;
+
+  @ApiPropertyOptional()
+  variableReadOnlyId?: string;
+
   @ApiPropertyOptional({ type: Number })
   meanTaskDifficulty?: number;
 }

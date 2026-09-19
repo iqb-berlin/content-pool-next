@@ -109,7 +109,7 @@ describe("OidcValidationService", () => {
     expect(result.isAppAdmin).toBe(true);
   });
 
-  it("links existing local user by username and keeps manually granted admin rights", async () => {
+  it("links a pre-provisioned user by username and keeps manually granted admin rights", async () => {
     mockedJwtVerify.mockResolvedValue({
       payload: {
         sub: "oidc-sub-3",
@@ -147,5 +147,33 @@ describe("OidcValidationService", () => {
     );
     expect(result.sub).toBe("user-3");
     expect(result.isAppAdmin).toBe(true);
+  });
+
+  it("creates a new OIDC profile without local credentials", async () => {
+    mockedJwtVerify.mockResolvedValue({
+      payload: {
+        sub: "oidc-sub-new",
+        preferred_username: "new-oidc-user",
+        name: "New OIDC User",
+        realm_access: { roles: ["user"] },
+      },
+    } as any);
+    userRepository.findOne.mockResolvedValue(null);
+    userRepository.create.mockImplementationOnce((entity) => ({
+      ...entity,
+      id: "user-new",
+      acpRoles: [],
+    }));
+    userRepository.save.mockImplementationOnce(async (entity) => entity);
+
+    const result = await service.validateIdToken("mock-id-token");
+
+    expect(userRepository.create).toHaveBeenCalledWith({
+      username: "new-oidc-user",
+      displayName: "New OIDC User",
+      oidcSub: "oidc-sub-new",
+      isAppAdmin: false,
+    });
+    expect(result.sub).toBe("user-new");
   });
 });

@@ -30,10 +30,9 @@ Benutzerverwaltung.
 
 ### 1. Anmelden
 
-Je nach Systemkonfiguration erfolgt die Anmeldung:
-
-- mit lokalem Benutzername/Kennwort oder
-- ueber Keycloak / OIDC.
+Die Anmeldung fuer ContentPool-Nutzerinnen und -Nutzer erfolgt ueber Keycloak / OIDC.
+Separate ACP-Zugangsdaten werden nur fuer entsprechend geschuetzte Nur-Lese-Zugaenge
+verwendet.
 
 Nach erfolgreicher Anmeldung oeffnen Sie die ACP-Liste ueber:
 
@@ -237,22 +236,21 @@ noch brauchen.
 Im Bereich `Zugriffskonfiguration` verwalten Sie sowohl das Zugriffsmodell als auch die
 Nur-Lese-Features fuer andere Nutzerinnen und Nutzer.
 
-Wichtig: Es gibt zwei getrennte Speichervorgaenge.
-
-- `Zugriffsmodell speichern` speichert nur das Zugriffsmodell.
-- `Features speichern` speichert nur die Feature-Konfiguration.
+Die Aktion `Änderungen speichern` speichert Zugangsart, Funktionen und Darstellung gemeinsam.
+Die Speicherleiste zeigt ungespeicherte Änderungen und Fehler an. Technische Optionen
+stehen im eingeklappten Bereich `Erweiterte Einstellungen`.
 
 ### Zugriffsmodell waehlen
 
 Sie koennen eines der Basismodelle waehlen:
 
-- `Privat`
-- `Oeffentlich (Public)`
-- `Zugangsliste`
+- `Nur zugewiesene Personen`
+- `Öffentlich – ohne Anmeldung`
+- `Zugang mit ACP-Zugangsdaten`
 
-Zusatzoption:
-
-- `Registrierte Nutzer` zusaetzlich zu oben
+App-Admins und Personen mit zugewiesener ACP-Rolle haben unabhängig von der
+Zugangsart Zugriff. Eine Registrierung allein reicht nicht. Die Rollen werden
+unter `Personen und Rollen verwalten` auf der ACP-Übersicht gepflegt.
 
 #### 1. Privat
 
@@ -338,6 +336,21 @@ Vor dem Import sehen Sie eine Vorschau mit:
 
 Die Feature-Schalter steuern die Lesesicht fuer andere Nutzerinnen und Nutzer.
 
+#### Auf dieser Startseite anzeigen
+
+Hier legen Sie fest, welche Einstiege auf der ACP-Startseite erscheinen:
+
+- Item-Explorer
+- Aufgaben ansehen
+- Testhefte und Aufgabenfolgen
+- Paketstruktur (ACP-Index)
+
+Diese Schalter aendern keine Funktionsrechte. Die fachlichen Funktionen werden weiterhin in den
+Bereichen `Aufgaben-Ansicht`, `Navigation`, `Kommentare` und `Item-Explorer` aktiviert. Auch ein
+ausgeblendeter Einstieg ist keine Zugriffssperre; Zugriffe werden ueber das Zugriffsmodell und die
+Funktionsrechte geregelt. Bestehende ACPs zeigen alle Eintraege weiterhin an. Eine vorhandene,
+deaktivierte Einstellung `Navigation ueber die Unit-Liste` bleibt als Alt-Konfiguration erhalten.
+
 #### Downloads
 
 Sie koennen einzeln erlauben:
@@ -354,8 +367,7 @@ Hier steuern Sie unter anderem, ob die Unit-Ansicht mit Verona-Player verfuegbar
 
 Hier steuern Sie unter anderem:
 
-- Navigation ueber die Unit-Liste
-- Aufgabenfolgen aus Testheften
+- Verfuegbarkeit von Testheften und Aufgabenfolgen
 
 #### Kommentare
 
@@ -522,10 +534,19 @@ Vor dem Speichern zeigt die Anwendung eine Aenderungsuebersicht.
 
 Ueber `Spalten verwalten` bestimmen Sie:
 
-- welche Metadaten-Spalten sichtbar sind
+- welche fachlichen Spalten sichtbar sind
 - in welcher Reihenfolge sie erscheinen
+- welche Breite die einzelnen Spalten haben
+
+Die Verwaltung umfasst feste Spalten wie `Item-ID` und `Aufgabe`, konfigurierte
+Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe (persönlich)`, `Markierungen`
+und `Notiz`. Die gemeinsame, per CSV-Feld `kstufe` importierte Kompetenzstufe ist davon getrennt
+und erscheint als fachliche Spalte `Kompetenzstufe`. Erlaubt sind die Werte `I` bis `V`.
+Technische Bedienungsspalten wie die laufende Position oder die Auswahl
+fuer eine Auswahlliste bleiben fest.
 
 Diese Einstellungen werden veroeffentlicht und damit Teil der gemeinsamen ACP-Konfiguration.
+Vorhandene reine Metadatenspalten-Konfigurationen werden weiterhin uebernommen.
 
 ### Tags verwalten
 
@@ -541,6 +562,11 @@ Ueber `Item-Schwierigkeiten (CSV) hochladen` importieren Sie Schwierigkeitswerte
 
 Nutzen Sie diese Funktion, wenn empirische Daten in die fachliche Sichtung einfliessen sollen.
 Nach dem Import erhalten Sie einen Bericht ueber erfolgreiche und fehlgeschlagene Zuordnungen.
+
+Die Spalte `booklet` kann auch ohne `position` importiert werden. Neue Zuordnungen haben dann keine
+bekannte Position. Ist dasselbe Booklet bereits mit einer Position gespeichert, bleibt diese beim
+Import ohne Positionsangabe erhalten. Eine Position ohne Booklet wird nicht importiert; nach einer
+Warnung koennen Sie den Import abbrechen oder nur die unabhaengigen Itemparameter uebernehmen.
 
 ### Player- und Antwortzustaende testen
 
@@ -559,12 +585,37 @@ Das ist vor allem fuer Test- und Analysezwecke hilfreich.
 - `Pos1` / `Ende` springen an Anfang oder Ende
 - `Strg/Cmd + S` oeffnet den Speicherdialog
 
+## Review vorbereiten und starten
+
+Die ACP-Uebersicht zeigt fuer Personen mit `Review: verwalten` eine eigene Review-Karte mit dem
+aktuellen Aktivierungsstatus.
+
+1. Oeffnen Sie die Review-Karte.
+2. Waehlen Sie `Bereitschaft pruefen`.
+3. Beheben Sie technische Blocker. Hinweise duerfen nach bewusster Bestaetigung bestehen bleiben.
+4. Waehlen Sie die Kommentarsicht und konfigurieren Sie bei Bedarf Review-Gruppen.
+5. Aktivieren Sie den Review und speichern Sie die Konfiguration.
+6. Vergeben Sie unter den Personen oder ACP-Zugaengen die Berechtigung `Review: teilnehmen`.
+
+Die Bereitschaftspruefung kontrolliert insbesondere Booklets, referenzierte Units,
+Aufgabendefinitionen, Player sowie syntaktische und semantische Validierungsergebnisse. Sie ist
+keine formale Release-Freigabe.
+
+Teilnehmende sehen auf der ACP-Startseite eine Review-Karte. Dort oeffnen sie ein Testheft direkt im
+Review-Arbeitsplatz mit Player und Reviewbereich. Eine zusaetzliche Review-Zwischenseite ist fuer
+Teilnehmende nicht erforderlich.
+
+`Review: verwalten` und `Review: teilnehmen` sind getrennte Berechtigungen. Review-Gruppen steuern
+nur die Sichtbarkeit von Kommentaren und vergeben keinen Zugang.
+
 ## Kommentare und Exporte
 
-Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare anlegen.
-Auf der ACP-Startseite stehen dann typischerweise zur Verfuegung:
+Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare im
+jeweiligen fachlichen Kontext anlegen. Item-Kommentare werden beim ausgewaehlten Item im
+Item-Explorer erfasst; Unit-Kommentare in der Ansicht der jeweiligen Unit. Auf der
+ACP-Startseite stehen dann typischerweise zur Verfuegung:
 
-- `Kommentar hinzufuegen`
+- ein Link zu den Item-Kommentaren im Item-Explorer, falls diese aktiviert sind
 - `Kommentare exportieren (XLSX)`
 
 Pruefen Sie vor der Freigabe:

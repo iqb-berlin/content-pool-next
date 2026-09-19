@@ -19,6 +19,7 @@ import { AsyncCacheStatus, AsyncLruCache } from "./async-lru-cache";
 import {
   extractLabelText,
   extractValueText,
+  extractVomdTimeSeconds,
   isValidVomdItem,
   parseUnitXml,
   parseVomd,
@@ -117,6 +118,9 @@ export class ItemListParser {
     const items: VomdItemData[] = [];
     const unitMetadata: Record<string, any[]> = {};
     const codingSchemes: Record<string, any> = {};
+    const variableIdentityCollisions: ItemListResult["variableIdentityConsistency"]["collisions"] =
+      [];
+    let checkedVariableIdentityItemCount = 0;
     let cacheable = true;
 
     const xmlFiles = allFiles.filter(
@@ -178,6 +182,10 @@ export class ItemListParser {
           const entries = vomdData.unitProfiles[0]?.entries;
           unitMetadata[parsed.unitId] = Array.isArray(entries) ? entries : [];
         }
+        const vomdStimulusTimeSeconds = extractVomdTimeSeconds(
+          vomdData.unitProfiles,
+          "iqb_time_stimulus",
+        );
 
         if (parsed.codingSchemeRef) {
           const vocsFile = this.findReferencedFile(allFiles, xmlFile, [
@@ -207,6 +215,9 @@ export class ItemListParser {
             continue;
           }
           const metadata: Record<string, string> = {};
+          const vomdItemTimeSeconds =
+            extractVomdTimeSeconds(item.profiles, "iqb_time_item") ??
+            extractVomdTimeSeconds(item.profiles, "iqb_item_time");
           for (const profile of item.profiles || []) {
             for (const entry of profile.entries || []) {
               const entryId = entry.id;
@@ -221,11 +232,55 @@ export class ItemListParser {
             item.useUnitAliasAsPrefix === false
               ? item.id
               : `${parsed.unitId}_${item.id}`;
-          const sourceVariable =
-            item.sourceVariable ||
-            item.variableId ||
-            item.variableReadOnlyId ||
-            "";
+          const variableId = String(item.variableId || "").trim();
+          const sourceVariable = String(item.sourceVariable || "").trim();
+          const variableReadOnlyId = String(
+            item.variableReadOnlyId || "",
+          ).trim();
+          if (variableReadOnlyId) {
+            const codingVariables = Array.isArray(
+              codingSchemes[parsed.unitId]?.variableCodings,
+            )
+              ? codingSchemes[parsed.unitId].variableCodings
+              : Array.isArray(codingSchemes[parsed.unitId])
+                ? codingSchemes[parsed.unitId]
+                : [];
+            const exactVariables = codingVariables.filter(
+              (variable: any) =>
+                String(variable?.id || "")
+                  .trim()
+                  .toLowerCase() === variableReadOnlyId.toLowerCase(),
+            );
+            const exactVariable =
+              exactVariables.length === 1 ? exactVariables[0] : undefined;
+            if (exactVariable) checkedVariableIdentityItemCount += 1;
+            const legacyReference = sourceVariable || variableId;
+            const legacyVariable = codingVariables.find((variable: any) =>
+              [variable?.id, variable?.alias].some(
+                (identifier) =>
+                  String(identifier || "")
+                    .trim()
+                    .toLowerCase() === legacyReference.toLowerCase(),
+              ),
+            );
+            if (
+              legacyReference &&
+              exactVariable &&
+              legacyVariable &&
+              exactVariable !== legacyVariable
+            ) {
+              variableIdentityCollisions.push({
+                unitId: parsed.unitId,
+                itemId: item.id,
+                variableId,
+                variableReadOnlyId,
+                resolvedVariableId: String(exactVariable.id || "").trim(),
+                legacyResolvedVariableId: String(
+                  legacyVariable.id || "",
+                ).trim(),
+              });
+            }
+          }
           const itemUuid = item.uuid || `${parsed.unitId}_${item.id}`;
           const baseProperties = this.resolveItemProperties(itemProps, [
             itemUuid,
@@ -261,6 +316,12 @@ export class ItemListParser {
               const value = Number(rawValue);
               return Number.isFinite(value) ? value : undefined;
             };
+            const optionalText = (property: string): string | undefined => {
+              const rawValue = rowProperties[property];
+              if (rawValue === undefined || rawValue === null) return undefined;
+              const value = String(rawValue).trim();
+              return value || undefined;
+            };
             const bookletOccurrences = Array.isArray(
               rowProperties.bookletOccurrences,
             )
@@ -272,21 +333,35 @@ export class ItemListParser {
                         : {};
                     return {
                       booklet: String(occurrence.booklet || "").trim(),
-                      position: Number(occurrence.position),
+                      position:
+                        occurrence.position === null ||
+                        occurrence.position === undefined ||
+                        occurrence.position === ""
+                          ? null
+                          : Number(occurrence.position),
                     };
                   })
                   .filter(
                     (occurrence) =>
                       occurrence.booklet.length > 0 &&
-                      Number.isInteger(occurrence.position) &&
-                      occurrence.position > 0,
+                      (occurrence.position === null ||
+                        (Number.isInteger(occurrence.position) &&
+                          occurrence.position > 0)),
                   )
-                  .sort(
-                    (left, right) =>
-                      left.booklet.localeCompare(right.booklet, "de", {
+                  .sort((left, right) => {
+                    const bookletComparison = left.booklet.localeCompare(
+                      right.booklet,
+                      "de",
+                      {
                         numeric: true,
-                      }) || left.position - right.position,
-                  )
+                      },
+                    );
+                    if (bookletComparison) return bookletComparison;
+                    if (left.position === right.position) return 0;
+                    if (left.position === null) return 1;
+                    if (right.position === null) return -1;
+                    return left.position - right.position;
+                  })
               : [];
 
             items.push({
@@ -304,15 +379,23 @@ export class ItemListParser {
               ),
               unitLabel: parsed.unitLabel,
               description: item.description || "",
-              variableId: sourceVariable,
+              variableId,
               sourceVariable: sourceVariable || undefined,
+              variableReadOnlyId: variableReadOnlyId || undefined,
+              useUnitAliasAsPrefix: item.useUnitAliasAsPrefix,
               metadata: { ...metadata },
               empiricalDifficulty,
+              bista: optionalNumber("bista"),
               infit: optionalNumber("infit"),
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
-              itemTimeSeconds: optionalNumber("itemTimeSeconds"),
-              stimulusTimeSeconds: optionalNumber("stimulusTimeSeconds"),
+              textComplexity: optionalText("textComplexity"),
+              competenceLevel: optionalText("competenceLevel"),
+              itemTimeSeconds:
+                optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
+              stimulusTimeSeconds:
+                optionalNumber("stimulusTimeSeconds") ??
+                vomdStimulusTimeSeconds,
               bookletOccurrences,
               tags: Array.isArray(rowProperties.tags)
                 ? rowProperties.tags.map(String)
@@ -350,6 +433,11 @@ export class ItemListParser {
         subIdLabels,
         unitMetadata,
         codingSchemes,
+        variableIdentityConsistency: {
+          checkedItemCount: checkedVariableIdentityItemCount,
+          collisionCount: variableIdentityCollisions.length,
+          collisions: variableIdentityCollisions,
+        },
       },
       sourceFileSignature,
       parseMs: performance.now() - parseStartedAt,
@@ -374,9 +462,13 @@ export class ItemListParser {
       );
       if (local) return local;
     }
-    const basenames = new Set(references.map((entry) => path.posix.basename(entry)));
+    const basenames = new Set(
+      references.map((entry) => path.posix.basename(entry)),
+    );
     const matches = allFiles.filter((file) =>
-      basenames.has(path.posix.basename(file.relativePath || file.originalName)),
+      basenames.has(
+        path.posix.basename(file.relativePath || file.originalName),
+      ),
     );
     return matches.length === 1 ? matches[0] : undefined;
   }

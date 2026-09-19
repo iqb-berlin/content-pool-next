@@ -1,3 +1,6 @@
+import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
+import { ExplorerReadGuard } from "../auth/capabilities/explorer-access.guard";
+import { hasCapability } from "../auth/capabilities/acp-capabilities";
 import {
   BadRequestException,
   Body,
@@ -25,11 +28,13 @@ import {
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from "class-validator";
 import { Response } from "express";
@@ -136,6 +141,14 @@ class ExportPersonalItemDataDto {
 
 class ExportAllPersonalItemDataDto {
   @ApiPropertyOptional({
+    description: "Restrict to one accessible item collection",
+    format: "uuid",
+  })
+  @IsOptional()
+  @IsUUID()
+  collectionId?: string;
+
+  @ApiPropertyOptional({
     description: "Explorer state used to resolve item metadata",
     enum: ["editor", "read-only"],
     default: "read-only",
@@ -146,7 +159,7 @@ class ExportAllPersonalItemDataDto {
 }
 
 class CreateItemCollectionDto {
-  @ApiPropertyOptional({ example: "Meine Kollektion" })
+  @ApiPropertyOptional({ example: "Meine Auswahlliste" })
   @IsOptional()
   @IsString()
   name?: string;
@@ -175,10 +188,89 @@ class UpdateItemCollectionDto {
   @IsString({ each: true })
   rowKeys?: string[];
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  shared?: boolean;
+
   @ApiPropertyOptional({ enum: ["editor", "read-only"] })
   @IsOptional()
   @IsIn(["editor", "read-only"])
   perspective?: "editor" | "read-only";
+}
+
+class MutateItemCollectionRowsDto {
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  baseVersion!: number;
+
+  @ApiPropertyOptional({ type: [String], maxItems: 10_000 })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  addRowKeys?: string[];
+
+  @ApiPropertyOptional({ type: [String], maxItems: 10_000 })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10_000)
+  @IsString({ each: true })
+  removeRowKeys?: string[];
+
+  @ApiPropertyOptional({ enum: [true] })
+  @IsOptional()
+  @IsBoolean()
+  clear?: boolean;
+
+  @ApiPropertyOptional({ enum: ["editor", "read-only"] })
+  @IsOptional()
+  @IsIn(["editor", "read-only"])
+  perspective?: "editor" | "read-only";
+}
+
+class ItemCollectionSummaryDto {
+  @ApiProperty()
+  rowCount!: number;
+
+  @ApiProperty()
+  itemCount!: number;
+
+  @ApiProperty()
+  unitCount!: number;
+
+  @ApiProperty()
+  itemTimeSeconds!: number;
+
+  @ApiProperty()
+  stimulusTimeSeconds!: number;
+
+  @ApiProperty()
+  testTimeSeconds!: number;
+
+  @ApiProperty()
+  missingItemTimeCount!: number;
+
+  @ApiProperty()
+  missingStimulusTimeUnitCount!: number;
+
+  @ApiProperty()
+  complete!: boolean;
+}
+
+class ItemCollectionRowsMutationResultDto {
+  @ApiProperty({ format: "uuid" })
+  collectionId!: string;
+
+  @ApiProperty()
+  version!: number;
+
+  @ApiProperty({ format: "date-time" })
+  updatedAt!: string;
+
+  @ApiProperty({ type: () => ItemCollectionSummaryDto })
+  summary!: ItemCollectionSummaryDto;
 }
 
 class ActivateItemCollectionDto {
@@ -186,6 +278,11 @@ class ActivateItemCollectionDto {
   @IsOptional()
   @IsString()
   collectionId?: string | null;
+
+  @ApiPropertyOptional({ enum: ["all", "active"] })
+  @IsOptional()
+  @IsIn(["all", "active"])
+  collectionViewMode?: "all" | "active";
 
   @ApiPropertyOptional({ enum: ["editor", "read-only"] })
   @IsOptional()
@@ -200,6 +297,7 @@ export class ViewsController {
     private readonly viewsService: ViewsService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
     private readonly itemCollectionsService: ItemCollectionsService,
+    private readonly capabilities: AcpCapabilitiesService,
   ) {}
 
   @Get("settings")
@@ -219,8 +317,22 @@ export class ViewsController {
   @Get("acp/:acpId")
   @UseGuards(AcpAccessGuard)
   @ApiOperation({ summary: "ACP start page data" })
-  async getAcpStartPage(@UuidParam("acpId") acpId: string) {
-    return this.viewsService.getAcpStartPage(acpId);
+  async getAcpStartPage(
+    @UuidParam("acpId") acpId: string,
+    @Request() req: any,
+  ) {
+    const data = await this.viewsService.getAcpStartPage(acpId);
+    const grants = await this.capabilities.resolve(req);
+    const fc = data?.featureConfig || {};
+    return {
+      ...data,
+      capabilities: grants,
+      featureConfig: {
+        ...fc,
+        enableCommenting:
+          Boolean(fc.enableCommenting) && grants.includes("review:participate"),
+      },
+    };
   }
 
   @Get("acp/:acpId/index")
@@ -292,7 +404,7 @@ export class ViewsController {
   }
 
   @Get("acp/:acpId/items")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Get item list for an ACP" })
   @ApiOkResponse({ type: SimpleItemListEntryDto, isArray: true })
   async getItems(@UuidParam("acpId") acpId: string, @Request() req: any) {
@@ -300,25 +412,29 @@ export class ViewsController {
       throw new ForbiddenException("Item list is not enabled for this ACP");
     }
 
-    const canEdit =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    const canEdit = hasCapability(
+      req?.acpCapabilities || [],
+      "item-explorer:edit",
+    );
     return this.viewsService.getItemList(acpId, canEdit);
   }
 
   @Get("acp/:acpId/item-explorer/state")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Get shared Item Explorer state for ACP" })
   async getItemExplorerState(
     @UuidParam("acpId") acpId: string,
     @Request() req: any,
   ) {
-    const canEdit =
-      req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN";
+    const canEdit = hasCapability(
+      req?.acpCapabilities || [],
+      "item-explorer:edit",
+    );
     return this.itemExplorerStateService.getStateForViewer(acpId, canEdit);
   }
 
   @Get("acp/:acpId/items/preferences")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Get persisted user preferences for item views" })
   async getItemPreferences(
     @UuidParam("acpId") acpId: string,
@@ -338,7 +454,7 @@ export class ViewsController {
   }
 
   @Put("acp/:acpId/items/preferences")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Save persisted user preferences for item views" })
   @ApiBody({ type: SaveItemPreferencesDto })
   async saveItemPreferences(
@@ -369,7 +485,7 @@ export class ViewsController {
   }
 
   @Patch("acp/:acpId/items/preferences/row-data")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Patch personal working data for one item row" })
   @ApiBody({ type: PatchPersonalItemRowDto })
   async patchPersonalItemRow(
@@ -389,13 +505,13 @@ export class ViewsController {
       dto.rowKey,
       dto.rowData ?? null,
       "item-explorer",
-      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+      hasCapability(req?.acpCapabilities || [], "item-explorer:edit") &&
         dto.perspective === "editor",
     );
   }
 
   @Post("acp/:acpId/items/preferences/export.xlsx")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Export personal Item Explorer working data" })
   @ApiBody({ type: ExportPersonalItemDataDto })
   async exportPersonalItemDataXlsx(
@@ -414,15 +530,21 @@ export class ViewsController {
     }
 
     const canEditExplorerState =
-      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+      hasCapability(req?.acpCapabilities || [], "item-explorer:edit") &&
       dto.perspective === "editor";
     const buffer = await this.viewsService.exportPersonalItemDataXlsx(
       acpId,
       resolveStablePreferenceIdentity(req?.user),
       dto.rowKeys,
       canEditExplorerState,
+      req.reviewerColumnPolicy,
     );
 
+    if (req.reviewerColumnPolicy)
+      await this.itemExplorerStateService.assertColumnPolicyCurrent(
+        acpId,
+        req.reviewerColumnPolicy,
+      );
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -435,7 +557,7 @@ export class ViewsController {
   }
 
   @Post("acp/:acpId/items/preferences/export-all.csv")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({
     summary: "Export all participants' Item Explorer working data",
   })
@@ -457,20 +579,31 @@ export class ViewsController {
       );
     }
 
+    let rowKeys: string[] | undefined;
+    if (dto.collectionId !== undefined) {
+      await this.assertItemCollectionsEnabled(acpId, req);
+      rowKeys =
+        await this.itemCollectionsService.getAccessibleCollectionRowKeys(
+          acpId,
+          this.requireCollectionIdentity(req),
+          dto.collectionId,
+        );
+    }
     const buffer = await this.viewsService.exportAllPersonalItemDataCsv(
       acpId,
       dto.perspective === "editor",
+      rowKeys,
     );
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="all-participant-item-data-${acpId}.csv"`,
+      `attachment; filename="all-participant-item-data-${acpId}${dto.collectionId ? `-collection-${dto.collectionId}` : ""}.csv"`,
     );
     res.send(buffer);
   }
 
   @Get("acp/:acpId/items/collections")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "List the caller's personal item collections" })
   async getItemCollections(
     @UuidParam("acpId") acpId: string,
@@ -486,7 +619,7 @@ export class ViewsController {
   }
 
   @Post("acp/:acpId/items/collections")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Create a personal item collection" })
   async createItemCollection(
     @UuidParam("acpId") acpId: string,
@@ -503,7 +636,7 @@ export class ViewsController {
   }
 
   @Patch("acp/:acpId/items/collections/:collectionId")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Update a personal item collection" })
   async updateItemCollection(
     @UuidParam("acpId") acpId: string,
@@ -521,9 +654,53 @@ export class ViewsController {
     );
   }
 
+  @Post("acp/:acpId/items/collections/:collectionId/copy")
+  @UseGuards(ExplorerReadGuard)
+  @ApiOperation({
+    summary: "Copy an available item collection as a private list",
+  })
+  async copyItemCollection(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
+    @Body() dto: CreateItemCollectionDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId, req);
+    return this.itemCollectionsService.copyItemCollection(
+      acpId,
+      this.requireCollectionIdentity(req),
+      collectionId,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
+  @Patch("acp/:acpId/items/collections/:collectionId/rows")
+  @UseGuards(ExplorerReadGuard)
+  @ApiOperation({
+    summary: "Add, remove, or clear personal item collection rows",
+  })
+  @ApiOkResponse({ type: ItemCollectionRowsMutationResultDto })
+  async mutateItemCollectionRows(
+    @UuidParam("acpId") acpId: string,
+    @UuidParam("collectionId") collectionId: string,
+    @Body() dto: MutateItemCollectionRowsDto,
+    @Request() req: any,
+  ) {
+    await this.assertItemCollectionsEnabled(acpId, req);
+    return this.itemCollectionsService.mutateItemCollectionRows(
+      acpId,
+      this.requireCollectionIdentity(req),
+      collectionId,
+      dto,
+      this.isEditorPerspective(req, dto.perspective),
+    );
+  }
+
   @Put("acp/:acpId/items/collections/active")
-  @UseGuards(AcpAccessGuard)
-  @ApiOperation({ summary: "Persist the active personal item collection" })
+  @UseGuards(ExplorerReadGuard)
+  @ApiOperation({
+    summary: "Persist the active personal item collection and list view mode",
+  })
   async activateItemCollection(
     @UuidParam("acpId") acpId: string,
     @Body() dto: ActivateItemCollectionDto,
@@ -535,11 +712,12 @@ export class ViewsController {
       this.requireCollectionIdentity(req),
       dto.collectionId || null,
       this.isEditorPerspective(req, dto.perspective),
+      dto.collectionViewMode,
     );
   }
 
   @Delete("acp/:acpId/items/collections/:collectionId")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Delete a personal item collection" })
   async deleteItemCollection(
     @UuidParam("acpId") acpId: string,
@@ -557,7 +735,7 @@ export class ViewsController {
   }
 
   @Post("acp/:acpId/items/collections/:collectionId/export.csv")
-  @UseGuards(AcpAccessGuard)
+  @UseGuards(ExplorerReadGuard)
   @ApiOperation({ summary: "Export one personal item collection as CSV" })
   async exportItemCollectionCsv(
     @UuidParam("acpId") acpId: string,
@@ -572,7 +750,13 @@ export class ViewsController {
       this.requireCollectionIdentity(req),
       collectionId,
       this.isEditorPerspective(req, perspective),
+      req.reviewerColumnPolicy,
     );
+    if (req.reviewerColumnPolicy)
+      await this.itemExplorerStateService.assertColumnPolicyCurrent(
+        acpId,
+        req.reviewerColumnPolicy,
+      );
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
@@ -613,6 +797,8 @@ export class ViewsController {
       );
     }
 
+    if (req?.query?.kind === "booklet")
+      return this.viewsService.getTaskSequence(acpId, sequenceId, "booklet");
     return this.viewsService.getTaskSequence(acpId, sequenceId);
   }
 
@@ -631,6 +817,23 @@ export class ViewsController {
       string,
       unknown
     >;
+    if (
+      featureKey === "enableItemList" &&
+      hasCapability(req?.acpCapabilities || [], "item-explorer:view")
+    )
+      return true;
+    if (
+      ["enableUnitView", "enableSequenceNavigation"].includes(featureKey) &&
+      featureConfig.enableReview === true &&
+      req?.user?.sub
+    ) {
+      const grants = await this.capabilities.resolve(req);
+      if (
+        grants.includes("review:participate") ||
+        grants.includes("review:manage")
+      )
+        return true;
+    }
     const value = featureConfig[featureKey];
     if (value === undefined) {
       return defaultWhenUnset;
@@ -698,7 +901,7 @@ export class ViewsController {
     perspective?: "editor" | "read-only",
   ): boolean {
     return (
-      (req?.acpAccessLevel === "MANAGER" || req?.acpAccessLevel === "ADMIN") &&
+      hasCapability(req?.acpCapabilities || [], "item-explorer:edit") &&
       perspective === "editor"
     );
   }

@@ -139,7 +139,11 @@ export class ServerApiService {
         ? this.deepMergeObjects(acp.acpIndex as Record<string, any>, acpIndex)
         : acpIndex;
     const saved = this.acpIndexService
-      ? await this.acpIndexService.saveCandidate(acpId, candidate, expectedUpdatedAt)
+      ? await this.acpIndexService.saveCandidate(
+          acpId,
+          candidate,
+          expectedUpdatedAt,
+        )
       : await this.acpRepository.save({ ...acp, acpIndex: candidate });
     return {
       acpId: saved.id,
@@ -337,7 +341,9 @@ export class ServerApiService {
       if (matches.length > 1) {
         throw new ConflictException({
           message: `Coding scheme "${incomingName}" is ambiguous`,
-          possiblePaths: matches.map((file) => file.relativePath || file.originalName),
+          possiblePaths: matches.map(
+            (file) => file.relativePath || file.originalName,
+          ),
         });
       }
 
@@ -452,12 +458,17 @@ export class ServerApiService {
       this.assertAcpAllowed(acp.id, allowedAcpIds);
     }
     if (!acp) {
-      const validation = this.acpIndexService ? await this.acpIndexService.validateCandidate(
-        "00000000-0000-4000-8000-000000000000",
-        incomingIndex,
-      ) : { valid: true, publishable: false } as any;
+      const validation = this.acpIndexService
+        ? await this.acpIndexService.validateCandidate(
+            "00000000-0000-4000-8000-000000000000",
+            incomingIndex,
+          )
+        : ({ valid: true, publishable: false } as any);
       if (!validation.valid) {
-        throw new UnprocessableEntityException({ message: "ACP index violates acp-index@0.5", report: validation });
+        throw new UnprocessableEntityException({
+          message: "ACP index violates acp-index@0.5",
+          report: validation,
+        });
       }
       acp = this.acpRepository.create({
         packageId: data.packageId,
@@ -468,8 +479,13 @@ export class ServerApiService {
         ...(this.acpIndexService
           ? {
               acpIndexSchemaId: "acp-index@0.5",
-              acpIndexValidationStatus: validation.publishable ? "CONFORMANT" : "CONFORMANT_WITH_ISSUES",
-              acpIndexValidationReport: validation as unknown as Record<string, unknown>,
+              acpIndexValidationStatus: validation.publishable
+                ? "CONFORMANT"
+                : "CONFORMANT_WITH_ISSUES",
+              acpIndexValidationReport: validation as unknown as Record<
+                string,
+                unknown
+              >,
             }
           : {}),
       });
@@ -593,7 +609,9 @@ export class ServerApiService {
     }
   }
 
-  private requireExpectedUpdatedAt(expectedUpdatedAt?: string): asserts expectedUpdatedAt is string {
+  private requireExpectedUpdatedAt(
+    expectedUpdatedAt?: string,
+  ): asserts expectedUpdatedAt is string {
     if (!expectedUpdatedAt || Number.isNaN(Date.parse(expectedUpdatedAt))) {
       throw new BadRequestException(
         "expectedUpdatedAt must be a valid ISO timestamp",

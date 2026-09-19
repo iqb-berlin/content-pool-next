@@ -62,6 +62,18 @@ describe("JwtStrategy", () => {
     });
   });
 
+  it("rejects legacy local user tokens without a DB lookup", async () => {
+    const result = await strategy.validate({
+      sub: "legacy-user-1",
+      username: "legacy",
+      type: "user",
+      authType: "local",
+    } as any);
+
+    expect(result).toBeNull();
+    expect(userRepository.findOne).not.toHaveBeenCalled();
+  });
+
   it("maps DB roles for regular users", async () => {
     userRepository.findOne.mockResolvedValue({
       isAppAdmin: true,

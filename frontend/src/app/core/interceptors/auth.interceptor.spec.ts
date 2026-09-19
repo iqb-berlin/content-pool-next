@@ -97,8 +97,8 @@ describe('authInterceptor', () => {
     expect(accessMock.redirectToAccess).not.toHaveBeenCalled();
   });
 
-  it('does not redirect for inline login errors', async () => {
-    const req = new HttpRequest('POST', '/api/auth/login');
+  it('does not redirect for inline ACP credential errors', async () => {
+    const req = new HttpRequest('POST', '/api/auth/credential-login');
     const next = vi.fn(() => throwError(() => new HttpErrorResponse({ status: 401 })));
 
     await expect(
@@ -112,7 +112,7 @@ describe('authInterceptor', () => {
   it('does not clear a new login session when an older anonymous request returns 401', async () => {
     token = null;
     const response$ = new Subject<HttpResponse<unknown>>();
-    const req = new HttpRequest('GET', '/api/auth/context?type=acp');
+    const req = new HttpRequest('GET', '/api/auth/oidc-config');
     const next = vi.fn(() => response$);
     const result = firstValueFrom(
       runInInjectionContext(injector, () => authInterceptor(req, next as any)),

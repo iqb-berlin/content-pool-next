@@ -1,0 +1,30 @@
+name: Promote Production Exception
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Release candidate tag, for example v0.3.0-rc.5
+        required: true
+        type: string
+      exception_issue:
+        description: Repository issue documenting the approved production-only exception
+        required: true
+        type: string
+
+concurrency:
+  group: promote-release
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    permissions:
+      contents: write
+      issues: read
+      packages: write
+    uses: ./.github/workflows/promote-release-core.yml
+    with:
+      candidate: ${{ inputs.candidate }}
+      validation_mode: production-exception
+      validation_evidence: ${{ inputs.exception_issue }}
+    secrets: inherit

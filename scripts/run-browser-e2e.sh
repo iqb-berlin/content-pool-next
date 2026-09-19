@@ -64,7 +64,7 @@ if [[ "$USE_EXISTING_DATABASE" != "true" ]]; then
 fi
 
 if [[ "$SKIP_BROWSER_INSTALL" != "true" ]]; then
-  (cd "$REPOSITORY_ROOT/frontend" && npx playwright install chromium)
+  (cd "$REPOSITORY_ROOT/frontend" && npx playwright install chromium firefox webkit)
 fi
 (cd "$REPOSITORY_ROOT/backend" && npm run "$SEED_SCRIPT")
 # The seed process has already synchronized the complete schema. Repeating

@@ -72,7 +72,7 @@ async function bootstrap() {
     const config = new DocumentBuilder()
       .setTitle("IQB ContentPool API")
       .setDescription("API for managing Assessment Content Packages")
-      .setVersion("0.1.0")
+      .setVersion(process.env.APP_VERSION || "0.0.0-dev")
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);

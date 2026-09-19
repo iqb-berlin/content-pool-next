@@ -205,7 +205,8 @@ describe('VoudService.resolvePlayerResponseTarget', () => {
                   id: 'radio_1',
                   alias: 'A1',
                   type: 'radio',
-                  options: [{ text: 'A' }, { text: 'B' }],
+                  label: [{ lang: 'de', value: '<strong>Lieblingsfarbe</strong>' }],
+                  options: [{ text: 'Rot' }, { text: '<em>Blau</em>' }],
                 },
               ],
             },
@@ -219,7 +220,33 @@ describe('VoudService.resolvePlayerResponseTarget', () => {
       elementType: 'radio',
       identifiers: ['radio_1', 'A1'],
       optionCount: 2,
+      label: 'Lieblingsfarbe',
+      options: [
+        { position: 1, label: 'Rot' },
+        { position: 2, label: 'Blau' },
+      ],
     });
+  });
+
+  it('uses safe ordinal labels when options contain no readable text', () => {
+    const definition = JSON.stringify({
+      pages: [
+        {
+          elements: [
+            {
+              id: 'images',
+              type: 'radio-group-images',
+              options: [{ image: 'a.png' }, { image: 'b.png' }],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(service.resolvePlayerResponseTarget(definition, 'images')?.options).toEqual([
+      { position: 1, label: 'Option 1' },
+      { position: 2, label: 'Option 2' },
+    ]);
   });
 
   it('falls back to the internal id when the element has no alias', () => {

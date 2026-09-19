@@ -539,8 +539,10 @@ Ueber `Spalten verwalten` bestimmen Sie:
 - welche Breite die einzelnen Spalten haben
 
 Die Verwaltung umfasst feste Spalten wie `Item-ID` und `Aufgabe`, konfigurierte
-Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe`, `Markierungen`
-und `Notiz`. Technische Bedienungsspalten wie die laufende Position oder die Auswahl
+Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe (persönlich)`, `Markierungen`
+und `Notiz`. Die gemeinsame, per CSV-Feld `kstufe` importierte Kompetenzstufe ist davon getrennt
+und erscheint als fachliche Spalte `Kompetenzstufe`. Erlaubt sind die Werte `I` bis `V`.
+Technische Bedienungsspalten wie die laufende Position oder die Auswahl
 fuer eine Auswahlliste bleiben fest.
 
 Diese Einstellungen werden veroeffentlicht und damit Teil der gemeinsamen ACP-Konfiguration.

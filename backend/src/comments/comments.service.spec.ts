@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
   ConflictException,
@@ -5,12 +6,14 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { CommentsService } from "./comments.service";
-import { CommentTargetType } from "../database/entities";
+import { Acp, Comment, CommentTargetType } from "../database/entities";
 import { ReviewPolicyService } from "./review-policy.service";
 
 describe("CommentsService", () => {
   let service: CommentsService;
   let commentRepository: {
+    manager?: any;
+    query: jest.Mock;
     find: jest.Mock;
     create: jest.Mock;
     save: jest.Mock;
@@ -24,6 +27,7 @@ describe("CommentsService", () => {
   let unitParserService: { getItemListFromFiles: jest.Mock };
   let fileCatalogCache: { get: jest.Mock };
   let acpRepository: { findOne: jest.Mock };
+  let reviewManifestService: { getManifest: jest.Mock };
 
   beforeEach(() => {
     deleteQueryBuilder = {
@@ -34,6 +38,7 @@ describe("CommentsService", () => {
       execute: jest.fn(),
     };
     commentRepository = {
+      query: jest.fn().mockResolvedValue([]),
       find: jest.fn(),
       create: jest
         .fn()
@@ -46,7 +51,12 @@ describe("CommentsService", () => {
     };
 
     accessConfigRepository = {
-      findOne: jest.fn(),
+      findOne: jest.fn().mockResolvedValue({
+        featureConfig: {
+          enableReview: true,
+          commentVisibilityMode: "PRIVATE",
+        },
+      }),
     };
     unitParserService = {
       getItemListFromFiles: jest.fn().mockResolvedValue({
@@ -62,13 +72,32 @@ describe("CommentsService", () => {
         updatedAt: new Date("2026-01-01T00:00:00.000Z"),
       }),
     };
+    reviewManifestService = {
+      getManifest: jest.fn().mockResolvedValue({
+        booklets: [],
+        units: [{ id: "unit-1", name: "Unit 1", items: [{ id: "item-1" }] }],
+        issues: [],
+      }),
+    };
 
+    const manager = {
+      findOne: jest.fn(),
+      getRepository: (entity: any) =>
+        entity === Comment
+          ? commentRepository
+          : entity === Acp
+            ? acpRepository
+            : accessConfigRepository,
+      transaction: async (fn: any): Promise<any> => fn(manager),
+    };
+    commentRepository.manager = manager;
     service = new CommentsService(
       commentRepository as any,
       new ReviewPolicyService(accessConfigRepository as any),
       unitParserService as any,
       fileCatalogCache as any,
       acpRepository as any,
+      reviewManifestService as any,
     );
   });
 
@@ -133,7 +162,7 @@ describe("CommentsService", () => {
     expect(commentRepository.save).not.toHaveBeenCalled();
   });
 
-  it("deletes only unreferenced legacy non-item comments by ACP", async () => {
+  it("deletes only unresolved legacy task-sequence comments by ACP", async () => {
     deleteQueryBuilder.execute.mockResolvedValueOnce({ affected: 4 });
     commentRepository.count.mockResolvedValueOnce(7);
     await expect(
@@ -144,14 +173,11 @@ describe("CommentsService", () => {
       acpId: "acp-1",
     });
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"target_type" <> :itemTargetType',
-      { itemTargetType: CommentTargetType.ITEM },
+      '"target_type" = :legacyTargetType',
+      { legacyTargetType: CommentTargetType.TASK_SEQUENCE },
     );
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"unit_id" IS NULL',
-    );
-    expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
-      '"item_id" IS NULL',
+      '"legacy_read_only" = true',
     );
     expect(deleteQueryBuilder.andWhere).toHaveBeenCalledWith(
       '"parent_comment_id" IS NULL',
@@ -276,18 +302,14 @@ describe("CommentsService", () => {
 
   it("checks comment feature flags per target type", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: {
-        enableCommenting: false,
-      },
+      featureConfig: { enableReview: true, enableCommenting: false },
     });
     await expect(
       service.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
     ).resolves.toBe(false);
 
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: {
-        enableCommenting: true,
-      },
+      featureConfig: { enableReview: true, enableCommenting: true },
     });
     await expect(
       service.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
@@ -295,6 +317,7 @@ describe("CommentsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.UNIT],
       },
@@ -337,6 +360,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([root, reply]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -359,6 +383,7 @@ describe("CommentsService", () => {
 
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -392,6 +417,7 @@ describe("CommentsService", () => {
       });
       accessConfigRepository.findOne.mockResolvedValue({
         featureConfig: {
+          enableReview: true,
           enableCommenting: true,
           commentVisibilityMode: "SHARED",
         },
@@ -475,6 +501,7 @@ describe("CommentsService", () => {
     ]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -488,16 +515,74 @@ describe("CommentsService", () => {
     });
 
     expect(snapshot.counts).toEqual([
-      { unitId: "unit-1", itemId: "item-1", count: 1 },
-      { unitId: "unit-1", itemId: "item-2", count: 1 },
+      { unitId: "unit-1", itemId: "item-1", count: 1, codingCount: 0 },
+      { unitId: "unit-1", itemId: "item-2", count: 1, codingCount: 0 },
     ]);
     expect(commentRepository.find).toHaveBeenCalledTimes(1);
     expect(commentRepository.find).toHaveBeenCalledWith({
-      where: expect.objectContaining({
-        acpId: "acp-1",
-        targetType: CommentTargetType.ITEM,
-      }),
+      where: expect.arrayContaining([
+        expect.objectContaining({
+          acpId: "acp-1",
+          targetType: CommentTargetType.ITEM,
+        }),
+      ]),
     });
+  });
+
+  it("applies combined filters to both CSV and XLSX without exporting other comments", async () => {
+    const base = {
+      acpId: "acp-1",
+      userId: "manager",
+      targetType: CommentTargetType.UNIT,
+      targetId: "unit-1",
+      groupId: "g",
+      authorLabel: "Alex",
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-01"),
+    };
+    commentRepository.find.mockResolvedValue([
+      { ...base, id: "yes", commentText: "Bitte PRÜFEN" },
+      {
+        ...base,
+        id: "no-group",
+        groupId: "other",
+        commentText: "Andere Gruppe prüfen",
+      },
+      {
+        ...base,
+        id: "no-author",
+        authorLabel: "Sam",
+        commentText: "Anderer Autor prüfen",
+      },
+      {
+        ...base,
+        id: "no-type",
+        targetType: CommentTargetType.ITEM,
+        commentText: "Anderer Bezug prüfen",
+      },
+    ]);
+    const actor = {
+      userId: "manager",
+      filters: {
+        q: " prüfen ",
+        author: "Alex",
+        groupId: "g",
+        targetType: CommentTargetType.UNIT,
+      },
+    };
+    const csv = (
+      await service.exportReviewCommentsCsv("acp-1", actor)
+    ).toString("utf8");
+    expect(csv).toContain("Bitte PRÜFEN");
+    expect(csv).not.toContain("Andere");
+    const ExcelJS = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(
+      (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+    );
+    const sheet = workbook.getWorksheet("Kommentare")!;
+    expect(sheet.rowCount).toBe(2);
+    expect(JSON.stringify(sheet.getRow(2).values)).toContain("Bitte PRÜFEN");
   });
 
   it("keeps personal review exports personal for manager identities", async () => {
@@ -534,6 +619,269 @@ describe("CommentsService", () => {
       ForbiddenException,
     );
   });
+
+  it.each([
+    {
+      mode: "SHARED",
+      deleted: false,
+      expected: true,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: false,
+      expected: true,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: true,
+      visible: true,
+      manager: false,
+    },
+    {
+      mode: "PRIVATE",
+      deleted: true,
+      expected: true,
+      visible: true,
+      manager: false,
+    },
+    {
+      mode: "PRIVATE",
+      deleted: false,
+      expected: false,
+      visible: false,
+      manager: false,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: false,
+      visible: true,
+      manager: false,
+      foreignGroup: true,
+    },
+    {
+      mode: "GROUP",
+      deleted: true,
+      expected: true,
+      visible: false,
+      manager: true,
+    },
+  ])(
+    "preserves only permitted export thread references: %j",
+    async (scenario) => {
+      const date = new Date("2026-01-01T10:00:00.000Z");
+      const root = {
+        id: "root",
+        acpId: "acp-1",
+        userId: "other",
+        groupId: scenario.foreignGroup ? "foreign" : "group",
+        deletedAt: scenario.deleted ? date : null,
+        commentText: "Root text must not be exported",
+        authorLabel: "Other author",
+      };
+      const replies = ["reply-1", "reply-2"].map((id) => ({
+        id,
+        acpId: "acp-1",
+        userId: "me",
+        groupId: "group",
+        parentCommentId: "root",
+        targetType: CommentTargetType.ITEM,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+        commentText: id,
+        authorLabel: "ME",
+        createdAt: date,
+        updatedAt: date,
+      }));
+      accessConfigRepository.findOne.mockResolvedValue({
+        featureConfig: {
+          enableReview: true,
+          commentVisibilityMode: scenario.mode,
+        },
+        reviewGroups: [
+          {
+            id: "group",
+            name: "Group",
+            archived: false,
+            members: [{ kind: "user", id: "me" }],
+          },
+        ],
+      });
+      commentRepository.find.mockImplementation(async ({ where }) =>
+        where.id ? [root] : replies,
+      );
+      const actor = scenario.manager
+        ? undefined
+        : { userId: "me", visible: scenario.visible };
+      const csv = (
+        await service.exportReviewCommentsCsv(
+          "acp-1",
+          actor || { userId: "me", isManager: true },
+        )
+      ).toString("utf8");
+      expect(csv).not.toContain(root.commentText);
+      expect(csv).not.toContain(root.authorLabel);
+      if (scenario.expected) expect(csv.match(/"root"/g)).toHaveLength(4);
+      else expect(csv).not.toContain('"root"');
+
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheet = workbook.getWorksheet("Kommentare")!;
+      const headers = sheet.getRow(1).values as unknown[];
+      const threadColumn = headers.indexOf("Thread-ID");
+      const parentColumn = headers.indexOf("Antwort auf");
+      expect(threadColumn).toBeGreaterThan(0);
+      expect(parentColumn).toBeGreaterThan(0);
+      expect(sheet.rowCount).toBe(3);
+      for (let row = 2; row <= 3; row++) {
+        expect(sheet.getRow(row).getCell(threadColumn).value).toBe(
+          scenario.expected ? "root" : replies[row - 2].id,
+        );
+        expect(sheet.getRow(row).getCell(parentColumn).value || "").toBe(
+          scenario.expected ? "root" : "",
+        );
+      }
+    },
+  );
+
+  it.each([
+    { userId: "manager", isManager: true },
+    { credentialId: "credential-1", isManager: true },
+  ])(
+    "exports identical personal data in manifest order for %j",
+    async (actor) => {
+      const units = ["unused", "second", "first"].map((id) => ({
+        id,
+        name: `Unit ${id}`,
+        items: [
+          { id: "z", name: "Zuerst" },
+          { id: "a", name: "Danach" },
+        ],
+      }));
+      acpRepository.findOne.mockResolvedValue({
+        acpIndex: { assessmentParts: [{ units }] },
+      });
+      unitParserService.getItemListFromFiles.mockResolvedValue({ items: [] });
+      reviewManifestService.getManifest.mockResolvedValue({
+        units,
+        booklets: [
+          {
+            id: "b2",
+            name: "Zweites",
+            units: [{ id: "first" }, { id: "second" }],
+          },
+          { id: "b1", name: "Erstes", units: [{ id: "first" }] },
+        ],
+      });
+      const comment = (
+        id: string,
+        unitId: string,
+        itemId = "",
+        extra = {},
+      ) => ({
+        id,
+        acpId: "acp-1",
+        userId: actor.userId,
+        credentialId: actor.credentialId,
+        targetType: itemId ? CommentTargetType.ITEM : CommentTargetType.UNIT,
+        targetId: itemId || unitId,
+        unitId,
+        itemId,
+        commentText: id,
+        createdAt: new Date("2026-01-01"),
+        updatedAt: new Date("2026-01-02"),
+        ...extra,
+      });
+      commentRepository.find.mockResolvedValue([
+        comment("unused", "unused"),
+        comment("second", "second"),
+        comment("a", "first", "a"),
+        comment("z-later", "first", "z", { createdAt: new Date("2026-01-02") }),
+        comment("z-2", "first", "z"),
+        comment("z-1", "first", "z", {
+          commentText: 'Ä; "Zitat"\r\nNeue Zeile 📝',
+        }),
+        comment("first", "first"),
+        comment("legacy", "first", "", { legacyReadOnly: true }),
+        comment("b1", "", "", {
+          targetType: CommentTargetType.BOOKLET,
+          bookletId: "b1",
+        }),
+        comment("b2", "", "", {
+          targetType: CommentTargetType.BOOKLET,
+          bookletId: "b2",
+        }),
+      ]);
+      const csv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      const ExcelJS = await import("exceljs");
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheet = workbook.getWorksheet("Kommentare")!;
+      const rows: string[][] = [];
+      sheet.eachRow((row) =>
+        rows.push(
+          Array.from({ length: sheet.columnCount }, (_, i) =>
+            String(row.getCell(i + 1).value ?? ""),
+          ),
+        ),
+      );
+      // Parse quoted CSV fields including embedded separators, quotes and newlines.
+      const fields = [...csv.matchAll(/"((?:[^"]|"")*)"/g)].map((match) =>
+        match[1].replace(/""/g, '"'),
+      );
+      expect(fields.map((field) => field.replace(/\r\n/g, "\n"))).toEqual(
+        rows.flat(),
+      );
+      const column = rows[0].indexOf("Kommentar");
+      expect(rows.slice(1).map((row) => row[column])).toEqual([
+        "b2",
+        "b1",
+        "first",
+        'Ä; "Zitat"\nNeue Zeile 📝',
+        "z-2",
+        "z-later",
+        "a",
+        "second",
+        "unused",
+        "legacy",
+      ]);
+      expect(rows[0]).not.toContain("Autor");
+      expect(sheet.views[0]).toMatchObject({ state: "frozen", ySplit: 1 });
+      expect(sheet.autoFilter).toBeTruthy();
+      expect(sheet.getRow(2).getCell(column + 1).alignment.wrapText).toBe(true);
+      expect(commentRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining(
+            actor.userId
+              ? { userId: actor.userId }
+              : { credentialId: actor.credentialId },
+          ),
+        }),
+      );
+      commentRepository.find.mockResolvedValue([]);
+      const emptyCsv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      expect(emptyCsv.split("\r\n")).toHaveLength(2);
+      await workbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      expect(workbook.getWorksheet("Kommentare")!.rowCount).toBe(1);
+    },
+  );
 
   it("uses ACP labels and content order for the shared CSV and XLSX projection", async () => {
     const date = new Date("2026-01-01T10:00:00.000Z");
@@ -673,6 +1021,35 @@ describe("CommentsService", () => {
       "Kommentar Item 1",
       "Kommentar Unit 1",
     ]);
+    for (const released of [false, true]) {
+      const visible = released ? ["metadata:booklet"] : [];
+      const actor = {
+        userId: "manager",
+        columnPolicy: new ReviewerColumnPolicy({
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: { configured: true, visible, order: visible, widths: {} },
+        }),
+      };
+      const restrictedCsv = (
+        await service.exportReviewCommentsCsv("acp-1", actor)
+      ).toString("utf8");
+      const restrictedWorkbook = new ExcelJS.Workbook();
+      await restrictedWorkbook.xlsx.load(
+        (await service.exportReviewCommentsXlsx("acp-1", actor)) as any,
+      );
+      const sheetData = JSON.stringify(
+        restrictedWorkbook.getWorksheet("Kommentare")!.getSheetValues(),
+      );
+      for (const serialized of [restrictedCsv, sheetData]) {
+        expect(serialized.includes("Booklet-Bezeichnung")).toBe(released);
+        expect(serialized.includes("Booklet-ID")).toBe(released);
+        expect(serialized.includes("Booklet Zwei")).toBe(released);
+        expect(serialized.includes("booklet-2")).toBe(released);
+        expect(serialized).not.toContain("Unit Zwei");
+        expect(serialized).not.toContain("Item Zwei");
+        expect(serialized).toContain("Kommentar Booklet");
+      }
+    }
   });
 
   it("does not transfer comment ownership to a recreated credential with the same username", async () => {
@@ -695,6 +1072,7 @@ describe("CommentsService", () => {
     ]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -715,6 +1093,7 @@ describe("CommentsService", () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -753,6 +1132,8 @@ describe("CommentsService", () => {
 
     expect(unitParserService.getItemListFromFiles).toHaveBeenCalledWith(
       "acp-1",
+      {},
+      commentRepository.manager,
     );
     expect(commentRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -766,9 +1147,58 @@ describe("CommentsService", () => {
     expect(result).toMatchObject({ isOwn: true, parentCommentId: "root-1" });
   });
 
+  it("allows replies to a uniquely resolved legacy item comment", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: [CommentTargetType.ITEM],
+        commentVisibilityMode: "SHARED",
+      },
+    });
+    commentRepository.findOne.mockResolvedValue({
+      id: "legacy-root",
+      acpId: "acp-1",
+      targetType: CommentTargetType.ITEM,
+      targetId: "unit-1_item-1",
+      unitId: null,
+      itemId: null,
+      legacyReadOnly: true,
+      parentCommentId: null,
+    });
+    commentRepository.save.mockImplementation(async (value) => ({
+      ...value,
+      createdAt: date,
+      updatedAt: date,
+    }));
+
+    await expect(
+      service.createItemComment(
+        "acp-1",
+        {
+          unitId: "unit-1",
+          itemId: "item-1",
+          parentCommentId: "legacy-root",
+          commentText: "Antwort auf Altkommentar",
+        },
+        { userId: "me", authorLabel: "ME", isManager: false },
+      ),
+    ).resolves.toMatchObject({ parentCommentId: "legacy-root" });
+    expect(commentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: CommentTargetType.ITEM,
+        unitId: "unit-1",
+        itemId: "item-1",
+        parentCommentId: "legacy-root",
+      }),
+    );
+  });
+
   it("rejects replies to a foreign comment after switching to private visibility", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -796,7 +1226,7 @@ describe("CommentsService", () => {
         },
         { userId: "me", authorLabel: "ME", isManager: false },
       ),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toThrow(NotFoundException);
     expect(commentRepository.save).not.toHaveBeenCalled();
   });
 
@@ -824,6 +1254,7 @@ describe("CommentsService", () => {
     };
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -865,6 +1296,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -898,6 +1330,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -920,6 +1353,7 @@ describe("CommentsService", () => {
       },
     );
     expect(aliasedThread.target).toEqual({
+      targetType: CommentTargetType.ITEM,
       unitId: "unit-1",
       itemId: "item-1",
     });
@@ -929,7 +1363,8 @@ describe("CommentsService", () => {
         expect.objectContaining({ unitId: "unit-1", itemId: "item-1" }),
       );
     }
-    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledTimes(1);
+    // Each transaction keeps its own catalog promises; the pure file parser remains cached.
+    expect(unitParserService.getItemListFromFiles).toHaveBeenCalledTimes(2);
   });
 
   it("prefers an exact item ID over another item's colliding legacy alias", async () => {
@@ -942,6 +1377,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -965,6 +1401,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -991,6 +1428,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1012,6 +1450,7 @@ describe("CommentsService", () => {
   it("keeps canonical targets distinct even when only one has a parsed row", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentVisibilityMode: "SHARED",
       },
@@ -1044,8 +1483,8 @@ describe("CommentsService", () => {
     const actor = { userId: "me", authorLabel: "ME", isManager: false };
     expect((await service.getItemCommentCounts("acp-1", actor)).counts).toEqual(
       [
-        { unitId: "unit-1", itemId: "item-1", count: 1 },
-        { unitId: "unit-1", itemId: "unit-1_item-1", count: 0 },
+        { unitId: "unit-1", itemId: "item-1", count: 1, codingCount: 0 },
+        { unitId: "unit-1", itemId: "unit-1_item-1", count: 0, codingCount: 0 },
       ],
     );
     commentRepository.find.mockResolvedValue([]);
@@ -1057,6 +1496,7 @@ describe("CommentsService", () => {
     );
     expect(thread.comments).toEqual([]);
     expect(thread.target).toEqual({
+      targetType: CommentTargetType.ITEM,
       unitId: "unit-1",
       itemId: "unit-1_item-1",
     });
@@ -1070,6 +1510,7 @@ describe("CommentsService", () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -1139,6 +1580,7 @@ describe("CommentsService", () => {
     commentRepository.find.mockResolvedValue([root, reply]);
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "PRIVATE",
@@ -1171,7 +1613,11 @@ describe("CommentsService", () => {
   it("prevents foreign edits and reports stale own edits as conflicts", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue({
       id: "c-1",
@@ -1179,6 +1625,8 @@ describe("CommentsService", () => {
       userId: "other",
       targetType: CommentTargetType.ITEM,
       targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
       commentText: "Text",
       authorLabel: "OT",
       createdAt: date,
@@ -1215,10 +1663,14 @@ describe("CommentsService", () => {
     ).rejects.toThrow(ConflictException);
   });
 
-  it("does not let the item-thread endpoint mutate another comment target", async () => {
+  it("checks target configuration before mutating another comment target", async () => {
     const date = new Date("2026-01-01T00:00:00.000Z");
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue({
       id: "unit-comment",
@@ -1238,7 +1690,7 @@ describe("CommentsService", () => {
         authorLabel: "ME",
         isManager: false,
       }),
-    ).rejects.toThrow(NotFoundException);
+    ).rejects.toThrow(ForbiddenException);
     expect(commentRepository.update).not.toHaveBeenCalled();
   });
 
@@ -1250,6 +1702,8 @@ describe("CommentsService", () => {
       userId: "me",
       targetType: CommentTargetType.ITEM,
       targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
       commentText: "Text",
       authorLabel: "ME",
       createdAt: date,
@@ -1257,7 +1711,11 @@ describe("CommentsService", () => {
       version: 1,
     } as any;
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: true, commentTargets: ["ITEM"] },
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
     });
     commentRepository.findOne.mockResolvedValue(ownComment);
     commentRepository.update.mockResolvedValue({ affected: 1 });
@@ -1274,5 +1732,228 @@ describe("CommentsService", () => {
       expect.objectContaining({ id: "c-1", acpId: "acp-1", version: 1 }),
       expect.objectContaining({ commentText: "", version: 2 }),
     );
+  });
+
+  it("updates and deletes by stable credential ownership", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    const ownComment = {
+      id: "credential-comment",
+      acpId: "acp-1",
+      credentialId: "credential-1",
+      credentialUsername: "reviewer",
+      targetType: CommentTargetType.ITEM,
+      targetId: "unit-1_item-1",
+      unitId: "unit-1",
+      itemId: "item-1",
+      commentText: "Text",
+      authorLabel: "RE",
+      createdAt: date,
+      updatedAt: date,
+      version: 1,
+    } as any;
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM"],
+      },
+    });
+    commentRepository.findOne.mockResolvedValue(ownComment);
+    commentRepository.update.mockResolvedValue({ affected: 1 });
+    const actor = {
+      credentialId: "credential-1",
+      credentialUsername: "reviewer",
+      authorLabel: "RE",
+      isManager: false,
+    };
+
+    await expect(
+      service.updateOwnComment("acp-1", "credential-comment", "Neu", 1, actor),
+    ).resolves.toMatchObject({ commentText: "Neu", version: 2, isOwn: true });
+    await expect(
+      service.deleteOwnComment("acp-1", "credential-comment", 1, actor),
+    ).resolves.toBeUndefined();
+    expect(commentRepository.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates a stored target before updating it", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["UNIT"],
+      },
+    });
+    reviewManifestService.getManifest.mockResolvedValue({
+      booklets: [],
+      units: [],
+      issues: [],
+    });
+    commentRepository.findOne.mockResolvedValue({
+      id: "removed-unit-comment",
+      acpId: "acp-1",
+      userId: "me",
+      targetType: CommentTargetType.UNIT,
+      targetId: "removed-unit",
+      unitId: "removed-unit",
+      commentText: "Text",
+      createdAt: date,
+      updatedAt: date,
+      version: 1,
+    });
+
+    await expect(
+      service.updateOwnComment("acp-1", "removed-unit-comment", "Neu", 1, {
+        userId: "me",
+        authorLabel: "ME",
+        isManager: false,
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(commentRepository.update).not.toHaveBeenCalled();
+  });
+
+  it("creates coding comments on the whole item coding context", async () => {
+    const date = new Date("2026-01-01T00:00:00.000Z");
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["CODING"],
+      },
+    });
+    unitParserService.getItemListFromFiles.mockResolvedValue({
+      items: [{ unitId: "unit-1", itemId: "item-1" }],
+      codingSchemes: { "unit-1": { variableCodings: [] } },
+    });
+    commentRepository.create.mockImplementationOnce((value) => ({
+      id: "coding-1",
+      createdAt: date,
+      updatedAt: date,
+      legacyReadOnly: false,
+      ...value,
+    }));
+
+    await expect(
+      service.createReviewComment(
+        "acp-1",
+        {
+          targetType: CommentTargetType.CODING,
+          unitId: "unit-1",
+          itemId: "item-1",
+          commentText: "Kodierschema prüfen",
+        },
+        { userId: "me", authorLabel: "ME", isManager: false },
+      ),
+    ).resolves.toMatchObject({
+      targetType: CommentTargetType.CODING,
+      unitId: "unit-1",
+      itemId: "item-1",
+      commentText: "Kodierschema prüfen",
+    });
+    expect(commentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: CommentTargetType.CODING,
+        targetId: "unit-1_item-1",
+        unitId: "unit-1",
+        itemId: "item-1",
+      }),
+    );
+  });
+
+  it("keeps item and coding counts separate", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["ITEM", "CODING"],
+      },
+    });
+    commentRepository.find.mockResolvedValue([
+      {
+        targetType: CommentTargetType.ITEM,
+        unitId: "unit-1",
+        itemId: "item-1",
+        userId: "me",
+      },
+      {
+        targetType: CommentTargetType.CODING,
+        unitId: "unit-1",
+        itemId: "item-1",
+        userId: "me",
+      },
+    ]);
+
+    const snapshot = await service.getItemCommentCounts("acp-1", {
+      userId: "me",
+      authorLabel: "ME",
+      isManager: false,
+    });
+    expect(snapshot.counts).toContainEqual({
+      unitId: "unit-1",
+      itemId: "item-1",
+      count: 1,
+      codingCount: 1,
+    });
+  });
+
+  it("accepts canonical booklets and rejects legacy-only booklet identities", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: ["BOOKLET"],
+      },
+    });
+    reviewManifestService.getManifest.mockResolvedValue({
+      booklets: [
+        { id: "booklet-1", name: "Booklet 1", legacy: false },
+        { id: "module-1", name: "Legacy", legacy: true },
+      ],
+      units: [],
+      issues: [],
+    });
+    commentRepository.find.mockResolvedValue([]);
+    const actor = { userId: "me", authorLabel: "ME", isManager: false };
+
+    await expect(
+      service.getReviewThread(
+        "acp-1",
+        { targetType: CommentTargetType.BOOKLET, bookletId: "booklet-1" },
+        actor,
+      ),
+    ).resolves.toMatchObject({
+      target: {
+        targetType: CommentTargetType.BOOKLET,
+        bookletId: "booklet-1",
+      },
+    });
+    await expect(
+      service.getReviewThread(
+        "acp-1",
+        { targetType: CommentTargetType.BOOKLET, bookletId: "module-1" },
+        actor,
+      ),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("keeps unresolved legacy comments read-only", async () => {
+    commentRepository.findOne.mockResolvedValue({
+      id: "legacy-1",
+      acpId: "acp-1",
+      userId: "me",
+      targetType: CommentTargetType.TASK_SEQUENCE,
+      targetId: "ambiguous-module",
+      legacyReadOnly: true,
+      version: 1,
+    });
+    await expect(
+      service.updateOwnComment("acp-1", "legacy-1", "Neu", 1, {
+        userId: "me",
+        authorLabel: "ME",
+        isManager: false,
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(commentRepository.update).not.toHaveBeenCalled();
   });
 });

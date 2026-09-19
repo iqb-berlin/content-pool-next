@@ -1,3 +1,4 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
 import {
   Injectable,
   NotFoundException,
@@ -164,6 +165,7 @@ export class FilesService {
     private readonly validationService: ValidationService,
     private readonly fileMutationService: FileMutationService,
     private readonly fileStorageService: FileStorageService,
+    private readonly reviewManifestService: ReviewManifestService,
   ) {
     this.storagePath = this.configService.get<string>(
       "FILE_STORAGE_PATH",
@@ -544,10 +546,20 @@ export class FilesService {
   async createSequenceZip(
     acpId: string,
     sequenceId: string,
+    kind?: "booklet",
   ): Promise<{ buffer: Buffer; fileName: string }> {
     const index = await this.getAcpIndex(acpId);
     const allFiles = await this.findByAcp(acpId);
-    const unitIds = this.resolveSequenceUnitIds(index, sequenceId);
+    const unitIds =
+      kind === "booklet"
+        ? [
+            ...new Set(
+              (await this.reviewManifestService.getManifest(acpId)).booklets
+                .find((entry) => !entry.legacy && entry.id === sequenceId)
+                ?.units.map((unit) => unit.id) || [],
+            ),
+          ]
+        : this.resolveSequenceUnitIds(index, sequenceId);
 
     if (!unitIds.length) {
       throw new NotFoundException(`Sequence "${sequenceId}" not found`);
@@ -623,6 +635,28 @@ export class FilesService {
       string,
       any
     >;
+  }
+
+  async isRuntimeDependencyFile(
+    acpId: string,
+    fileName: string,
+  ): Promise<boolean> {
+    const units = getIndexUnits(await this.getAcpIndex(acpId));
+    const isRuntime = (dependency: any) =>
+      ["PLAYER", "UNIT_DEFINITION", "CODING_SCHEME"].includes(
+        dependency?.type,
+      ) &&
+      (dependency.id === fileName || dependency.originalName === fileName);
+    for (const unit of units) {
+      if ((unit.dependencies || []).some(isRuntime)) return true;
+      // The uploaded Unit XML can be newer than the stored index dependency list.
+      const view = await this.unitParserService.getUnitViewFromFiles(
+        acpId,
+        unit.id,
+      );
+      if ((view?.dependencies || []).some(isRuntime)) return true;
+    }
+    return false;
   }
 
   async isUnitDependencyFile(

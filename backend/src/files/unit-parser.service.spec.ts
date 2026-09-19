@@ -1,3 +1,4 @@
+import { buildReviewManifest } from "../review/review-manifest";
 import { ConflictException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
@@ -201,6 +202,167 @@ describe("UnitParserService", () => {
     }).compile();
 
     service = module.get<UnitParserService>(UnitParserService);
+  });
+
+  it("does not validate a Booklet with nested Unit references as a Unit file", async () => {
+    const bookletFile = {
+      id: "f-booklet",
+      acpId: "acp-1",
+      originalName: "OBI-Deutsch-Aufgabenreview.xml",
+      filePath: "/tmp/OBI-Deutsch-Aufgabenreview.xml",
+    };
+    fileRepo.find.mockResolvedValue([...files, bookletFile]);
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === bookletFile.filePath) {
+        return '<?xml version="1.0"?><Booklet><Metadata><Id>review</Id><Label>Review</Label></Metadata><Units><Unit id="u1"/></Units></Booklet>';
+      }
+      return "";
+    });
+
+    const results = await service.validateUnitFiles("acp-1");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ unitId: "u1", valid: true });
+  });
+
+  it("reconnects a test booklet after upload, deletion and reupload without duplicating it", async () => {
+    const file = { originalName: "review.xml", filePath: "/tmp/review.xml" };
+    const xml =
+      "<Booklet><Metadata><Id>b1</Id><Label>Testheft</Label></Metadata><Units/></Booklet>";
+    fileRepo.find.mockResolvedValue([file]);
+    (fs.readFile as jest.Mock).mockResolvedValue(xml);
+    await service.syncIndexFromFiles("acp-1");
+    const acp = acpRepo.save.mock.calls[0][0];
+    acpRepo.findOne.mockResolvedValue(acp);
+    acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0].name =
+      "Manueller Name";
+
+    fileRepo.find.mockResolvedValue([]);
+    const cleanup = await service.pruneMissingDependencies("acp-1");
+    expect(cleanup.bookletDefinitionsRemoved).toBe(1);
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0]
+        .definitionId,
+    ).toBeUndefined();
+
+    fileRepo.find.mockResolvedValue([file]);
+    acpRepo.save.mockClear();
+    const report = await service.syncIndexFromFiles("acp-1");
+    expect(report.warnings).toEqual([]);
+    expect(acpRepo.save).toHaveBeenCalledTimes(1);
+    expect(acp.acpIndex.assessmentParts[0].instruments).toHaveLength(1);
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet,
+    ).toEqual([
+      { id: "b1", name: "Manueller Name", definitionId: "review.xml" },
+    ]);
+    const manifest = buildReviewManifest(
+      acp.acpIndex,
+      new Map([["review.xml", xml]]),
+    );
+    expect(manifest.issues).toEqual([]);
+    expect(manifest.booklets.map((booklet) => booklet.id)).toEqual(["b1"]);
+  });
+
+  it("registers uploaded Booklet XMLs automatically and keeps repeated synchronization idempotent", async () => {
+    const bookletXml =
+      '<Booklet><Metadata><Id>b1</Id><Label>Review</Label></Metadata><Units><Unit id="u1"/><Unit id="u1" alias="repeat"/></Units></Booklet>';
+    fileRepo.find.mockResolvedValue([
+      ...files,
+      {
+        originalName: "booklet-review.xml",
+        filePath: "/tmp/booklet-review.xml",
+      },
+    ]);
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) => {
+      if (path === "/tmp/booklet-review.xml") return bookletXml;
+      if (path === "/tmp/u1.xml") return xmlContent;
+      if (path === "/tmp/u1.vomd") return vomdContent;
+      return "";
+    });
+    await service.syncIndexFromFiles("acp-1");
+    const acp = acpRepo.save.mock.calls[0][0];
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet,
+    ).toEqual([
+      { id: "b1", name: "Review", definitionId: "booklet-review.xml" },
+    ]);
+    const manifest = buildReviewManifest(
+      acp.acpIndex,
+      new Map([["booklet-review.xml", bookletXml]]),
+    );
+    expect(manifest.issues).toEqual([]);
+    expect(manifest.booklets[0].units.map((unit) => unit.id)).toEqual([
+      "u1",
+      "u1",
+    ]);
+    expect(
+      acp.acpIndex.assessmentParts[0].units.map((unit: any) => unit.id),
+    ).toEqual(["u1"]);
+    acpRepo.findOne.mockResolvedValue(acp);
+    acpRepo.save.mockClear();
+    await service.syncIndexFromFiles("acp-1");
+    expect(acpRepo.save).not.toHaveBeenCalled();
+  });
+
+  it("persists completion of an existing booklet reference without overwriting manual fields", async () => {
+    const acp = {
+      id: "acp-1",
+      acpIndex: {
+        assessmentParts: [
+          {
+            units: [],
+            instruments: [
+              {
+                id: "manual",
+                testcenterBooklet: [
+                  {
+                    definitionId: "review.xml",
+                    name: "Manual name",
+                    modules: ["m"],
+                  },
+                ],
+              },
+            ],
+            bookletModules: [{ id: "m", units: [] }],
+          },
+        ],
+      },
+    };
+    const before = JSON.stringify(acp.acpIndex);
+    acpRepo.findOne.mockResolvedValue(acp);
+    fileRepo.find.mockResolvedValue([
+      { originalName: "review.xml", filePath: "/tmp/review.xml" },
+    ]);
+    (fs.readFile as jest.Mock).mockResolvedValue(
+      "<Booklet><Metadata><Id>b1</Id><Label>XML name</Label></Metadata><Units/></Booklet>",
+    );
+    await service.syncIndexFromFiles("acp-1");
+    expect(acpRepo.save).toHaveBeenCalled();
+    expect(JSON.stringify(acp.acpIndex)).not.toBe(before);
+    expect(
+      acp.acpIndex.assessmentParts[0].instruments[0].testcenterBooklet[0],
+    ).toMatchObject({ id: "b1", name: "Manual name", modules: ["m"] });
+  });
+
+  it("warns on ambiguous and malformed uploaded booklets without creating entries", async () => {
+    fileRepo.find.mockResolvedValue(
+      ["a.xml", "b.xml", "broken.xml"].map((name) => ({
+        originalName: name,
+        filePath: name,
+      })),
+    );
+    (fs.readFile as jest.Mock).mockImplementation(async (path: string) =>
+      path === "broken.xml"
+        ? "<Booklet><Units></Booklet>"
+        : "<Booklet><Metadata><Id>duplicate</Id></Metadata><Units/></Booklet>",
+    );
+    const report = await service.syncIndexFromFiles("acp-1");
+    expect(report.warnings).toHaveLength(3);
+    expect(
+      acpRepo.save.mock.calls[0][0].acpIndex.assessmentParts[0].instruments,
+    ).toBeUndefined();
   });
 
   it("syncs units and items from uploaded files into ACP index", async () => {
@@ -637,6 +799,7 @@ describe("UnitParserService", () => {
           discrimination: 0.41,
           solutionRate: 0.68,
           textComplexity: "anspruchsvoll",
+          competenceLevel: "III",
           itemTimeSeconds: 33,
           stimulusTimeSeconds: 12,
           bookletOccurrences: [
@@ -659,6 +822,7 @@ describe("UnitParserService", () => {
         discrimination: 0.41,
         solutionRate: 0.68,
         textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         itemTimeSeconds: 33,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
@@ -698,6 +862,11 @@ describe("UnitParserService", () => {
                   value: "30",
                   valueAsText: { lang: "de", value: "00:30" },
                 },
+                {
+                  id: "iqb_item_time",
+                  value: "99",
+                  valueAsText: { lang: "de", value: "01:39" },
+                },
               ],
             },
           ],
@@ -709,7 +878,7 @@ describe("UnitParserService", () => {
             {
               entries: [
                 {
-                  id: "iqb_time_item",
+                  id: "iqb_item_time",
                   value: 45,
                   valueAsText: { lang: "de", value: "00:45" },
                 },
@@ -728,6 +897,7 @@ describe("UnitParserService", () => {
 
     const result = await service.getItemListFromFiles("acp-1", {
       itemPropertiesOverride: {
+        "uuid-1": { competenceLevel: "III" },
         "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
         "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
       },
@@ -737,6 +907,7 @@ describe("UnitParserService", () => {
       expect.objectContaining({
         uuid: "uuid-1",
         rowKey: "uuid-1::A",
+        competenceLevel: "III",
         itemTimeSeconds: 30,
         stimulusTimeSeconds: 90,
         metadata: expect.objectContaining({ iqb_time_item: "00:30" }),
@@ -744,6 +915,7 @@ describe("UnitParserService", () => {
       expect.objectContaining({
         uuid: "uuid-1",
         rowKey: "uuid-1::B",
+        competenceLevel: "III",
         itemTimeSeconds: 30,
         stimulusTimeSeconds: 90,
       }),
@@ -752,6 +924,7 @@ describe("UnitParserService", () => {
         rowKey: "uuid-2",
         itemTimeSeconds: 45,
         stimulusTimeSeconds: 90,
+        metadata: expect.objectContaining({ iqb_item_time: "00:45" }),
       }),
     ]);
   });

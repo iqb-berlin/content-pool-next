@@ -52,6 +52,7 @@ export type ItemExplorerHeaderViewModel = ReadonlyViewModelSlice<
     | 'isRenumberingBlocked'
     | 'itemListError'
     | 'itemCommentsEnabled'
+    | 'codingCommentsEnabled'
     | 'itemCommentCountsAvailable'
     | 'itemCommentCountsError'
     | 'itemCommentCountsLoading'
@@ -232,13 +233,20 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'acpId'
     | 'canEditExplorer'
     | 'canPreviewSelectedItem'
+    | 'canSaveCurrentResponseState'
+    | 'correctSolutionAvailable'
+    | 'correctSolutionPrefill'
+    | 'correctSolutionRequested'
+    | 'correctSolutionToggleTitle'
     | 'customPreviewTargetDraft'
     | 'filteredItems'
     | 'hasStoredPreviewTargetOverride'
+    | 'isCorrectSolutionActive'
     | 'isItemExcluded'
     | 'isPreviewLoading'
     | 'itemSubIdLabel'
     | 'itemCommentsEnabled'
+    | 'codingCommentsEnabled'
     | 'itemCommentRefreshToken'
     | 'itemCommentSessionToken'
     | 'commentThreadInitiallyOpen'
@@ -248,6 +256,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'onPlayerLoaded'
     | 'onPreviewTargetSelectionChange'
     | 'openCodingOverlay'
+    | 'getCodingCommentCount'
     | 'pagingMode'
     | 'playerHeight'
     | 'playerSrcDoc'
@@ -275,6 +284,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     | 'showMetadataDrawer'
     | 'showPlayerTargetInfo'
     | 'showPreviewTargetSelector'
+    | 'toggleCorrectSolution'
     | 'toggleSelectedItemExclusion'
     | 'updateItemCommentCount'
   >
@@ -283,16 +293,21 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'acpId'
     | 'closeCodingOverlay'
     | 'codingSearchText'
+    | 'codingCommentsEnabled'
     | 'codingSortField'
     | 'codingVariableFocus'
     | 'codingVariableFocusMessage'
     | 'currentCodingSchemeAsText'
     | 'filteredCodingSchemeAsText'
     | 'getCodingVariableDisplayLabel'
+    | 'getCodingCommentCount'
     | 'getCodingSortIndicator'
     | 'itemSubIdLabel'
+    | 'itemCommentRefreshToken'
+    | 'itemCommentSessionToken'
     | 'preferManualCodingInstructions'
     | 'selectedItem'
     | 'setCodingSearchText'
@@ -302,6 +317,7 @@ export type ItemExplorerCodingDialogViewModel = ReadonlyViewModelSlice<
     | 'showGeneralCodingInstructions'
     | 'showPlayerTargetInfo'
     | 'toggleCodingSort'
+    | 'updateItemCommentCount'
   >
 >;
 
@@ -340,6 +356,9 @@ export type ItemExplorerUploadDialogsViewModel = ReadonlyViewModelSlice<
 export type ItemExplorerColumnManagerDialogViewModel = ReadonlyViewModelSlice<
   Pick<
     ItemExplorerFacade,
+    | 'canEditExplorer'
+    | 'reviewerColumnsRestricted'
+    | 'setRestrictReviewerColumns'
     | 'allTableColumns'
     | 'canMoveTableColumn'
     | 'canResetMetadataSettings'

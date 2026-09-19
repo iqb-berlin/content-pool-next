@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { ApiService } from './api.service';
 import { Acp, User, AppSettings, AcpFile } from '../models/api.models';
 
@@ -31,6 +31,15 @@ describe('ApiService', () => {
 
   it('should be created', () => {
     expect(service).toBeTruthy();
+  });
+
+  it('distinguishes booklet requests from legacy module requests with the same ID', () => {
+    service.getViewSequence('acp-1', 'same');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith('/api/view/acp/acp-1/sequences/same');
+    service.getViewSequence('acp-1', 'same', 'booklet');
+    expect(httpClientMock.get).toHaveBeenLastCalledWith(
+      '/api/view/acp/acp-1/sequences/same?kind=booklet',
+    );
   });
 
   describe('Users', () => {
@@ -818,6 +827,31 @@ describe('ApiService', () => {
       });
     });
 
+    it('reuses only the supplied visible snapshot on HTTP 304 and propagates revoked access', () => {
+      const previous: any = {
+        revision: 'visible-a',
+        target: { unitId: 'U', itemId: 'I' },
+        visibilityMode: 'GROUP',
+        comments: [{ id: 'own-group' }],
+      };
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 304 })));
+      let result: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe((snapshot) => (result = snapshot));
+      expect(result).toBe(previous);
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/acp/acp1/review/comments', {
+        params: { unitId: 'U', itemId: 'I' },
+        headers: { 'If-None-Match': '"visible-a"' },
+      });
+      httpClientMock.get.mockReturnValue(throwError(() => ({ status: 403 })));
+      let failure: any;
+      service
+        .getItemCommentThread('acp1', 'U', 'I', previous)
+        .subscribe({ error: (error) => (failure = error) });
+      expect(failure.status).toBe(403);
+    });
+
     it('should load and mutate item comment threads', () => {
       httpClientMock.get.mockReturnValue(
         of({ revision: '1', visibilityMode: 'SHARED', comments: [] }),
@@ -869,13 +903,13 @@ describe('ApiService', () => {
       expect(httpClientMock.get).toHaveBeenNthCalledWith(
         1,
         '/api/acp/acp1/review/comments/export/mine.csv',
-        { responseType: 'blob' },
+        { params: {}, responseType: 'blob' },
       );
       service.exportMyReviewCommentsXlsx('acp1').subscribe();
       expect(httpClientMock.get).toHaveBeenNthCalledWith(
         2,
         '/api/acp/acp1/review/comments/export/mine.xlsx',
-        { responseType: 'blob' },
+        { params: {}, responseType: 'blob' },
       );
       service.exportAllReviewCommentsXlsx('acp1').subscribe();
       expect(httpClientMock.get).toHaveBeenNthCalledWith(
@@ -1124,7 +1158,9 @@ describe('ApiService', () => {
         expect((result as any).version).toBe(1);
       });
 
-      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state');
+      expect(httpClientMock.get).toHaveBeenCalledWith('/api/view/acp/acp1/item-explorer/state', {
+        params: {},
+      });
     });
 
     it('should patch explorer draft', () => {

@@ -9,7 +9,9 @@ describe("ReviewCommentsController", () => {
   beforeEach(() => {
     commentsService = {
       getItemThread: jest.fn().mockResolvedValue({ comments: [] }),
+      getReviewThread: jest.fn().mockResolvedValue({ comments: [] }),
       createItemComment: jest.fn().mockResolvedValue({ id: "c-1" }),
+      createReviewComment: jest.fn().mockResolvedValue({ id: "c-2" }),
       updateOwnComment: jest.fn().mockResolvedValue({ id: "c-1", version: 2 }),
       deleteOwnComment: jest.fn().mockResolvedValue(undefined),
       getItemCommentCounts: jest.fn().mockResolvedValue({ counts: [] }),
@@ -19,6 +21,7 @@ describe("ReviewCommentsController", () => {
         .mockResolvedValue(Buffer.from("xlsx")),
     };
     reviewPolicy = {
+      assertCanParticipateRequest: jest.fn(),
       resolveActor: jest.fn((req) => {
         const credential = req.user?.type === "credential";
         return {
@@ -131,6 +134,48 @@ describe("ReviewCommentsController", () => {
     );
   });
 
+  it("normalizes booklet and coding targets for the shared lifecycle", async () => {
+    const req = {
+      user: { type: "oidc", sub: "user-1", username: "u1" },
+      acpAccessLevel: "READ_ONLY",
+    };
+    await controller.getItemThread(
+      "acp-1",
+      " unit-1 ",
+      " item-1 ",
+      req,
+      "CODING",
+    );
+    expect(commentsService.getReviewThread).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        targetType: "CODING",
+        unitId: "unit-1",
+        itemId: "item-1",
+      },
+      expect.objectContaining({ userId: "user-1" }),
+    );
+
+    await controller.createItemComment(
+      "acp-1",
+      {
+        targetType: "BOOKLET" as any,
+        bookletId: " booklet-1 ",
+        commentText: "Booklet prüfen",
+      },
+      req,
+    );
+    expect(commentsService.createReviewComment).toHaveBeenCalledWith(
+      "acp-1",
+      expect.objectContaining({
+        targetType: "BOOKLET",
+        bookletId: "booklet-1",
+        commentText: "Booklet prüfen",
+      }),
+      expect.objectContaining({ userId: "user-1" }),
+    );
+  });
+
   it("rejects missing item targets before service access", async () => {
     await expect(
       controller.getItemThread("acp-1", "", "item-1", {
@@ -153,12 +198,17 @@ describe("ReviewCommentsController", () => {
     await controller.exportMineXlsx("acp-1", managerRequest, response() as any);
     expect(commentsService.exportReviewCommentsXlsx).toHaveBeenCalledWith(
       "acp-1",
-      { userId: "manager-1", credentialId: undefined },
+      expect.objectContaining({
+        userId: "manager-1",
+        credentialId: undefined,
+        isManager: true,
+      }),
     );
 
     await controller.exportAllXlsx("acp-1", managerRequest, response() as any);
     expect(commentsService.exportReviewCommentsXlsx).toHaveBeenLastCalledWith(
       "acp-1",
+      undefined,
     );
 
     await expect(

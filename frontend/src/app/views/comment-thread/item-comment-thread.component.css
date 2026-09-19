@@ -145,3 +145,10 @@ textarea {
     padding-left: 10px;
   }
 }
+
+.comment-votes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}

@@ -462,6 +462,226 @@ test('keeps collection management actions inside wide, narrow and mobile panels'
   await checkMenu();
 });
 
+test('hides, persists, and restores the position column through column management', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  const headers = {
+    Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, MANAGER_USERNAME)}`,
+  };
+  const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+  const draftUrl = `/api/acp/${ACP_ID}/item-explorer/draft`;
+  const originalResponse = await request.get(stateUrl, { headers });
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+
+  const saveColumnSettings = async () => {
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (candidate) =>
+          candidate.request().method() === 'PATCH' && candidate.url().endsWith(draftUrl),
+      ),
+      page
+        .getByRole('button', { name: /Speichern/ })
+        .last()
+        .click(),
+    ]);
+    expect(response.ok()).toBeTruthy();
+  };
+
+  try {
+    await page.goto(`/view/${ACP_ID}/item-explorer`);
+    const positionHeader = page.getByRole('columnheader', { name: 'Pos.' });
+    await expect(positionHeader).toBeVisible();
+    await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
+
+    await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+    const positionCheckbox = page.getByRole('checkbox', { name: 'Position', exact: true });
+    await expect(positionCheckbox).toBeChecked();
+    await positionCheckbox.uncheck();
+    await saveColumnSettings();
+
+    await expect(positionHeader).toHaveCount(0);
+    await expect(page.locator('tbody tr td.number-col')).toHaveCount(0);
+    await page.reload();
+    await expect(positionHeader).toHaveCount(0);
+
+    const tableScroll = page.locator('.table-scroll');
+    await tableScroll.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    const leadingAlignment = await page.locator('table.explorer-table').evaluate((table) => {
+      const itemId = Array.from(
+        table.querySelectorAll<HTMLElement>('thead tr:first-child th'),
+      ).find((header) => header.textContent?.trim().startsWith('Item-ID'));
+      const selection = table.querySelector<HTMLElement>('thead th.collection-select-col');
+      const scroller = table.closest<HTMLElement>('.table-scroll');
+      if (!itemId || !scroller) throw new Error('Leading table cells are missing');
+      return {
+        itemIdLeft: itemId.getBoundingClientRect().left,
+        expectedLeft:
+          selection?.getBoundingClientRect().right ?? scroller.getBoundingClientRect().left,
+      };
+    });
+    expect(
+      Math.abs(leadingAlignment.itemIdLeft - leadingAlignment.expectedLeft),
+    ).toBeLessThanOrEqual(1);
+
+    await page.getByRole('button', { name: /Spalten verwalten/ }).click();
+    await expect(positionCheckbox).not.toBeChecked();
+    await page.getByRole('button', { name: /Standard/ }).click();
+    await expect(positionCheckbox).toBeChecked();
+    await saveColumnSettings();
+
+    await expect(positionHeader).toBeVisible();
+    await expect(page.locator('tbody tr td.number-col')).toHaveText(['1', '2']);
+  } finally {
+    await page.close();
+    const current = await request.get(stateUrl, { headers });
+    expect(current.ok()).toBeTruthy();
+    const cleanup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: (await current.json()).version,
+        changeType: 'METADATA_COLUMNS_CHANGED',
+        patch: { metadataColumns: original.draftState.metadataColumns },
+      },
+    });
+    expect(cleanup.ok()).toBeTruthy();
+  }
+});
+
+test('normalizes legacy VOMD time columns without duplicating or rewriting the draft', async ({
+  page,
+  request,
+}) => {
+  await installOidcSession(page, MANAGER_ID, MANAGER_USERNAME);
+  const headers = {
+    Authorization: `Bearer ${createOidcAppToken(MANAGER_ID, MANAGER_USERNAME)}`,
+  };
+  const stateUrl = `/api/view/acp/${ACP_ID}/item-explorer/state`;
+  const draftUrl = `/api/acp/${ACP_ID}/item-explorer/draft`;
+  const originalResponse = await request.get(stateUrl, { headers });
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+
+  try {
+    const setup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: original.version,
+        changeType: 'METADATA_COLUMNS_CHANGED',
+        patch: {
+          ui: {
+            ...original.draftState.ui,
+            columnFilters: {},
+            sortField: 'iqb_item_time',
+            sortDir: 'desc',
+            sortIsMeta: true,
+          },
+          metadataColumns: {
+            visible: ['iqb_item_time', 'iqb_time_stimulus'],
+            order: ['iqb_item_time', 'iqb_time_stimulus'],
+            configured: true,
+            widths: { iqb_item_time: 180, iqb_time_stimulus: 190 },
+            layout: {
+              configured: true,
+              visible: ['system:itemId', 'metadata:iqb_item_time', 'metadata:iqb_time_stimulus'],
+              order: ['system:itemId', 'metadata:iqb_item_time', 'metadata:iqb_time_stimulus'],
+              widths: {
+                'metadata:iqb_item_time': 180,
+                'metadata:iqb_time_stimulus': 190,
+              },
+              schemaVersion: 3,
+            },
+          },
+        },
+      },
+    });
+    expect(setup.ok()).toBeTruthy();
+
+    await page.route(`**/api/acp/${ACP_ID}/files/item-list*`, async (route) => {
+      const response = await route.fetch();
+      const itemList = await response.json();
+      itemList.columns = [
+        ...(itemList.columns || []),
+        { id: 'iqb_item_time', label: 'Itemzeit' },
+        { id: 'iqb_time_stimulus', label: 'Stimuluszeit' },
+      ];
+      itemList.items = itemList.items.map((item: Record<string, unknown>, index: number) => ({
+        ...item,
+        metadata: {
+          ...((item['metadata'] as Record<string, string>) || {}),
+          iqb_item_time: index === 0 ? '00:30' : '00:45',
+          iqb_time_stimulus: '00:20',
+        },
+        itemTimeSeconds: index === 0 ? 30 : 45,
+        stimulusTimeSeconds: 20,
+      }));
+      await route.fulfill({ response, json: itemList });
+    });
+
+    let draftPatchCount = 0;
+    page.on('request', (browserRequest) => {
+      if (
+        browserRequest.method() === 'PATCH' &&
+        new URL(browserRequest.url()).pathname.endsWith(draftUrl)
+      ) {
+        draftPatchCount += 1;
+      }
+    });
+    await page.goto(`/view/${ACP_ID}/item-explorer`);
+
+    const itemTimeHeader = page.getByRole('columnheader', { name: /^Itemzeit \(s\)/ });
+    const stimulusTimeHeader = page.getByRole('columnheader', { name: /^Stimuluszeit \(s\)/ });
+    await expect(itemTimeHeader).toHaveCount(1);
+    await expect(stimulusTimeHeader).toHaveCount(1);
+    await expect(page.getByRole('columnheader', { name: /^Itemzeit$/ })).toHaveCount(0);
+
+    const table = page.locator('table.explorer-table');
+    const itemTimeIndex = await table
+      .locator('thead tr:first-child th')
+      .evaluateAll((elements) =>
+        elements.findIndex((element) => element.textContent?.trim().startsWith('Itemzeit (s)')),
+      );
+    const stimulusTimeIndex = await table
+      .locator('thead tr:first-child th')
+      .evaluateAll((elements) =>
+        elements.findIndex((element) => element.textContent?.trim().startsWith('Stimuluszeit (s)')),
+      );
+    expect(itemTimeIndex).toBeGreaterThanOrEqual(0);
+    expect(stimulusTimeIndex).toBeGreaterThanOrEqual(0);
+    const rows = table.locator('tbody tr');
+    await expect(rows).toHaveCount(2);
+    await expect(rows.nth(0).locator('td').nth(itemTimeIndex)).toHaveText('45');
+    await expect(rows.nth(1).locator('td').nth(itemTimeIndex)).toHaveText('30');
+    await expect(rows.nth(0).locator('td').nth(stimulusTimeIndex)).toHaveText('20');
+
+    await page.reload();
+    await expect(itemTimeHeader).toHaveCount(1);
+    await expect(stimulusTimeHeader).toHaveCount(1);
+    await expect(rows.nth(0).locator('td').nth(itemTimeIndex)).toHaveText('45');
+    expect(draftPatchCount).toBe(0);
+  } finally {
+    await page.close();
+    const current = await request.get(stateUrl, { headers });
+    expect(current.ok()).toBeTruthy();
+    const cleanup = await request.patch(draftUrl, {
+      headers,
+      data: {
+        baseVersion: (await current.json()).version,
+        changeType: 'METADATA_COLUMNS_CHANGED',
+        patch: {
+          ui: original.draftState.ui,
+          metadataColumns: original.draftState.metadataColumns,
+        },
+      },
+    });
+    expect(cleanup.ok()).toBeTruthy();
+  }
+});
+
 test('keeps positions gapless and persists the personal selection view across perspectives', async ({
   page,
 }) => {

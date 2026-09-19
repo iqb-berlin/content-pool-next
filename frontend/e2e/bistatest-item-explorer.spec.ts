@@ -20,7 +20,7 @@ async function openExplorer(page: Page): Promise<void> {
 }
 
 async function saveFeatureConfig(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Features speichern' }).click();
+  await page.getByRole('button', { name: 'Änderungen speichern' }).click();
   await expect(page.getByText('✓ Gespeichert').last()).toBeVisible();
 }
 
@@ -51,13 +51,18 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(page.getByRole('button', { name: 'Kommentar hinzufügen' })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Kommentare', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Item-Liste', exact: true })).toHaveCount(0);
-  await page
-    .getByRole('link', {
-      name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
-      exact: true,
-    })
-    .click();
-  await expect(page.getByRole('heading', { name: 'Item-Explorer' })).toBeVisible();
+  await Promise.all([
+    page.waitForURL(`**/view/${ACP_ID}/item-explorer`),
+    page
+      .getByRole('link', {
+        name: 'Item-Explorer Items prüfen, kommentieren und bearbeiten',
+        exact: true,
+      })
+      .click(),
+  ]);
+  await expect(
+    page.getByRole('heading', { name: 'Item-Explorer', exact: true, level: 1 }),
+  ).toBeVisible();
   await expect(page.locator('tbody tr')).toHaveCount(2);
   await page.locator('tbody tr').first().click();
 
@@ -227,11 +232,51 @@ test('shares item comments and replies directly in the selected Item Explorer pr
   await expect(page.locator('tbody tr')).toHaveCount(2);
 });
 
-test('serializes delayed draft updates while typing into the item filter', async ({ page }) => {
+test('keeps item searches local for two users and out of the shared draft', async ({
+  page,
+  browser,
+}) => {
   await login(page, MANAGER_ID, MANAGER_USERNAME);
   await openExplorer(page);
 
-  const requests: Array<{ baseVersion: number; filterText: string; status: number }> = [];
+  const draftPatchUrls: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'PATCH' &&
+      request.url().endsWith(`/api/acp/${ACP_ID}/item-explorer/draft`)
+    ) {
+      draftPatchUrls.push(request.url());
+    }
+  });
+
+  const filter = page.getByPlaceholder('🔍 Items filtern...');
+  await filter.fill('GeoGebra');
+  await expect(filter).toHaveValue('GeoGebra');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  expect(draftPatchUrls).toEqual([]);
+
+  const observerContext = await browser.newContext();
+  const observer = await observerContext.newPage();
+  await login(observer, VIEWER_ID, VIEWER_USERNAME);
+  await openExplorer(observer);
+  const observerFilter = observer.getByPlaceholder('🔍 Items filtern...');
+  await expect(observerFilter).toHaveValue('');
+  await observerFilter.fill('Item ohne ausgewählte Kodiervariable');
+  await expect(observer.locator('tbody tr')).toHaveCount(1);
+
+  await expect(filter).toHaveValue('GeoGebra');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  expect(draftPatchUrls).toEqual([]);
+  await observerContext.close();
+});
+
+test('serializes delayed draft updates while typing into a shared column filter', async ({
+  page,
+}) => {
+  await login(page, MANAGER_ID, MANAGER_USERNAME);
+  await openExplorer(page);
+
+  const requests: Array<{ baseVersion: number; itemIdFilter: string; status: number }> = [];
   let activeRequests = 0;
   let maximumActiveRequests = 0;
   const draftPatchUrl = `**/api/acp/${ACP_ID}/item-explorer/draft`;
@@ -240,23 +285,24 @@ test('serializes delayed draft updates while typing into the item filter', async
     maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
     const payload = route.request().postDataJSON() as {
       baseVersion: number;
-      patch?: { ui?: { filterText?: string } };
+      patch?: { ui?: { columnFilters?: Record<string, string> } };
     };
     await new Promise((resolve) => setTimeout(resolve, 700));
     const response = await route.fetch();
     requests.push({
       baseVersion: payload.baseVersion,
-      filterText: payload.patch?.ui?.filterText || '',
+      itemIdFilter: payload.patch?.ui?.columnFilters?.['itemId'] || '',
       status: response.status(),
     });
     activeRequests -= 1;
     await route.fulfill({ response });
   });
 
-  const filter = page.getByPlaceholder('🔍 Items filtern...');
-  await filter.pressSequentially('DLB002', { delay: 300 });
-  await expect(filter).toHaveValue('DLB002');
-  await expect.poll(() => requests.at(-1)?.filterText).toBe('DLB002');
+  const filter = page.getByPlaceholder('🔍 ID...');
+  await filter.pressSequentially('MDB00701', { delay: 300 });
+  await expect(filter).toHaveValue('MDB00701');
+  await expect(page.locator('tbody tr')).toHaveCount(1);
+  await expect.poll(() => requests.at(-1)?.itemIdFilter).toBe('MDB00701');
   await expect.poll(() => activeRequests).toBe(0);
 
   expect(requests.length).toBeGreaterThan(1);
@@ -270,7 +316,7 @@ test('serializes delayed draft updates while typing into the item filter', async
   ).toHaveCount(0);
 
   await filter.fill('');
-  await expect.poll(() => requests.at(-1)?.filterText).toBe('');
+  await expect.poll(() => requests.at(-1)?.itemIdFilter).toBe('');
   await expect.poll(() => activeRequests).toBe(0);
   await page.unroute(draftPatchUrl);
 });
@@ -281,16 +327,18 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await login(page, MANAGER_ID, MANAGER_USERNAME);
 
   await page.goto(`/manage/${ACP_ID}/access`);
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
   await expect(page.getByRole('heading', { name: 'Zugriff & Funktionen' })).toBeVisible();
   await expect(page.getByLabel('ID der zusätzlichen Spalte 1')).toHaveValue('customQuality');
   await expect(page.getByLabel('Name der zusätzlichen Spalte 1')).toHaveValue(
     'Eigene Qualitätsspalte',
   );
   await expect(page.getByLabel('Allgemeine Kodierungshinweise anzeigen')).not.toBeChecked();
-  await expect(
-    page.getByLabel('Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden'),
-  ).toBeChecked();
-  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').check();
+  await expect(page.getByLabel('Manuelle Kodieranweisungen bevorzugt anzeigen')).toBeChecked();
+  await page.getByLabel('Persönliche Kategorien, Markierungen und Notizen aktivieren').check();
   await saveFeatureConfig(page);
 
   await openExplorer(page);
@@ -304,7 +352,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   await expect(dialog).toContainText('Kompetenzstufe');
   await dialog.getByLabel('Breite für Eigene Qualitätsspalte').fill('260');
   await dialog.getByLabel('Breite für Aufgabe').fill('310');
-  await dialog.getByLabel('Breite für Kompetenzstufe').fill('230');
+  await dialog.getByLabel('Breite für Kompetenzstufe', { exact: true }).fill('230');
 
   await Promise.all([
     page.waitForResponse(
@@ -326,7 +374,7 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     'width',
     '310px',
   );
-  await expect(page.getByRole('columnheader', { name: /^Kompetenzstufe(?:\s|$)/ })).toHaveCSS(
+  await expect(page.getByRole('columnheader', { name: 'Kompetenzstufe', exact: true })).toHaveCSS(
     'width',
     '230px',
   );
@@ -390,7 +438,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   );
   await expect(reorderedTaskHeader).toHaveCSS('width', '310px');
   const reorderedCompetenceHeader = page.getByRole('columnheader', {
-    name: /^Kompetenzstufe(?:\s|$)/,
+    name: 'Kompetenzstufe',
+    exact: true,
   });
   const expectedCompetenceCellIndex = await reorderedCompetenceHeader.evaluate(
     (header) => (header as HTMLTableCellElement).cellIndex,
@@ -414,7 +463,8 @@ test('offers configured columns and persists widths plus an explicitly empty sel
     .poll(() => readOnlyTaskHeader.evaluate((header) => (header as HTMLTableCellElement).cellIndex))
     .toBe(expectedTaskCellIndex);
   const readOnlyCompetenceHeader = page.getByRole('columnheader', {
-    name: /^Kompetenzstufe(?:\s|$)/,
+    name: 'Kompetenzstufe',
+    exact: true,
   });
   await expect(readOnlyCompetenceHeader).toHaveCSS('width', '230px');
   await expect
@@ -521,7 +571,11 @@ test('offers configured columns and persists widths plus an explicitly empty sel
   ).toHaveCount(0);
 
   await page.goto(`/manage/${ACP_ID}/access`);
-  await page.getByLabel('Persönliche Arbeitsdaten im Item-Explorer aktivieren').uncheck();
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
+  await page.getByLabel('Persönliche Kategorien, Markierungen und Notizen aktivieren').uncheck();
   await saveFeatureConfig(page);
 });
 
@@ -553,8 +607,12 @@ test('applies coding configuration defaults and the alternative combinations in 
   await page.getByRole('button', { name: /Schließen/ }).click();
 
   await page.goto(`/manage/${ACP_ID}/access`);
+  await page.getByText('Inhalte und Darstellung', { exact: true }).click();
+  await page
+    .getByText('Erweiterte Einstellungen: Datenzuordnung und Player-Diagnose', { exact: true })
+    .click();
   const preferManualCodingInstructions = page.getByLabel(
-    'Manuelle Kodieranweisung anstelle automatischer Kodiervorschrift verwenden',
+    'Manuelle Kodieranweisungen bevorzugt anzeigen',
   );
   const showGeneralCodingInstructions = page.getByLabel('Allgemeine Kodierungshinweise anzeigen');
   await expect(preferManualCodingInstructions).toBeChecked();

@@ -18,7 +18,7 @@ type ImportedScalarProperty =
   | "itemTimeSeconds"
   | "stimulusTimeSeconds";
 
-type ImportedTextProperty = "textComplexity";
+type ImportedTextProperty = "textComplexity" | "competenceLevel";
 
 type ImportedProperty =
   | ImportedScalarProperty
@@ -106,14 +106,21 @@ const IMPORTED_SCALAR_COLUMNS: Array<{
 const IMPORTED_TEXT_COLUMNS: Array<{
   header: string;
   property: ImportedTextProperty;
-  scope: "row";
+  scope: "row" | "item";
 }> = [
   {
     header: "text_complexity",
     property: "textComplexity",
     scope: "row",
   },
+  {
+    header: "kstufe",
+    property: "competenceLevel",
+    scope: "item",
+  },
 ];
+
+const VALID_COMPETENCE_LEVELS = new Set(["I", "II", "III", "IV", "V"]);
 
 const RESERVED_LEGACY_SUB_ID_HEADERS = new Set([
   "item",
@@ -216,7 +223,7 @@ export class ItemParameterImportPipeline {
 
     if (!scalarColumns.length && !textColumns.length && bookletIdx < 0) {
       throw new BadRequestException(
-        'CSV must contain at least one supported item parameter column: "est", "bista", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", or "booklet"',
+        'CSV must contain at least one supported item parameter column: "est", "bista", "infit", "discrimination", "solution_rate", "item_time_s", "stimulus_time_s", "text_complexity", "kstufe", or "booklet"',
       );
     }
 
@@ -304,14 +311,26 @@ export class ItemParameterImportPipeline {
         }
         rowScalars.set(definition.property, value);
       }
+      for (const definition of textColumns) {
+        const rawValue = row[definition.index]?.trim() || "";
+        const value =
+          definition.property === "competenceLevel"
+            ? rawValue.toUpperCase()
+            : rawValue;
+        if (
+          value &&
+          definition.property === "competenceLevel" &&
+          !VALID_COMPETENCE_LEVELS.has(value)
+        ) {
+          invalidReason = "kstufe muss I, II, III, IV oder V sein";
+          break;
+        }
+        if (value) rowTexts.set(definition.property, value);
+      }
       if (invalidReason) {
         failed.push({ csvRow: itemValRaw, reason: invalidReason });
         if (!group.rowIndexes.length) groups.delete(rowKey);
         continue;
-      }
-      for (const definition of textColumns) {
-        const value = row[definition.index]?.trim() || "";
-        if (value) rowTexts.set(definition.property, value);
       }
 
       const occurrence = this.parseOccurrence(
@@ -367,8 +386,15 @@ export class ItemParameterImportPipeline {
       "stimulusTimeSeconds",
       (group) => group.match.unitId,
     );
+    const competenceLevelsByItem = this.collectScopedTextValues(
+      groups,
+      textColumns,
+      "competenceLevel",
+      (group) => group.match.uuid,
+    );
     this.validateScopedConflicts(itemTimesByUuid, "item");
     this.validateScopedConflicts(stimulusTimesByUnit, "unit");
+    this.validateCompetenceLevelConflicts(competenceLevelsByItem);
 
     const mutations: ImportMutation[] = [];
     const importedScalarProperties = new Set(
@@ -403,7 +429,9 @@ export class ItemParameterImportPipeline {
     const importedRowScalarProperties = scalarColumns.filter(
       (definition) => definition.scope === "row",
     );
-    const importedRowTextProperties = textColumns;
+    const importedRowTextProperties = textColumns.filter(
+      (definition) => definition.scope === "row",
+    );
     const importedRowMutationDefinitions: Array<{
       property: ImportedProperty;
       scope: ImportScope;
@@ -558,6 +586,11 @@ export class ItemParameterImportPipeline {
     this.addItemScopeMutations(
       mutations,
       itemTimesByUuid,
+      request.itemProperties,
+    );
+    this.addCompetenceLevelMutations(
+      mutations,
+      competenceLevelsByItem,
       request.itemProperties,
     );
     this.addUnitScopeMutations(
@@ -860,6 +893,37 @@ export class ItemParameterImportPipeline {
     }
   }
 
+  private collectScopedTextValues(
+    groups: Map<string, ImportGroup>,
+    textColumns: Array<{ property: ImportedTextProperty }>,
+    property: "competenceLevel",
+    getScopeKey: (group: ImportGroup) => string,
+  ): Map<string, Set<string>> {
+    if (!textColumns.some((definition) => definition.property === property)) {
+      return new Map();
+    }
+    const valuesByScope = new Map<string, Set<string>>();
+    for (const group of groups.values()) {
+      const scopeKey = getScopeKey(group);
+      const values = valuesByScope.get(scopeKey) || new Set<string>();
+      const groupValues = group.texts.get(property);
+      if (groupValues?.size) values.add(Array.from(groupValues)[0]);
+      valuesByScope.set(scopeKey, values);
+    }
+    return valuesByScope;
+  }
+
+  private validateCompetenceLevelConflicts(
+    valuesByItem: Map<string, Set<string>>,
+  ): void {
+    for (const [itemUuid, values] of valuesByItem.entries()) {
+      if (values.size <= 1) continue;
+      throw new BadRequestException(
+        `Konflikt: Für Item "${itemUuid}" wurden unterschiedliche Werte für kstufe geliefert.`,
+      );
+    }
+  }
+
   private addItemScopeMutations(
     mutations: ImportMutation[],
     valuesByItem: Map<string, Set<number>>,
@@ -886,6 +950,37 @@ export class ItemParameterImportPipeline {
         action: "clear",
         scope: "item",
         property: "itemTimeSeconds",
+        targetKeys: this.getPartialCreditRowKeys(source, itemUuid),
+      });
+    }
+  }
+
+  private addCompetenceLevelMutations(
+    mutations: ImportMutation[],
+    valuesByItem: Map<string, Set<string>>,
+    source: Record<string, Record<string, unknown>>,
+  ): void {
+    for (const [itemUuid, values] of valuesByItem.entries()) {
+      if (values.size) {
+        mutations.push({
+          action: "set",
+          scope: "item",
+          property: "competenceLevel",
+          targetKeys: [itemUuid],
+          value: Array.from(values)[0],
+        });
+      } else {
+        mutations.push({
+          action: "clear",
+          scope: "item",
+          property: "competenceLevel",
+          targetKeys: [itemUuid],
+        });
+      }
+      mutations.push({
+        action: "clear",
+        scope: "item",
+        property: "competenceLevel",
         targetKeys: this.getPartialCreditRowKeys(source, itemUuid),
       });
     }

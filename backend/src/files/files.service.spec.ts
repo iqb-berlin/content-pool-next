@@ -1,3 +1,5 @@
+import { ReviewManifestService } from "../review/review-manifest.service";
+import { buildReviewManifest } from "../review/review-manifest";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { ConfigService } from "@nestjs/config";
@@ -33,6 +35,7 @@ describe("FilesService", () => {
   const acpId = TEST_UUIDS.acp;
   const unknownAcpId = TEST_UUIDS.unknownAcp;
   let service: FilesService;
+  let manifestService: { getManifest: jest.Mock };
   let repo: any;
   let acpRepo: any;
   let accessConfigRepo: any;
@@ -51,6 +54,11 @@ describe("FilesService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    manifestService = {
+      getManifest: jest
+        .fn()
+        .mockResolvedValue({ booklets: [], issues: [], units: [] }),
+    };
     repo = {
       find: jest.fn().mockResolvedValue([mockFile]),
       findOne: jest.fn().mockResolvedValue(mockFile),
@@ -158,6 +166,7 @@ describe("FilesService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FilesService,
+        { provide: ReviewManifestService, useValue: manifestService },
         ArchiveExpansionService,
         FileMutationService,
         FileStorageService,
@@ -1097,6 +1106,41 @@ describe("FilesService", () => {
   });
 
   describe("createSequenceZip", () => {
+    it("exports the XML booklet rather than a same-ID legacy module, deduplicating units", async () => {
+      const index = (await acpRepo.findOne()).acpIndex;
+      index.assessmentParts[0].instruments = [
+        { testcenterBooklet: [{ id: "seq-1", definitionId: "b.xml" }] },
+      ];
+      const xml =
+        '<Booklet><Metadata><Id>seq-1</Id></Metadata><Units><Unit id="unit-2"/><Unit id="unit-2" alias="again"/></Units></Booklet>';
+      manifestService.getManifest.mockResolvedValue(
+        buildReviewManifest(index, new Map([["b.xml", xml]])),
+      );
+      repo.find.mockResolvedValue([
+        { ...mockFile, id: "f1", originalName: "test.json" },
+        { ...mockFile, id: "f2", originalName: "second.json" },
+      ]);
+      const archive = jest
+        .spyOn(service as any, "createZipBuffer")
+        .mockResolvedValue(Buffer.from("zip"));
+      await service.createSequenceZip(acpId, "seq-1", "booklet");
+      expect(archive.mock.calls[0][0]).toEqual([
+        expect.objectContaining({ originalName: "second.json" }),
+      ]);
+      archive.mockClear();
+      await service.createSequenceZip(acpId, "seq-1");
+      expect(
+        (archive.mock.calls[0][0] as any[]).map((file) => file.originalName),
+      ).toEqual(["test.json", "second.json"]);
+      archive.mockRestore();
+    });
+
+    it("does not fall back to a module for an unknown explicit booklet", async () => {
+      await expect(
+        service.createSequenceZip(acpId, "seq-1", "booklet"),
+      ).rejects.toThrow(NotFoundException);
+    });
+
     it("should create a ZIP for all units in a sequence", async () => {
       repo.find.mockResolvedValue([
         { ...mockFile, id: "f1", originalName: "test.json" },

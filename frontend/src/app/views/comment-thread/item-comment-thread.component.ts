@@ -11,7 +11,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil, timeout } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { Comment, CommentThreadSnapshot } from '../../core/models/api.models';
+import { Comment, CommentThreadSnapshot, ReviewCommentTarget } from '../../core/models/api.models';
 
 interface CommentThreadGroup {
   id: string;
@@ -28,6 +28,8 @@ interface CommentThreadGroup {
 })
 export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() acpId = '';
+  @Input() targetType: ReviewCommentTarget['targetType'] = 'ITEM';
+  @Input() bookletId = '';
   @Input() unitId = '';
   @Input() itemId = '';
   @Input() enabled = false;
@@ -36,6 +38,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() initiallyOpen = false;
   @Input() hideToggle = false;
   @Output() countChanged = new EventEmitter<{
+    targetType?: ReviewCommentTarget['targetType'];
     unitId: string;
     itemId: string;
     count: number;
@@ -70,11 +73,22 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   private readonly replyDrafts = new Map<string, string>();
   private readonly expandedByTarget = new Map<string, Set<string>>();
 
+  selectedGroupId = '';
+  private accessDenied = false;
+  private readonly poll = setInterval(() => {
+    if (this.hasTarget && !this.loading && !this.busy) this.loadThread(true);
+  }, 8000);
+
   constructor(private readonly api: ApiService) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     const targetChanged =
-      changes['acpId'] || changes['unitId'] || changes['itemId'] || changes['enabled'];
+      changes['acpId'] ||
+      changes['targetType'] ||
+      changes['bookletId'] ||
+      changes['unitId'] ||
+      changes['itemId'] ||
+      changes['enabled'];
     const sessionChanged = changes['sessionToken'];
     if (sessionChanged) {
       this.sessionChanged$.next();
@@ -89,6 +103,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       this.threadRequest = null;
       this.loading = false;
       this.snapshot = null;
+      this.selectedGroupId = '';
       this.replyingTo = null;
       this.cancelEdit();
       this.error = '';
@@ -104,6 +119,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    clearInterval(this.poll);
     this.threadRequest?.unsubscribe();
     this.destroy$.next();
     this.destroy$.complete();
@@ -111,7 +127,47 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get hasTarget(): boolean {
-    return Boolean(this.enabled && this.acpId && this.unitId && this.itemId);
+    if (!this.enabled || !this.acpId) return false;
+    if (this.targetType === 'BOOKLET') return Boolean(this.bookletId);
+    if (this.targetType === 'UNIT') return Boolean(this.unitId);
+    return Boolean(this.unitId && this.itemId);
+  }
+
+  get panelId(): string {
+    return `${this.targetType.toLowerCase()}-comment-panel`;
+  }
+
+  get contextLabel(): string {
+    if (this.targetType === 'BOOKLET') return `Testheft ${this.bookletId}`;
+    if (this.targetType === 'UNIT') return `Unit ${this.unitId}`;
+    if (this.targetType === 'CODING') return `Kodierung ${this.unitId} · ${this.itemId}`;
+    return `Item ${this.unitId} · ${this.itemId}`;
+  }
+
+  get commentHeading(): string {
+    if (this.targetType === 'BOOKLET') return `Kommentare zum Testheft ${this.bookletId}`;
+    if (this.targetType === 'UNIT') return `Kommentare zur Unit ${this.unitId}`;
+    if (this.targetType === 'CODING') {
+      return `Kommentare zur Kodierung ${this.unitId} · ${this.itemId}`;
+    }
+    return `Kommentare zu ${this.contextLabel}`;
+  }
+
+  get panelAriaLabel(): string {
+    return this.targetType === 'ITEM' ? 'Kommentare zum ausgewählten Item' : this.commentHeading;
+  }
+
+  get newCommentPlaceholder(): string {
+    if (this.targetType === 'ITEM') return 'Kommentar zu diesem Item …';
+    if (this.targetType === 'BOOKLET') return `Kommentar zum Testheft ${this.bookletId} …`;
+    if (this.targetType === 'UNIT') return `Kommentar zur Unit ${this.unitId} …`;
+    return `Kommentar zur Kodierung ${this.unitId} · ${this.itemId} …`;
+  }
+
+  get emptyStateText(): string {
+    return this.targetType === 'ITEM'
+      ? 'Noch keine Kommentare zu diesem Item.'
+      : 'Noch keine Kommentare in diesem Kontext.';
   }
 
   get commentCount(): number {
@@ -119,7 +175,11 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   get visibilityLabel(): string {
-    return this.snapshot?.visibilityMode === 'SHARED' ? 'Geteilt' : 'Privat';
+    return this.snapshot?.visibilityMode === 'GROUP'
+      ? 'Review-Gruppen'
+      : this.snapshot?.visibilityMode === 'SHARED'
+        ? 'Geteilt'
+        : 'Privat';
   }
 
   get newCommentText(): string {
@@ -130,10 +190,21 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.newDrafts.set(this.targetKey, value);
   }
 
+  get editAccessLost(): boolean {
+    return (
+      this.accessDenied ||
+      Boolean(
+        this.editingComment?.groupId &&
+        this.snapshot?.visibilityMode === 'GROUP' &&
+        !this.snapshot.groups?.some((group) => group.id === this.editingComment!.groupId),
+      )
+    );
+  }
+
   get threadGroups(): CommentThreadGroup[] {
     const comments = [...(this.snapshot?.comments || [])];
     // Keep the active edit and its original version even when another tab changes it.
-    if (this.editingComment) {
+    if (this.editingComment && !this.editAccessLost) {
       const index = comments.findIndex((comment) => comment.id === this.editingComment!.id);
       if (index >= 0) comments[index] = this.editingComment;
       else comments.push(this.editingComment);
@@ -179,73 +250,95 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     const token = ++this.requestToken;
     const refreshToken = this.refreshToken;
     this.loading = true;
-    this.threadRequest = this.api
-      .getItemCommentThread(this.acpId, this.unitId, this.itemId)
-      .pipe(timeout(10_000), takeUntil(this.destroy$))
-      .subscribe({
-        next: (snapshot) => {
-          if (token !== this.requestToken) return;
-          this.snapshot = snapshot;
-          this.countChanged.emit({
-            unitId: snapshot.target.unitId,
-            itemId: snapshot.target.itemId,
-            count: this.commentCount,
-            refreshToken,
-          });
-          this.loading = false;
-          this.threadRequest = null;
-          if (!preserveError) this.operationError = '';
-          this.threadLoadError = '';
-        },
-        error: (error) => {
-          if (token !== this.requestToken) return;
-          this.loading = false;
-          this.threadRequest = null;
-          this.threadLoadError = this.errorMessage(
-            error,
-            'Kommentare konnten nicht geladen werden.',
-          );
-          if (!preserveError) this.operationError = '';
-        },
-      });
+    const request =
+      this.targetType === 'ITEM'
+        ? this.api.getItemCommentThread(this.acpId, this.unitId, this.itemId, this.snapshot)
+        : this.api.getReviewCommentThread(this.acpId, this.target, this.snapshot);
+    this.threadRequest = request.pipe(timeout(10_000), takeUntil(this.destroy$)).subscribe({
+      next: (snapshot) => {
+        if (token !== this.requestToken) return;
+        this.snapshot = snapshot;
+        this.accessDenied = false;
+        if (snapshot.visibilityMode !== 'GROUP') this.selectedGroupId = '';
+        if (
+          this.selectedGroupId &&
+          !snapshot.groups?.some((group) => group.id === this.selectedGroupId && !group.archived)
+        )
+          this.selectedGroupId = '';
+        if (!this.selectedGroupId && !this.newCommentText)
+          this.selectedGroupId = snapshot.defaultGroupId || '';
+
+        this.countChanged.emit({
+          ...(this.targetType === 'ITEM' ? {} : { targetType: this.targetType }),
+          unitId: snapshot.target.unitId || '',
+          itemId: snapshot.target.itemId || '',
+          count: this.commentCount,
+          refreshToken,
+        });
+        this.loading = false;
+        this.threadRequest = null;
+        if (!preserveError) this.operationError = '';
+        this.threadLoadError = '';
+      },
+      error: (error) => {
+        if (token !== this.requestToken) return;
+        this.loading = false;
+        this.threadRequest = null;
+        if (error?.status === 403 || error?.status === 401) {
+          this.snapshot = null;
+          this.accessDenied = true;
+        }
+        this.threadLoadError = this.errorMessage(error, 'Kommentare konnten nicht geladen werden.');
+        if (!preserveError) this.operationError = '';
+      },
+    });
   }
 
   submitComment(parentCommentId?: string): void {
+    if (!parentCommentId && this.snapshot?.visibilityMode === 'GROUP' && !this.selectedGroupId) {
+      this.error = 'Bitte die Review-Gruppe für diesen Entwurf wählen.';
+      return;
+    }
     const targetKey = this.targetKey;
     const acpId = this.acpId;
-    const unitId = this.unitId;
-    const itemId = this.itemId;
     const replyDraftKey = parentCommentId ? this.replyDraftKey(parentCommentId, targetKey) : '';
     const text = parentCommentId ? this.replyDrafts.get(replyDraftKey) || '' : this.newCommentText;
     if (!text.trim() || this.busy) return;
     this.busy = true;
-    this.api
-      .createItemComment(acpId, {
-        unitId,
-        itemId,
-        commentText: text.trim(),
-        ...(parentCommentId ? { parentCommentId } : {}),
-      })
-      .pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
-      .subscribe({
-        next: () => {
-          if (parentCommentId) {
-            this.replyDrafts.delete(replyDraftKey);
-            this.expandedThreadsFor(targetKey).add(parentCommentId);
-            if (targetKey === this.targetKey) this.replyingTo = null;
-          } else {
-            this.newDrafts.delete(targetKey);
-          }
-          this.busy = false;
-          if (targetKey === this.targetKey) this.loadThread();
-        },
-        error: (error) => {
-          this.busy = false;
-          if (targetKey === this.targetKey) {
-            this.error = this.errorMessage(error, 'Kommentar konnte nicht gespeichert werden.');
-          }
-        },
-      });
+    const input = {
+      commentText: text.trim(),
+      ...(!parentCommentId && this.snapshot?.visibilityMode === 'GROUP' && this.selectedGroupId
+        ? { groupId: this.selectedGroupId }
+        : {}),
+      ...(parentCommentId ? { parentCommentId } : {}),
+    };
+    const request =
+      this.targetType === 'ITEM'
+        ? this.api.createItemComment(acpId, {
+            unitId: this.unitId,
+            itemId: this.itemId,
+            ...input,
+          })
+        : this.api.createReviewComment(acpId, { ...this.target, ...input });
+    request.pipe(takeUntil(this.destroy$), takeUntil(this.sessionChanged$)).subscribe({
+      next: () => {
+        if (parentCommentId) {
+          this.replyDrafts.delete(replyDraftKey);
+          this.expandedThreadsFor(targetKey).add(parentCommentId);
+          if (targetKey === this.targetKey) this.replyingTo = null;
+        } else {
+          this.newDrafts.delete(targetKey);
+        }
+        this.busy = false;
+        if (targetKey === this.targetKey) this.loadThread();
+      },
+      error: (error) => {
+        this.busy = false;
+        if (targetKey === this.targetKey) {
+          this.error = this.errorMessage(error, 'Kommentar konnte nicht gespeichert werden.');
+        }
+      },
+    });
   }
 
   startReply(rootId: string): void {
@@ -326,6 +419,28 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       });
   }
 
+  vote(comment: Comment, value: 'UP' | 'DOWN'): void {
+    if (this.busy || !comment.canVote || this.snapshot?.visibilityMode !== 'SHARED') return;
+    const targetKey = this.targetKey;
+    this.busy = true;
+    this.api
+      .setCommentVote(this.acpId, comment.id, comment.myVote === value ? null : value)
+      .pipe(timeout(10_000), takeUntil(this.destroy$), takeUntil(this.sessionChanged$))
+      .subscribe({
+        next: () => {
+          this.busy = false;
+          if (targetKey === this.targetKey) this.loadThread();
+        },
+        error: (error) => {
+          this.busy = false;
+          if (targetKey === this.targetKey) {
+            this.error = this.errorMessage(error, 'Bewertung konnte nicht gespeichert werden.');
+            this.loadThread(true);
+          }
+        },
+      });
+  }
+
   toggleReplies(threadId: string): void {
     const expanded = this.expandedThreads;
     if (expanded.has(threadId)) expanded.delete(threadId);
@@ -353,7 +468,17 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   private get targetKey(): string {
-    return `${this.acpId}\u0000${this.unitId}\u0000${this.itemId}`;
+    return `${this.acpId}\u0000${this.targetType}\u0000${this.bookletId}\u0000${this.unitId}\u0000${this.itemId}`;
+  }
+
+  private get target(): ReviewCommentTarget {
+    if (this.targetType === 'BOOKLET') {
+      return { targetType: this.targetType, bookletId: this.bookletId };
+    }
+    if (this.targetType === 'UNIT') {
+      return { targetType: this.targetType, unitId: this.unitId };
+    }
+    return { targetType: this.targetType, unitId: this.unitId, itemId: this.itemId };
   }
 
   private get expandedThreads(): Set<string> {

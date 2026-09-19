@@ -1,3 +1,5 @@
+import { buildReviewManifest } from "../review/review-manifest";
+import { ReviewManifestService } from "../review/review-manifest.service";
 import { Test, TestingModule } from "@nestjs/testing";
 import { getRepositoryToken } from "@nestjs/typeorm";
 import { BadRequestException, UnauthorizedException } from "@nestjs/common";
@@ -14,6 +16,7 @@ import {
 
 describe("ViewsService", () => {
   let service: ViewsService;
+  let manifestService: ReviewManifestService;
   let acpRepository: { findOne: jest.Mock };
   let accessConfigRepository: { findOne: jest.Mock; find: jest.Mock };
   let fileRepository: { find: jest.Mock; findOne: jest.Mock };
@@ -77,6 +80,14 @@ describe("ViewsService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ViewsService,
+        {
+          provide: ReviewManifestService,
+          useValue: {
+            getManifest: jest
+              .fn()
+              .mockResolvedValue({ booklets: [], units: [], issues: [] }),
+          },
+        },
         { provide: getRepositoryToken(Acp), useValue: acpRepository },
         {
           provide: getRepositoryToken(AcpAccessConfig),
@@ -100,6 +111,122 @@ describe("ViewsService", () => {
     }).compile();
 
     service = module.get<ViewsService>(ViewsService);
+    manifestService = module.get(ReviewManifestService);
+  });
+
+  it("lists canonical booklets and returns their complete navigation", async () => {
+    acpRepository.findOne.mockResolvedValue({
+      id: "acp-1",
+      name: "ACP",
+      acpIndex: {},
+    });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+    const booklet = {
+      id: "b1",
+      name: "Booklet",
+      definitionId: "b.xml",
+      children: [],
+      units: [
+        {
+          id: "u1",
+          name: "Unit",
+          occurrenceId: "b1:path",
+          blockPath: ["Block"],
+        },
+      ],
+    };
+    jest
+      .mocked(manifestService.getManifest)
+      .mockResolvedValue({ booklets: [booklet], units: [], issues: [] });
+    expect((await service.getAcpStartPage("acp-1")).sequences).toEqual([
+      {
+        id: "b1",
+        name: "Booklet",
+        bookletDefinitionId: "b.xml",
+        kind: "booklet",
+      },
+    ]);
+    expect(await service.getTaskSequence("acp-1", "b1", "booklet")).toEqual(
+      booklet,
+    );
+  });
+
+  it.each([
+    ["Manual name", "Manual name"],
+    [undefined, "XML name"],
+    ["", "XML name"],
+  ])(
+    "uses the configured booklet name %j with XML fallback",
+    async (name, expected) => {
+      const index = {
+        assessmentParts: [
+          {
+            instruments: [
+              {
+                testcenterBooklet: [{ id: "b1", name, definitionId: "b.xml" }],
+              },
+            ],
+          },
+        ],
+      };
+      const manifest = buildReviewManifest(
+        index,
+        new Map([
+          [
+            "b.xml",
+            "<Booklet><Metadata><Id>b1</Id><Label>XML name</Label></Metadata><Units/></Booklet>",
+          ],
+        ]),
+      );
+      acpRepository.findOne.mockResolvedValue({ id: "acp-1", acpIndex: index });
+      accessConfigRepository.findOne.mockResolvedValue(null);
+      jest.mocked(manifestService.getManifest).mockResolvedValue(manifest);
+      expect((await service.getAcpStartPage("acp-1")).sequences[0].name).toBe(
+        expected,
+      );
+      expect(
+        (await service.getTaskSequence("acp-1", "b1", "booklet")).name,
+      ).toBe(expected);
+    },
+  );
+
+  it("keeps same-ID legacy module links distinct from explicit booklet links", async () => {
+    const index = {
+      assessmentParts: [
+        {
+          units: [{ id: "old" }, { id: "new" }],
+          bookletModules: [
+            { id: "same", name: "Module", units: [{ id: "old" }] },
+          ],
+          instruments: [{ testcenterBooklet: [{ definitionId: "b.xml" }] }],
+        },
+      ],
+    };
+    const xml =
+      '<Booklet><Metadata><Id>same</Id></Metadata><Units><Unit id="new"/></Units></Booklet>';
+    const manifest = buildReviewManifest(index, new Map([["b.xml", xml]]));
+    expect(manifest.issues).toEqual([]);
+    acpRepository.findOne.mockResolvedValue({ id: "acp-1", acpIndex: index });
+    accessConfigRepository.findOne.mockResolvedValue(null);
+    jest.mocked(manifestService.getManifest).mockResolvedValue(manifest);
+    expect(
+      (await service.getTaskSequence("acp-1", "same")).units.map(
+        (unit: any) => unit.id,
+      ),
+    ).toEqual(["old"]);
+    expect(
+      (await service.getTaskSequence("acp-1", "same", "booklet")).units.map(
+        (unit: any) => unit.id,
+      ),
+    ).toEqual(["new"]);
+    const sequences = (await service.getAcpStartPage("acp-1")).sequences;
+    expect(sequences).toHaveLength(2);
+    expect(sequences[0]).toMatchObject({ id: "same", kind: "booklet" });
+    expect(sequences[1]).toMatchObject({ id: "same" });
+    expect(sequences[1].kind).toBeUndefined();
+    expect(
+      await service.getTaskSequence("acp-1", "unknown", "booklet"),
+    ).toBeNull();
   });
 
   it("uses bookletModule IDs as sequence IDs on ACP start page", async () => {
@@ -270,7 +397,7 @@ describe("ViewsService", () => {
     expect(itemPreferenceRepository.query).not.toHaveBeenCalled();
   });
 
-  it("exports only the current user's personal data in requested list order", async () => {
+  it("exports personal data in requested order with an unambiguous configured category label", async () => {
     itemPreferenceRepository.findOne.mockResolvedValue({
       preferences: {
         rowData: {
@@ -284,6 +411,7 @@ describe("ViewsService", () => {
     });
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        personalItemCategoryLabel: "Kompetenzstufe",
         personalItemTags: [{ label: "Prüfen", color: "#ff0000" }],
       },
     });
@@ -361,7 +489,7 @@ describe("ViewsService", () => {
     await workbook.xlsx.load(buffer as any);
     const sheet = workbook.getWorksheet("Persönliche Itemdaten");
     expect(sheet).toBeDefined();
-    expect(sheet!.autoFilter).toBe("A1:U1");
+    expect(sheet!.autoFilter).toBe("A1:V1");
     expect(sheet!.getRow(1).values).toEqual([
       undefined,
       "Laufende Nummer",
@@ -373,13 +501,14 @@ describe("ViewsService", () => {
       "Zeilenschlüssel",
       "Markierung/Farbe",
       "Notiz",
-      "Kompetenzstufe",
+      "Kompetenzstufe (persönlich)",
       "Empirische Itemschwierigkeit",
       "BiSta-Wert",
       "Infit",
       "Trennschärfe",
       "Lösungshäufigkeit",
       "Textkomplexität",
+      "Kompetenzstufe",
       "Itemzeit (s)",
       "Stimuluszeit (s)",
       "Booklet",
@@ -393,7 +522,7 @@ describe("ViewsService", () => {
     expect(sheet!.getCell("H2").value).toBeNull();
     expect(sheet!.getCell("P3").value).toBe("anspruchsvoll");
     expect(sheet!.getCell("L3").value).toBe(503.25);
-    expect(sheet!.getCell("U2").value).toBe(0.6);
+    expect(sheet!.getCell("V2").value).toBe(0.6);
     expect(sheet!.getCell("A3").value).toBe(2);
     expect(sheet!.getCell("E3").value).toBe("uuid-1");
     expect(sheet!.getCell("F3").value).toBe("1");
@@ -401,6 +530,22 @@ describe("ViewsService", () => {
     expect(sheet!.getCell("H3").value).toBe("Prüfen (#ff0000)");
     expect(sheet!.getCell("I3").value).toBe("Eigene Notiz");
     expect(sheet!.getCell("J3").value).toBe("II");
+
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: { personalItemCategoryLabel: "Priorität" },
+    });
+    const customLabelBuffer = await service.exportPersonalItemDataXlsx(
+      "acp-1",
+      { kind: "user", userId: "user-1" },
+      ["uuid-1::1"],
+      true,
+    );
+    const customLabelWorkbook = new ExcelJS.Workbook();
+    await customLabelWorkbook.xlsx.load(customLabelBuffer as any);
+    expect(
+      customLabelWorkbook.getWorksheet("Persönliche Itemdaten")!.getCell("J1")
+        .value,
+    ).toBe("Priorität");
   });
 
   it("requires an explicit filtered and sorted row order for exports", async () => {
@@ -524,10 +669,10 @@ describe("ViewsService", () => {
       '"Teilnehmerkennung";"Unit-ID";"Unit-Label";"Item-ID";"Sub-ID";"Zeilenschlüssel"',
     );
     expect(csv).toContain(
-      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"";"";"-0.125"',
+      '"teilnehmer-a";"unit-1";"Aufgabe 1";"item-1";"A";"uuid-1::A";"\'=II";"Prüfen, Sicher";"Erste Zeile\\nZweite Zeile";"-0.25";"";"";"";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).toContain(
-      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"";"";"-0.125"',
+      '"teilnehmer-b";"unit-1";"Aufgabe 1";"item-2";"";"uuid-2";"III";"";"Fertig";"0.75";"";"";"";"";"";"";"";"";"";"";"-0.125"',
     );
     expect(csv).not.toContain("ohne-eintrag");
   });

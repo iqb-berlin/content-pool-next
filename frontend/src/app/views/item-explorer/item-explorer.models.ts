@@ -57,6 +57,7 @@ export interface ExplorerItem {
   discrimination?: number;
   solutionRate?: number;
   textComplexity?: string;
+  competenceLevel?: string;
   itemTimeSeconds?: number;
   stimulusTimeSeconds?: number;
   bookletOccurrences?: Array<{ booklet: string; position: number | null }>;
@@ -68,6 +69,7 @@ export interface ExplorerItem {
 export type ReadonlyExplorerItem = DeepReadonly<ExplorerItem>;
 
 export interface MetadataSettings {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
   configured: boolean;

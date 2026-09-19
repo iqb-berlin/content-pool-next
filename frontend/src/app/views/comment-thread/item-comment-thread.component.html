@@ -6,7 +6,7 @@
         class="btn btn-outline btn-sm btn-state comment-toggle"
         (click)="toggleOpen()"
         [attr.aria-expanded]="open"
-        aria-controls="item-comment-panel"
+        [attr.aria-controls]="panelId"
       >
         💬 Kommentare ({{ commentCount }})
       </button>
@@ -14,14 +14,14 @@
 
     @if (open) {
       <div
-        id="item-comment-panel"
+        [id]="panelId"
         class="comment-panel card"
         role="region"
-        aria-label="Kommentare zum ausgewählten Item"
+        [attr.aria-label]="panelAriaLabel"
       >
         <div class="comment-panel-header">
           <div>
-            <strong>Kommentare zu {{ unitId }} · {{ itemId }}</strong>
+            <strong>{{ commentHeading }}</strong>
             <span class="visibility-badge">{{ visibilityLabel }}</span>
           </div>
           @if (error) {
@@ -37,35 +37,64 @@
           }
         </div>
 
+        @if (snapshot?.visibilityMode === 'GROUP') {
+          <p class="comment-status">Bewertungen sind nur im geteilten Modus verfügbar.</p>
+        }
         <div class="new-comment-form">
+          @if (snapshot?.visibilityMode === 'GROUP') {
+            <label
+              >Review-Gruppe
+              <select [(ngModel)]="selectedGroupId">
+                <option value="">Bitte Gruppe wählen</option>
+                @for (group of snapshot?.groups || []; track group.id) {
+                  @if (!group.archived) {
+                    <option [value]="group.id">{{ group.name }}</option>
+                  }
+                }
+              </select>
+            </label>
+          }
           <textarea
             rows="3"
             maxlength="10000"
-            placeholder="Kommentar zu diesem Item …"
+            [placeholder]="newCommentPlaceholder"
             [(ngModel)]="newCommentText"
           ></textarea>
           <button
             type="button"
             class="btn btn-primary btn-sm"
-            [disabled]="!newCommentText.trim() || busy"
+            [disabled]="!snapshot || !newCommentText.trim() || busy"
             (click)="submitComment()"
           >
             Kommentieren
           </button>
         </div>
 
+        @if (editingCommentId && editAccessLost) {
+          <label
+            >Ungespeicherter Bearbeitungsentwurf – der Kommentar ist nicht mehr zugänglich.
+            <textarea
+              rows="3"
+              [(ngModel)]="editText"
+              aria-label="Bearbeitungsentwurf ohne Zugriff"
+            ></textarea>
+          </label>
+        }
         @if (error) {
           <div class="alert alert-error">{{ error }}</div>
         }
         @if (loading && !snapshot) {
           <p class="comment-status">Kommentare werden geladen …</p>
         } @else if (threadGroups.length === 0) {
-          <p class="comment-status">Noch keine Kommentare zu diesem Item.</p>
+          <p class="comment-status">{{ emptyStateText }}</p>
         } @else {
           <div class="thread-list">
             @for (thread of threadGroups; track thread.id) {
               <article class="comment-thread">
                 @if (thread.root; as root) {
+                  @if (root.groupName) {
+                    <span class="visibility-badge">{{ root.groupName }}</span>
+                  }
                   <ng-container
                     *ngTemplateOutlet="commentCard; context: { $implicit: root, isReply: false }"
                   ></ng-container>
@@ -189,6 +218,44 @@
       </div>
     } @else {
       <p class="comment-text">{{ comment.commentText }}</p>
+      @if (snapshot?.visibilityMode === 'SHARED' && !comment.legacyReadOnly) {
+        <div class="comment-votes" role="group" aria-label="Kommentarbewertung">
+          @if (comment.canVote) {
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'UP'"
+              [attr.aria-label]="
+                'Upvotes ' +
+                (comment.upvotes || 0) +
+                (comment.myVote === 'UP' ? ': Upvote entfernen' : ': Upvote geben')
+              "
+              (click)="vote(comment, 'UP')"
+            >
+              ↑ Upvotes {{ comment.upvotes || 0 }}
+            </button>
+            <button
+              type="button"
+              class="btn btn-outline btn-sm btn-state"
+              [disabled]="busy || loading"
+              [attr.aria-pressed]="comment.myVote === 'DOWN'"
+              [attr.aria-label]="
+                'Downvotes ' +
+                (comment.downvotes || 0) +
+                (comment.myVote === 'DOWN' ? ': Downvote entfernen' : ': Downvote geben')
+              "
+              (click)="vote(comment, 'DOWN')"
+            >
+              ↓ Downvotes {{ comment.downvotes || 0 }}
+            </button>
+          } @else {
+            <span
+              >↑ Upvotes {{ comment.upvotes || 0 }} · ↓ Downvotes {{ comment.downvotes || 0 }}</span
+            >
+          }
+        </div>
+      }
       @if (comment.isOwn) {
         <div class="own-comment-actions">
           <button type="button" class="link-button" (click)="startEdit(comment)">Bearbeiten</button>

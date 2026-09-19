@@ -1,3 +1,4 @@
+import { CapabilitiesComponent } from '../../shared/capabilities/capabilities.component';
 import { sequenceLabel } from '../../shared/sequence-label';
 import { Component, ElementRef, ViewChild, OnInit } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -8,11 +9,20 @@ import { AuthService } from '../../core/services/auth.service';
 import { Acp } from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [FormsModule, RouterLink, JsonPipe, AcpManagerContextComponent, ConfirmDialogComponent],
+  imports: [
+    CapabilitiesComponent,
+    FormsModule,
+    RouterLink,
+    JsonPipe,
+    AcpManagerContextComponent,
+    ConfirmDialogComponent,
+    BookletSelectionComponent,
+  ],
   template: `
     @if (acp) {
       <app-acp-manager-context />
@@ -50,7 +60,10 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         <h2 id="content-heading">Inhalte</h2>
         @if (contentData) {
           <div class="grid content-grid">
-            @if (contentData.featureConfig?.enableItemList !== false) {
+            @if (
+              contentData.capabilities?.includes('item-explorer:view') ||
+              contentData.capabilities?.includes('item-explorer:edit')
+            ) {
               <a
                 [routerLink]="['/view', acp.id, 'item-explorer']"
                 class="card link-card primary-content"
@@ -83,7 +96,7 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               contentData.sequences?.length &&
               contentData.featureConfig?.enableSequenceNavigation !== false
             ) {
-              @for (sequence of contentData.sequences; track sequence.id) {
+              @for (sequence of nonBookletSequences; track sequence.kind + ':' + sequence.id) {
                 <a [routerLink]="['/view', acp.id, 'sequence', sequence.id]" class="card link-card">
                   <span class="tile-icon" aria-hidden="true">📋</span>
                   <div>
@@ -95,6 +108,15 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               }
             }
           </div>
+          @if (
+            bookletSequences.length && contentData.featureConfig?.enableSequenceNavigation !== false
+          ) {
+            <app-booklet-selection
+              [acpId]="acp.id"
+              [booklets]="bookletSequences"
+              actionLabel="Öffnen"
+            />
+          }
         } @else {
           <p>{{ contentError || 'Inhalte werden geladen …' }}</p>
         }
@@ -124,6 +146,27 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
               <p>Zugang und Funktionen festlegen</p>
             </div>
           </a>
+          @if (contentData?.capabilities?.includes('review:manage')) {
+            <a
+              [routerLink]="['/view', acp.id, 'review', 'manage']"
+              class="card link-card review-card"
+            >
+              <span class="tile-icon" aria-hidden="true">💬</span>
+              <div>
+                <h3>Review</h3>
+                <p>
+                  <span
+                    class="badge"
+                    [class.badge-success]="contentData?.featureConfig?.enableReview"
+                    [class.badge-warning]="!contentData?.featureConfig?.enableReview"
+                  >
+                    {{ contentData?.featureConfig?.enableReview ? 'Aktiv' : 'Nicht aktiviert' }}
+                  </span>
+                  · Bereitschaft, Freigabe und Kommentare verwalten
+                </p>
+              </div>
+            </a>
+          }
           <a [routerLink]="['/manage', acp.id, 'application-tokens']" class="card link-card">
             <span class="tile-icon" aria-hidden="true">🔑</span>
             <div>
@@ -171,6 +214,11 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 
       <section class="card roles-card" aria-labelledby="roles-heading">
         <h2 id="roles-heading">Personen &amp; Rollen</h2>
+        <p class="roles-help">
+          ACP-Manager verwalten das Paket. „Nur lesend“ erlaubt keine Paketverwaltung. Rechte für
+          Review und Item Explorer gelten zusätzlich und unabhängig von der Paketrolle. Änderungen
+          pro Person speichern.
+        </p>
         @if (roleError) {
           <p class="alert alert-error" role="alert">{{ roleError }}</p>
         }
@@ -182,17 +230,19 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
             <thead>
               <tr>
                 <th scope="col">Person</th>
-                <th scope="col">Rolle</th>
+                <th scope="col">Paketrolle</th>
+                <th scope="col">Review</th>
+                <th scope="col">Item Explorer</th>
                 <th scope="col">Aktionen</th>
               </tr>
             </thead>
             <tbody>
               @for (role of roles; track role.id) {
-                <tr>
+                <tr [class.assignment-changed]="hasAssignmentChanges(role)">
                   <th scope="row" class="person-name">
                     {{ role.user?.displayName || role.user?.username || role.userId }}
                   </th>
-                  <td>
+                  <td data-label="Paketrolle">
                     <select
                       class="form-select"
                       [ngModel]="roleEdits[role.userId] ?? role.role"
@@ -206,24 +256,42 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                       <option value="ACP_MANAGER" [disabled]="!canAssignManager">
                         ACP-Manager
                       </option>
-                      <option value="READ_ONLY">Nur Lesen</option>
+                      <option value="READ_ONLY">Nur lesend</option>
                     </select>
+                  </td>
+                  <td data-label="Review">
+                    <app-capabilities
+                      class="role-capabilities"
+                      group="review"
+                      [value]="capabilityEdits[role.userId] ?? role.capabilities ?? []"
+                      [disabled]="roleBusy"
+                      [compact]="true"
+                      [showHint]="false"
+                      (valueChange)="capabilityEdits[role.userId] = $event"
+                    />
+                  </td>
+                  <td data-label="Item Explorer">
+                    <app-capabilities
+                      class="role-capabilities"
+                      group="item-explorer"
+                      [value]="capabilityEdits[role.userId] ?? role.capabilities ?? []"
+                      [disabled]="roleBusy"
+                      [compact]="true"
+                      [showHint]="false"
+                      (valueChange)="capabilityEdits[role.userId] = $event"
+                    />
                   </td>
                   <td>
                     <div class="role-actions">
                       <button
                         class="btn btn-primary btn-sm"
-                        (click)="saveRole(role.userId)"
-                        [disabled]="
-                          roleBusy ||
-                          !roleEdits[role.userId] ||
-                          roleEdits[role.userId] === role.role
-                        "
+                        (click)="saveAssignment(role)"
+                        [disabled]="roleBusy || !hasAssignmentChanges(role)"
                       >
-                        Speichern
+                        Änderungen speichern
                       </button>
                       <button
-                        class="btn btn-outline btn-sm"
+                        class="btn btn-link btn-sm"
                         (click)="removeRole(role.userId)"
                         [disabled]="roleBusy || (role.role === 'ACP_MANAGER' && !canAssignManager)"
                       >
@@ -234,54 +302,63 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="3">Noch keine Personen zugewiesen.</td>
+                  <td colspan="5">Noch keine Personen zugewiesen.</td>
                 </tr>
               }
             </tbody>
           </table>
         </div>
-        <div class="add-person">
-          <h4>Person hinzufügen</h4>
+        <details class="add-person">
+          <summary>Person hinzufügen</summary>
           @if (availableUsers.length) {
-            <div class="add-person-fields">
-              <div class="add-person-field">
-                <label for="new-role-person">Person</label>
-                <select
-                  id="new-role-person"
-                  [(ngModel)]="selectedUserId"
-                  class="form-select"
-                  [disabled]="roleBusy"
-                >
-                  <option value="">Person auswählen …</option>
-                  @for (u of availableUsers; track u.id) {
-                    <option [value]="u.id">{{ u.displayName || u.username }}</option>
-                  }
-                </select>
+            <div class="add-person-layout">
+              <div class="add-person-fields">
+                <div class="add-person-field">
+                  <label for="new-role-person">Person</label>
+                  <select
+                    id="new-role-person"
+                    [(ngModel)]="selectedUserId"
+                    class="form-select"
+                    [disabled]="roleBusy"
+                  >
+                    <option value="">Person auswählen …</option>
+                    @for (u of availableUsers; track u.id) {
+                      <option [value]="u.id">{{ u.displayName || u.username }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="add-person-field">
+                  <label for="new-role-value">Paketrolle</label>
+                  <select
+                    id="new-role-value"
+                    [(ngModel)]="selectedRole"
+                    class="form-select"
+                    [disabled]="roleBusy"
+                  >
+                    <option value="ACP_MANAGER" [disabled]="!canAssignManager">ACP-Manager</option>
+                    <option value="READ_ONLY">Nur lesend</option>
+                  </select>
+                </div>
               </div>
-              <div class="add-person-field">
-                <label for="new-role-value">Rolle</label>
-                <select
-                  id="new-role-value"
-                  [(ngModel)]="selectedRole"
-                  class="form-select"
-                  [disabled]="roleBusy"
-                >
-                  <option value="ACP_MANAGER" [disabled]="!canAssignManager">ACP-Manager</option>
-                  <option value="READ_ONLY">Nur Lesen</option>
-                </select>
-              </div>
+              <app-capabilities
+                class="new-person-capabilities"
+                [(value)]="newCapabilities"
+                [disabled]="roleBusy"
+                [compact]="true"
+                [showHint]="false"
+              />
               <button
-                class="btn btn-primary btn-sm"
+                class="btn btn-primary btn-sm add-person-button"
                 (click)="assignRole()"
                 [disabled]="roleBusy || !selectedUserId"
               >
-                Hinzufügen
+                Person hinzufügen
               </button>
             </div>
           } @else {
             <p>Alle verfügbaren Personen sind bereits zugewiesen.</p>
           }
-        </div>
+        </details>
       </section>
 
       <app-confirm-dialog
@@ -424,7 +501,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
       .roles-table {
         width: 100%;
         border-collapse: collapse;
-        table-layout: fixed;
+        table-layout: auto;
+        min-width: 800px;
       }
       .roles-table th,
       .roles-table td {
@@ -437,11 +515,23 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         font-size: 0.85rem;
         font-weight: 600;
       }
+      .roles-table th:nth-child(1) {
+        width: 24%;
+      }
       .roles-table th:nth-child(2) {
-        width: 180px;
+        width: 190px;
       }
       .roles-table th:nth-child(3) {
-        width: 210px;
+        width: 150px;
+      }
+      .roles-table th:nth-child(4) {
+        width: 150px;
+      }
+      .roles-table th:nth-child(5) {
+        width: 170px;
+      }
+      .assignment-changed {
+        background: var(--color-bg);
       }
       .person-name {
         font-weight: 500;
@@ -452,14 +542,27 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         gap: 8px;
         flex-wrap: wrap;
       }
+      .roles-help {
+        color: var(--color-text-secondary);
+        font-size: 0.88rem;
+        margin: -6px 0 14px;
+      }
       .roles-table select {
         width: 100%;
       }
       .add-person {
         margin-top: 20px;
+        padding: 16px;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius);
+        background: var(--color-bg);
       }
-      .add-person h4 {
-        margin-bottom: 12px;
+      .add-person summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      .add-person[open] summary {
+        margin-bottom: 16px;
       }
       .add-person-fields {
         display: flex;
@@ -467,20 +570,92 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
         gap: 12px;
         flex-wrap: wrap;
       }
+      .add-person-layout {
+        display: grid;
+        grid-template-columns: minmax(250px, 1fr) minmax(330px, 1.2fr) auto;
+        align-items: end;
+        gap: 16px;
+      }
       .add-person-field {
         display: flex;
         flex-direction: column;
         gap: 6px;
         font-size: 0.85rem;
+        flex: 1 1 170px;
+      }
+      .add-person-button {
+        white-space: nowrap;
       }
       .role-status {
         color: var(--color-text-secondary);
         margin: 12px 0;
       }
-      @media (max-width: 650px) {
-        .roles-table {
-          min-width: 520px;
+      @media (min-width: 901px) {
+        .roles-table td[data-label='Paketrolle'] {
+          padding-right: 32px;
         }
+      }
+      @media (max-width: 1000px) {
+        .add-person-layout {
+          grid-template-columns: 1fr;
+          align-items: stretch;
+        }
+        .add-person-button {
+          justify-self: start;
+        }
+      }
+      @media (max-width: 900px) {
+        .roles-table {
+          min-width: 0;
+        }
+        .roles-table thead {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          overflow: hidden;
+          clip-path: inset(50%);
+        }
+        .roles-table tbody {
+          display: grid;
+          gap: 12px;
+        }
+        .roles-table tr {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius);
+          padding: 12px;
+          gap: 12px;
+        }
+        .roles-table th,
+        .roles-table td {
+          border: 0;
+          padding: 0;
+          width: auto;
+          min-width: 0;
+        }
+        .roles-table th:nth-child(1) {
+          width: auto;
+        }
+        .roles-table .person-name,
+        .roles-table td[data-label='Paketrolle'],
+        .roles-table td:last-child {
+          grid-column: 1 / -1;
+        }
+        .roles-table td[data-label]::before {
+          content: attr(data-label);
+          display: block;
+          font-size: 0.8rem;
+          color: var(--color-text-secondary);
+          font-weight: 600;
+          margin-bottom: 8px;
+        }
+        .role-actions {
+          padding-top: 8px;
+          border-top: 1px solid var(--color-border);
+        }
+      }
+      @media (max-width: 650px) {
         .add-person-field {
           width: 100%;
         }
@@ -516,6 +691,7 @@ export class DashboardComponent implements OnInit {
   selectedUserId = '';
   selectedRole = 'READ_ONLY';
   roleEdits: Record<string, string | undefined> = {};
+  capabilityEdits: Record<string, string[] | undefined> = {};
   roleBusy = false;
   roleError = '';
   roleStatus = '';
@@ -527,6 +703,19 @@ export class DashboardComponent implements OnInit {
   get availableUsers(): any[] {
     return this.allUsers.filter((user) => !this.roles.some((role) => role.userId === user.id));
   }
+
+  get bookletSequences(): any[] {
+    return (this.contentData?.sequences || []).filter(
+      (sequence: any) => sequence.kind === 'booklet',
+    );
+  }
+
+  get nonBookletSequences(): any[] {
+    return (this.contentData?.sequences || []).filter(
+      (sequence: any) => sequence.kind !== 'booklet',
+    );
+  }
+
   myRole: string | null = null;
   editingName = false;
   editName = '';
@@ -641,39 +830,59 @@ export class DashboardComponent implements OnInit {
       !this.availableUsers.some((user) => user.id === this.selectedUserId)
     )
       return;
-    this.persistRole(this.selectedUserId, this.selectedRole);
+    this.persistRole(this.selectedUserId, this.selectedRole, this.newCapabilities);
   }
 
-  saveRole(userId: string) {
-    const assignment = this.roles.find((role) => role.userId === userId);
-    const nextRole = this.roleEdits[userId];
-    if (!assignment || !nextRole || nextRole === assignment.role) return;
-    this.persistRole(userId, nextRole);
+  newCapabilities: string[] = [];
+  hasAssignmentChanges(role: any): boolean {
+    const nextRole = this.roleEdits[role.userId] ?? role.role;
+    const nextCapabilities = this.capabilityEdits[role.userId] ?? role.capabilities ?? [];
+    return (
+      nextRole !== role.role || !this.sameCapabilities(nextCapabilities, role.capabilities || [])
+    );
   }
 
-  private persistRole(userId: string, role: string) {
+  saveAssignment(assignment: any) {
+    if (!this.hasAssignmentChanges(assignment)) return;
+    this.persistRole(
+      assignment.userId,
+      this.roleEdits[assignment.userId] ?? assignment.role,
+      this.capabilityEdits[assignment.userId] ?? assignment.capabilities ?? [],
+    );
+  }
+
+  private persistRole(userId: string, role: string, capabilities: string[]) {
     if (!this.acp || this.roleBusy) return;
     this.roleBusy = true;
     this.roleError = '';
     this.roleStatus = '';
-    this.api.assignAcpRole(this.acp.id, { userId, role }).subscribe({
+    const assignment = this.roles.find((entry) => entry.userId === userId);
+    const save =
+      assignment?.role === role
+        ? this.api.updateRoleCapabilities(this.acp.id, userId, capabilities)
+        : this.api.assignAcpRole(this.acp.id, { userId, role, capabilities });
+    save.subscribe({
       next: (saved) => {
         const existing = this.roles.find((entry) => entry.userId === userId);
         const updated = {
           ...existing,
           ...saved,
           userId,
-          role,
+          role: saved.role ?? role,
           user: existing?.user || this.allUsers.find((user) => user.id === userId),
         };
         this.roles = existing
           ? this.roles.map((entry) => (entry.userId === userId ? updated : entry))
           : [...this.roles, updated];
         delete this.roleEdits[userId];
-        if (this.selectedUserId === userId) this.selectedUserId = '';
-        if (this.auth.currentUser?.id === userId) this.myRole = role;
+        delete this.capabilityEdits[userId];
+        if (this.selectedUserId === userId) {
+          this.selectedUserId = '';
+          this.newCapabilities = [];
+        }
+        if (this.auth.currentUser?.id === userId) this.myRole = updated.role;
         this.roleBusy = false;
-        this.roleStatus = existing ? 'Rolle gespeichert.' : 'Person hinzugefügt.';
+        this.roleStatus = existing ? 'Zuordnung gespeichert.' : 'Person hinzugefügt.';
       },
       error: (err) => {
         this.roleBusy = false;
@@ -691,6 +900,7 @@ export class DashboardComponent implements OnInit {
       next: () => {
         this.roles = this.roles.filter((role) => role.userId !== userId);
         delete this.roleEdits[userId];
+        delete this.capabilityEdits[userId];
         if (this.auth.currentUser?.id === userId) this.myRole = null;
         this.roleBusy = false;
         this.roleStatus = 'Rollenzuweisung entfernt.';
@@ -700,6 +910,15 @@ export class DashboardComponent implements OnInit {
         this.roleError = this.mapRoleError(err, 'Die Rolle konnte nicht entfernt werden.');
       },
     });
+  }
+
+  private sameCapabilities(left: string[], right: string[]): boolean {
+    const normalizedLeft = [...new Set(left)].sort();
+    const normalizedRight = [...new Set(right)].sort();
+    return (
+      normalizedLeft.length === normalizedRight.length &&
+      normalizedLeft.every((capability, index) => capability === normalizedRight[index])
+    );
   }
 
   startEditName() {

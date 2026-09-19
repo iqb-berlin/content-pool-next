@@ -1,3 +1,14 @@
+import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
+import { UpdateCapabilitiesDto } from "./dto/acp.dto";
+import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  UploadedFile,
+  UseInterceptors,
+  BadRequestException,
+} from "@nestjs/common";
+import { parseCredentialFile } from "./credential-file";
+import { profileGrants } from "../auth/capabilities/acp-capabilities";
+import { ExplorerEditGuard } from "../auth/capabilities/explorer-access.guard";
 import {
   Controller,
   Get,
@@ -86,6 +97,7 @@ export class AcpController {
     private readonly acpService: AcpService,
     private readonly itemExplorerStateService: ItemExplorerStateService,
     private readonly adminService: AdminService,
+    private readonly capabilities: AcpCapabilitiesService,
   ) {}
 
   @Get()
@@ -223,6 +235,17 @@ export class AcpController {
     return this.acpService.assignRole(id, dto);
   }
 
+  @Patch(":id/roles/:userId/capabilities")
+  @UseGuards(RolesGuard)
+  @Roles("ACP_MANAGER")
+  async updateRoleCapabilities(
+    @UuidParam("id") id: string,
+    @UuidParam("userId") userId: string,
+    @Body() dto: UpdateCapabilitiesDto,
+  ) {
+    return this.acpService.updateRoleCapabilities(id, userId, dto.capabilities);
+  }
+
   @Delete(":id/roles/:userId")
   @UseGuards(RolesGuard)
   @Roles("ACP_MANAGER")
@@ -311,7 +334,9 @@ export class AcpController {
   @Roles("ACP_MANAGER")
   @ApiOperation({ summary: "Get access configuration for ACP" })
   async getAccessConfig(@UuidParam("id") id: string) {
-    return this.acpService.getAccessConfig(id);
+    return this.withoutReviewInternals(
+      await this.acpService.getAccessConfig(id),
+    );
   }
 
   @Put(":id/access")
@@ -321,8 +346,29 @@ export class AcpController {
   async updateAccessConfig(
     @UuidParam("id") id: string,
     @Body() dto: UpdateAccessConfigDto,
+    @Request() req: any,
   ) {
-    return this.acpService.updateAccessConfig(id, dto);
+    if (dto.featureConfig) {
+      const current = await this.acpService.getAccessConfig(id);
+      const reviewKeys = [
+        "enableReview",
+        "enableCommenting",
+        "commentTargets",
+        "commentVisibilityMode",
+      ];
+      if (
+        reviewKeys.some(
+          (key) =>
+            JSON.stringify(current?.featureConfig?.[key]) !==
+            JSON.stringify(dto.featureConfig?.[key]),
+        )
+      ) {
+        await this.capabilities.assert(req, "review:manage");
+      }
+    }
+    return this.withoutReviewInternals(
+      await this.acpService.updateAccessConfig(id, dto),
+    );
   }
 
   @Post(":id/access/credentials")
@@ -338,11 +384,65 @@ export class AcpController {
       id,
       dto.credentials,
       mode,
+      dto.profile || dto.capabilities
+        ? profileGrants(dto.profile, dto.capabilities)
+        : undefined,
     );
     return {
       message: `Credentials processed: ${result.added} added, ${result.updated} updated, ${result.skipped} skipped`,
       ...result,
     };
+  }
+
+  @Post(":id/access/credentials/file")
+  @UseGuards(RolesGuard)
+  @Roles("ACP_MANAGER")
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 1024 * 1024 } }),
+  )
+  async importCredentialFile(
+    @UuidParam("id") id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query("mode") mode: "replace" | "append" | "upsert" = "append",
+    @Query("preview") preview?: string,
+    @Body() body?: { profile?: string; capabilities?: string },
+  ) {
+    if (!file?.buffer) throw new BadRequestException("Zugangsliste fehlt");
+    let custom: unknown = [];
+    try {
+      custom = JSON.parse(body?.capabilities || "[]");
+    } catch {
+      throw new BadRequestException("Ungültige Berechtigungen");
+    }
+    if (!body?.profile)
+      throw new BadRequestException("Berechtigungsprofil fehlt");
+    const grants = profileGrants(body.profile, custom);
+    const entries = parseCredentialFile(file.buffer);
+    if (!["replace", "append", "upsert"].includes(mode))
+      throw new BadRequestException("Ungültiger Importmodus");
+    if (preview === "true") {
+      const existing = await this.acpService.getCredentials(id);
+      const names = new Set(entries.map((e) => e.username));
+      const changes = entries.map((e) => {
+        const old = existing.find((c) => c.username === e.username);
+        return {
+          username: e.username,
+          action: old ? (mode === "append" ? "skip" : "update") : "add",
+          before: old?.capabilities || [],
+          after: old && mode === "append" ? old.capabilities || [] : grants,
+        };
+      });
+      return {
+        changes,
+        removed:
+          mode === "replace"
+            ? existing
+                .filter((c) => !names.has(c.username))
+                .map((c) => c.username)
+            : [],
+      };
+    }
+    return this.acpService.uploadCredentials(id, entries, mode, grants);
   }
 
   @Get(":id/access/credentials")
@@ -411,7 +511,7 @@ export class AcpController {
     try {
       const result = await this.acpService.updateMetadataColumns(id, dto);
       this.logger.log(`Successfully updated metadata columns for ACP ${id}`);
-      return result;
+      return this.withoutReviewInternals(result);
     } catch (error) {
       this.logger.error(
         `Failed to update metadata columns for ACP ${id}: ${error.message}`,
@@ -422,8 +522,7 @@ export class AcpController {
   }
 
   @Patch(":id/item-explorer/draft")
-  @UseGuards(RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiOperation({
     summary: "Patch Item Explorer draft state (ACP Manager or Admin)",
   })
@@ -445,8 +544,7 @@ export class AcpController {
   }
 
   @Post(":id/item-explorer/draft/save")
-  @UseGuards(RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiOperation({ summary: "Publish Item Explorer draft state" })
   async saveItemExplorerDraft(
     @UuidParam("id") id: string,
@@ -461,8 +559,7 @@ export class AcpController {
   }
 
   @Post(":id/item-explorer/draft/discard")
-  @UseGuards(RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiOperation({
     summary: "Discard Item Explorer draft state and reset to published",
   })
@@ -479,8 +576,7 @@ export class AcpController {
   }
 
   @Get(":id/item-explorer/changes")
-  @UseGuards(RolesGuard)
-  @Roles("ACP_MANAGER")
+  @UseGuards(ExplorerEditGuard)
   @ApiOperation({ summary: "List Item Explorer change log entries" })
   async getItemExplorerChanges(
     @UuidParam("id") id: string,
@@ -491,5 +587,20 @@ export class AcpController {
       id,
       Number.isNaN(parsedLimit) ? 100 : parsedLimit,
     );
+  }
+  private withoutReviewInternals<T extends Record<string, unknown> | object>(
+    config: T,
+  ) {
+    const {
+      reviewGroups: _groups,
+      reviewRevision: _revision,
+      reviewConfigVersion: _version,
+      ...visible
+    } = config as T & {
+      reviewGroups?: unknown;
+      reviewRevision?: unknown;
+      reviewConfigVersion?: unknown;
+    };
+    return visible;
   }
 }

@@ -13,8 +13,18 @@ function createComponent() {
         comments: [],
       }),
     ),
+    getReviewCommentThread: vi.fn().mockReturnValue(
+      of({
+        revision: 'coding-1',
+        target: { targetType: 'CODING', unitId: 'unit-1', itemId: 'item-1' },
+        visibilityMode: 'SHARED',
+        comments: [],
+      }),
+    ),
     createItemComment: vi.fn().mockReturnValue(of({ id: 'created' })),
+    createReviewComment: vi.fn().mockReturnValue(of({ id: 'coding-created' })),
     updateItemComment: vi.fn().mockReturnValue(of({ id: 'updated' })),
+    setCommentVote: vi.fn().mockReturnValue(of({})),
     deleteItemComment: vi.fn().mockReturnValue(of({ success: true })),
   } as any;
   const component = new ItemCommentThreadComponent(api);
@@ -26,6 +36,123 @@ function createComponent() {
 }
 
 describe('ItemCommentThreadComponent', () => {
+  it('sets, switches and removes votes while retaining drafts and refreshing the snapshot', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    component.newCommentText = 'Ungespeichert';
+    const comment = { id: 'foreign', canVote: true, myVote: null } as any;
+    component.vote(comment, 'UP');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', 'UP');
+    component.vote({ ...comment, myVote: 'UP' }, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', 'DOWN');
+    component.vote({ ...comment, myVote: 'DOWN' }, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenLastCalledWith('acp-1', 'foreign', null);
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(4);
+    expect(component.newCommentText).toBe('Ungespeichert');
+    component.ngOnDestroy();
+  });
+
+  it('blocks disabled votes and ignores responses after switching sessions', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    const comment = { id: 'foreign', canVote: true } as any;
+    component.vote({ ...comment, canVote: false }, 'UP');
+    component.snapshot!.visibilityMode = 'GROUP';
+    component.vote(comment, 'UP');
+    expect(api.setCommentVote).not.toHaveBeenCalled();
+    component.snapshot!.visibilityMode = 'SHARED';
+    const response = new Subject();
+    api.setCommentVote.mockReturnValue(response);
+    component.vote(comment, 'UP');
+    component.vote(comment, 'DOWN');
+    expect(api.setCommentVote).toHaveBeenCalledTimes(1);
+    component.ngOnChanges({ sessionToken: { firstChange: false } as any });
+    const loads = api.getItemCommentThread.mock.calls.length;
+    response.next({});
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(loads);
+    expect(component.busy).toBe(false);
+    component.ngOnDestroy();
+  });
+
+  it('preserves vote failures while refreshing revoked access', () => {
+    const { component, api } = createComponent();
+    component.loadThread();
+    component.newCommentText = 'Entwurf';
+    api.setCommentVote.mockReturnValue(
+      throwError(() => ({ status: 403, error: { message: 'Review deaktiviert' } })),
+    );
+    component.vote({ id: 'foreign', canVote: true } as any, 'UP');
+    expect(component.error).toBe('Review deaktiviert');
+    expect(component.busy).toBe(false);
+    expect(component.newCommentText).toBe('Entwurf');
+    expect(api.getItemCommentThread).toHaveBeenCalledTimes(2);
+    component.ngOnDestroy();
+  });
+
+  it('requires a new group choice after membership changes without moving a draft automatically', () => {
+    const { component, api } = createComponent();
+    component.selectedGroupId = 'A';
+    component.newCommentText = 'Entwurf für A';
+    component.startEdit({
+      id: 'old',
+      groupId: 'A',
+      commentText: 'Gespeicherter Text',
+      version: 1,
+    } as any);
+    component.editText = 'Ungespeicherte Änderung';
+    api.getItemCommentThread.mockReturnValue(
+      of({
+        revision: 'new-membership',
+        visibilityMode: 'GROUP',
+        target: { unitId: 'unit-1', itemId: 'item-1' },
+        comments: [],
+        groups: [{ id: 'B', name: 'B', archived: false }],
+        defaultGroupId: 'B',
+      }),
+    );
+    component.loadThread(true);
+    expect(component.selectedGroupId).toBe('');
+    expect(component.newCommentText).toBe('Entwurf für A');
+    expect(component.editText).toBe('Ungespeicherte Änderung');
+    expect(component.editAccessLost).toBe(true);
+    expect(component.threadGroups).toEqual([]);
+    component.submitComment();
+    expect(api.createItemComment).not.toHaveBeenCalled();
+    component.ngOnDestroy();
+  });
+
+  it('polls after eight seconds without changing the target or unsaved input and stops on destroy', () => {
+    vi.useFakeTimers();
+    const { component, api } = createComponent();
+    try {
+      component.loadThread();
+      component.newCommentText = 'Neuer Entwurf';
+      component.setReplyText('root', 'Antwortentwurf');
+      component.startEdit({ id: 'edit', commentText: 'Original', version: 1 } as any);
+      component.editText = 'Bearbeitungsentwurf';
+      api.getItemCommentThread.mockReturnValue(
+        of({
+          revision: '2',
+          visibilityMode: 'SHARED',
+          target: { unitId: 'unit-1', itemId: 'item-1' },
+          comments: [],
+        }),
+      );
+      vi.advanceTimersByTime(8000);
+      expect(component.snapshot?.revision).toBe('2');
+      expect(component.itemId).toBe('item-1');
+      expect(component.newCommentText).toBe('Neuer Entwurf');
+      expect(component.replyText('root')).toBe('Antwortentwurf');
+      expect(component.editText).toBe('Bearbeitungsentwurf');
+      component.ngOnDestroy();
+      vi.advanceTimersByTime(16000);
+      expect(api.getItemCommentThread).toHaveBeenCalledTimes(2);
+    } finally {
+      component.ngOnDestroy();
+      vi.useRealTimers();
+    }
+  });
+
   it('clears load errors after distinct failures and a successful poll', () => {
     const { component, api } = createComponent();
     api.getItemCommentThread
@@ -103,9 +230,28 @@ describe('ItemCommentThreadComponent', () => {
   it('exposes the comment panel as a stateful disclosure', () => {
     expect(template).toContain('class="btn btn-outline btn-sm btn-state comment-toggle"');
     expect(template).toContain('[attr.aria-expanded]="open"');
-    expect(template).toContain('aria-controls="item-comment-panel"');
-    expect(template).toContain('id="item-comment-panel"');
+    expect(template).toContain('[attr.aria-controls]="panelId"');
+    expect(template).toContain('[id]="panelId"');
     expect(template).not.toContain('btn-state-indicator');
+  });
+
+  it('keeps the established Item labels while naming other comment contexts explicitly', () => {
+    const { component } = createComponent();
+
+    expect(component.panelAriaLabel).toBe('Kommentare zum ausgewählten Item');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zu diesem Item …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare zu diesem Item.');
+
+    component.targetType = 'BOOKLET';
+    component.bookletId = 'testheft-1';
+    expect(component.contextLabel).toBe('Testheft testheft-1');
+    expect(component.panelAriaLabel).toBe('Kommentare zum Testheft testheft-1');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zum Testheft testheft-1 …');
+
+    component.targetType = 'CODING';
+    expect(component.panelAriaLabel).toBe('Kommentare zur Kodierung unit-1 · item-1');
+    expect(component.newCommentPlaceholder).toBe('Kommentar zur Kodierung unit-1 · item-1 …');
+    expect(component.emptyStateText).toBe('Noch keine Kommentare in diesem Kontext.');
   });
 
   it('loads only the selected item and ignores a superseded response', () => {
@@ -132,8 +278,8 @@ describe('ItemCommentThreadComponent', () => {
     });
 
     expect(component.snapshot?.revision).toBe('new');
-    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(1, 'acp-1', 'unit-1', 'item-1');
-    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(2, 'acp-1', 'unit-1', 'item-2');
+    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(1, 'acp-1', 'unit-1', 'item-1', null);
+    expect(api.getItemCommentThread).toHaveBeenNthCalledWith(2, 'acp-1', 'unit-1', 'item-2', null);
     component.ngOnDestroy();
   });
 
@@ -376,5 +522,35 @@ describe('ItemCommentThreadComponent', () => {
         updatedAt: '2026-01-01T10:00:05.000Z',
       } as any),
     ).toBe(false);
+  });
+
+  it('uses a separate coding thread for the selected item', () => {
+    const { component, api } = createComponent();
+    component.targetType = 'CODING';
+    const countChanged = vi.fn();
+    component.countChanged.subscribe(countChanged);
+
+    component.loadThread();
+    component.newCommentText = 'Kodierung prüfen';
+    component.submitComment();
+
+    expect(api.getReviewCommentThread).toHaveBeenCalledWith(
+      'acp-1',
+      {
+        targetType: 'CODING',
+        unitId: 'unit-1',
+        itemId: 'item-1',
+      },
+      null,
+    );
+    expect(api.createReviewComment).toHaveBeenCalledWith('acp-1', {
+      targetType: 'CODING',
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      commentText: 'Kodierung prüfen',
+    });
+    expect(countChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ targetType: 'CODING', count: 0 }),
+    );
   });
 });

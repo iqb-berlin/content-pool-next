@@ -1,4 +1,4 @@
-import { Component, ElementRef, Inject, OnDestroy, ViewChild } from '@angular/core';
+import { Component, ElementRef, HostListener, Inject, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ItemExplorerFacade } from '../../item-explorer.facade';
@@ -15,9 +15,13 @@ import { ItemCommentThreadComponent } from '../../../comment-thread/item-comment
 })
 export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlayerDomPort {
   private frame?: ElementRef<HTMLIFrameElement>;
+  private playerContainer?: ElementRef<HTMLDivElement>;
+  private fullscreenToggle?: ElementRef<HTMLButtonElement>;
   private autoResizeInterval: ReturnType<typeof setInterval> | null = null;
   private printLabelObserver: MutationObserver | null = null;
   private printLabelOverrides = new Map<string, string>();
+  isPlayerFullscreen = false;
+  isPlayerFullscreenFallback = false;
   readonly vm: ItemExplorerPreviewViewModel;
   private readonly messageHandler = (event: MessageEvent) => {
     const frameWindow = this.frame?.nativeElement.contentWindow;
@@ -33,6 +37,17 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     this.observePrintLabels();
   }
 
+  @ViewChild('playerContainer')
+  set playerContainerElement(value: ElementRef<HTMLDivElement> | undefined) {
+    this.playerContainer = value;
+    this.syncPlayerFullscreenState();
+  }
+
+  @ViewChild('fullscreenToggle')
+  set fullscreenToggleElement(value: ElementRef<HTMLButtonElement> | undefined) {
+    this.fullscreenToggle = value;
+  }
+
   constructor(@Inject(ItemExplorerFacade) private readonly feature: ItemExplorerFacade) {
     this.vm = feature.previewViewModel;
     feature.registerPlayerDom(this);
@@ -45,6 +60,53 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     this.disconnectPrintLabelObserver();
     this.frame = undefined;
     this.feature.unregisterPlayerDom(this);
+  }
+
+  @HostListener('document:fullscreenchange')
+  handlePlayerFullscreenChange(): void {
+    const wasFullscreen = this.isPlayerFullscreen;
+    this.syncPlayerFullscreenState();
+    if (wasFullscreen && !this.isPlayerFullscreen) this.restoreFullscreenToggleFocus();
+  }
+
+  @HostListener('document:keydown', ['$event'])
+  handlePlayerFullscreenKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || !this.isPlayerFullscreenFallback) return;
+    this.closePlayerFullscreenFallback();
+  }
+
+  async togglePlayerFullscreen(): Promise<void> {
+    const container = this.playerContainer?.nativeElement;
+    if (!container) return;
+
+    if (this.isPlayerFullscreenFallback) {
+      this.closePlayerFullscreenFallback();
+      return;
+    }
+
+    if (document.fullscreenElement === container) {
+      try {
+        await document.exitFullscreen?.();
+      } catch {
+        this.syncPlayerFullscreenState();
+        return;
+      }
+      this.syncPlayerFullscreenState();
+      if (!this.isPlayerFullscreen) this.restoreFullscreenToggleFocus();
+      return;
+    }
+
+    try {
+      if (container.requestFullscreen) {
+        await container.requestFullscreen();
+      } else {
+        this.openPlayerFullscreenFallback();
+        return;
+      }
+      this.syncPlayerFullscreenState();
+    } catch {
+      this.openPlayerFullscreenFallback();
+    }
   }
 
   hasFrame(): boolean {
@@ -111,6 +173,27 @@ export class ItemExplorerPreviewComponent implements OnDestroy, ItemExplorerPlay
     if (!this.autoResizeInterval) return;
     clearInterval(this.autoResizeInterval);
     this.autoResizeInterval = null;
+  }
+
+  private syncPlayerFullscreenState(): void {
+    this.isPlayerFullscreen =
+      this.isPlayerFullscreenFallback ||
+      document.fullscreenElement === this.playerContainer?.nativeElement;
+  }
+
+  private openPlayerFullscreenFallback(): void {
+    this.isPlayerFullscreenFallback = true;
+    this.isPlayerFullscreen = true;
+  }
+
+  private closePlayerFullscreenFallback(): void {
+    this.isPlayerFullscreenFallback = false;
+    this.isPlayerFullscreen = false;
+    this.restoreFullscreenToggleFocus();
+  }
+
+  private restoreFullscreenToggleFocus(): void {
+    this.fullscreenToggle?.nativeElement.focus({ preventScroll: true });
   }
 
   private getPlayerDocument(): Document | null {

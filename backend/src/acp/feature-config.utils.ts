@@ -1,6 +1,7 @@
 type UnknownRecord = Record<string, unknown>;
 
 interface MetadataColumnsConfig {
+  restrictReviewerColumnsToManagerSelection?: boolean;
   visible: string[];
   order: string[];
   configured?: boolean;
@@ -147,6 +148,7 @@ function normalizeMetadataColumns(
   const layout = normalizeTableColumnLayout(metadataColumns.layout);
 
   if (
+    metadataColumns.restrictReviewerColumnsToManagerSelection === true ||
     explicitlyConfigured ||
     hasColumnSelection ||
     referenceNumberVisible ||
@@ -157,6 +159,9 @@ function normalizeMetadataColumns(
     const normalizedVisible = visible.length ? visible : order;
     const normalizedOrder = order.length ? order : normalizedVisible;
     return {
+      ...(metadataColumns.restrictReviewerColumnsToManagerSelection === true
+        ? { restrictReviewerColumnsToManagerSelection: true }
+        : {}),
       visible: normalizedVisible,
       order: normalizedOrder,
       ...(explicitlyConfigured ? { configured: true } : {}),
@@ -189,7 +194,11 @@ export function normalizeFeatureConfig(featureConfig: unknown): UnknownRecord {
   const normalized: UnknownRecord = { ...source };
 
   normalized.commentVisibilityMode =
-    source.commentVisibilityMode === "SHARED" ? "SHARED" : "PRIVATE";
+    source.commentVisibilityMode === "GROUP"
+      ? "GROUP"
+      : source.commentVisibilityMode === "SHARED"
+        ? "SHARED"
+        : "PRIVATE";
 
   normalized.enablePlayerFocusHighlight =
     source.enablePlayerFocusHighlight === true;

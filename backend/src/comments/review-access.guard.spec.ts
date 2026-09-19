@@ -2,48 +2,46 @@ import { ForbiddenException } from "@nestjs/common";
 import { ReviewAccessGuard } from "./review-access.guard";
 
 describe("ReviewAccessGuard", () => {
-  it("delegates current ACP access and then applies the review policy", async () => {
-    const request = { user: { sub: "user-1" } };
-    const context = {
-      switchToHttp: () => ({ getRequest: () => request }),
-    } as any;
-    const acpAccessGuard = {
-      canActivate: jest.fn().mockImplementation(async () => {
-        (request as any).acpAccessLevel = "READ_ONLY";
-        return true;
-      }),
-    };
-    const reviewPolicy = {
-      assertCanParticipateRequest: jest.fn(),
-    };
+  for (const grants of [
+    [],
+    ["review:participate"],
+    ["review:manage"],
+    ["review:participate", "review:manage"],
+    ["item-explorer:edit"],
+  ]) {
+    for (const method of ["GET", "POST", "PATCH", "DELETE"]) {
+      it(`${method} with ${grants.join(",") || "no grants"}`, async () => {
+        const request = { method };
+        const access = { canActivate: jest.fn().mockResolvedValue(true) };
+        const capabilities = { resolve: jest.fn().mockResolvedValue(grants) };
+        const context = {
+          switchToHttp: () => ({ getRequest: () => request }),
+          getHandler: () => ({ name: "comment" }),
+        } as any;
+        const result = new ReviewAccessGuard(
+          access as any,
+          capabilities as any,
+        ).canActivate(context);
+        if (
+          grants.includes("review:participate") ||
+          (method === "GET" && grants.includes("review:manage"))
+        )
+          await expect(result).resolves.toBe(true);
+        else await expect(result).rejects.toThrow(ForbiddenException);
+      });
+    }
+  }
+  it("does not bypass ACP access", async () => {
+    const capabilities = { resolve: jest.fn() };
     const guard = new ReviewAccessGuard(
-      acpAccessGuard as any,
-      reviewPolicy as any,
+      {
+        canActivate: jest.fn().mockRejectedValue(new ForbiddenException()),
+      } as any,
+      capabilities as any,
     );
-
-    await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(acpAccessGuard.canActivate).toHaveBeenCalledWith(context);
-    expect(reviewPolicy.assertCanParticipateRequest).toHaveBeenCalledWith(
-      request,
-    );
-  });
-
-  it("does not bypass a rejected ACP access decision", async () => {
-    const context = {} as any;
-    const acpAccessGuard = {
-      canActivate: jest
-        .fn()
-        .mockRejectedValue(new ForbiddenException("No ACP access")),
-    };
-    const reviewPolicy = { assertCanParticipateRequest: jest.fn() };
-    const guard = new ReviewAccessGuard(
-      acpAccessGuard as any,
-      reviewPolicy as any,
-    );
-
-    await expect(guard.canActivate(context)).rejects.toThrow(
+    await expect(guard.canActivate({} as any)).rejects.toThrow(
       ForbiddenException,
     );
-    expect(reviewPolicy.assertCanParticipateRequest).not.toHaveBeenCalled();
+    expect(capabilities.resolve).not.toHaveBeenCalled();
   });
 });

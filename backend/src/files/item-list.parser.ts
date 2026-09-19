@@ -214,10 +214,9 @@ export class ItemListParser {
             continue;
           }
           const metadata: Record<string, string> = {};
-          const vomdItemTimeSeconds = extractVomdTimeSeconds(
-            item.profiles,
-            "iqb_time_item",
-          );
+          const vomdItemTimeSeconds =
+            extractVomdTimeSeconds(item.profiles, "iqb_time_item") ??
+            extractVomdTimeSeconds(item.profiles, "iqb_item_time");
           for (const profile of item.profiles || []) {
             for (const entry of profile.entries || []) {
               const entryId = entry.id;
@@ -387,6 +386,7 @@ export class ItemListParser {
               discrimination: optionalNumber("discrimination"),
               solutionRate: optionalNumber("solutionRate"),
               textComplexity: optionalText("textComplexity"),
+              competenceLevel: optionalText("competenceLevel"),
               itemTimeSeconds:
                 optionalNumber("itemTimeSeconds") ?? vomdItemTimeSeconds,
               stimulusTimeSeconds:

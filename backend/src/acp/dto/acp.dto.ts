@@ -1,3 +1,5 @@
+import { ACP_CAPABILITIES } from "../../auth/capabilities/acp-capabilities";
+import { IsIn, ArrayUnique } from "class-validator";
 import {
   IsString,
   IsNotEmpty,
@@ -50,6 +52,12 @@ export class UpdateAcpDto {
 }
 
 export class AssignRoleDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty()
   @IsUUID("all")
   userId!: string;
@@ -57,6 +65,7 @@ export class AssignRoleDto {
   @ApiProperty({ enum: ["ACP_MANAGER", "READ_ONLY"] })
   @IsString()
   @IsNotEmpty()
+  @IsIn(["ACP_MANAGER", "READ_ONLY"])
   role!: string;
 }
 
@@ -121,6 +130,16 @@ export class CredentialEntryDto {
 }
 
 export class UploadCredentialsDto {
+  @IsOptional()
+  @IsIn(["REVIEW_ONLY", "ITEM_EXPLORER_ONLY", "BOTH", "CUSTOM"])
+  profile?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty({ type: [CredentialEntryDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -129,6 +148,12 @@ export class UploadCredentialsDto {
 }
 
 export class CreateCredentialDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -144,6 +169,12 @@ export class CreateCredentialDto {
 }
 
 export class UpdateCredentialDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
@@ -213,9 +244,18 @@ export class VersionedItemExplorerActionDto {
 }
 
 export class CredentialResponseDto {
+  capabilities?: string[];
+
   @ApiProperty()
   id!: string;
 
   @ApiProperty()
   username!: string;
+}
+
+export class UpdateCapabilitiesDto {
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities!: string[];
 }

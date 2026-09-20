@@ -5,32 +5,38 @@ import type { ExplorerMetadataColumns } from "./item-explorer-state.service";
 /** Shared field mapping for JSON projections and spreadsheet/CSV columns.
  * Unknown item fields are not released by adding them to a response DTO.
  */
-const FIELD_COLUMNS: Record<string, string> = {
-  unitLabel: "system:unitLabel",
-  unitName: "system:unitLabel",
-  rowNumber: "system:referenceNumber",
-  subIdDisplay: "system:subId",
-  empiricalDifficulty: "system:empiricalDifficulty",
-  meanTaskDifficulty: "system:meanTaskDifficulty",
-  tags: "system:tags",
-  commentCount: "system:comments",
-  bista: "metadata:bista",
-  infit: "metadata:infit",
-  discrimination: "metadata:discrimination",
-  solutionRate: "metadata:solutionRate",
-  textComplexity: "metadata:textComplexity",
-  competenceLevel: "metadata:competenceLevel",
-  itemTimeSeconds: "metadata:itemTimeSeconds",
-  stimulusTimeSeconds: "metadata:stimulusTimeSeconds",
-  booklets: "metadata:booklet",
-  bookletPositions: "metadata:bookletPosition",
-};
+const FIELD_COLUMNS: Record<string, string> = Object.assign(
+  Object.create(null),
+  {
+    unitLabel: "system:unitLabel",
+    unitName: "system:unitLabel",
+    rowNumber: "system:referenceNumber",
+    subIdDisplay: "system:subId",
+    empiricalDifficulty: "system:empiricalDifficulty",
+    meanTaskDifficulty: "system:meanTaskDifficulty",
+    tags: "system:tags",
+    commentCount: "system:comments",
+    bista: "metadata:bista",
+    infit: "metadata:infit",
+    discrimination: "metadata:discrimination",
+    solutionRate: "metadata:solutionRate",
+    textComplexity: "metadata:textComplexity",
+    competenceLevel: "metadata:competenceLevel",
+    itemTimeSeconds: "metadata:itemTimeSeconds",
+    stimulusTimeSeconds: "metadata:stimulusTimeSeconds",
+    booklets: "metadata:booklet",
+    bookletPositions: "metadata:bookletPosition",
+  },
+);
 
-const TIME_COLUMN_ALIASES: Readonly<Record<string, string>> = {
-  "metadata:iqb_time_item": "metadata:itemTimeSeconds",
-  "metadata:iqb_item_time": "metadata:itemTimeSeconds",
-  "metadata:iqb_time_stimulus": "metadata:stimulusTimeSeconds",
-};
+const TIME_COLUMN_ALIASES: Readonly<Record<string, string>> = Object.assign(
+  Object.create(null),
+  {
+    "metadata:iqb_time_item": "metadata:itemTimeSeconds",
+    "metadata:iqb_item_time": "metadata:itemTimeSeconds",
+    "metadata:iqb_time_stimulus": "metadata:stimulusTimeSeconds",
+  },
+);
 
 const normalizeColumn = (column: string): string =>
   TIME_COLUMN_ALIASES[column] || column;

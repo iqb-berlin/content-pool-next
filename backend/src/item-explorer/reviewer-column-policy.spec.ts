@@ -10,6 +10,48 @@ const policy = (...visible: string[]) =>
   });
 
 describe("Reviewer column information boundary", () => {
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "handles custom metadata named %s without inherited dictionary entries",
+    (id) => {
+      const metadata = Object.fromEntries([[id, "custom value"]]);
+      const visible = policy(`metadata:${id}`);
+      expect(
+        visible.projectItem({
+          itemId: "I",
+          metadata,
+          [id]: "hidden top-level value",
+        }),
+      ).toEqual({ itemId: "I", metadata });
+      expect(policy().projectMetadata(metadata)).toEqual({});
+      expect(visible.allowsField(id)).toBe(false);
+      expect(visible.allowsExportField(id)).toBe(false);
+      const settings = {
+        visible: [id],
+        order: [id],
+        widths: { [id]: 140 },
+        definitions: [{ id, label: id }],
+      };
+      expect(visible.projectColumnSettings(settings)).toMatchObject(settings);
+      expect(policy().projectColumnSettings(settings)).toMatchObject({
+        visible: [],
+        order: [],
+        widths: {},
+        definitions: [],
+      });
+      expect(visible.projectResponse({ columns: [{ id }], metadata })).toEqual({
+        columns: [{ id }],
+        metadata,
+      });
+      // Malformed legacy layout keys must not resolve through Object.prototype.
+      expect(() =>
+        policy(id).projectColumnSettings({
+          layout: { visible: [id], order: [id] },
+        }),
+      ).not.toThrow();
+      expect(() => visible.projectResponse({ [id]: "value" })).not.toThrow();
+    },
+  );
+
   it("projects start-page and standalone sequence summaries without leaking labels", () => {
     const sequences = [
       {

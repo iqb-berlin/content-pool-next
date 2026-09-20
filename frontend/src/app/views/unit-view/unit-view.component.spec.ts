@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { UnitViewComponent } from './unit-view.component';
@@ -17,6 +18,8 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
     enabled = false;
     initiallyOpen = false;
     hideToggle = false;
+    drafts: unknown;
+    sessionToken = 0;
   }
   Component({
     selector: 'app-item-comment-thread',
@@ -31,6 +34,8 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
       'enabled',
       'initiallyOpen',
       'hideToggle',
+      'drafts',
+      'sessionToken',
     ],
   })(ItemCommentThreadStub);
   return { ItemCommentThreadComponent: ItemCommentThreadStub };
@@ -158,6 +163,7 @@ describe('UnitViewComponent', () => {
           },
         },
         { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: { currentUser$: of(null), getToken: () => null } },
       ],
     }).compileComponents();
 

@@ -12,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil, timeout } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { Comment, CommentThreadSnapshot, ReviewCommentTarget } from '../../core/models/api.models';
+import { CommentThreadDrafts } from './comment-thread-drafts';
 
 interface CommentThreadGroup {
   id: string;
@@ -35,6 +36,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   @Input() enabled = false;
   @Input() refreshToken = 0;
   @Input() sessionToken = 0;
+  @Input() drafts = new CommentThreadDrafts();
   @Input() initiallyOpen = false;
   @Input() hideToggle = false;
   @Output() countChanged = new EventEmitter<{
@@ -58,10 +60,31 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     this.operationError = value;
   }
   snapshot: CommentThreadSnapshot | null = null;
-  replyingTo: string | null = null;
-  editingCommentId: string | null = null;
-  editText = '';
-  private editingComment: Comment | null = null;
+  get replyingTo(): string | null {
+    return this.drafts.replyTargets.get(this.targetKey) || null;
+  }
+
+  set replyingTo(value: string | null) {
+    if (value) this.drafts.replyTargets.set(this.targetKey, value);
+    else this.drafts.replyTargets.delete(this.targetKey);
+  }
+
+  get editingCommentId(): string | null {
+    return this.editingComment?.id || null;
+  }
+
+  get editText(): string {
+    return this.drafts.edits.get(this.targetKey)?.text || '';
+  }
+
+  set editText(value: string) {
+    const edit = this.drafts.edits.get(this.targetKey);
+    if (edit) edit.text = value;
+  }
+
+  private get editingComment(): Comment | null {
+    return this.drafts.edits.get(this.targetKey)?.comment || null;
+  }
 
   private requestToken = 0;
   private threadLoadError = '';
@@ -69,11 +92,23 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   private threadRequest: Subscription | null = null;
   private readonly destroy$ = new Subject<void>();
   private readonly sessionChanged$ = new Subject<void>();
-  private readonly newDrafts = new Map<string, string>();
-  private readonly replyDrafts = new Map<string, string>();
-  private readonly expandedByTarget = new Map<string, Set<string>>();
+  private get newDrafts() {
+    return this.drafts.newComments;
+  }
+  private get replyDrafts() {
+    return this.drafts.replies;
+  }
+  private get expandedByTarget() {
+    return this.drafts.expandedThreads;
+  }
 
-  selectedGroupId = '';
+  get selectedGroupId(): string {
+    return this.drafts.selectedGroups.get(this.targetKey) || '';
+  }
+
+  set selectedGroupId(value: string) {
+    this.drafts.selectedGroups.set(this.targetKey, value);
+  }
   private accessDenied = false;
   private readonly poll = setInterval(() => {
     if (this.hasTarget && !this.loading && !this.busy) this.loadThread(true);
@@ -93,9 +128,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
     if (sessionChanged) {
       this.sessionChanged$.next();
       this.busy = false;
-      this.newDrafts.clear();
-      this.replyDrafts.clear();
-      this.expandedByTarget.clear();
+      if (!sessionChanged.firstChange) this.drafts.clear();
     }
     if (targetChanged || sessionChanged) {
       this.requestToken += 1;
@@ -103,9 +136,6 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       this.threadRequest = null;
       this.loading = false;
       this.snapshot = null;
-      this.selectedGroupId = '';
-      this.replyingTo = null;
-      this.cancelEdit();
       this.error = '';
       this.threadLoadError = '';
       if (this.initiallyOpen && !this.initialOpenConsumed) {
@@ -325,7 +355,7 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
         if (parentCommentId) {
           this.replyDrafts.delete(replyDraftKey);
           this.expandedThreadsFor(targetKey).add(parentCommentId);
-          if (targetKey === this.targetKey) this.replyingTo = null;
+          this.drafts.replyTargets.delete(targetKey);
         } else {
           this.newDrafts.delete(targetKey);
         }
@@ -354,15 +384,11 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
   }
 
   startEdit(comment: Comment): void {
-    this.editingComment = { ...comment };
-    this.editingCommentId = comment.id;
-    this.editText = comment.commentText;
+    this.drafts.edits.set(this.targetKey, { comment: { ...comment }, text: comment.commentText });
   }
 
   cancelEdit(): void {
-    this.editingComment = null;
-    this.editingCommentId = null;
-    this.editText = '';
+    this.drafts.edits.delete(this.targetKey);
   }
 
   saveEdit(comment: Comment): void {
@@ -381,10 +407,8 @@ export class ItemCommentThreadComponent implements OnChanges, OnDestroy {
       .subscribe({
         next: () => {
           this.busy = false;
-          if (targetKey === this.targetKey) {
-            this.cancelEdit();
-            this.loadThread();
-          }
+          this.drafts.edits.delete(targetKey);
+          if (targetKey === this.targetKey) this.loadThread();
         },
         error: (error) => {
           this.busy = false;

@@ -173,6 +173,7 @@ describe('ItemCommentThreadComponent', () => {
       throwError(() => ({ status: 409, error: { message: 'Konflikt' } })),
     );
     api.getItemCommentThread.mockReturnValueOnce(throwError(() => new Error('offline')));
+    component.startEdit({ id: 'c-1', version: 1, commentText: 'Original' } as any);
     component.editText = 'Entwurf';
     component.saveEdit({ id: 'c-1', version: 1 } as any);
     component.loadThread(true);
@@ -479,6 +480,7 @@ describe('ItemCommentThreadComponent', () => {
       throwError(() => ({ status: 409, error: { message: 'Konflikt' } })),
     );
     const loadSpy = vi.spyOn(component, 'loadThread');
+    component.startEdit({ id: 'c-1', version: 2, commentText: 'Original' } as any);
     component.editText = 'Neue Fassung';
 
     component.saveEdit({ id: 'c-1', version: 2 } as any);

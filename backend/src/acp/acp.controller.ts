@@ -350,18 +350,23 @@ export class AcpController {
   ) {
     if (dto.featureConfig) {
       const current = await this.acpService.getAccessConfig(id);
-      const reviewKeys = [
-        "enableReview",
-        "enableCommenting",
-        "commentTargets",
-        "commentVisibilityMode",
-      ];
-      if (
-        reviewKeys.some(
-          (key) =>
-            JSON.stringify(current?.featureConfig?.[key]) !==
-            JSON.stringify(dto.featureConfig?.[key]),
+      // Compare effective defaults: the access form materializes optional fields
+      // even when only an unrelated package setting has changed.
+      const reviewSettings = (config: Record<string, any> = {}) => ({
+        enableReview: config.enableReview === true,
+        enableCommenting: config.enableCommenting ?? false,
+        commentTargets: Array.isArray(config.commentTargets)
+          ? [...new Set(config.commentTargets)].sort()
+          : [],
+        commentVisibilityMode: ["SHARED", "GROUP"].includes(
+          config.commentVisibilityMode,
         )
+          ? config.commentVisibilityMode
+          : "PRIVATE",
+      });
+      if (
+        JSON.stringify(reviewSettings(current?.featureConfig)) !==
+        JSON.stringify(reviewSettings(dto.featureConfig))
       ) {
         await this.capabilities.assert(req, "review:manage");
       }

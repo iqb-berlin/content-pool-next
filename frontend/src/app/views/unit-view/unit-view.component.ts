@@ -25,6 +25,10 @@ import {
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
 import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
 
+import { CommentThreadDrafts } from '../comment-thread/comment-thread-drafts';
+import { AuthService } from '../../core/services/auth.service';
+import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
+
 type UnitPagingMode =
   | 'buttons'
   | 'separate'
@@ -98,6 +102,8 @@ type UnitPagingMode =
 
       @if (showCommentBtn && !reviewMode) {
         <app-item-comment-thread
+          [drafts]="commentDrafts"
+          [sessionToken]="commentSessionToken"
           [acpId]="acpId"
           [targetType]="'UNIT'"
           [unitId]="unitId"
@@ -253,6 +259,8 @@ type UnitPagingMode =
               }
               @if (commentScope === 'booklet' && showBookletCommentBtn) {
                 <app-item-comment-thread
+                  [drafts]="commentDrafts"
+                  [sessionToken]="commentSessionToken"
                   [acpId]="acpId"
                   [targetType]="'BOOKLET'"
                   [bookletId]="bookletId"
@@ -262,6 +270,8 @@ type UnitPagingMode =
                 />
               } @else {
                 <app-item-comment-thread
+                  [drafts]="commentDrafts"
+                  [sessionToken]="commentSessionToken"
                   [acpId]="acpId"
                   [targetType]="'UNIT'"
                   [unitId]="unitId"
@@ -788,6 +798,10 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   showDownloadBtn = false;
   showAudioVideoCodingVariables = true;
   commentScope: 'unit' | 'booklet' = 'unit';
+  readonly commentDrafts = new CommentThreadDrafts();
+  commentSessionToken = 0;
+  private commentIdentity: string | null = null;
+  private authSubscription: Subscription | null = null;
   codingFilterText = '';
   showAllCodingVariables = false;
   unitMetadata: FilePreviewVomdData['unitProfiles'] = [];
@@ -825,6 +839,9 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
     @Inject(ApiService) public api: ApiService,
     @Inject(DomSanitizer) private sanitizer: DomSanitizer,
     @Inject(ChangeDetectorRef) private changeDetector: ChangeDetectorRef,
+    @Inject(AuthService) private auth: AuthService,
+    @Inject(PendingPersonalSessionStorageService)
+    private personalSession: PendingPersonalSessionStorageService,
   ) {}
 
   get printMode(): 'off' | 'on' | 'on-with-ids' {
@@ -876,6 +893,15 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnInit() {
+    this.authSubscription = this.auth.currentUser$.subscribe(() => {
+      const identity = this.personalSession.resolveIdentityFromToken(this.auth.getToken());
+      if (identity !== this.commentIdentity) {
+        this.commentDrafts.clear();
+        this.commentIdentity = identity;
+        this.commentSessionToken += 1;
+        this.changeDetector.markForCheck();
+      }
+    });
     this.acpId = this.acpId || this.route.snapshot.paramMap.get('acpId') || '';
     this.unitId = this.unitId || this.route.snapshot.paramMap.get('unitId') || '';
 
@@ -989,6 +1015,8 @@ export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.authSubscription?.unsubscribe();
+    this.commentDrafts.clear();
     this.unitLoadToken += 1;
     this.featureConfigRequest?.unsubscribe();
     this.unitRequest?.unsubscribe();

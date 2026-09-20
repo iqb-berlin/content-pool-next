@@ -60,6 +60,9 @@ All notable changes to ContentPool are documented in this file. Releases use
 - Preserve comment drafts across Review navigation, safely project metadata
   names that collide with JavaScript properties, and avoid requiring Review
   management rights for unrelated package settings.
+- Build the architecture-independent frontend bundle on the native BuildKit
+  platform so multi-architecture release images do not depend on Node.js under
+  QEMU emulation.
 
 ### Breaking changes
 

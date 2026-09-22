@@ -159,6 +159,22 @@ export interface CodingVariableFocusResolution {
   sourceIds: string[];
 }
 
+export interface CodingInformationAnswer {
+  responseId: string;
+  label: string;
+  valueLabel: string;
+}
+
+export type CodingInformationStatus = 'exact' | 'multiple' | 'rules' | 'unavailable';
+
+export interface CodingInformation {
+  status: CodingInformationStatus;
+  title: string;
+  message: string;
+  answers: CodingInformationAnswer[];
+  ruleGroups: CodingAsText[];
+}
+
 export type ExplorerUiStatus = 'CLEAN' | 'DIRTY' | 'SAVING' | 'SAVED' | 'ERROR';
 
 export type PreviewStatus =

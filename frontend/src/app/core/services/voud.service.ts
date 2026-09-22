@@ -22,6 +22,8 @@ export interface PlayerResponseTarget {
   elementType: string;
   identifiers: string[];
   optionCount?: number;
+  label?: string;
+  options?: Array<{ position: number; label: string }>;
 }
 
 interface IdentifierBearingNode {
@@ -29,6 +31,11 @@ interface IdentifierBearingNode {
   alias?: unknown;
   type?: unknown;
   options?: unknown;
+  label?: unknown;
+  text?: unknown;
+  prompt?: unknown;
+  title?: unknown;
+  name?: unknown;
 }
 
 interface IdentifierNodeMatch {
@@ -205,13 +212,27 @@ export class VoudService {
       const identifiers = this.getNodeIdentifiers(match.node);
       const responseId = String(match.node.alias || match.node.id || '').trim();
       if (!responseId) return undefined;
-      const optionCount = Array.isArray(match.node.options) ? match.node.options.length : undefined;
+      const rawOptions = Array.isArray(match.node.options) ? match.node.options : undefined;
+      const optionCount = rawOptions?.length;
+      const label = this.extractDisplayText(
+        match.node.label ||
+          match.node.prompt ||
+          match.node.text ||
+          match.node.title ||
+          match.node.name,
+      );
+      const options = rawOptions?.map((option, index) => ({
+        position: index + 1,
+        label: this.extractDisplayText(option) || `Option ${index + 1}`,
+      }));
 
       return {
         responseId,
         elementType: String(match.node.type || '').trim(),
         identifiers,
         ...(optionCount !== undefined ? { optionCount } : {}),
+        ...(label ? { label } : {}),
+        ...(options ? { options } : {}),
       };
     } catch (e) {
       console.error('Error resolving player response target from VOUD:', e);
@@ -272,6 +293,40 @@ export class VoudService {
           .filter((value) => value.length > 0),
       ),
     );
+  }
+
+  private extractDisplayText(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value)
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/&nbsp;|&#160;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+    if (Array.isArray(value)) {
+      const german = value.find(
+        (entry) =>
+          entry &&
+          typeof entry === 'object' &&
+          String((entry as Record<string, unknown>)['lang'] || '').toLowerCase() === 'de',
+      );
+      if (german) return this.extractDisplayText(german);
+      return value.map((entry) => this.extractDisplayText(entry)).find(Boolean) || '';
+    }
+    if (typeof value === 'object') {
+      const objectValue = value as Record<string, unknown>;
+      for (const key of ['de', 'value', 'text', 'label', 'title', 'name']) {
+        const text = this.extractDisplayText(objectValue[key]);
+        if (text) return text;
+      }
+    }
+    return '';
   }
 
   private visitNodes(

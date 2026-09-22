@@ -43,6 +43,8 @@ function createFacade(options?: {
         elementType: string;
         identifiers: string[];
         optionCount?: number;
+        label?: string;
+        options?: Array<{ position: number; label: string }>;
       }
     | undefined;
   stripConditionalVisibility?: (definition: string) => string;
@@ -4457,6 +4459,271 @@ describe('ItemExplorerFacade', () => {
 
     component.preferManualCodingInstructions = false;
     expect(component.shouldShowAutomaticCodingRules(code)).toBe(true);
+  });
+
+  it('uses the same validated solution for the coding information and player prefill', () => {
+    const component = createFacade({
+      resolvePlayerResponseTarget: (_definition, variableId) => ({
+        responseId: variableId,
+        elementType: 'radio',
+        identifiers: [variableId],
+        optionCount: 3,
+        label: 'Lieblingsfarbe',
+        options: [
+          { position: 1, label: 'Rot' },
+          { position: 2, label: 'Blau' },
+          { position: 3, label: 'Grün' },
+        ],
+      }),
+    });
+    const variables = [
+      {
+        id: 'internal-a',
+        alias: 'A1',
+        label: 'Farbe',
+        sourceType: 'BASE',
+        manualInstruction: '<p>Allgemeiner Hinweis.</p>',
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            score: 1,
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['2'] }] }],
+          },
+          { id: 0, type: 'RESIDUAL', score: 0, ruleSets: [] },
+        ],
+      },
+    ];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableReadOnlyId: 'internal-a',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+    component.showGeneralCodingInstructions = true;
+    (component as any).definitionContent = '{}';
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.correctSolutionPrefill).toMatchObject({
+      status: 'available',
+      responses: [{ id: 'A1', value: 2 }],
+    });
+    expect(component.codingInformation).toMatchObject({
+      status: 'exact',
+      title: 'Richtige Antwort',
+      answers: [{ responseId: 'A1', label: 'Lieblingsfarbe', valueLabel: 'Blau' }],
+    });
+  });
+
+  it('keeps multiple FULL_CREDIT answers as rules instead of choosing one', () => {
+    const component = createFacade();
+    const variables = [
+      {
+        id: 'A1',
+        sourceType: 'BASE',
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['1'] }] }],
+          },
+          {
+            id: 2,
+            type: 'FULL_CREDIT',
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['2'] }] }],
+          },
+        ],
+      },
+    ];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.codingInformation).toMatchObject({
+      status: 'multiple',
+      title: 'Mehrere gültige Antworten',
+      answers: [],
+    });
+    expect(component.codingInformation.ruleGroups[0].codes).toHaveLength(2);
+  });
+
+  it('prefers a manual instruction on the contributing FULL_CREDIT code', () => {
+    const component = createFacade();
+    const variables = [
+      {
+        id: 'A1',
+        sourceType: 'BASE',
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            manualInstruction: '<p>Antwort fachlich prüfen.</p>',
+            ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['2'] }] }],
+          },
+        ],
+      },
+    ];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+    component.preferManualCodingInstructions = true;
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.codingInformation).toMatchObject({
+      status: 'rules',
+      title: 'Manuelle Kodieranweisung',
+      answers: [],
+    });
+  });
+
+  it('shows an explicit unavailable state for an empty resolved coding variable', () => {
+    const component = createFacade();
+    const variables = [{ id: 'A1', sourceType: 'BASE', codes: [] }];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.codingInformation).toEqual({
+      status: 'unavailable',
+      title: 'Keine eindeutige richtige Antwort',
+      message:
+        'Aus der vorhandenen Kodierung kann keine eindeutige richtige Antwort ermittelt werden.',
+      answers: [],
+      ruleGroups: component.currentCodingSchemeAsText,
+    });
+  });
+
+  it('filters audio and video rule groups for an unambiguous item when configured', () => {
+    const component = createFacade();
+    const variables = [
+      {
+        id: 'RESULT',
+        sourceType: 'COPY_VALUE',
+        deriveSources: ['AUDIO_SOURCE', 'TEXT_SOURCE'],
+        codes: [],
+      },
+      { id: 'AUDIO_SOURCE', sourceType: 'BASE', codes: [] },
+      { id: 'TEXT_SOURCE', sourceType: 'BASE', codes: [] },
+    ];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableId: 'RESULT',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+    component.showAudioVideoCodingVariables = false;
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.codingInformation.ruleGroups.map((coding) => coding.id)).toEqual([
+      'RESULT',
+      'TEXT_SOURCE',
+    ]);
+  });
+
+  it('does not let a hidden audio source manual instruction suppress an exact answer', () => {
+    const component = createFacade();
+    const residual = { id: 0, type: 'RESIDUAL', score: 0, ruleSets: [] };
+    const variables = [
+      {
+        id: 'AUDIO_OPTION',
+        sourceType: 'BASE',
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            score: 1,
+            manualInstruction: '<p>Audioantwort fachlich prüfen.</p>',
+            ruleSets: [{ rules: [{ method: 'IS_TRUE' }] }],
+          },
+          residual,
+        ],
+      },
+      {
+        id: 'TEXT_OPTION',
+        sourceType: 'BASE',
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            score: 1,
+            ruleSets: [{ rules: [{ method: 'IS_FALSE' }] }],
+          },
+          residual,
+        ],
+      },
+      {
+        id: 'RESULT',
+        sourceType: 'SUM_SCORE',
+        deriveSources: ['AUDIO_OPTION', 'TEXT_OPTION'],
+        codes: [
+          {
+            id: 1,
+            type: 'FULL_CREDIT',
+            score: 1,
+            ruleSets: [{ rules: [{ method: 'NUMERIC_MATCH', parameters: ['2'] }] }],
+          },
+          residual,
+        ],
+      },
+    ];
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      variableId: 'RESULT',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = { variableCodings: variables };
+    component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+    component.showAudioVideoCodingVariables = false;
+    component.preferManualCodingInstructions = true;
+
+    (component as any).refreshCodingInformation();
+
+    expect(component.codingInformation.status).toBe('exact');
+    expect(component.codingInformation.title).toBe('Richtige Antwort');
+    expect(component.codingInformation.ruleGroups.map((coding) => coding.id)).toEqual([
+      'RESULT',
+      'TEXT_OPTION',
+    ]);
   });
 
   it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {

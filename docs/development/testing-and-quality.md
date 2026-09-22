@@ -60,6 +60,18 @@ npm run format
 Review the resulting diff and rerun the checks. `lint:fix` still fails if any
 errors or warnings remain after automatic fixes.
 
+### Coverage and behavior regression gates
+
+Run `npm run test:cov -- --runInBand` from `backend/` or `npm run test:cov` from
+`frontend/`. CI runs these complete suites with coverage in its required unit-test
+jobs. Protected modules have separate minimums for statements, branches, functions,
+and lines; results from other files cannot compensate for a regression.
+
+See [the measured baseline, protected modules, and update policy](coverage-baseline.md).
+The HTML and JSON reports are available in each project's `coverage/` directory
+and as CI artifacts. The baseline includes untested application files; it does
+not replace browser, database, or migration checks.
+
 ### ACP API contracts
 
 `backend/src/acp/acp-http-contract.spec.ts` exercises actual HTTP routing, the

@@ -283,9 +283,15 @@ export class ItemExplorerDraftService implements OnDestroy {
   finishConflictRecovery(reloaded: boolean): void {
     const recovery = this.conflictRecovery;
     if (!recovery) return;
-    recovery.resolve(recovery.result);
-    if (this.destroyed || !reloaded) return;
     this.conflictRecovery = null;
+    recovery.resolve(recovery.result);
+    if (this.destroyed) return;
+    if (!reloaded) {
+      this.lastDraftOperationError =
+        'Konflikt beim Aktualisieren des Entwurfs. Der Explorer konnte nicht neu geladen werden. Bitte erneut versuchen.';
+      this.explorerUiStatus = 'ERROR';
+      return;
+    }
     if (!this.publishing && !this.discarding && this.pendingDraftPatch) {
       this.flushRequested.next();
     }

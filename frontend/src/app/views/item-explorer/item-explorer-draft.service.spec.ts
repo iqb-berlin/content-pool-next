@@ -156,6 +156,22 @@ describe('ItemExplorerDraftService', () => {
     expect(requested).toHaveBeenCalledOnce();
   });
 
+  it('allows another patch after conflict recovery could not reload the state', async () => {
+    api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    service.queueDraftPatch('UI_UPDATE', { ui: { filterText: 'conflicting' } });
+    expect(await service.flushDraftPatch()).toEqual({ kind: 'conflict' });
+
+    service.finishConflictRecovery(false);
+    expect(service.lastDraftOperationError).toContain('konnte nicht neu geladen werden');
+    service.queueDraftPatch('UI_UPDATE', { ui: { filterText: 'retry' } });
+
+    expect(await service.flushDraftPatch()).toMatchObject({ kind: 'applied' });
+    expect(api.patchItemExplorerDraft).toHaveBeenCalledTimes(2);
+    expect(api.patchItemExplorerDraft.mock.calls[1][1].patch).toEqual({
+      ui: { filterText: 'retry' },
+    });
+  });
+
   it('keeps retryable changes but requests an explicit tag rollback on a non-conflict error', async () => {
     api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 500 })));
     service.queueDraftPatch('TAGS_UPDATE', { tags: { row: ['tag'] }, ui: { filterText: 'keep' } });

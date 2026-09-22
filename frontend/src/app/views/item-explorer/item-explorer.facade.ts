@@ -1,3 +1,8 @@
+import {
+  readPreviewDefinition,
+  resolvePreviewVisibility,
+  PreviewStart,
+} from '../../core/services/preview-visibility';
 import { Injectable, OnDestroy, Optional } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import DOMPurify from 'dompurify';
@@ -88,6 +93,13 @@ import {
   mergePlayerSolutionIntoDataParts,
   PlayerSolutionPrefill,
 } from './item-explorer-solution-prefill';
+
+interface PreviewResponseSession {
+  id: string | null;
+  origin: 'answers' | 'visibility' | 'solution';
+  initialDataParts: Record<string, any>;
+  dataParts: Record<string, any> | null;
+}
 
 const DEFAULT_EXPLORER_SORT_FIELD = 'unitLabel';
 const DEFAULT_EXPLORER_SORT_DIR: 'asc' | 'desc' = 'asc';
@@ -231,6 +243,77 @@ export class ItemExplorerFacade implements OnDestroy {
   showGeneralCodingInstructions = false;
   preferManualCodingInstructions = true;
   itemExplorerConditionalVisibilityEnabled = false;
+  get syntheticPreviewState(): boolean {
+    return this.responseSession.origin === 'visibility';
+  }
+
+  private previewDefinitionSource: string | null | undefined;
+  private previewDefinitionCache: ReturnType<typeof readPreviewDefinition> = null;
+
+  private get previewDefinition() {
+    if (this.previewDefinitionSource !== this.definitionContent) {
+      this.previewDefinitionSource = this.definitionContent;
+      this.previewDefinitionCache = readPreviewDefinition(this.definitionContent || '');
+    }
+    return this.previewDefinitionCache;
+  }
+
+  get previewStateVariables() {
+    return (this.previewDefinition?.stateVariables || []).map((v) => ({
+      id: v.id!,
+      label: v.alias || v.id!,
+      value: this.selectedItem?.previewStart?.values?.[v.id!] ?? '',
+    }));
+  }
+
+  get previewStartPage() {
+    return this.selectedItem?.previewStart?.page ?? '';
+  }
+
+  get previewStartPages() {
+    return (this.previewDefinition?.pages || [])
+      .filter(
+        (p) => p.alwaysVisible !== true && p.alwaysVisible !== 'true' && p.alwaysVisible !== 1,
+      )
+      .map((_, i) => i);
+  }
+
+  get showPreviewStartPageSelector(): boolean {
+    if (!this.definitionContent || !this.selectedItem) return false;
+    const target = this.getEffectivePlayerTarget(this.selectedItem);
+    if (!target) return false;
+    return (
+      this.voudService.resolvePlayerTargetLocation(this.definitionContent, target)
+        ?.isAlwaysVisiblePage === true
+    );
+  }
+
+  setPreviewStartPage(value: string) {
+    this.persistPreviewStart({
+      values: this.selectedItem?.previewStart?.values || {},
+      ...(value === '' ? {} : { page: Number(value) }),
+    });
+  }
+
+  setPreviewStateValue(id: string, value: string) {
+    const values = { ...this.selectedItem?.previewStart?.values };
+    if (value === '') delete values[id];
+    else values[id] = value;
+    this.persistPreviewStart({ ...this.selectedItem?.previewStart, values });
+  }
+
+  private persistPreviewStart(start: PreviewStart) {
+    if (!this.canEditExplorer || !this.selectedItem) return;
+    this.selectedItem.previewStart = start;
+    this.queueItemPropertyPatch(
+      this.selectedItem,
+      'PREVIEW_START_CHANGED',
+      { previewStart: start },
+      true,
+    );
+    this.updatePreviewTargetSelection(this.getStoredPreviewTargetId(this.selectedItem));
+  }
+
   playerFocusHighlightEnabled = false;
   itemExplorerPlayerTargetInfoEnabled = false;
   itemCommentsEnabled = false;
@@ -338,7 +421,15 @@ export class ItemExplorerFacade implements OnDestroy {
   private readonly listPageSize = 10;
   private definitionContent: string | null = null;
   private playerFrameReady = false;
-  private activePlayerSessionId: string | null = null;
+  private responseSession: PreviewResponseSession = {
+    id: null,
+    origin: 'answers',
+    initialDataParts: {},
+    dataParts: null,
+  };
+  private get activePlayerSessionId(): string | null {
+    return this.responseSession.id;
+  }
   private itemListLoadToken = 0;
   private startSessionCounter = 0;
   private itemListSlowTimer: ReturnType<typeof setTimeout> | null = null;
@@ -439,7 +530,10 @@ export class ItemExplorerFacade implements OnDestroy {
   codingSortDir: 'asc' | 'desc' = 'asc';
 
   // Response State
-  currentResponseData: Record<string, any> | null = null;
+  get currentResponseData(): Record<string, any> | null {
+    return this.responseSession.dataParts;
+  }
+  private savedResponseData: Record<string, any> | null = null;
   hasResponseState = false;
   isFallbackState = false;
   correctSolutionRequested = false;
@@ -448,7 +542,7 @@ export class ItemExplorerFacade implements OnDestroy {
     responses: [],
     message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
   };
-  private restoreResponseDataAfterSolution = false;
+  private responseBeforeSolution: Record<string, any> | null = null;
   showRawDataOverlay = false;
   allResponseStates: any[] = [];
   previewUserFacingMessage = '';
@@ -928,7 +1022,11 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get canSaveCurrentResponseState(): boolean {
-    return !this.previewUpdateInProgress && !this.isCorrectSolutionActive;
+    return (
+      !this.previewUpdateInProgress &&
+      !this.isCorrectSolutionActive &&
+      this.responseSession.origin === 'answers'
+    );
   }
 
   get loadingUnit(): boolean {
@@ -3026,7 +3124,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.unit = null;
     this.definitionContent = null;
     this.playerFrameReady = false;
-    this.activePlayerSessionId = null;
+    this.beginResponseSession(null, 'answers');
     this.playerFrameRefreshPending = false;
     this.previewUserFacingMessage = '';
     this.correctSolutionPrefill = {
@@ -3034,7 +3132,7 @@ export class ItemExplorerFacade implements OnDestroy {
       responses: [],
       message: 'Die Player-Daten für die Musterlösung werden geladen.',
     };
-    this.restoreResponseDataAfterSolution = false;
+    this.responseBeforeSolution = null;
   }
 
   private startItemListSlowTimer(): void {
@@ -3107,10 +3205,11 @@ export class ItemExplorerFacade implements OnDestroy {
 
     // Reset response state data
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
-    this.currentResponseData = null;
-    this.activePlayerSessionId = null;
-    this.restoreResponseDataAfterSolution = false;
+    this.responseSession.dataParts = null;
+    this.beginResponseSession(null, 'answers');
+    this.responseBeforeSolution = null;
     this.previewUserFacingMessage = '';
     this.correctSolutionPrefill = {
       status: 'unavailable',
@@ -3211,14 +3310,16 @@ export class ItemExplorerFacade implements OnDestroy {
 
   private applyResponseStateResult(result: any): void {
     if (result?.state?.responseData && Object.keys(result.state.responseData).length > 0) {
-      this.currentResponseData = result.state.responseData;
+      this.savedResponseData = result.state.responseData;
+      this.responseSession.dataParts = null;
       this.hasResponseState = true;
       this.isFallbackState = !!result.isFallback;
       return;
     }
 
-    this.currentResponseData = null;
+    this.responseSession.dataParts = null;
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
   }
 
@@ -3229,6 +3330,12 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Response State ---
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
     if (this.isCorrectSolutionActive) {
       this.confirmDialogError =
         'Die Musterlösung ist nur eine Vorschau und kann nicht als Player-Eingabe gespeichert werden. Blenden Sie sie zuerst aus.';
@@ -3252,10 +3359,17 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   confirmSaveResponseState() {
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      return;
+    }
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
       this.isCorrectSolutionActive ||
+      this.responseSession.origin !== 'answers' ||
+      !this.activePlayerSessionId ||
       this.previewCoordinator.status.kind !== 'ready'
     ) {
       this.confirmDialogError =
@@ -3264,24 +3378,32 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     this.confirmDialogState = 'saving';
+    const responseData = this.currentResponseData;
+    const responseItem = this.selectedItem;
+    const responseSession = this.responseSession;
 
     this.api
       .saveResponseState(
         this.acpId,
         this.selectedItem.itemId,
         this.selectedItem.unitId,
-        this.currentResponseData,
+        responseData,
         this.selectedItem.rowKey,
       )
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
+          this.savedResponseData = responseData;
           this.hasResponseState = true;
           this.isFallbackState = false;
           this.confirmDialogState = 'idle';
           this.closeSaveConfirmDialog();
         },
         error: (err) => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           console.error('Error saving response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
@@ -3300,6 +3422,8 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!this.selectedItem) return;
 
     this.confirmDialogState = 'deleting';
+    const responseItem = this.selectedItem;
+    const responseSession = this.responseSession;
 
     this.api
       .deleteResponseState(
@@ -3311,13 +3435,20 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           this.hasResponseState = false;
+          this.savedResponseData = null;
           this.isFallbackState = false;
-          this.currentResponseData = null;
+          this.responseSession.dataParts = null;
+          this.responseSession.initialDataParts = {};
+          this.responseBeforeSolution = null;
           this.confirmDialogState = 'idle';
           this.closeDeleteConfirmDialog();
         },
         error: (err) => {
+          if (this.selectedItem !== responseItem || this.responseSession !== responseSession)
+            return;
           console.error('Error deleting response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
@@ -3352,7 +3483,12 @@ export class ItemExplorerFacade implements OnDestroy {
     const wasActive = this.isCorrectSolutionActive;
     this.correctSolutionRequested = !this.correctSolutionRequested;
     const isActive = this.isCorrectSolutionActive;
-    this.restoreResponseDataAfterSolution = wasActive && !isActive;
+    if (!wasActive && isActive) {
+      this.responseBeforeSolution =
+        this.responseSession.origin === 'answers'
+          ? this.currentResponseData || this.savedResponseData
+          : null;
+    }
 
     if (wasActive === isActive || this.previewCoordinator.status.kind !== 'ready') return;
     this.clearFocusRetryTimer();
@@ -3425,9 +3561,11 @@ export class ItemExplorerFacade implements OnDestroy {
       this.resetPlayer();
     }
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
-    this.currentResponseData = null;
-    this.activePlayerSessionId = null;
+    this.responseSession.dataParts = null;
+    this.beginResponseSession(null, 'answers');
+    this.responseBeforeSolution = null;
     this.startPreviewSlowTimer(
       reuseLoadedUnit ? 'gespeicherter Zustand' : 'Aufgabendaten, Player und Definition',
     );
@@ -3479,9 +3617,9 @@ export class ItemExplorerFacade implements OnDestroy {
           this.totalPages = playerMessage['playerState'].validPages.length || this.totalPages;
         }
         // Capture response data from unitState.dataParts
-        if (playerMessage['unitState']?.dataParts && !this.isCorrectSolutionActive) {
-          this.currentResponseData = playerMessage['unitState'].dataParts;
-          this.restoreResponseDataAfterSolution = false;
+        if (playerMessage['unitState']?.dataParts && this.responseSession.origin !== 'solution') {
+          this.responseSession.dataParts = playerMessage['unitState'].dataParts;
+          this.responseBeforeSolution = null;
         }
         break;
 
@@ -3560,22 +3698,51 @@ export class ItemExplorerFacade implements OnDestroy {
       this.playerReadyTiming = null;
       return;
     }
-    const startPage = targetLocation.scrollPageIndex;
+    let startPage = targetLocation.scrollPageIndex;
+    let origin: PreviewResponseSession['origin'] = 'answers';
+    let dataParts = this.getPlayerStartDataParts();
+    if (this.itemExplorerConditionalVisibilityEnabled && !this.hasResponseState) {
+      const resolved = resolvePreviewVisibility(
+        this.definitionContent,
+        previewTarget,
+        selectedItem.previewStart,
+      );
+      if (resolved.kind === 'unavailable') {
+        this.beginResponseSession(null, 'answers');
+        this.previewUserFacingMessage = resolved.reason;
+        this.previewCoordinator.markUnavailable(resolved.reason);
+        this.diagnostics?.finish(this.playerReadyTiming, { outcome: 'unresolved-visibility' });
+        this.playerReadyTiming = null;
+        return;
+      }
+      startPage = resolved.page;
+      origin = resolved.codes.length > 0 ? 'visibility' : 'answers';
+      dataParts = resolved.codes.length
+        ? { ...dataParts, stateVariableCodes: JSON.stringify(resolved.codes) }
+        : dataParts;
+    }
+    if (this.isCorrectSolutionActive) {
+      dataParts = mergePlayerSolutionIntoDataParts(
+        dataParts,
+        this.correctSolutionPrefill.responses,
+      );
+      origin = 'solution';
+    }
     const sessionId = `explorer-${this.getStableRowKey(selectedItem) || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
-    this.activePlayerSessionId = sessionId;
+    this.beginResponseSession(sessionId, origin, dataParts);
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
       unitDefinition: playerDefinition,
       unitState: {
-        dataParts: this.getPlayerStartDataParts(),
+        dataParts,
       },
       playerConfig: {
-        stateReportPolicy: 'none',
+        stateReportPolicy: 'eager',
         pagingMode:
           this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
             ? 'concat-scroll'
@@ -3612,20 +3779,31 @@ export class ItemExplorerFacade implements OnDestroy {
     this.schedulePlayerFocus();
   }
 
+  private beginResponseSession(
+    id: string | null,
+    origin: PreviewResponseSession['origin'],
+    initialDataParts: Record<string, any> = {},
+  ): void {
+    // Identity changes even when the item stays selected. Async mutations capture
+    // this object; player replies may only update data within the active session.
+    this.responseSession = { id, origin, initialDataParts, dataParts: null };
+    this.confirmDialogState = 'idle';
+    this.confirmDialogError = '';
+    this.showSaveConfirmDialog = false;
+    this.showDeleteConfirmDialog = false;
+  }
+
   private getPlayerStartDataParts(): Record<string, any> {
-    if (this.isCorrectSolutionActive) {
-      return mergePlayerSolutionIntoDataParts(
-        this.currentResponseData,
-        this.correctSolutionPrefill.responses,
-      );
-    }
-    if (
-      this.currentResponseData &&
-      (this.hasResponseState || this.restoreResponseDataAfterSolution)
-    ) {
-      return this.currentResponseData;
-    }
-    return {};
+    const answers =
+      this.responseSession.origin === 'answers'
+        ? this.currentResponseData || this.responseSession.initialDataParts
+        : null;
+    // Never promote a visibility or solution session to an answer session just
+    // because a saved state exists. Its data keeps its provenance across restarts.
+    if (this.responseBeforeSolution) return this.responseBeforeSolution;
+    if (!this.hasResponseState) return {};
+    if (answers && Object.keys(answers).length) return answers;
+    return this.savedResponseData || {};
   }
 
   private getPlayerDefinitionContent(): string {
@@ -6205,6 +6383,13 @@ export class ItemExplorerFacade implements OnDestroy {
     return Number.isInteger(responseVersion) && responseVersion === expectedVersion;
   }
 
+  private getPreviewStartFingerprint(item: ReadonlyExplorerItem | null): string {
+    return JSON.stringify([
+      item?.previewStart?.page ?? null,
+      Object.entries(item?.previewStart?.values || {}).sort(([a], [b]) => a.localeCompare(b)),
+    ]);
+  }
+
   private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {
     this.lastDraftOperationError = '';
     this.latestExplorerState = envelope;
@@ -6242,6 +6427,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.suppressDraftPatch = false;
     }
 
+    const previousPreviewStart = this.getPreviewStartFingerprint(this.selectedItem);
     const previousPreviewTarget = this.selectedItem
       ? this.getEffectivePlayerTarget(this.selectedItem)
       : '';
@@ -6250,14 +6436,14 @@ export class ItemExplorerFacade implements OnDestroy {
       this.syncPreviewTargetResolution(this.selectedItem);
       const nextPreviewTarget = this.getEffectivePlayerTarget(this.selectedItem);
       if (
-        previousPreviewTarget !== nextPreviewTarget &&
-        this.playerFrameReady &&
+        (previousPreviewTarget !== nextPreviewTarget ||
+          previousPreviewStart !== this.getPreviewStartFingerprint(this.selectedItem)) &&
         this.definitionContent &&
         this.unit
       ) {
         const previewStatus = this.previewCoordinator.status.kind;
         if (previewStatus === 'ready') {
-          this.startPlayerIfReady();
+          if (this.playerFrameReady) this.startPlayerIfReady();
         } else if (previewStatus !== 'loading-unit' && previewStatus !== 'loading-response') {
           this.reloadPreviewAfterTargetChange(this.selectedItem);
         }
@@ -6310,6 +6496,8 @@ export class ItemExplorerFacade implements OnDestroy {
           delete item.empiricalDifficulty;
         }
       }
+
+      item.previewStart = itemProps?.['previewStart'] as PreviewStart | undefined;
 
       const previewTargetId = String(itemProps?.[this.previewTargetItemPropertyKey] || '').trim();
       if (previewTargetId) {
@@ -6872,15 +7060,16 @@ export class ItemExplorerFacade implements OnDestroy {
     this.currentUnitMetadata = [];
     this.currentCodingScheme = null;
     this.currentCodingSchemeAsText = null;
-    this.currentResponseData = null;
+    this.responseSession.dataParts = null;
     this.hasResponseState = false;
+    this.savedResponseData = null;
     this.isFallbackState = false;
     this.correctSolutionPrefill = {
       status: 'unavailable',
       responses: [],
       message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
     };
-    this.restoreResponseDataAfterSolution = false;
+    this.responseBeforeSolution = null;
     this.selectedPreviewTargetId = '';
     this.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);

@@ -13,6 +13,8 @@ import {
   Header,
   Logger,
   ForbiddenException,
+  DefaultValuePipe,
+  ParseEnumPipe,
 } from "@nestjs/common";
 import {
   ArrayNotEmpty,
@@ -37,6 +39,7 @@ import {
   AssignRoleDto,
   UpdateAccessConfigDto,
   UploadCredentialsDto,
+  CredentialUploadMode,
   UpdateMetadataColumnsDto,
   CreateCredentialDto,
   UpdateCredentialDto,
@@ -331,7 +334,12 @@ export class AcpController {
   @ApiOperation({ summary: "Upload credentials list for ACP" })
   async uploadCredentials(
     @UuidParam("id") id: string,
-    @Query("mode") mode: "replace" | "append" | "upsert" = "replace",
+    @Query(
+      "mode",
+      new DefaultValuePipe("replace"),
+      new ParseEnumPipe(CredentialUploadMode),
+    )
+    mode: `${CredentialUploadMode}` = "replace",
     @Body() dto: UploadCredentialsDto,
   ) {
     const result = await this.acpService.uploadCredentials(

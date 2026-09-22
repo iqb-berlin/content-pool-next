@@ -194,7 +194,7 @@ export class AcpService {
       throw new NotFoundException(`User with ID ${dto.userId} not found`);
     }
 
-    const targetRole = dto.role as AcpRole;
+    const targetRole = AcpRole[dto.role];
 
     const existing = await this.acpUserRoleRepository.findOne({
       where: { userId: dto.userId, acpId },
@@ -326,7 +326,7 @@ export class AcpService {
     }
 
     if (config) {
-      config.accessModel = dto.accessModel as AccessModel;
+      config.accessModel = AccessModel[dto.accessModel];
       if (dto.allowRegistered !== undefined)
         config.allowRegistered = dto.allowRegistered;
       if (dto.featureConfig)
@@ -338,7 +338,7 @@ export class AcpService {
     } else {
       config = this.accessConfigRepository.create({
         acpId,
-        accessModel: dto.accessModel as AccessModel,
+        accessModel: AccessModel[dto.accessModel],
         allowRegistered: dto.allowRegistered || false,
         featureConfig: normalizeFeatureConfig({
           [PLAYER_FOCUS_HIGHLIGHT_FEATURE_KEY]: false,

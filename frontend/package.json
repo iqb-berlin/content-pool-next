@@ -10,7 +10,10 @@
     "e2e": "../scripts/run-browser-e2e.sh",
     "e2e:playwright": "playwright test",
     "benchmark:item-explorer": "../scripts/run-item-explorer-browser-benchmark.sh",
-    "lint": "ng lint"
+    "lint": "ng lint --max-warnings=0",
+    "lint:fix": "ng lint --fix --max-warnings=0",
+    "format:check": "prettier --check \"src/**/*.{ts,html,scss}\"",
+    "format": "prettier --write \"src/**/*.{ts,html,scss}\""
   },
   "private": true,
   "packageManager": "npm@11.7.0",

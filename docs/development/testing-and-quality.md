@@ -37,6 +37,29 @@ npm run lint
 
 The frontend uses Vitest for tests and Angular ESLint tooling for lint checks.
 
+### Lint and formatting gates
+
+Run these commands from either `backend/` or `frontend/` before submitting changes:
+
+```bash
+npm run lint
+npm run format:check
+```
+
+Both commands only check files; they do not rewrite them. Lint fails on any error
+or warning (`--max-warnings=0`), and the format check fails on formatting differences.
+CI runs the same commands for both projects and requires both jobs in the release gate.
+
+To apply automatic fixes locally, use the separate write commands:
+
+```bash
+npm run lint:fix
+npm run format
+```
+
+Review the resulting diff and rerun the checks. `lint:fix` still fails if any
+errors or warnings remain after automatic fixes.
+
 ### Full-stack browser tests
 
 The Playwright suite runs Chromium against the real Angular frontend, NestJS backend, and an

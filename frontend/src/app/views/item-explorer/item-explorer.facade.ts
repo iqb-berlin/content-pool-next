@@ -860,7 +860,12 @@ export class ItemExplorerFacade implements OnDestroy {
   private async performDraftResultApplication(result: ItemExplorerDraftResult): Promise<boolean> {
     if (this.destroyed) return false;
     if (result.kind === 'conflict') {
-      await this.reloadSharedExplorerStateAndItems(true);
+      let reloaded = false;
+      try {
+        reloaded = await this.reloadSharedExplorerStateAndItems(true);
+      } finally {
+        this.draft.finishConflictRecovery(reloaded);
+      }
       return false;
     }
     if (result.kind === 'failed') {

@@ -121,6 +121,27 @@ describe('ItemExplorerDraftService', () => {
     service.finishOperation();
   });
 
+  it('keeps later saves waiting until patch conflict recovery finishes', async () => {
+    api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    service.queueDraftPatch('UI_UPDATE', { ui: {} });
+    expect(await service.flushDraftPatch()).toEqual({ kind: 'conflict' });
+
+    let settled = false;
+    const saving = service.saveExplorerDraft().then((result) => {
+      settled = true;
+      return result;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(api.saveItemExplorerDraft).not.toHaveBeenCalled();
+
+    service.finishConflictRecovery(true);
+    expect(await saving).toEqual({ kind: 'conflict' });
+    expect(api.saveItemExplorerDraft).not.toHaveBeenCalled();
+    service.finishOperation();
+  });
+
   it('keeps retryable changes but requests an explicit tag rollback on a non-conflict error', async () => {
     api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 500 })));
     service.queueDraftPatch('TAGS_UPDATE', { tags: { row: ['tag'] }, ui: { filterText: 'keep' } });

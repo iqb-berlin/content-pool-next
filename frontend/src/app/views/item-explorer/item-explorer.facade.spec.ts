@@ -7730,6 +7730,45 @@ describe('ItemExplorerFacade', () => {
 });
 
 describe('ItemExplorer draft coordination', () => {
+  it('keeps saving blocked until automatic conflict recovery has reloaded the version', async () => {
+    const patch = new Subject<any>();
+    const saveItemExplorerDraft = vi.fn(() => of({}));
+    const component = createFacade({
+      api: { patchItemExplorerDraft: () => patch, saveItemExplorerDraft },
+    });
+    component.acpId = 'a';
+    (component as any).explorerEditingAllowed = true;
+    component.canPublishExplorer = true;
+    let finishReload!: (loaded: boolean) => void;
+    vi.spyOn(component as any, 'reloadSharedExplorerStateAndItems').mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finishReload = resolve;
+        }),
+    );
+
+    (component as any).queueDraftPatch('UI_UPDATE', { ui: {} });
+    const flushing = (component as any).flushDraftPatch();
+    patch.error({ status: 409 });
+    await vi.waitFor(() => expect(finishReload).toBeTypeOf('function'));
+
+    let saveFinished = false;
+    const saving = component.saveExplorerDraft(true).then((saved) => {
+      saveFinished = true;
+      return saved;
+    });
+    await Promise.resolve();
+
+    expect(saveFinished).toBe(false);
+    expect(saveItemExplorerDraft).not.toHaveBeenCalled();
+
+    finishReload(true);
+    expect(await saving).toBe(false);
+    expect(await flushing).toBe(false);
+    expect(saveItemExplorerDraft).not.toHaveBeenCalled();
+    destroyFacade(component);
+  });
+
   it('waits for conflict reload before finishing discard, and reloads once for shared flush results', async () => {
     const patch = new Subject<any>();
     const component = createFacade({ api: { patchItemExplorerDraft: () => patch } });

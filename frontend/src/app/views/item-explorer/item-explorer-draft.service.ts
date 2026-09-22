@@ -19,6 +19,11 @@ export class ItemExplorerDraftService implements OnDestroy {
   private canEdit = false;
   private canPublish = false;
   private flushInFlight: Promise<ItemExplorerDraftResult> | null = null;
+  private conflictRecovery: {
+    result: ItemExplorerDraftResult;
+    completion: Promise<ItemExplorerDraftResult>;
+    resolve: (result: ItemExplorerDraftResult) => void;
+  } | null = null;
   private operationInFlight = false;
   private publishing = false;
   discarding = false;
@@ -37,6 +42,8 @@ export class ItemExplorerDraftService implements OnDestroy {
     this.operationInFlight = false;
     this.publishing = false;
     this.discarding = false;
+    this.conflictRecovery?.resolve({ kind: 'cancelled' });
+    this.conflictRecovery = null;
     this.clearPatchTimer();
     if (this.saveStatusResetTimeout) clearTimeout(this.saveStatusResetTimeout);
     if (this.draftSaveMessageResetTimeout) clearTimeout(this.draftSaveMessageResetTimeout);
@@ -50,7 +57,11 @@ export class ItemExplorerDraftService implements OnDestroy {
     return this.operationInFlight;
   }
   get hasUnflushedChanges(): boolean {
-    return this.pendingDraftPatch !== null || this.flushInFlight !== null;
+    return (
+      this.pendingDraftPatch !== null ||
+      this.flushInFlight !== null ||
+      this.conflictRecovery !== null
+    );
   }
 
   canApplyEnvelope(envelope: ItemExplorerStateEnvelope): boolean {
@@ -114,6 +125,7 @@ export class ItemExplorerDraftService implements OnDestroy {
   flushDraftPatch(): Promise<ItemExplorerDraftResult> {
     if (this.destroyed || this.discarding) return Promise.resolve({ kind: 'cancelled' });
     if (this.publishing) return Promise.resolve({ kind: 'busy' });
+    if (this.conflictRecovery) return this.conflictRecovery.completion;
     if (this.flushInFlight) return this.flushInFlight;
     if (!this.canEdit || !this.pendingDraftPatch) return Promise.resolve({ kind: 'idle' });
     const drain = this.drainDraftPatches();
@@ -163,7 +175,9 @@ export class ItemExplorerDraftService implements OnDestroy {
           'Konflikt beim Aktualisieren des Entwurfs. Der Explorer wurde neu geladen.';
         this.pendingDraftPatch = null;
         this.pendingDraftChangeType = 'UI_UPDATE';
-        return { kind: 'conflict' };
+        const result: ItemExplorerDraftResult = { kind: 'conflict' };
+        this.beginConflictRecovery(result);
+        return result;
       }
       this.lastDraftOperationError = this.extractDraftErrorMessage(
         error,
@@ -231,6 +245,8 @@ export class ItemExplorerDraftService implements OnDestroy {
     this.pendingDraftPatch = null;
     this.pendingDraftChangeType = 'UI_UPDATE';
     this.showSavePreviewDialog = false;
+    const recovering = this.conflictRecovery?.completion;
+    if (recovering) return recovering;
     const running = this.flushInFlight;
     if (running) {
       const result = await running;
@@ -261,6 +277,27 @@ export class ItemExplorerDraftService implements OnDestroy {
     this.publishing = false;
     this.discarding = false;
     if (!this.destroyed && flushDeferredEdits && this.pendingDraftPatch) this.flushRequested.next();
+  }
+
+  /** Called after the facade has finished reloading state for a patch conflict. */
+  finishConflictRecovery(reloaded: boolean): void {
+    const recovery = this.conflictRecovery;
+    if (!recovery) return;
+    recovery.resolve(recovery.result);
+    if (this.destroyed || !reloaded) return;
+    this.conflictRecovery = null;
+    if (!this.publishing && !this.discarding && this.pendingDraftPatch) {
+      this.flushRequested.next();
+    }
+  }
+
+  private beginConflictRecovery(result: ItemExplorerDraftResult): void {
+    if (this.conflictRecovery) return;
+    let resolve!: (value: ItemExplorerDraftResult) => void;
+    const completion = new Promise<ItemExplorerDraftResult>((done) => {
+      resolve = done;
+    });
+    this.conflictRecovery = { result, completion, resolve };
   }
 
   private operationError(error: any, fallback: string): ItemExplorerDraftResult {

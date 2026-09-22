@@ -142,6 +142,20 @@ describe('ItemExplorerDraftService', () => {
     service.finishOperation();
   });
 
+  it('flushes edits queued while patch conflict recovery is in progress', async () => {
+    api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 409 })));
+    service.queueDraftPatch('UI_UPDATE', { ui: { filterText: 'conflicting' } });
+    expect(await service.flushDraftPatch()).toEqual({ kind: 'conflict' });
+
+    const requested = vi.fn();
+    service.flushRequested$.subscribe(requested);
+    service.queueDraftPatch('UI_UPDATE', { ui: { filterText: 'after-reload' } });
+    expect(requested).not.toHaveBeenCalled();
+
+    service.finishConflictRecovery(true);
+    expect(requested).toHaveBeenCalledOnce();
+  });
+
   it('keeps retryable changes but requests an explicit tag rollback on a non-conflict error', async () => {
     api.patchItemExplorerDraft.mockReturnValueOnce(throwError(() => ({ status: 500 })));
     service.queueDraftPatch('TAGS_UPDATE', { tags: { row: ['tag'] }, ui: { filterText: 'keep' } });

@@ -25,6 +25,7 @@ import {
   TaskSequence,
   Credential,
   FileUploadResponse,
+  UploadPreflightReport,
   FileUploadConflictStrategy,
   FileProcessingJob,
   IndexSyncReport,
@@ -324,6 +325,19 @@ export class ApiService {
         observe: 'events',
         reportProgress: true,
       },
+    );
+  }
+  preflightUpload(
+    acpId: string,
+    formData: FormData,
+    options?: { conflictStrategy?: FileUploadConflictStrategy },
+  ): Observable<UploadPreflightReport> {
+    const query = options?.conflictStrategy
+      ? `?conflictStrategy=${encodeURIComponent(options.conflictStrategy)}`
+      : '';
+    return this.http.post<UploadPreflightReport>(
+      `${this.API}/acp/${acpId}/files/upload-preflight${query}`,
+      formData,
     );
   }
   startFileProcessing(

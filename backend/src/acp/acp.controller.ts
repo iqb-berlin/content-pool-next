@@ -24,6 +24,8 @@ import {
   Header,
   Logger,
   ForbiddenException,
+  DefaultValuePipe,
+  ParseEnumPipe,
 } from "@nestjs/common";
 import {
   ArrayNotEmpty,
@@ -48,6 +50,7 @@ import {
   AssignRoleDto,
   UpdateAccessConfigDto,
   UploadCredentialsDto,
+  CredentialUploadMode,
   UpdateMetadataColumnsDto,
   CreateCredentialDto,
   UpdateCredentialDto,
@@ -382,7 +385,12 @@ export class AcpController {
   @ApiOperation({ summary: "Upload credentials list for ACP" })
   async uploadCredentials(
     @UuidParam("id") id: string,
-    @Query("mode") mode: "replace" | "append" | "upsert" = "replace",
+    @Query(
+      "mode",
+      new DefaultValuePipe("replace"),
+      new ParseEnumPipe(CredentialUploadMode),
+    )
+    mode: `${CredentialUploadMode}` = "replace",
     @Body() dto: UploadCredentialsDto,
   ) {
     const result = await this.acpService.uploadCredentials(
@@ -519,8 +527,8 @@ export class AcpController {
       return this.withoutReviewInternals(result);
     } catch (error) {
       this.logger.error(
-        `Failed to update metadata columns for ACP ${id}: ${error.message}`,
-        error.stack,
+        `Failed to update metadata columns for ACP ${id}: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : undefined,
       );
       throw error;
     }

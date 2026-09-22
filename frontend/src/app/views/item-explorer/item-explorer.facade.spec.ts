@@ -1177,6 +1177,85 @@ describe('ItemExplorerFacade', () => {
     expect(patchViewItemPreferenceRow).not.toHaveBeenCalled();
   });
 
+  it('keeps the newest edit after an older save succeeds and retries it after a failure', async () => {
+    const first = new Subject<unknown>();
+    const second = new Subject<unknown>();
+    const retry = new Subject<unknown>();
+    const patch = vi
+      .fn()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second)
+      .mockReturnValueOnce(retry);
+    const component = createFacade({
+      api: { patchViewItemPreferenceRow: patch },
+      authService: { isLoggedIn: true },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    try {
+      component.setPersonalItemNote('row-1', 'first');
+      component.flushPersonalItemDataSave();
+      component.setPersonalItemNote('row-1', 'latest');
+      component.flushPersonalItemDataSave();
+      expect(patch).toHaveBeenCalledTimes(1);
+      first.next({});
+      first.complete();
+      expect(patch).toHaveBeenNthCalledWith(2, 'acp-1', 'row-1', { note: 'latest' }, 'read-only');
+      const leaving = component.canDeactivate();
+      second.error(new Error('offline'));
+      await expect(leaving).resolves.toBe(false);
+      expect(component.personalItemData['row-1'].note).toBe('latest');
+      const retriedNavigation = component.canDeactivate();
+      expect(patch).toHaveBeenNthCalledWith(3, 'acp-1', 'row-1', { note: 'latest' }, 'read-only');
+      retry.next({});
+      retry.complete();
+      await expect(retriedNavigation).resolves.toBe(true);
+      expect(component.personalDataSaveState).toBe('saved');
+      expect(component.personalItemData['row-1'].note).toBe('latest');
+    } finally {
+      component.ngOnDestroy();
+    }
+  });
+
+  it.each(['success', 'error'])('ignores a late save %s from the previous identity', (outcome) => {
+    let token = createJwt('user-a');
+    const oldSave = new Subject<unknown>();
+    const newSave = new Subject<unknown>();
+    const patch = vi.fn().mockReturnValueOnce(oldSave).mockReturnValueOnce(newSave);
+    const component = createFacade({
+      api: { patchViewItemPreferenceRow: patch, getViewItemPreferences: () => of({ rowData: {} }) },
+      authService: { isLoggedIn: true, getToken: () => token },
+    });
+    component.acpId = 'acp-1';
+    component.enablePersonalItemData = true;
+    component.personalDataLoadState = 'loaded';
+    try {
+      component.setPersonalItemNote('row-1', 'private A');
+      component.flushPersonalItemDataSave();
+      token = createJwt('user-b');
+      (component as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+      component.setPersonalItemNote('row-1', 'private B');
+      component.flushPersonalItemDataSave();
+      expect(patch).toHaveBeenCalledTimes(2);
+      if (outcome === 'success') {
+        oldSave.next({});
+        oldSave.complete();
+      } else {
+        oldSave.error(new Error('late failure'));
+      }
+      expect(component.personalItemData).toEqual({ 'row-1': { note: 'private B' } });
+      expect(component.personalDataSaveState).toBe('saving');
+      expect(component.personalDataError).toBe('');
+      newSave.next({});
+      newSave.complete();
+      expect(component.personalDataSaveState).toBe('saved');
+      expect(component.canDeactivate()).toBe(true);
+    } finally {
+      component.ngOnDestroy();
+    }
+  });
+
   it('blocks navigation while a personal autosave keeps failing', async () => {
     const component = createFacade({
       api: {
@@ -1316,56 +1395,62 @@ describe('ItemExplorerFacade', () => {
   });
 
   it('restores pending changes from memory when session storage is unavailable', () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const setItem = vi.spyOn(sessionStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('Storage unavailable', 'QuotaExceededError');
     });
-    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    const getItem = vi.spyOn(sessionStorage, 'getItem').mockImplementation(() => {
       throw new DOMException('Storage unavailable', 'SecurityError');
     });
-    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+    const removeItem = vi.spyOn(sessionStorage, 'removeItem').mockImplementation(() => {
       throw new DOMException('Storage unavailable', 'SecurityError');
     });
-    const pendingStorage = new PendingPersonalSessionStorageService();
-    let firstToken: string | null = createJwt('user-a');
-    const firstComponent = createFacade({
-      api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
-      authService: {
-        isLoggedIn: true,
-        getToken: () => firstToken,
-      },
-      pendingPersonalSessionStorage: pendingStorage,
-    });
-    firstComponent.acpId = 'acp-1';
-    firstComponent.enablePersonalItemData = true;
-    firstComponent.personalDataLoadState = 'loaded';
-    firstComponent.setPersonalItemNote('uuid::1', 'Fallback-Notiz');
-    firstToken = null;
-    (firstComponent as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
-    firstComponent.ngOnDestroy();
+    try {
+      const pendingStorage = new PendingPersonalSessionStorageService();
+      let firstToken: string | null = createJwt('user-a');
+      const firstComponent = createFacade({
+        api: { patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })) },
+        authService: {
+          isLoggedIn: true,
+          getToken: () => firstToken,
+        },
+        pendingPersonalSessionStorage: pendingStorage,
+      });
+      firstComponent.acpId = 'acp-1';
+      firstComponent.enablePersonalItemData = true;
+      firstComponent.personalDataLoadState = 'loaded';
+      firstComponent.setPersonalItemNote('uuid::1', 'Fallback-Notiz');
+      firstToken = null;
+      (firstComponent as any).authStorageListener({ key: 'cp_token' } as StorageEvent);
+      firstComponent.ngOnDestroy();
 
-    const secondComponent = createFacade({
-      api: {
-        getViewItemPreferences: vi.fn().mockReturnValue(of({ rowData: {} })),
-        patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })),
-      },
-      authService: {
-        isLoggedIn: true,
-        getToken: () => createJwt('user-a'),
-      },
-      pendingPersonalSessionStorage: pendingStorage,
-    });
-    secondComponent.acpId = 'acp-1';
-    secondComponent.enablePersonalItemData = true;
-    (secondComponent as any).syncPersonalItemDataSession();
+      const secondComponent = createFacade({
+        api: {
+          getViewItemPreferences: vi.fn().mockReturnValue(of({ rowData: {} })),
+          patchViewItemPreferenceRow: vi.fn().mockReturnValue(of({ rowData: {} })),
+        },
+        authService: {
+          isLoggedIn: true,
+          getToken: () => createJwt('user-a'),
+        },
+        pendingPersonalSessionStorage: pendingStorage,
+      });
+      secondComponent.acpId = 'acp-1';
+      secondComponent.enablePersonalItemData = true;
+      (secondComponent as any).syncPersonalItemDataSession();
 
-    expect(secondComponent.personalItemData).toEqual({
-      'uuid::1': { note: 'Fallback-Notiz' },
-    });
-    expect((secondComponent as any).pendingPersonalRowUpdates.size).toBe(1);
-    secondComponent.ngOnDestroy();
-    setItem.mockRestore();
-    getItem.mockRestore();
-    removeItem.mockRestore();
+      expect(secondComponent.personalItemData).toEqual({
+        'uuid::1': { note: 'Fallback-Notiz' },
+      });
+      expect((secondComponent as any).pendingPersonalRowUpdates.size).toBe(1);
+      secondComponent.ngOnDestroy();
+      expect(setItem).toHaveBeenCalled();
+      expect(getItem).not.toHaveBeenCalled();
+      expect(removeItem).toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+      getItem.mockRestore();
+      removeItem.mockRestore();
+    }
   });
 
   it('discards suspended personal changes when a different identity logs in', () => {

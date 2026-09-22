@@ -1,3 +1,12 @@
+import { ItemExplorerImportService } from './item-explorer-import.service';
+import { ItemExplorerTableService } from './item-explorer-table.service';
+import { ItemExplorerPlayerService } from './item-explorer-player.service';
+import { ItemExplorerCodingService } from './item-explorer-coding.service';
+import { ItemExplorerDraftService } from './item-explorer-draft.service';
+import { ItemExplorerCollectionsService } from './item-explorer-collections.service';
+import { ItemExplorerPersonalDataService } from './item-explorer-personal-data.service';
+import { ItemExplorerCommentsService } from './item-explorer-comments.service';
+import { ItemExplorerBrowser } from './item-explorer-browser.service';
 /// <reference types="vite/client" />
 
 import { of } from 'rxjs';
@@ -191,7 +200,6 @@ function createFacade(): ItemExplorerFacade {
   return new ItemExplorerFacade(
     api,
     { bypassSecurityTrustHtml: (html: string) => html } as any,
-    {} as any,
     {
       hasAcpRole: () => false,
       isAdmin: false,
@@ -201,6 +209,18 @@ function createFacade(): ItemExplorerFacade {
     } as any,
     new PendingPersonalSessionStorageService(),
     previewCoordinator,
+    new ItemExplorerCommentsService(api as any, new ItemExplorerBrowser()),
+    new ItemExplorerPersonalDataService(
+      api as any,
+      new PendingPersonalSessionStorageService(),
+      new ItemExplorerBrowser(),
+    ),
+    new ItemExplorerCollectionsService(api as any, new ItemExplorerBrowser()),
+    new ItemExplorerDraftService(api as any),
+    new ItemExplorerCodingService({} as any),
+    new ItemExplorerPlayerService({} as any),
+    new ItemExplorerTableService(),
+    new ItemExplorerImportService(api as any),
     diagnostics,
   );
 }
@@ -294,6 +314,11 @@ describe('ItemExplorer production template composition', () => {
       expect(root.querySelector('app-breadcrumb')?.textContent).toContain('Package 42');
       expect(button.getAttribute('aria-pressed')).toBe('false');
     } finally {
+      facade.comments.ngOnDestroy();
+      facade.personalData.ngOnDestroy();
+      facade.collections.ngOnDestroy();
+      facade.draft.ngOnDestroy();
+      facade.player.ngOnDestroy();
       facade.ngOnDestroy();
     }
   });
@@ -301,7 +326,7 @@ describe('ItemExplorer production template composition', () => {
   it.each([false, true])('renders editing controls only when permission is %s', async (canEdit) => {
     const facade = createFacade();
     vi.spyOn(facade, 'init').mockImplementation(() => undefined);
-    facade.canEditExplorer = canEdit;
+    (facade as any).explorerEditingAllowed = canEdit;
     const fixture = await renderExplorer(facade);
     try {
       const root: HTMLElement = fixture.nativeElement;
@@ -312,6 +337,11 @@ describe('ItemExplorer production template composition', () => {
           'Manuell sortieren',
         );
     } finally {
+      facade.comments.ngOnDestroy();
+      facade.personalData.ngOnDestroy();
+      facade.collections.ngOnDestroy();
+      facade.draft.ngOnDestroy();
+      facade.player.ngOnDestroy();
       facade.ngOnDestroy();
     }
   });

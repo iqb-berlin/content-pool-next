@@ -60,6 +60,17 @@ npm run format
 Review the resulting diff and rerun the checks. `lint:fix` still fails if any
 errors or warnings remain after automatic fixes.
 
+### ACP API contracts
+
+`backend/src/acp/acp-http-contract.spec.ts` exercises actual HTTP routing, the
+validation pipe, response serialization, and the role guard for ACP management.
+Authentication and persistence are mocked in this suite; service, authentication,
+and database E2E tests remain responsible for those layers.
+
+`frontend/src/app/core/services/api-acp-contract.spec.ts` uses Angular's HTTP test
+backend to check request methods and payloads, nullable fields, role response
+shapes, credential import counters, and propagation of HTTP 400/403 responses.
+
 ### Full-stack browser tests
 
 The Playwright suite runs Chromium against the real Angular frontend, NestJS backend, and an

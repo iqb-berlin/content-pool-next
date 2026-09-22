@@ -5,7 +5,12 @@ import { FormsModule } from '@angular/forms';
 import { JsonPipe } from '@angular/common';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
-import { Acp } from '../../core/models/api.models';
+import {
+  Acp,
+  AcpRoleAssignment,
+  AcpRoleName,
+  AssignableAcpUser,
+} from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.component';
 
@@ -501,8 +506,8 @@ import { ConfirmDialogComponent } from '../../shared/components/confirm-dialog.c
 export class DashboardComponent implements OnInit {
   sequenceLabel = sequenceLabel;
   acp: Acp | null = null;
-  roles: any[] = [];
-  allUsers: any[] = [];
+  roles: AcpRoleAssignment[] = [];
+  allUsers: AssignableAcpUser[] = [];
   contentData: any = null;
   contentError = '';
   @ViewChild('indexDialog') indexDialog?: ElementRef<HTMLDialogElement>;
@@ -518,8 +523,8 @@ export class DashboardComponent implements OnInit {
     this.indexTrigger?.nativeElement.focus();
   }
   selectedUserId = '';
-  selectedRole = 'READ_ONLY';
-  roleEdits: Record<string, string | undefined> = {};
+  selectedRole: AcpRoleName = 'READ_ONLY';
+  roleEdits: Record<string, AcpRoleName | undefined> = {};
   roleBusy = false;
   roleError = '';
   roleStatus = '';
@@ -528,7 +533,7 @@ export class DashboardComponent implements OnInit {
     return this.auth.isAdmin;
   }
 
-  get availableUsers(): any[] {
+  get availableUsers(): AssignableAcpUser[] {
     return this.allUsers.filter((user) => !this.roles.some((role) => role.userId === user.id));
   }
   myRole: string | null = null;
@@ -655,7 +660,7 @@ export class DashboardComponent implements OnInit {
     this.persistRole(userId, nextRole);
   }
 
-  private persistRole(userId: string, role: string) {
+  private persistRole(userId: string, role: AcpRoleName) {
     if (!this.acp || this.roleBusy) return;
     this.roleBusy = true;
     this.roleError = '';

@@ -2,7 +2,14 @@ import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
-import { AccessModel, Credential } from '../../core/models/api.models';
+import {
+  AccessModel,
+  Credential,
+  CredentialEntry,
+  CredentialUploadMode,
+  FeatureConfig,
+  UpdateAccessConfigRequest,
+} from '../../core/models/api.models';
 import { AcpManagerContextComponent } from '../shared/acp-manager-context.component';
 
 @Component({
@@ -933,7 +940,7 @@ export class AccessConfigComponent implements OnInit {
   private readonly DATETIME_LOCAL_FORMAT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
   credentialCount = 0;
   dateError = '';
-  featureConfig: Record<string, any> = {};
+  featureConfig: FeatureConfig = {};
   commentTargets: string[] = [];
   availableTags: string[] = [];
   newTag = '';
@@ -951,7 +958,7 @@ export class AccessConfigComponent implements OnInit {
   addError = '';
 
   // CSV upload
-  csvMode: 'replace' | 'append' | 'upsert' = 'replace';
+  csvMode: CredentialUploadMode = 'replace';
   csvPreview: {
     filename: string;
     total: number;
@@ -960,9 +967,9 @@ export class AccessConfigComponent implements OnInit {
     toSkip: number;
     duplicates: string[];
     conflicts: string[];
-    credentials: any[];
+    credentials: CredentialEntry[];
   } | null = null;
-  pendingCSVUpload: any[] = [];
+  pendingCSVUpload: CredentialEntry[] = [];
 
   // Edit dialog
   editingCredential: Credential | null = null;
@@ -1008,7 +1015,7 @@ export class AccessConfigComponent implements OnInit {
     this.loadCredentials();
   }
 
-  private toDateTimeLocalString(isoDateString: string | undefined): string {
+  private toDateTimeLocalString(isoDateString: string | null | undefined): string {
     if (!isoDateString) return '';
     // Parse the UTC date from backend and convert to local datetime-local format
     const utcDate = new Date(isoDateString);
@@ -1061,18 +1068,16 @@ export class AccessConfigComponent implements OnInit {
         this.applyFeatureConfigDefaults();
         this.validFrom = this.toDateTimeLocalString(config.validFrom);
         this.validUntil = this.toDateTimeLocalString(config.validUntil);
-        this.commentTargets = (this.featureConfig['commentTargets'] as string[]) || [];
-        this.availableTags = (this.featureConfig['availableTags'] as string[]) || [];
+        this.commentTargets = this.featureConfig['commentTargets'] || [];
+        this.availableTags = this.featureConfig['availableTags'] || [];
         this.itemSubIdLabelEntries = Object.entries(
-          (this.featureConfig[this.itemSubIdLabelsKey] as Record<string, string>) || {},
+          this.featureConfig[this.itemSubIdLabelsKey] || {},
         ).map(([value, label]) => ({ value, label }));
-        this.personalItemCategoryValues = Array.isArray(
-          this.featureConfig[this.personalItemCategoryValuesKey],
-        )
-          ? [...this.featureConfig[this.personalItemCategoryValuesKey]]
-          : [];
-        this.personalItemTags = Array.isArray(this.featureConfig[this.personalItemTagsKey])
-          ? this.featureConfig[this.personalItemTagsKey].map((tag: any) => ({
+        const categoryValues = this.featureConfig[this.personalItemCategoryValuesKey];
+        this.personalItemCategoryValues = Array.isArray(categoryValues) ? [...categoryValues] : [];
+        const personalTags = this.featureConfig[this.personalItemTagsKey];
+        this.personalItemTags = Array.isArray(personalTags)
+          ? personalTags.map((tag) => ({
               label: String(tag?.label || ''),
               color: /^#[0-9a-f]{6}$/i.test(String(tag?.color || ''))
                 ? String(tag.color)
@@ -1081,7 +1086,7 @@ export class AccessConfigComponent implements OnInit {
           : [];
         const metadataColumns = this.featureConfig['metadataColumns'];
         this.metadataColumnDefinitions = Array.isArray(metadataColumns?.definitions)
-          ? metadataColumns.definitions.map((entry: any) => ({
+          ? metadataColumns.definitions.map((entry) => ({
               id: String(entry?.id || ''),
               label: String(entry?.label || ''),
             }))
@@ -1147,7 +1152,7 @@ export class AccessConfigComponent implements OnInit {
 
   saveAccess() {
     if (!this.validateDates()) return;
-    const data: any = {
+    const data: UpdateAccessConfigRequest = {
       accessModel: this.accessModel,
       allowRegistered: this.allowRegistered,
     };
@@ -1190,7 +1195,7 @@ export class AccessConfigComponent implements OnInit {
     };
     this.featureConfig['commentTargets'] = this.commentTargets;
     this.featureConfig['availableTags'] = this.availableTags;
-    const data: any = {
+    const data: UpdateAccessConfigRequest = {
       accessModel: this.accessModel,
       allowRegistered: this.allowRegistered,
       featureConfig: this.featureConfig,
@@ -1415,7 +1420,7 @@ export class AccessConfigComponent implements OnInit {
     );
 
     this.api.uploadCredentials(this.acpId, validCreds, this.csvMode).subscribe({
-      next: (res: any) => {
+      next: (res) => {
         this.csvPreview = null;
         this.pendingCSVUpload = [];
         this.credentialCount =

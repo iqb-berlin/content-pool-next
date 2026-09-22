@@ -34,6 +34,17 @@ function createFacade(options?: {
       }
     | undefined;
   getFocusIdentifiers?: (definition: string, variableId: string) => string[];
+  resolvePlayerResponseTarget?: (
+    definition: string,
+    variableId: string,
+  ) =>
+    | {
+        responseId: string;
+        elementType: string;
+        identifiers: string[];
+        optionCount?: number;
+      }
+    | undefined;
   stripConditionalVisibility?: (definition: string) => string;
   api?: Record<string, unknown>;
   authService?: Record<string, unknown>;
@@ -60,6 +71,14 @@ function createFacade(options?: {
       }),
     getFocusIdentifiers:
       options?.getFocusIdentifiers || ((_definition: string, variableId: string) => [variableId]),
+    resolvePlayerResponseTarget:
+      options?.resolvePlayerResponseTarget ||
+      ((_definition: string, variableId: string) => ({
+        responseId: variableId,
+        elementType: 'radio',
+        identifiers: [variableId],
+        optionCount: 4,
+      })),
     stripConditionalVisibility:
       options?.stripConditionalVisibility || ((definition: string) => definition),
   };
@@ -161,7 +180,7 @@ describe('ItemExplorerFacade role initialization', () => {
     expect(component.canEditExplorer).toBe(false);
   });
 
-  it('keeps credential sessions in read-only mode', () => {
+  it.each([false, true])('uses the server edit grant for credential sessions (%s)', (canEdit) => {
     const component = createFacade({
       authService: {
         hasAcpRole: () => false,
@@ -172,9 +191,29 @@ describe('ItemExplorerFacade role initialization', () => {
       },
     });
 
+    (component as any).latestExplorerState = { canEdit };
     component.checkUserRole();
 
-    expect(component.viewPerspective).toBe('read-only');
+    expect(component.viewPerspective).toBe(canEdit ? 'editor' : 'read-only');
+    expect(component.canEditExplorer).toBe(canEdit);
+  });
+
+  it('synchronizes coding comments with login and logout', () => {
+    const component = createFacade();
+    const authService = (component as any).authService;
+    (component as any).itemCommentsConfigured = false;
+    (component as any).codingCommentsConfigured = true;
+
+    authService.isLoggedIn = true;
+    component.checkUserRole();
+
+    expect(component.itemCommentsEnabled).toBe(false);
+    expect(component.codingCommentsEnabled).toBe(true);
+
+    authService.isLoggedIn = false;
+    component.checkUserRole();
+
+    expect(component.codingCommentsEnabled).toBe(false);
   });
 });
 
@@ -529,7 +568,7 @@ describe('ItemExplorerFacade comment counts', () => {
     expect(component.metadataSettings.layout?.order).toContain('system:comments');
   });
 
-  it('preserves an explicitly empty shared column selection during layout migration', () => {
+  it('keeps position visible when migrating an explicitly empty legacy column selection', () => {
     const component = createFacade();
     component.itemCommentsEnabled = true;
     const envelope = createExplorerEnvelope();
@@ -544,9 +583,9 @@ describe('ItemExplorerFacade comment counts', () => {
 
     (component as any).applySharedExplorerEnvelope(envelope);
 
-    expect(component.metadataSettings.layout?.visible).toEqual([]);
-    expect(component.metadataSettings.layout?.order).toEqual([]);
-    expect(component.metadataSettings.layout?.schemaVersion).toBe(2);
+    expect(component.metadataSettings.layout?.visible).toEqual(['system:position']);
+    expect(component.metadataSettings.layout?.order).toEqual(['system:position']);
+    expect(component.metadataSettings.layout?.schemaVersion).toBe(3);
   });
 
   it('resolves a filtered deep link and consumes its automatic-open state on navigation', () => {
@@ -701,6 +740,40 @@ describe('ItemExplorerFacade', () => {
     expect(getFileItemList).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
+
+  it.each([
+    { canEdit: true, perspective: 'editor', expected: 'editor' },
+    { canEdit: true, perspective: 'read-only', expected: 'read-only' },
+    { canEdit: false, perspective: 'editor', expected: 'read-only' },
+  ] as const)(
+    'loads the initial list using freshly resolved permissions: $canEdit/$perspective',
+    async ({ canEdit, perspective, expected }) => {
+      const envelope = createExplorerEnvelope({ canEdit });
+      const getFileItemList = vi.fn((_id, options) =>
+        of({
+          itemExplorerStateVersion:
+            options.perspective === 'editor' ? envelope.version : envelope.publishedVersion,
+          columns: [],
+          items: [],
+          unitMetadata: {},
+          codingSchemes: {},
+        }),
+      );
+      const component = createFacade({
+        api: {
+          getItemExplorerState: vi.fn().mockReturnValue(of(envelope)),
+          getFileItemList,
+        },
+      });
+      component.acpId = 'acp-1';
+      component.latestExplorerState = null;
+      component.hasExplorerEditPermission = false;
+      component.viewPerspective = perspective;
+      expect(await (component as any).reloadSharedExplorerStateAndItems()).toBe(true);
+      expect(getFileItemList).toHaveBeenCalledExactlyOnceWith('acp-1', { perspective: expected });
+      expect(component.itemListError).toBe('');
+    },
+  );
 
   it('rejects an item list from another explorer-state version and reloads a consistent pair', async () => {
     const firstEnvelope = createExplorerEnvelope();
@@ -1060,21 +1133,26 @@ describe('ItemExplorerFacade', () => {
     expect((component as any).pendingPersonalRowUpdates.size).toBe(0);
   });
 
-  it('keeps personal filters out of the shared Explorer UI state', () => {
+  it('keeps local search and personal filters out of the shared Explorer UI state', () => {
     const component = createFacade({ authService: { isLoggedIn: true } });
+    component.filterText = 'lokale Suche';
     component.columnFilters = {
       unitLabel: 'Mathematik',
       personalNote: 'vertraulich',
     };
     component.personalColumnFilters = { personalNote: 'vertraulich' };
 
-    expect((component as any).buildUiPreferences().columnFilters).toEqual({
+    const sharedUi = (component as any).buildUiPreferences();
+    expect(sharedUi).not.toHaveProperty('filterText');
+    expect(sharedUi.columnFilters).toEqual({
       unitLabel: 'Mathematik',
     });
 
     (component as any).applyUiPreferences({
+      filterText: 'fremde gespeicherte Suche',
       columnFilters: { unitLabel: 'Deutsch', personalCategory: 'III' },
     });
+    expect(component.filterText).toBe('lokale Suche');
     expect(component.columnFilters).toEqual({ unitLabel: 'Deutsch' });
     expect(component.personalColumnFilters).toEqual({ personalNote: 'vertraulich' });
   });
@@ -1853,6 +1931,43 @@ describe('ItemExplorerFacade', () => {
     ).toBe(true);
   });
 
+  it('toggles position through the shared layout and restores its default visibility', () => {
+    const component = createFacade();
+    const positionColumn = component.allTableColumns.find(
+      (column) => column.key === 'system:position',
+    )!;
+
+    expect(component.isColumnVisible(positionColumn)).toBe(true);
+    expect(component.tableColumns[0].key).toBe('system:position');
+
+    component.setColumnWidth(positionColumn, 120);
+    const itemIdColumn = component.tableColumns.find((column) => column.key === 'system:itemId')!;
+    expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(120);
+    component.toggleColumnVisibility(positionColumn);
+
+    expect(component.isColumnVisible(positionColumn)).toBe(false);
+    expect(component.tableColumns.some((column) => column.key === 'system:position')).toBe(false);
+    expect(
+      component.getStickyTableColumnLeft(component.tableColumns[0], component.tableColumns),
+    ).toBe(0);
+
+    component.enableItemCollections = true;
+    component.toggleReferenceNumberVisibility();
+
+    const visibleColumns = component.tableColumns;
+    expect(visibleColumns.slice(0, 2).map((column) => column.key)).toEqual([
+      'system:referenceNumber',
+      'system:itemId',
+    ]);
+    expect(component.getStickyTableColumnLeft(visibleColumns[0], visibleColumns)).toBe(38);
+    expect(component.getStickyTableColumnLeft(visibleColumns[1], visibleColumns)).toBe(178);
+
+    component.resetToDefault();
+
+    expect(component.isColumnVisible(positionColumn)).toBe(true);
+    expect(component.tableColumns[0].key).toBe('system:position');
+  });
+
   it('keeps an enabled reference number directly before the sticky Item-ID column', () => {
     const component = createFacade();
 
@@ -1861,13 +1976,15 @@ describe('ItemExplorerFacade', () => {
     const tableColumns = component.tableColumns;
     const tableColumnsSpy = vi.spyOn(component, 'tableColumns', 'get');
 
-    expect(tableColumns.slice(0, 2).map((column) => column.id)).toEqual([
+    expect(tableColumns.slice(0, 3).map((column) => column.id)).toEqual([
+      'position',
       'referenceNumber',
       'itemId',
     ]);
     expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
     expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
-    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(212);
+    expect(component.isStickyTableColumn(tableColumns[2], tableColumns)).toBe(true);
+    expect(component.getStickyTableColumnLeft(tableColumns[2], tableColumns)).toBe(212);
     expect(tableColumnsSpy).not.toHaveBeenCalled();
   });
 
@@ -1875,15 +1992,16 @@ describe('ItemExplorerFacade', () => {
     const component = createFacade();
     component.enableItemCollections = true;
 
-    const itemIdColumn = component.tableColumns[0];
+    const itemIdColumn = component.tableColumns.find((column) => column.id === 'itemId')!;
     expect(component.getStickyTableColumnLeft(itemIdColumn, component.tableColumns)).toBe(110);
 
     component.toggleReferenceNumberVisibility();
 
     const tableColumns = component.tableColumns;
 
-    expect(component.getStickyTableColumnLeft(tableColumns[0], tableColumns)).toBe(110);
-    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(250);
+    expect(component.getStickyTableColumnLeft(tableColumns[0], tableColumns)).toBe(38);
+    expect(component.getStickyTableColumnLeft(tableColumns[1], tableColumns)).toBe(110);
+    expect(component.getStickyTableColumnLeft(tableColumns[2], tableColumns)).toBe(250);
   });
 
   it('normalizes persisted layouts to keep reference number and Item-ID pinned first', () => {
@@ -1894,8 +2012,8 @@ describe('ItemExplorerFacade', () => {
       configured: true,
       widths: {},
       layout: {
-        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber'],
-        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber'],
+        visible: ['system:itemId', 'system:unitLabel', 'system:referenceNumber', 'system:position'],
+        order: ['system:unitLabel', 'system:itemId', 'system:referenceNumber', 'system:position'],
         configured: true,
         widths: {},
       },
@@ -1904,14 +2022,17 @@ describe('ItemExplorerFacade', () => {
     const tableColumns = component.tableColumns;
 
     expect(tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'referenceNumber',
       'itemId',
       'unitLabel',
     ]);
     expect(component.isStickyTableColumn(tableColumns[0], tableColumns)).toBe(true);
     expect(component.isStickyTableColumn(tableColumns[1], tableColumns)).toBe(true);
+    expect(component.isStickyTableColumn(tableColumns[2], tableColumns)).toBe(true);
     expect(component.canMoveTableColumn(tableColumns[0], 1)).toBe(false);
     expect(component.canMoveTableColumn(tableColumns[1], 1)).toBe(false);
+    expect(component.canMoveTableColumn(tableColumns[2], 1)).toBe(false);
   });
 
   it('restores column settings when the column manager is cancelled', () => {
@@ -1980,6 +2101,81 @@ describe('ItemExplorerFacade', () => {
     expect(component.canResetMetadataSettings).toBe(true);
   });
 
+  it('offers VOMD time metadata only through the canonical numeric columns', () => {
+    const component = createFacade();
+    (component as any).configuredMetadataColumns = [
+      { id: 'iqb_time_item', label: 'Konfigurierte Itemzeit', kind: 'text' },
+      { id: 'iqb_item_time', label: 'Konfigurierte alte Itemzeit', kind: 'text' },
+      { id: 'iqb_time_stimulus', label: 'Konfigurierte Stimuluszeit', kind: 'text' },
+      { id: 'custom', label: 'Eigene Spalte', kind: 'text' },
+    ];
+
+    const columns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+      { id: 'iqb_item_time', label: 'Alte Itemzeit' },
+      { id: 'itemTimeSeconds', label: 'Itemzeit aus Import' },
+      { id: 'iqb_time_stimulus', label: 'Stimuluszeit' },
+      { id: 'subject', label: 'Fach' },
+    ]);
+
+    expect(columns.filter((column: { id: string }) => column.id === 'itemTimeSeconds')).toEqual([
+      { id: 'itemTimeSeconds', label: 'Itemzeit (s)', kind: 'number' },
+    ]);
+    expect(columns.filter((column: { id: string }) => column.id === 'stimulusTimeSeconds')).toEqual(
+      [{ id: 'stimulusTimeSeconds', label: 'Stimuluszeit (s)', kind: 'number' }],
+    );
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_time_item');
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_item_time');
+    expect(columns.map((column: { id: string }) => column.id)).not.toContain('iqb_time_stimulus');
+    expect(columns).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'subject', label: 'Fach' }),
+        expect.objectContaining({ id: 'custom', label: 'Eigene Spalte' }),
+      ]),
+    );
+  });
+
+  it('displays and filters canonical time overrides instead of differing VOMD display metadata', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+    ]);
+    const itemTimeColumn = columns.find(
+      (column: { id: string }) => column.id === 'itemTimeSeconds',
+    );
+    component.allColumns = columns;
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: { iqb_time_item: '00:30' },
+        itemTimeSeconds: 40,
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: { iqb_time_item: '00:45' },
+        itemTimeSeconds: 0,
+      },
+    ];
+    component.columnFilters = { itemTimeSeconds: '40' };
+
+    expect(component.getMetadataColumnDisplayValue(component.items[0], itemTimeColumn)).toBe('40');
+    expect(component.getMetadataColumnDisplayValue(component.items[1], itemTimeColumn)).toBe('0');
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+  });
+
   it('materializes the default column order before moving a column', () => {
     const component = createFacade();
     component.allColumns = [
@@ -2003,6 +2199,53 @@ describe('ItemExplorerFacade', () => {
     expect(component.columns.map((column) => column.id)).toEqual(['second', 'first']);
   });
 
+  it('enforces published reviewer columns against stale layouts and direct toggle calls', () => {
+    const component = createFacade();
+    component.canEditExplorer = false;
+    component.allColumns = [
+      { id: 'secret', label: 'Secret' },
+      { id: 'skill', label: 'Skill' },
+    ];
+    component.enablePersonalItemData = true;
+    (component as any).personalDataSessionIdentity = 'oidc:reader';
+    (component as any).latestExplorerState = {
+      publishedState: {
+        metadataColumns: {
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: { configured: true, visible: ['system:itemId', 'metadata:skill'] },
+        },
+      },
+    };
+    component.metadataSettings.layout = {
+      configured: true,
+      visible: ['metadata:secret', 'metadata:skill'],
+      order: ['metadata:secret', 'metadata:skill'],
+      widths: {},
+    };
+    expect(component.tableColumns.map((c) => c.key)).toEqual(['system:itemId', 'metadata:skill']);
+    expect(component.filteredAllColumns.some((c) => c.key === 'metadata:secret')).toBe(false);
+    expect(component.filteredAllColumns.some((c) => c.key === 'personal:note')).toBe(true);
+    component.toggleColumnVisibility({ id: 'secret', label: 'Secret' });
+    expect(component.isColumnVisible({ id: 'secret', label: 'Secret' })).toBe(false);
+    const skill = component.allTableColumns.find((c) => c.key === 'metadata:skill')!;
+    component.toggleColumnVisibility(skill);
+    expect(component.tableColumns.map((c) => c.key)).toEqual(['system:itemId']);
+    component.resetToDefault();
+    expect(component.tableColumns.some((c) => c.key === 'metadata:secret')).toBe(false);
+  });
+
+  it('materializes the manager selection and cancels restriction changes with the dialog', () => {
+    const component = createFacade();
+    component.canEditExplorer = true;
+    component.openColumnManager();
+    component.setRestrictReviewerColumns(true);
+    expect(component.metadataSettings.restrictReviewerColumnsToManagerSelection).toBe(true);
+    expect(component.metadataSettings.layout?.visible).toContain('system:itemId');
+    expect(component.metadataSettings.layout?.visible).toContain('system:unitLabel');
+    component.closeColumnManager();
+    expect(component.metadataSettings.restrictReviewerColumnsToManagerSelection).not.toBe(true);
+  });
+
   it('offers fixed, configured, and personal columns in one configurable table layout', () => {
     const component = createFacade();
     component.allColumns = [{ id: 'customQuality', label: 'Eigene Qualitätsspalte' }];
@@ -2013,6 +2256,7 @@ describe('ItemExplorerFacade', () => {
     (component as any).personalDataSessionIdentity = 'oidc:test-user';
 
     expect(component.allTableColumns.map((column) => column.label)).toEqual([
+      'Position',
       'Referenz-Nr.',
       'Item-ID',
       'Aufgabe',
@@ -2034,6 +2278,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.getColumnWidth(taskColumn)).toBe(310);
     expect(component.getColumnWidth(competenceColumn)).toBe(230);
     expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'itemId',
       'customQuality',
       'unitLabel',
@@ -2165,11 +2410,119 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.metadataSettings.layout?.configured).toBe(false);
     expect(component.tableColumns.map((column) => column.id)).toEqual([
+      'position',
       'itemId',
       'unitLabel',
       'second',
     ]);
-    expect(component.getColumnWidth(component.tableColumns[2])).toBe(260);
+    expect(component.getColumnWidth(component.tableColumns[3])).toBe(260);
+  });
+
+  it('normalizes legacy VOMD time settings without writing a draft', () => {
+    const component = createFacade();
+    component.allColumns = (component as any).getAvailableMetadataColumns([
+      { id: 'iqb_time_item', label: 'Itemzeit' },
+      { id: 'iqb_time_stimulus', label: 'Stimuluszeit' },
+    ]);
+    const envelope = createExplorerEnvelope();
+    const state = {
+      ui: {
+        sortField: 'iqb_time_item',
+        sortIsMeta: true,
+        sortDir: 'desc',
+        columnFilters: {
+          iqb_time_item: '00:30',
+          iqb_time_stimulus: 'nicht numerisch',
+          unitLabel: 'Lesen',
+        },
+      },
+      tags: {},
+      metadataColumns: {
+        visible: ['iqb_time_item', 'itemTimeSeconds'],
+        order: ['iqb_time_item', 'subject', 'itemTimeSeconds'],
+        widths: { iqb_time_item: 180, itemTimeSeconds: 220 },
+        layout: {
+          configured: true,
+          visible: ['metadata:iqb_time_item', 'metadata:itemTimeSeconds'],
+          order: ['metadata:iqb_time_item', 'system:itemId', 'metadata:itemTimeSeconds'],
+          widths: { 'metadata:iqb_time_item': 190, 'metadata:itemTimeSeconds': 230 },
+          schemaVersion: 3,
+        },
+      },
+      itemOrder: [],
+      itemProperties: {},
+    };
+    envelope.activeState = state;
+    envelope.draftState = state;
+    envelope.publishedState = state;
+    const queueDraftPatch = vi.spyOn(component as any, 'queueDraftPatch');
+
+    (component as any).applySharedExplorerEnvelope(envelope);
+
+    expect(component.metadataSettings.visible).toEqual(['itemTimeSeconds']);
+    expect(component.metadataSettings.order).toEqual(['itemTimeSeconds', 'subject']);
+    expect(component.metadataSettings.widths).toEqual({ itemTimeSeconds: 220 });
+    expect(component.metadataSettings.layout).toMatchObject({
+      visible: ['metadata:itemTimeSeconds'],
+      order: ['metadata:itemTimeSeconds', 'system:itemId'],
+      widths: { 'metadata:itemTimeSeconds': 230 },
+      schemaVersion: 3,
+    });
+    expect(component.sortField).toBe('itemTimeSeconds');
+    expect(component.sortIsMeta).toBe(true);
+    expect(component.sortDir).toBe('desc');
+    expect(component.columnFilters).toEqual({ itemTimeSeconds: '30' });
+    expect(queueDraftPatch).not.toHaveBeenCalled();
+  });
+
+  it('keeps canonical settings authoritative when legacy and current filters coexist', () => {
+    const component = createFacade();
+
+    (component as any).applyUiPreferences({
+      sortField: 'iqb_time_stimulus',
+      sortIsMeta: true,
+      sortDir: 'asc',
+      columnFilters: {
+        iqb_time_item: '00:30',
+        itemTimeSeconds: '',
+        iqb_time_stimulus: '1:02:03',
+      },
+    });
+
+    expect(component.sortField).toBe('stimulusTimeSeconds');
+    expect(component.columnFilters).toEqual({
+      itemTimeSeconds: '',
+      stimulusTimeSeconds: '3723',
+    });
+  });
+
+  it('honors legacy VOMD time keys in restricted published reviewer layouts', () => {
+    const component = createFacade();
+    component.canEditExplorer = false;
+    component.allColumns = (component as any).getAvailableMetadataColumns([]);
+    (component as any).latestExplorerState = {
+      publishedState: {
+        metadataColumns: {
+          restrictReviewerColumnsToManagerSelection: true,
+          layout: {
+            configured: true,
+            visible: ['system:itemId', 'metadata:iqb_time_item'],
+          },
+        },
+      },
+    };
+    component.metadataSettings.layout = {
+      configured: true,
+      visible: ['system:itemId', 'metadata:itemTimeSeconds'],
+      order: ['system:itemId', 'metadata:itemTimeSeconds'],
+      widths: {},
+      schemaVersion: 3,
+    };
+
+    expect(component.tableColumns.map((column) => column.key)).toEqual([
+      'system:itemId',
+      'metadata:itemTimeSeconds',
+    ]);
   });
 
   it('allows an explicitly empty selection to be reset to defaults', () => {
@@ -2362,13 +2715,11 @@ describe('ItemExplorerFacade', () => {
     consoleError.mockRestore();
   });
 
-  it('serializes and merges draft patches queued during a request', async () => {
+  it('serializes and merges draft patches without replacing the local search', async () => {
     const firstPatch$ = new Subject<any>();
     const secondPatch$ = new Subject<any>();
     const savedEnvelope = createExplorerEnvelope({
       status: 'CLEAN',
-      draftFilterText: 'DLB002',
-      publishedFilterText: 'DLB002',
     });
     savedEnvelope.version = 6;
     savedEnvelope.publishedVersion = 3;
@@ -2384,18 +2735,22 @@ describe('ItemExplorerFacade', () => {
     component.explorerVersion = 3;
     vi.spyOn(component, 'reloadItems').mockImplementation(() => undefined);
 
-    component.setFilterText('D');
-    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'D' } }, true);
+    component.setFilterText('lokale Suche');
+    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { sortField: 'itemId' } }, true);
     expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
     expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
       changeType: 'UI_STATE_CHANGED',
-      patch: { ui: { filterText: 'D' } },
+      patch: { ui: { sortField: 'itemId' } },
       baseVersion: 3,
     });
     const savePromise = component.saveExplorerDraft(true);
 
-    component.setFilterText('DLB002');
-    (component as any).queueDraftPatch('UI_STATE_CHANGED', { ui: { filterText: 'DLB002' } }, true);
+    component.setFilterText('aktualisierte lokale Suche');
+    (component as any).queueDraftPatch(
+      'UI_STATE_CHANGED',
+      { ui: { sortField: 'unitLabel' } },
+      true,
+    );
     (component as any).queueDraftPatch(
       'ITEM_EXCLUSION_CHANGED',
       { itemPropertiesPatch: { 'row-1': { excluded: true } } },
@@ -2423,18 +2778,18 @@ describe('ItemExplorerFacade', () => {
     );
     expect(patchItemExplorerDraft).toHaveBeenCalledTimes(1);
 
-    const firstEnvelope = createExplorerEnvelope({ draftFilterText: 'D' });
+    const firstEnvelope = createExplorerEnvelope();
     firstEnvelope.version = 4;
     firstPatch$.next(firstEnvelope);
     firstPatch$.complete();
 
     await vi.waitFor(() => expect(patchItemExplorerDraft).toHaveBeenCalledTimes(2));
     expect(saveItemExplorerDraft).not.toHaveBeenCalled();
-    expect(component.filterText).toBe('DLB002');
+    expect(component.filterText).toBe('aktualisierte lokale Suche');
     expect(patchItemExplorerDraft).toHaveBeenLastCalledWith('acp-1', {
       changeType: 'PREVIEW_TARGET_CHANGED',
       patch: {
-        ui: { filterText: 'DLB002' },
+        ui: { sortField: 'unitLabel' },
         itemPropertiesPatch: {
           'row-1': { excluded: true, previewTargetId: 'V2' },
           'row-2': null,
@@ -2444,7 +2799,7 @@ describe('ItemExplorerFacade', () => {
       baseVersion: 4,
     });
 
-    const secondEnvelope = createExplorerEnvelope({ draftFilterText: 'DLB002' });
+    const secondEnvelope = createExplorerEnvelope();
     secondEnvelope.version = 5;
     secondPatch$.next(secondEnvelope);
     secondPatch$.complete();
@@ -2452,7 +2807,7 @@ describe('ItemExplorerFacade', () => {
     await vi.waitFor(() => expect(saveItemExplorerDraft).toHaveBeenCalledWith('acp-1', 5));
     await expect(savePromise).resolves.toBe(true);
     expect(component.explorerVersion).toBe(6);
-    expect(component.filterText).toBe('DLB002');
+    expect(component.filterText).toBe('aktualisierte lokale Suche');
     expect(component.lastDraftOperationError).toBe('');
   });
 
@@ -4353,6 +4708,195 @@ describe('ItemExplorerFacade', () => {
     }
   });
 
+  it('shows a validated solution without replacing or saving the persisted player state', () => {
+    vi.useFakeTimers();
+    const component = createFacade();
+    const postMessage = vi.fn();
+    const persistedDataParts = {
+      elementCodes: JSON.stringify([
+        { id: 'A1', status: 'VALUE_CHANGED', value: 1 },
+        { id: 'B1', status: 'VALUE_CHANGED', value: 'keep' },
+      ]),
+    };
+
+    try {
+      component.selectedItem = {
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        description: 'Single choice',
+        variableId: 'A1',
+        metadata: {},
+      };
+      component.currentCodingScheme = {
+        variableCodings: [
+          {
+            id: 'A1',
+            alias: 'A1',
+            sourceType: 'BASE',
+            codes: [
+              {
+                id: 1,
+                type: 'FULL_CREDIT',
+                score: 1,
+                ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['2'] }] }],
+              },
+              { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+            ],
+          },
+        ],
+      };
+      component.currentResponseData = persistedDataParts;
+      component.hasResponseState = true;
+      (component as any).unit = { id: 'UNIT_1', dependencies: [] };
+      (component as any).definitionContent = JSON.stringify({ pages: [] });
+      (component as any).playerFrameReady = true;
+      setPreviewStatus(component, 'ready');
+      (component as any).refreshCorrectSolutionPrefill();
+      registerPlayerDom(component, postMessage);
+      postMessage.mockClear();
+
+      component.toggleCorrectSolution();
+
+      expect(component.isCorrectSolutionActive).toBe(true);
+      const solutionStart = postMessage.mock.calls[0][0];
+      expect(solutionStart.type).toBe('vopStartCommand');
+      expect(JSON.parse(solutionStart.unitState.dataParts.elementCodes)).toEqual([
+        { id: 'B1', status: 'VALUE_CHANGED', value: 'keep' },
+        { id: 'A1', status: 'VALUE_CHANGED', value: 2 },
+      ]);
+
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: solutionStart.sessionId,
+        unitState: { dataParts: { elementCodes: 'synthetic-state' } },
+      });
+      expect(component.currentResponseData).toBe(persistedDataParts);
+
+      component.saveCurrentResponseState();
+      expect(component.showSaveConfirmDialog).toBe(true);
+      expect(component.confirmDialogError).toContain('Musterlösung ist nur eine Vorschau');
+
+      component.closeSaveConfirmDialog();
+      postMessage.mockClear();
+      component.toggleCorrectSolution();
+
+      expect(component.isCorrectSolutionActive).toBe(false);
+      expect(postMessage.mock.calls[0][0].unitState.dataParts).toBe(persistedDataParts);
+    } finally {
+      vi.runAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the player usable when no unique correct solution can be derived', () => {
+    const component = createFacade();
+    const startPlayerIfReady = vi.fn();
+    component.selectedItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'Ambiguous item',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    component.currentCodingScheme = {
+      variableCodings: [
+        {
+          id: 'A1',
+          sourceType: 'BASE',
+          codes: [
+            {
+              id: 1,
+              type: 'FULL_CREDIT',
+              ruleSets: [{ rules: [{ method: 'MATCH_REGEX', parameters: ['[12]'] }] }],
+            },
+          ],
+        },
+      ],
+    };
+    (component as any).definitionContent = JSON.stringify({ pages: [] });
+    (component as any).startPlayerIfReady = startPlayerIfReady;
+    setPreviewStatus(component, 'ready');
+    (component as any).refreshCorrectSolutionPrefill();
+
+    component.toggleCorrectSolution();
+
+    expect(component.correctSolutionRequested).toBe(true);
+    expect(component.correctSolutionAvailable).toBe(false);
+    expect(component.isCorrectSolutionActive).toBe(false);
+    expect(startPlayerIfReady).not.toHaveBeenCalled();
+  });
+
+  it('keeps the requested mode and recalculates the solution for the newly selected item', () => {
+    const component = createFacade();
+    const solutionVariable = (id: string, answer: string) => ({
+      id,
+      alias: id,
+      sourceType: 'BASE',
+      codes: [
+        {
+          id: 1,
+          type: 'FULL_CREDIT',
+          score: 1,
+          ruleSets: [{ rules: [{ method: 'MATCH', parameters: [answer] }] }],
+        },
+        { id: 0, type: 'RESIDUAL_AUTO', score: 0, ruleSets: [] },
+      ],
+    });
+    const firstItem = {
+      itemId: 'ITEM_1',
+      uuid: 'uuid-1',
+      rowKey: 'uuid-1',
+      unitId: 'UNIT_1',
+      unitLabel: 'Unit 1',
+      description: 'First item',
+      variableId: 'A1',
+      metadata: {},
+    } as any;
+    const secondItem = {
+      ...firstItem,
+      itemId: 'ITEM_2',
+      uuid: 'uuid-2',
+      rowKey: 'uuid-2',
+      variableId: 'B1',
+      description: 'Second item',
+    };
+    component.currentCodingScheme = {
+      variableCodings: [solutionVariable('A1', '1'), solutionVariable('B1', '2')],
+    };
+    (component as any).definitionContent = JSON.stringify({ pages: [] });
+    component.correctSolutionRequested = true;
+
+    component.selectedItem = firstItem;
+    setPreviewStatus(component, 'ready');
+    (component as any).applyPreviewResult({
+      item: firstItem,
+      reuseUnit: true,
+      responseState: null,
+    });
+    expect(component.correctSolutionPrefill).toMatchObject({
+      status: 'available',
+      responses: [{ id: 'A1', value: 1 }],
+    });
+
+    component.selectedItem = secondItem;
+    setPreviewStatus(component, 'ready');
+    (component as any).applyPreviewResult({
+      item: secondItem,
+      reuseUnit: true,
+      responseState: null,
+    });
+    expect(component.correctSolutionRequested).toBe(true);
+    expect(component.correctSolutionPrefill).toMatchObject({
+      status: 'available',
+      responses: [{ id: 'B1', value: 2 }],
+    });
+  });
+
   it('uses the scroll-page index from the VOUD service in the player preview', () => {
     vi.useFakeTimers();
     const realVoudService = new VoudService();
@@ -4610,7 +5154,7 @@ describe('ItemExplorerFacade', () => {
     expect(component.showExplorerKeyboardHints).toBe(true);
   });
 
-  it('switches to the published explorer state in read-only preview mode', async () => {
+  it('keeps the local search when switching to the published explorer state', async () => {
     const envelope = createExplorerEnvelope();
     const getItemExplorerState = vi.fn(() => of(envelope));
     const getFileItemList = vi.fn(() =>
@@ -4623,9 +5167,10 @@ describe('ItemExplorerFacade', () => {
       },
     });
     component.acpId = 'acp-1';
+    component.filterText = 'lokale Suche';
 
     (component as any).applySharedExplorerEnvelope(envelope);
-    expect(component.filterText).toBe('draft');
+    expect(component.filterText).toBe('lokale Suche');
 
     const flushDraftPatch = vi.fn().mockResolvedValue(true);
     (component as any).flushDraftPatch = flushDraftPatch;
@@ -4635,14 +5180,14 @@ describe('ItemExplorerFacade', () => {
     expect(flushDraftPatch).toHaveBeenCalledTimes(1);
     expect(component.isReadOnlyPreview).toBe(true);
     expect(component.canEditExplorer).toBe(false);
-    expect(component.filterText).toBe('published');
-    expect(getItemExplorerState).toHaveBeenCalledWith('acp-1');
+    expect(component.filterText).toBe('lokale Suche');
+    expect(getItemExplorerState).toHaveBeenCalledWith('acp-1', 'read-only');
     expect(getFileItemList).toHaveBeenCalledWith('acp-1', {
       perspective: 'read-only',
     });
   });
 
-  it('switches back to the draft explorer state when leaving read-only preview mode', async () => {
+  it('keeps the local search when switching back to the draft explorer state', async () => {
     const envelope = createExplorerEnvelope();
     const getItemExplorerState = vi.fn(() => of(envelope));
     const getFileItemList = vi.fn(() =>
@@ -4655,6 +5200,7 @@ describe('ItemExplorerFacade', () => {
       },
     });
     component.acpId = 'acp-1';
+    component.filterText = 'lokale Suche';
 
     (component as any).applySharedExplorerEnvelope(envelope);
     (component as any).flushDraftPatch = vi.fn().mockResolvedValue(true);
@@ -4664,7 +5210,7 @@ describe('ItemExplorerFacade', () => {
 
     expect(component.isReadOnlyPreview).toBe(false);
     expect(component.canEditExplorer).toBe(true);
-    expect(component.filterText).toBe('draft');
+    expect(component.filterText).toBe('lokale Suche');
     expect(getFileItemList).toHaveBeenLastCalledWith('acp-1', {
       perspective: 'editor',
     });
@@ -6452,6 +6998,7 @@ describe('ItemExplorerFacade', () => {
       'discrimination',
       'solutionRate',
       'textComplexity',
+      'competenceLevel',
       'itemTimeSeconds',
       'stimulusTimeSeconds',
       'booklet',
@@ -6567,13 +7114,68 @@ describe('ItemExplorerFacade', () => {
     expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
   });
 
+  it('filters and sorts the shared competence level as imported text', () => {
+    const component = createFacade();
+    const columns = (component as any).getAvailableMetadataColumns([]);
+    const competenceLevelColumn = columns.find(
+      (column: { id: string }) => column.id === 'competenceLevel',
+    );
+    component.items = [
+      {
+        itemId: 'item-1',
+        uuid: 'uuid-1',
+        rowKey: 'uuid-1',
+        unitId: 'unit-1',
+        unitLabel: 'Aufgabe 1',
+        description: '',
+        variableId: 'v1',
+        metadata: {},
+        competenceLevel: 'IV',
+      },
+      {
+        itemId: 'item-2',
+        uuid: 'uuid-2',
+        rowKey: 'uuid-2',
+        unitId: 'unit-2',
+        unitLabel: 'Aufgabe 2',
+        description: '',
+        variableId: 'v2',
+        metadata: {},
+        competenceLevel: 'II',
+      },
+    ];
+    component.allColumns = columns;
+    component.columnFilters = { competenceLevel: 'IV' };
+
+    expect(competenceLevelColumn).toEqual({
+      id: 'competenceLevel',
+      label: 'Kompetenzstufe',
+      kind: 'text',
+    });
+    component.applyFilter(false);
+    expect(component.filteredItems.map((item) => item.itemId)).toEqual(['item-1']);
+
+    component.columnFilters = {};
+    component.applyFilter(false);
+    component.sortBy('competenceLevel');
+    expect(component.filteredItems.map((item) => item.competenceLevel)).toEqual(['II', 'IV']);
+  });
+
   it('formats wide and legacy upload successes without losing imported details', () => {
     const component = createFacade();
     const wideSuccess = {
       unitId: 'unit-1',
       itemId: 'item-1',
       subId: 'A',
-      fields: ['bista', 'infit', 'discrimination', 'text_complexity', 'booklet', 'position'],
+      fields: [
+        'bista',
+        'infit',
+        'discrimination',
+        'text_complexity',
+        'kstufe',
+        'booklet',
+        'position',
+      ],
       bookletOccurrences: [
         { booklet: 'B1', position: 2 },
         { booklet: 'B2', position: null },
@@ -6581,7 +7183,7 @@ describe('ItemExplorerFacade', () => {
     };
 
     expect(component.getUploadSuccessFieldSummary(wideSuccess)).toBe(
-      'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Booklet / Position',
+      'BiSta-Wert, Infit, Trennschärfe, Textkomplexität, Kompetenzstufe, Booklet / Position',
     );
     expect(component.getUploadSuccessBookletSummary(wideSuccess)).toBe('B1 / 2 | B2');
     const clearedBooklets = {

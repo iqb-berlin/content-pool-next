@@ -45,7 +45,9 @@ test('keeps sticky cells opaque and paints complete row states while scrolling',
       const backgrounds = cells.map((cell) => getComputedStyle(cell).backgroundColor);
       const selection = row.querySelector<HTMLElement>('td.collection-select-col');
       const position = row.querySelector<HTMLElement>('td.number-col');
-      const sticky = row.querySelector<HTMLElement>('td.sticky-col');
+      const sticky = row.querySelector<HTMLElement>(
+        'td.sticky-col:not(.number-col):not(.reference-number-col)',
+      );
       if (!selection || !position || !sticky) throw new Error('Sticky leading columns are missing');
       const scroller = row.closest<HTMLElement>('.table-scroll');
       const selectionBounds = selection.getBoundingClientRect();

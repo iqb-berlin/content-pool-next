@@ -89,6 +89,10 @@ The Item Explorer can be opened in a dedicated fullscreen mode from the toolbar.
 - In fullscreen mode the explorer keeps the same split view, dialogs, and overlays, but hides the
   breadcrumb to maximize usable space.
 - `Escape` leaves fullscreen when no dialog or overlay is currently open.
+- The player preview has its own fullscreen action. It enlarges the existing player container
+  without recreating the iframe, so the selected item and current player state are retained.
+- The player fullscreen can be closed with its visible action or `Escape`. Browsers without an
+  available Fullscreen API use a viewport-filling fallback.
 
 ### Focus model
 
@@ -438,16 +442,23 @@ The same distinction exists when clearing empirical difficulty values.
 
 Managers can also upload a semicolon-separated wide CSV through the Item Explorer. Its canonical
 headers are `item`, `sub_id`, `est`, `infit`, `discrimination`, `solution_rate`, `item_time_s`,
-`stimulus_time_s`, `text_complexity`, `booklet`, and `position`. Only `item` and at least one
+`stimulus_time_s`, `text_complexity`, `kstufe`, `booklet`, and `position`. Only `item` and at least one
 parameter column are required. `text_complexity` is imported and filtered as free text, including
-content that looks numeric. Time values are non-negative seconds; decimal point and decimal comma
-are accepted.
+content that looks numeric. `kstufe` accepts the shared competence levels `I` to `V`
+(case-insensitive) and is normalized to upper case. It belongs to the item, so all partial-credit
+rows inherit the same value; conflicting values for the same item are rejected. An empty `kstufe`
+cell clears the value, while omitting the column preserves it. Time values are non-negative seconds;
+decimal point and decimal comma are accepted.
 
 Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
-item profile and `iqb_time_stimulus` from the VOMD unit profile. The unit value is shared by every
-item row in that unit, and partial-credit rows inherit both values. Explicit Explorer values remain
-the higher-priority override. Empty, negative, and non-numeric VOMD values are treated as missing;
-the formatted `valueAsText` is retained only as display metadata and is not parsed as seconds.
+item profile and `iqb_time_stimulus` from the VOMD unit profile. The legacy item property
+`iqb_item_time` is used as a fallback when `iqb_time_item` is absent. If both item properties exist,
+`iqb_time_item` wins. The unit value is shared by every item row in that unit, and partial-credit
+rows inherit both values. Explicit Explorer values remain the higher-priority override. Empty,
+negative, and non-numeric VOMD values are treated as missing; the formatted `valueAsText` remains
+available as raw metadata and is not parsed as seconds. The column manager maps these VOMD
+properties to the canonical numeric `Itemzeit (s)` and `Stimuluszeit (s)` columns instead of
+offering the formatted metadata as duplicate columns.
 
 Repeated rows for the same item/Sub-ID represent booklet occurrences. Scalar values on those rows
 must agree, while `booklet` and the optional `position` are collected as ordered 1:n metadata on the

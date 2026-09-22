@@ -1,9 +1,13 @@
 import {
   ExecutionContext,
+  ForbiddenException,
   INestApplication,
   UnauthorizedException,
   ValidationPipe,
 } from "@nestjs/common";
+import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
+import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { Test } from "@nestjs/testing";
 import request = require("supertest");
 import { AcpController } from "./acp.controller";
@@ -44,9 +48,11 @@ const accessConfig = {
 };
 
 // Exercise real HTTP routing, DTO validation, serialization and RolesGuard.
-// Authentication and persistence are isolated here; their own suites cover them.
+// Authentication, ACP access resolution, capability resolution and persistence
+// are isolated here; their own suites cover them. RolesGuard remains real.
 describe("ACP HTTP contracts", () => {
   let app: INestApplication;
+  const capabilities = { assert: jest.fn().mockResolvedValue(undefined) };
   const service = {
     create: jest.fn(async (dto: CreateAcpDto) => ({ ...acp, ...dto })),
     update: jest.fn(async (_id: string, dto: UpdateAcpDto) => ({
@@ -91,6 +97,11 @@ describe("ACP HTTP contracts", () => {
       controllers: [AcpController],
       providers: [
         RolesGuard,
+        { provide: AcpCapabilitiesService, useValue: capabilities },
+        {
+          provide: AcpAccessGuard,
+          useValue: { canActivate: jest.fn().mockResolvedValue(true) },
+        },
         { provide: AcpService, useValue: service },
         { provide: AdminService, useValue: {} },
         { provide: ItemExplorerStateService, useValue: {} },
@@ -136,7 +147,70 @@ describe("ACP HTTP contracts", () => {
   });
   beforeEach(() => jest.clearAllMocks());
   afterAll(async () => {
-    await app.close();
+    await app?.close();
+  });
+
+  it("documents nullable validity dates as date-time strings", () => {
+    const document = SwaggerModule.createDocument(
+      app,
+      new DocumentBuilder().build(),
+    );
+    const schema = document.components?.schemas?.UpdateAccessConfigDto;
+    expect(schema).toMatchObject({
+      properties: {
+        validFrom: { type: "string", format: "date-time", nullable: true },
+        validUntil: { type: "string", format: "date-time", nullable: true },
+      },
+    });
+  });
+
+  it("preserves capability grants when assigning a role", async () => {
+    const body = {
+      userId,
+      role: "READ_ONLY",
+      capabilities: ["review:participate", "item-explorer:view"],
+    };
+    const response = await request(app.getHttpServer())
+      .post(`/api/acp/${acpId}/roles`)
+      .set("x-test-identity", "manager")
+      .send(body)
+      .expect(201);
+    expect(response.body).toMatchObject(body);
+    expect(service.assignRole).toHaveBeenCalledWith(acpId, body);
+  });
+
+  it("rejects unknown capability grants before role assignment", async () => {
+    await request(app.getHttpServer())
+      .post(`/api/acp/${acpId}/roles`)
+      .set("x-test-identity", "manager")
+      .send({ userId, role: "READ_ONLY", capabilities: ["invalid"] })
+      .expect(400);
+    expect(service.assignRole).not.toHaveBeenCalled();
+  });
+
+  it("requires review management permission when review settings change", async () => {
+    capabilities.assert.mockRejectedValueOnce(
+      new ForbiddenException("Review permission required"),
+    );
+    await request(app.getHttpServer())
+      .put(`/api/acp/${acpId}/access`)
+      .set("x-test-identity", "manager")
+      .send({ accessModel: "PRIVATE", featureConfig: { enableReview: true } })
+      .expect(403);
+    expect(capabilities.assert).toHaveBeenCalledWith(
+      expect.anything(),
+      "review:manage",
+    );
+    expect(service.updateAccessConfig).not.toHaveBeenCalled();
+  });
+
+  it("does not require review management for an unrelated feature change", async () => {
+    await request(app.getHttpServer())
+      .put(`/api/acp/${acpId}/access`)
+      .set("x-test-identity", "manager")
+      .send({ accessModel: "PRIVATE", featureConfig: { enableItemList: true } })
+      .expect(200);
+    expect(capabilities.assert).not.toHaveBeenCalled();
   });
 
   it("creates an ACP with the existing response shape and ISO dates", async () => {

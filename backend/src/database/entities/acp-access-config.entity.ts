@@ -16,6 +16,13 @@ export enum AccessModel {
   CREDENTIALS_LIST = "CREDENTIALS_LIST",
 }
 
+export interface ReviewGroup {
+  id: string;
+  name: string;
+  archived: boolean;
+  members: { kind: "user" | "credential"; id: string }[];
+}
+
 @Entity("acp_access_configs")
 export class AcpAccessConfig {
   @PrimaryGeneratedColumn("uuid")
@@ -32,6 +39,15 @@ export class AcpAccessConfig {
 
   @Column({ name: "feature_config", type: "jsonb", default: {} })
   featureConfig!: Record<string, unknown>;
+
+  @Column({ name: "review_groups", type: "jsonb", default: [] })
+  reviewGroups!: ReviewGroup[];
+
+  @Column({ name: "review_config_version", type: "integer", default: 1 })
+  reviewConfigVersion!: number;
+
+  @Column({ name: "review_revision", type: "bigint", default: 0 })
+  reviewRevision!: string;
 
   @Column({ name: "valid_from", type: "timestamptz", nullable: true })
   validFrom?: Date | null;

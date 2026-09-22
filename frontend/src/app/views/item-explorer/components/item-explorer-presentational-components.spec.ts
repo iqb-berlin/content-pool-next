@@ -157,6 +157,13 @@ describe('ItemExplorer presentational components', () => {
     expect(codingTemplate).toContain('Die Zuordnung wurde eindeutig über das Player-/Anzeige-Ziel');
   });
 
+  it('places a separate coding comment thread inside the coding overlay', () => {
+    expect(codingTemplate).toContain('<app-item-comment-thread');
+    expect(codingTemplate).toContain('[targetType]="\'CODING\'"');
+    expect(codingTemplate).toContain('[unitId]="vm.selectedItem.unitId"');
+    expect(codingTemplate).toContain('[itemId]="vm.selectedItem.itemId"');
+  });
+
   it('shows derived-variable source ids only when player diagnostics are enabled', () => {
     expect(codingTemplate).toContain(
       '@if (vm.showPlayerTargetInfo && vm.codingVariableFocus.isDerived)',

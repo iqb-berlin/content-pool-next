@@ -498,6 +498,14 @@ Application rollback never invokes `migration:revert`. Use the complete
 downtime restore described in [Releases and Promotion](releases.md) for an
 incompatible emergency.
 
+The `CompleteCommentLifecycle1789300000000` migration resolves legacy comment
+targets against both the ACP index and uploaded Unit/VOMD files. For ACPs with
+comments, unreadable or invalid item sources abort the transactional migration;
+restore or repair those sources before retrying. Ambiguous targets remain
+read-only. Its `down()` migration is allowed only when the comment table is
+empty, because the previous schema cannot preserve coding targets and legacy
+protection. Do not delete comments to bypass this guard.
+
 ## Backup Basics
 
 Create one consistent operational backup containing custom-format dumps of

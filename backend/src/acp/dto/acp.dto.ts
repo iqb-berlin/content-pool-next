@@ -1,3 +1,5 @@
+import { ACP_CAPABILITIES } from "../../auth/capabilities/acp-capabilities";
+import { IsIn, ArrayUnique } from "class-validator";
 import {
   IsString,
   IsNotEmpty,
@@ -56,6 +58,12 @@ export class UpdateAcpDto {
 }
 
 export class AssignRoleDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty()
   @IsUUID("all")
   userId!: string;
@@ -80,12 +88,12 @@ export class UpdateAccessConfigDto {
   @IsOptional()
   featureConfig?: Record<string, unknown>;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
   @IsDateString()
   @IsOptional()
   validFrom?: string | null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: String, format: "date-time", nullable: true })
   @IsDateString()
   @IsOptional()
   validUntil?: string | null;
@@ -126,6 +134,16 @@ export class CredentialEntryDto {
 }
 
 export class UploadCredentialsDto {
+  @IsOptional()
+  @IsIn(["REVIEW_ONLY", "ITEM_EXPLORER_ONLY", "BOTH", "CUSTOM"])
+  profile?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty({ type: [CredentialEntryDto] })
   @IsArray()
   @ValidateNested({ each: true })
@@ -134,6 +152,12 @@ export class UploadCredentialsDto {
 }
 
 export class CreateCredentialDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -149,6 +173,12 @@ export class CreateCredentialDto {
 }
 
 export class UpdateCredentialDto {
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities?: string[];
+
   @ApiPropertyOptional()
   @IsString()
   @IsOptional()
@@ -218,6 +248,8 @@ export class VersionedItemExplorerActionDto {
 }
 
 export class CredentialResponseDto {
+  capabilities?: string[];
+
   @ApiProperty()
   id!: string;
 
@@ -229,4 +261,11 @@ export enum CredentialUploadMode {
   replace = "replace",
   append = "append",
   upsert = "upsert",
+}
+
+export class UpdateCapabilitiesDto {
+  @IsArray()
+  @ArrayUnique()
+  @IsIn(ACP_CAPABILITIES, { each: true })
+  capabilities!: string[];
 }

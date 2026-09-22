@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { EntityManager, Repository } from "typeorm";
 import { readFile } from "fs/promises";
 import { Acp, AcpFile } from "../database/entities";
 import { getAssessmentParts, toRuntimeAcpIndex } from "../acp/acp-index.utils";
@@ -13,10 +13,14 @@ export class ReviewManifestService {
     @InjectRepository(AcpFile) private readonly files: Repository<AcpFile>,
   ) {}
 
-  async getManifest(acpId: string) {
-    const acp = await this.acps.findOne({ where: { id: acpId } });
+  async getManifest(acpId: string, manager?: EntityManager) {
+    const acp = await (manager?.getRepository(Acp) || this.acps).findOne({
+      where: { id: acpId },
+    });
     if (!acp) throw new NotFoundException("ACP nicht gefunden.");
-    const files = await this.files.find({ where: { acpId } });
+    const files = await (manager?.getRepository(AcpFile) || this.files).find({
+      where: { acpId },
+    });
     const wanted = new Set<string>();
     for (const part of getAssessmentParts(toRuntimeAcpIndex(acp.acpIndex))) {
       for (const instrument of Array.isArray(part.instruments)

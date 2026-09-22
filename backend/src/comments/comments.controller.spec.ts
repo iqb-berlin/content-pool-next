@@ -12,8 +12,9 @@ describe("CommentsController", () => {
       findByAcp: jest.fn().mockResolvedValue([{ id: "c-1" }]),
       findByCredential: jest.fn().mockResolvedValue([{ id: "c-cred" }]),
       findByUser: jest.fn().mockResolvedValue([{ id: "c-user" }]),
-      isCommentingEnabled: jest.fn().mockResolvedValue(true),
-      create: jest.fn().mockResolvedValue({ id: "c-new" }),
+      createLegacyCompatibleComment: jest
+        .fn()
+        .mockResolvedValue({ id: "c-new" }),
       deleteUnreferencedLegacyByAcp: jest
         .fn()
         .mockResolvedValue({ deletedCount: 3, retainedCount: 5 }),
@@ -28,6 +29,16 @@ describe("CommentsController", () => {
     };
 
     reviewPolicy = {
+      assertCanParticipateRequest: jest.fn(),
+      resolveActor: jest.fn((req) => ({
+        userId: req.user?.type === "oidc" ? req.user.sub : undefined,
+        credentialId:
+          req.user?.type === "credential" ? req.user.sub : undefined,
+        credentialUsername:
+          req.user?.type === "credential" ? req.user.username : undefined,
+        authorLabel: req.user?.username || "Unbekannt",
+        isManager: Boolean(req.user?.isAppAdmin),
+      })),
       isManagerRequest: jest.fn(
         (req) =>
           Boolean(req.user?.isAppAdmin) ||
@@ -68,6 +79,7 @@ describe("CommentsController", () => {
     expect(commentsService.findByCredential).toHaveBeenCalledWith(
       "acp-1",
       "credential-1",
+      expect.objectContaining({ credentialId: "credential-1" }),
     );
     expect(commentsService.findByUser).not.toHaveBeenCalled();
   });
@@ -77,7 +89,11 @@ describe("CommentsController", () => {
     const result = await controller.findMine("acp-1", req);
 
     expect(result).toEqual([{ id: "c-user" }]);
-    expect(commentsService.findByUser).toHaveBeenCalledWith("acp-1", "u-1");
+    expect(commentsService.findByUser).toHaveBeenCalledWith(
+      "acp-1",
+      "u-1",
+      expect.objectContaining({ userId: "u-1" }),
+    );
   });
 
   it("creates comment directly for managers", async () => {
@@ -94,17 +110,15 @@ describe("CommentsController", () => {
     const result = await controller.create("acp-1", dto as any, req);
 
     expect(result).toEqual({ id: "c-new" });
-    expect(commentsService.isCommentingEnabled).not.toHaveBeenCalled();
-    expect(commentsService.create).toHaveBeenCalledWith({
-      acpId: "acp-1",
-      userId: "u-1",
-      credentialId: undefined,
-      credentialUsername: undefined,
-      authorLabel: undefined,
-      targetType: CommentTargetType.ITEM,
-      targetId: "item-1",
-      commentText: "Hallo",
-    });
+    expect(commentsService.createLegacyCompatibleComment).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        targetType: CommentTargetType.ITEM,
+        targetId: "item-1",
+        commentText: "Hallo",
+      },
+      expect.objectContaining({ userId: "u-1" }),
+    );
   });
 
   it.each([
@@ -135,15 +149,16 @@ describe("CommentsController", () => {
         BadRequestException,
       );
       expect(reviewPolicy.isManagerRequest).not.toHaveBeenCalled();
-      expect(commentsService.isCommentingEnabled).not.toHaveBeenCalled();
-      expect(commentsService.create).not.toHaveBeenCalled();
+      expect(
+        commentsService.createLegacyCompatibleComment,
+      ).not.toHaveBeenCalled();
     },
   );
 
   it.each([
     [CommentTargetType.UNIT, "unit-1"],
     [CommentTargetType.ITEM, "item-1"],
-    [CommentTargetType.TASK_SEQUENCE, "sequence-1"],
+    [CommentTargetType.BOOKLET, "booklet-1"],
   ])("keeps valid %s targets available", async (targetType, targetId) => {
     const req = {
       user: { type: "oidc", sub: "manager-1", isAppAdmin: false },
@@ -157,17 +172,20 @@ describe("CommentsController", () => {
         req,
       ),
     ).resolves.toEqual({ id: "c-new" });
-    expect(commentsService.create).toHaveBeenCalledWith(
+    expect(commentsService.createLegacyCompatibleComment).toHaveBeenCalledWith(
+      "acp-1",
       expect.objectContaining({
-        acpId: "acp-1",
         targetType,
         targetId,
       }),
+      expect.any(Object),
     );
   });
 
-  it("rejects create for non-managers when commenting is disabled", async () => {
-    commentsService.isCommentingEnabled.mockResolvedValueOnce(false);
+  it("requires review participation for legacy-compatible create", async () => {
+    reviewPolicy.assertCanParticipateRequest.mockImplementationOnce(() => {
+      throw new ForbiddenException("Review-Teilnahme ist nicht erlaubt");
+    });
     const req = {
       user: { type: "credential", sub: "cred-id", username: "cred" },
       acpAccessLevel: "PUBLIC",
@@ -184,7 +202,6 @@ describe("CommentsController", () => {
   });
 
   it("creates comment for credential users when commenting is enabled", async () => {
-    commentsService.isCommentingEnabled.mockResolvedValueOnce(true);
     const req = {
       user: { type: "credential", sub: "cred-id", username: "cred" },
       acpAccessLevel: "PUBLIC",
@@ -197,16 +214,15 @@ describe("CommentsController", () => {
 
     await controller.create("acp-1", dto as any, req);
 
-    expect(commentsService.create).toHaveBeenCalledWith({
-      acpId: "acp-1",
-      userId: undefined,
-      credentialId: "cred-id",
-      credentialUsername: "cred",
-      authorLabel: "cred",
-      targetType: CommentTargetType.ITEM,
-      targetId: "item-1",
-      commentText: "ok",
-    });
+    expect(commentsService.createLegacyCompatibleComment).toHaveBeenCalledWith(
+      "acp-1",
+      {
+        targetType: CommentTargetType.ITEM,
+        targetId: "item-1",
+        commentText: "ok",
+      },
+      expect.objectContaining({ credentialId: "cred-id" }),
+    );
   });
 
   it("deletes only safe legacy comments for managers", async () => {
@@ -217,7 +233,7 @@ describe("CommentsController", () => {
       message: "3 legacy comments deleted; 5 comments retained",
       deletedCount: 3,
       retainedCount: 5,
-      scope: "UNREFERENCED_LEGACY_NON_ITEM",
+      scope: "UNRESOLVED_LEGACY_TASK_SEQUENCE",
     });
     expect(commentsService.deleteUnreferencedLegacyByAcp).toHaveBeenCalledWith(
       "acp-1",

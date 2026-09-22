@@ -1,7 +1,24 @@
 import type { Logger } from "@nestjs/common";
+import { SaxesParser } from "saxes";
 import type { UnitXmlData } from "./unit-parser.types";
 
 type ParsingLogger = Pick<Logger, "error">;
+
+export function getXmlRootElement(xmlContent: string): string | undefined {
+  let rootElement: string | undefined;
+  const parser = new SaxesParser({ xmlns: false });
+  parser.on("opentag", (tag) => {
+    rootElement ??= tag.name;
+  });
+
+  try {
+    parser.write(xmlContent).close();
+  } catch {
+    return undefined;
+  }
+
+  return rootElement;
+}
 
 export function parseUnitXml(
   xmlContent: string,
@@ -138,7 +155,7 @@ export function extractValueText(valueAsText: any): string {
 
 export function extractVomdTimeSeconds(
   profiles: unknown,
-  entryId: "iqb_time_item" | "iqb_time_stimulus",
+  entryId: "iqb_time_item" | "iqb_item_time" | "iqb_time_stimulus",
 ): number | undefined {
   if (!Array.isArray(profiles)) return undefined;
 

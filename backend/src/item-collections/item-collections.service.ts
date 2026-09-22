@@ -1,3 +1,4 @@
+import { ReviewerColumnPolicy } from "../item-explorer/reviewer-column-policy";
 import {
   BadRequestException,
   ConflictException,
@@ -421,6 +422,7 @@ export class ItemCollectionsService {
     identity: StablePreferenceIdentity,
     collectionId: string,
     canEditExplorerState = false,
+    columnPolicy?: ReviewerColumnPolicy,
   ): Promise<Buffer> {
     const preferences = await this.store.readPreferences(acpId, identity);
     const state = this.normalizeState(preferences);
@@ -448,11 +450,21 @@ export class ItemCollectionsService {
       itemList.items.map((item) => [item.rowKey, item] as const),
     );
     const personalRows = normalizeItemPreferences(preferences).rowData;
+    const policy =
+      columnPolicy ||
+      new ReviewerColumnPolicy(
+        canEditExplorerState
+          ? undefined
+          : explorerState.publishedState.metadataColumns,
+      );
+    const exportColumns = [
+      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
+      ...ITEM_EXPORT_PARAMETER_COLUMNS,
+    ].filter((column) => policy.allowsExportField(column.key));
     const headers = [
       "Kollektion",
       "Reihenfolge",
-      ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) => column.header),
-      ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) => column.header),
+      ...exportColumns.map((column) => column.header),
       "Kategorie",
       "Tags",
       "Notiz",
@@ -469,10 +481,7 @@ export class ItemCollectionsService {
         [
           collection.name,
           index + 1,
-          ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS.map((column) =>
-            getItemExportCell(projection, column),
-          ),
-          ...ITEM_EXPORT_PARAMETER_COLUMNS.map((column) =>
+          ...exportColumns.map((column) =>
             getItemExportCell(projection, column),
           ),
           projection.category || "",

@@ -6,12 +6,14 @@ import { Repository } from "typeorm";
 import * as request from "supertest";
 import {
   AcpFile,
+  AcpUserRole,
   AcpItemPreference,
   AcpItemRowNumber,
   User,
 } from "../src/database/entities";
 import { buildPatchPersonalItemPreferenceRowQuery } from "../src/views/personal-item-preferences.query";
 import { ItemRowNumberingService } from "../src/files/item-row-numbering.service";
+import { ReviewReadinessService } from "../src/review/review-readiness.service";
 
 if (!process.env.DB_HOST) process.env.DB_HOST = "localhost";
 if (!process.env.DB_PORT) process.env.DB_PORT = "5433";
@@ -113,7 +115,24 @@ describe("ContentPool API (e2e)", () => {
     const { AppModule } = await import("../src/app.module");
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ReviewReadinessService)
+      .useValue({
+        check: async () => ({
+          status: "READY",
+          checkedAt: new Date().toISOString(),
+          blockers: [],
+          warnings: [],
+          summary: {
+            totalFiles: 0,
+            validFiles: 0,
+            invalidFiles: 0,
+            bookletCount: 1,
+            unitCount: 1,
+          },
+        }),
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     app.useGlobalPipes(
@@ -186,6 +205,20 @@ describe("ContentPool API (e2e)", () => {
       .expect(201);
 
     acpId = createRes.body.id;
+    const adminId = app.get(JwtService).decode(authToken).sub;
+    await app
+      .get<Repository<AcpUserRole>>(getRepositoryToken(AcpUserRole))
+      .save({
+        acpId,
+        userId: adminId,
+        role: "ACP_MANAGER" as any,
+        capabilities: [
+          "review:participate",
+          "review:manage",
+          "item-explorer:view",
+          "item-explorer:edit",
+        ],
+      });
     expect(createRes.body.packageId).toBe(testPackageId);
 
     const accessConfigRes = await request(server)
@@ -418,12 +451,28 @@ describe("ContentPool API (e2e)", () => {
       })
       .expect(200);
 
+    const reviewConfig = await request(server)
+      .get(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .expect(200);
+    await request(server)
+      .put(`/api/view/acp/${acpId}/review/config`)
+      .set("Authorization", `Bearer ${authToken}`)
+      .send({
+        enableReview: true,
+        visibilityMode: "SHARED",
+        configVersion: reviewConfig.body.configVersion,
+        confirmExistingComments: true,
+      })
+      .expect(200);
+
     const credentialRes = await request(server)
       .post(`/api/acp/${acpId}/access/credentials/single`)
       .set("Authorization", `Bearer ${authToken}`)
       .send({
         username: credentialUsername,
         password: credentialPassword,
+        capabilities: ["review:participate", "item-explorer:view"],
       })
       .expect(201);
     credentialId = credentialRes.body.id;
@@ -845,7 +894,7 @@ describe("ContentPool API (e2e)", () => {
       expect.objectContaining({
         deletedCount: 0,
         retainedCount: expect.any(Number),
-        scope: "UNREFERENCED_LEGACY_NON_ITEM",
+        scope: "UNRESOLVED_LEGACY_TASK_SEQUENCE",
       }),
     );
     expect(legacyDeleteRes.body.retainedCount).toBeGreaterThanOrEqual(3);

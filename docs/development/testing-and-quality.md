@@ -64,8 +64,10 @@ errors or warnings remain after automatic fixes.
 
 `backend/src/acp/acp-http-contract.spec.ts` exercises actual HTTP routing, the
 validation pipe, response serialization, and the role guard for ACP management.
-Authentication and persistence are mocked in this suite; service, authentication,
-and database E2E tests remain responsible for those layers.
+Authentication, ACP access and capability resolution, and persistence are mocked
+in this suite; service, authentication,
+and database E2E tests remain responsible for those layers. The suite also checks
+the generated OpenAPI date schemas and permission checks when review settings change.
 
 `frontend/src/app/core/services/api-acp-contract.spec.ts` uses Angular's HTTP test
 backend to check request methods and payloads, nullable fields, role response

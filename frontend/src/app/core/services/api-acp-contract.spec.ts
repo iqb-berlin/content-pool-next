@@ -80,6 +80,7 @@ describe('ACP API client contracts', () => {
       acpId: acp.id,
       userId: user.id,
       role: 'READ_ONLY',
+      capabilities: ['review:participate'],
     };
     const users = firstValueFrom(api.getAssignableUsers(acp.id));
     http.expectOne(`/api/acp/${acp.id}/assignable-users`).flush([user]);
@@ -89,7 +90,11 @@ describe('ACP API client contracts', () => {
     http.expectOne(`/api/acp/${acp.id}/roles`).flush([{ ...assignment, user }]);
     expect((await roles)[0].user).toEqual(user);
 
-    const body: AssignAcpRoleRequest = { userId: user.id, role: 'READ_ONLY' };
+    const body: AssignAcpRoleRequest = {
+      userId: user.id,
+      role: 'READ_ONLY',
+      capabilities: ['review:participate'],
+    };
     const saved = firstValueFrom(api.assignAcpRole(acp.id, body));
     const post = http.expectOne(`/api/acp/${acp.id}/roles`);
     expect(post.request.method).toBe('POST');
@@ -98,13 +103,33 @@ describe('ACP API client contracts', () => {
     expect(await saved).toEqual(assignment);
   });
 
+  it('preserves an explicit empty capability list when removing grants', async () => {
+    const saved = firstValueFrom(api.updateRoleCapabilities(acp.id, 'user-id', []));
+    const patch = http.expectOne(`/api/acp/${acp.id}/roles/user-id/capabilities`);
+    expect(patch.request.method).toBe('PATCH');
+    expect(patch.request.body).toEqual({ capabilities: [] });
+    const response: AcpRoleAssignment = {
+      id: 'role-id',
+      acpId: acp.id,
+      userId: 'user-id',
+      role: 'READ_ONLY',
+      capabilities: [],
+    };
+    patch.flush(response);
+    expect(await saved).toEqual(response);
+  });
+
   it('preserves false, nullable dates and extension fields in access updates', async () => {
     const body: UpdateAccessConfigRequest = {
       accessModel: 'PRIVATE',
       allowRegistered: false,
       validFrom: null,
       validUntil: null,
-      featureConfig: { enableItemList: true, extension: { version: 1 } },
+      featureConfig: {
+        enableItemList: true,
+        commentVisibilityMode: 'GROUP',
+        extension: { version: 1 },
+      },
     };
     const saved = firstValueFrom(api.updateAccessConfig(acp.id, body));
     const put = http.expectOne(`/api/acp/${acp.id}/access`);

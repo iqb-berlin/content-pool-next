@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { CommentTargetType } from "../database/entities";
 import { ReviewPolicyService } from "./review-policy.service";
 
@@ -16,6 +16,7 @@ describe("ReviewPolicyService", () => {
       policy.resolveActor({
         user: { type: "oidc", sub: "user-1", username: "AB" },
         acpAccessLevel: "READ_ONLY",
+        acpCapabilities: ["review:participate"],
       }),
     ).toEqual({
       userId: "user-1",
@@ -23,6 +24,7 @@ describe("ReviewPolicyService", () => {
       credentialUsername: undefined,
       authorLabel: "AB",
       isManager: false,
+      canParticipate: true,
     });
     expect(
       policy.resolveActor({
@@ -44,6 +46,7 @@ describe("ReviewPolicyService", () => {
       policy.isManagerRequest({
         user: { isAppAdmin: false },
         acpAccessLevel: "ADMIN",
+        acpCapabilities: ["review:manage"],
       }),
     ).toBe(true);
   });
@@ -53,12 +56,14 @@ describe("ReviewPolicyService", () => {
       policy.assertCanParticipateRequest({
         user: { sub: "user-1" },
         acpAccessLevel: "READ_ONLY",
+        acpCapabilities: ["review:participate"],
       }),
     ).not.toThrow();
     expect(() =>
       policy.assertCanParticipateRequest({
         user: { sub: "user-1" },
         acpAccessLevel: "PUBLIC",
+        acpCapabilities: ["review:participate"],
       }),
     ).not.toThrow();
     expect(() =>
@@ -81,7 +86,7 @@ describe("ReviewPolicyService", () => {
     ).rejects.toThrow(ForbiddenException);
 
     accessConfigRepository.findOne.mockResolvedValue({
-      featureConfig: { enableCommenting: false },
+      featureConfig: { enableReview: true, enableCommenting: false },
     });
     await expect(
       policy.assertItemCommentAccess("acp-1", {
@@ -91,6 +96,44 @@ describe("ReviewPolicyService", () => {
       }),
     ).rejects.toThrow(ForbiddenException);
   });
+
+  it.each([false, undefined])(
+    "retains legacy comments with enableReview=%s",
+    async (enableReview) => {
+      accessConfigRepository.findOne.mockResolvedValue({
+        featureConfig: {
+          enableReview,
+          enableCommenting: true,
+          commentTargets: ["ITEM", "UNIT"],
+          commentVisibilityMode: "PRIVATE",
+        },
+      });
+      for (const identity of [
+        { userId: "user-1" },
+        { credentialId: "credential-1" },
+      ]) {
+        const actor = {
+          ...identity,
+          authorLabel: "Existing participant",
+          isManager: false,
+        };
+        for (const target of [CommentTargetType.ITEM, CommentTargetType.UNIT]) {
+          await expect(
+            policy.assertCommentAccess("acp-1", actor, target),
+          ).resolves.toBe("PRIVATE");
+        }
+        await expect(policy.prepareVisibility("acp-1", actor)).resolves.toBe(
+          "PRIVATE",
+        );
+        await expect(
+          policy.assertItemAndCodingCountAccess("acp-1", actor),
+        ).resolves.toMatchObject({ targetTypes: [CommentTargetType.ITEM] });
+        expect(
+          policy.canViewComment("PRIVATE", actor, { userId: "other" } as any),
+        ).toBe(false);
+      }
+    },
+  );
 
   it("uses stable IDs exclusively for ownership", () => {
     const comment = {
@@ -130,7 +173,7 @@ describe("ReviewPolicyService", () => {
     expect(policy.canViewComment("SHARED", actor, foreignComment)).toBe(true);
     expect(() =>
       policy.assertCanReply("PRIVATE", actor, foreignComment),
-    ).toThrow(ForbiddenException);
+    ).toThrow(NotFoundException);
     expect(() => policy.assertCanMutate(actor, foreignComment)).toThrow(
       ForbiddenException,
     );
@@ -142,6 +185,7 @@ describe("ReviewPolicyService", () => {
   it("keeps target feature checks behind the policy boundary", async () => {
     accessConfigRepository.findOne.mockResolvedValue({
       featureConfig: {
+        enableReview: true,
         enableCommenting: true,
         commentTargets: [CommentTargetType.ITEM],
         commentVisibilityMode: "SHARED",
@@ -157,5 +201,39 @@ describe("ReviewPolicyService", () => {
     await expect(
       policy.isCommentingEnabled("acp-1", CommentTargetType.UNIT),
     ).resolves.toBe(false);
+  });
+
+  it("requires explicit opt-in for new booklet and coding targets", async () => {
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: [],
+      },
+    });
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.ITEM),
+    ).resolves.toBe(true);
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.CODING),
+    ).resolves.toBe(false);
+    await expect(
+      policy.isCommentingEnabled("acp-1", CommentTargetType.BOOKLET),
+    ).resolves.toBe(false);
+
+    accessConfigRepository.findOne.mockResolvedValue({
+      featureConfig: {
+        enableReview: true,
+        enableCommenting: true,
+        commentTargets: [CommentTargetType.BOOKLET, CommentTargetType.CODING],
+      },
+    });
+    await expect(
+      policy.assertCommentAccess(
+        "acp-1",
+        { credentialId: "credential-1", authorLabel: "CR", isManager: false },
+        CommentTargetType.CODING,
+      ),
+    ).resolves.toBe("PRIVATE");
   });
 });

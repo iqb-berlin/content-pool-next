@@ -35,6 +35,33 @@ describe('ItemExplorerComponent', () => {
     expect(feature.init).toHaveBeenCalledWith('acp-42');
   });
 
+  it('opens the coding context from a stable item deep link', () => {
+    const feature = createFeature();
+    const params = new Map([
+      ['unitId', 'unit-1'],
+      ['itemId', 'item-1'],
+      ['coding', 'open'],
+    ]);
+    const component = new ItemExplorerComponent(
+      {
+        snapshot: {
+          paramMap: { get: () => 'acp-42' },
+          queryParamMap: { get: (key: string) => params.get(key) || null },
+        },
+      } as any,
+      feature as any,
+    );
+
+    component.ngOnInit();
+
+    expect(feature.init).toHaveBeenCalledWith('acp-42', {
+      unitId: 'unit-1',
+      itemId: 'item-1',
+      open: false,
+      openCoding: true,
+    });
+  });
+
   it('delegates host events and route deactivation to the facade', () => {
     const { component, feature } = createShell();
     const beforeUnload = new Event('beforeunload') as BeforeUnloadEvent;

@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpEvent, HttpResponse } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, catchError, of, throwError } from 'rxjs';
 import {
   Acp,
   CreateAcpRequest,
@@ -21,6 +21,8 @@ import {
   Comment,
   CommentThreadSnapshot,
   ItemCommentCountsSnapshot,
+  ReviewCommentTarget,
+  ReviewReadiness,
   AppSettings,
   ApplicationToken,
   ApplicationTokenListResponse,
@@ -210,6 +212,69 @@ export class ApiService {
     return this.http.get<AssignableAcpUser[]>(`${this.API}/acp/${acpId}/assignable-users`);
   }
 
+  updateRoleCapabilities(
+    acpId: string,
+    userId: string,
+    capabilities: string[],
+  ): Observable<AcpRoleAssignment> {
+    return this.http.patch<AcpRoleAssignment>(
+      `${this.API}/acp/${acpId}/roles/${userId}/capabilities`,
+      {
+        capabilities,
+      },
+    );
+  }
+  getCapabilities(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/capabilities`);
+  }
+  getReview(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review`);
+  }
+  getReviewConfig(acpId: string): Observable<any> {
+    return this.http.get(`${this.API}/view/acp/${acpId}/review/config`);
+  }
+  getReviewMembers(acpId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.API}/view/acp/${acpId}/review/members`);
+  }
+  getVisibleReviewComments(acpId: string): Observable<Comment[]> {
+    return this.http.get<Comment[]>(`${this.API}/acp/${acpId}/review/comments/visible`);
+  }
+  exportVisibleReviewComments(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
+    return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/visible.xlsx`, {
+      responseType: 'blob',
+      params: filters,
+    });
+  }
+  configureReview(acpId: string, config: any): Observable<any> {
+    return this.http.put(`${this.API}/view/acp/${acpId}/review/config`, config);
+  }
+  getReviewReadiness(acpId: string): Observable<ReviewReadiness | null> {
+    return this.http.get<ReviewReadiness | null>(`${this.API}/view/acp/${acpId}/review/readiness`);
+  }
+  checkReviewReadiness(acpId: string): Observable<ReviewReadiness> {
+    return this.http.post<ReviewReadiness>(`${this.API}/view/acp/${acpId}/review/readiness`, {});
+  }
+  importCredentialFile(
+    acpId: string,
+    file: File,
+    mode: string,
+    profile: string,
+    capabilities: string[],
+    preview = false,
+  ): Observable<any> {
+    const body = new FormData();
+    body.append('file', file);
+    body.append('profile', profile);
+    body.append('capabilities', JSON.stringify(capabilities));
+    return this.http.post(
+      `${this.API}/acp/${acpId}/access/credentials/file?mode=${mode}&preview=${preview}`,
+      body,
+    );
+  }
+
   // ACP Access
   getAccessConfig(id: string): Observable<AccessConfig> {
     return this.http.get<AccessConfig>(`${this.API}/acp/${id}/access`);
@@ -230,16 +295,22 @@ export class ApiService {
   getCredentials(id: string): Observable<Credential[]> {
     return this.http.get<Credential[]>(`${this.API}/acp/${id}/access/credentials`);
   }
-  createCredential(acpId: string, username: string, password: string): Observable<Credential> {
+  createCredential(
+    acpId: string,
+    username: string,
+    password: string,
+    capabilities: string[] = [],
+  ): Observable<Credential> {
     return this.http.post<Credential>(`${this.API}/acp/${acpId}/access/credentials/single`, {
       username,
       password,
+      capabilities,
     });
   }
   updateCredential(
     acpId: string,
     credentialId: string,
-    data: { username?: string; password?: string },
+    data: { username?: string; password?: string; capabilities?: string[] },
   ): Observable<Credential> {
     return this.http.patch<Credential>(
       `${this.API}/acp/${acpId}/access/credentials/${credentialId}`,
@@ -438,10 +509,34 @@ export class ApiService {
     acpId: string,
     unitId: string,
     itemId: string,
+    previous?: CommentThreadSnapshot | null,
   ): Observable<CommentThreadSnapshot> {
-    return this.http.get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
-      params: { unitId, itemId },
-    });
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { unitId, itemId },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
+  }
+  getReviewCommentThread(
+    acpId: string,
+    target: ReviewCommentTarget,
+    previous?: CommentThreadSnapshot | null,
+  ): Observable<CommentThreadSnapshot> {
+    return this.http
+      .get<CommentThreadSnapshot>(`${this.API}/acp/${acpId}/review/comments`, {
+        params: { ...target },
+        ...(previous ? { headers: { 'If-None-Match': `"${previous.revision}"` } } : {}),
+      })
+      .pipe(
+        catchError((error) =>
+          error.status === 304 && previous ? of(previous) : throwError(() => error),
+        ),
+      );
   }
   getItemCommentCounts(acpId: string): Observable<ItemCommentCountsSnapshot> {
     return this.http.get<ItemCommentCountsSnapshot>(
@@ -450,7 +545,19 @@ export class ApiService {
   }
   createItemComment(
     acpId: string,
-    data: { unitId: string; itemId: string; commentText: string; parentCommentId?: string },
+    data: {
+      unitId: string;
+      itemId: string;
+      commentText: string;
+      parentCommentId?: string;
+      groupId?: string;
+    },
+  ): Observable<Comment> {
+    return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
+  }
+  createReviewComment(
+    acpId: string,
+    data: ReviewCommentTarget & { commentText: string; parentCommentId?: string; groupId?: string },
   ): Observable<Comment> {
     return this.http.post<Comment>(`${this.API}/acp/${acpId}/review/comments`, data);
   }
@@ -479,14 +586,28 @@ export class ApiService {
   exportCommentsXlsx(acpId: string): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/comments/export.xlsx`, { responseType: 'blob' });
   }
-  exportMyReviewCommentsCsv(acpId: string): Observable<Blob> {
+  setCommentVote(
+    acpId: string,
+    commentId: string,
+    value: 'UP' | 'DOWN' | null,
+  ): Observable<unknown> {
+    const url = `${this.API}/acp/${acpId}/review/comments/${commentId}/vote`;
+    return value === null ? this.http.delete(url) : this.http.put(url, { value });
+  }
+
+  exportMyReviewCommentsCsv(acpId: string, filters: Record<string, string> = {}): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.csv`, {
       responseType: 'blob',
+      params: filters,
     });
   }
-  exportMyReviewCommentsXlsx(acpId: string): Observable<Blob> {
+  exportMyReviewCommentsXlsx(
+    acpId: string,
+    filters: Record<string, string> = {},
+  ): Observable<Blob> {
     return this.http.get(`${this.API}/acp/${acpId}/review/comments/export/mine.xlsx`, {
       responseType: 'blob',
+      params: filters,
     });
   }
   exportAllReviewCommentsXlsx(acpId: string): Observable<Blob> {
@@ -578,9 +699,13 @@ export class ApiService {
     return `${this.API}/view/acp/${acpId}/index/export${token ? '?auth_token=' + encodeURIComponent(token) : ''}`;
   }
 
-  getItemExplorerState(acpId: string): Observable<ItemExplorerStateEnvelope> {
+  getItemExplorerState(
+    acpId: string,
+    perspective?: ItemExplorerPerspective,
+  ): Observable<ItemExplorerStateEnvelope> {
     return this.http.get<ItemExplorerStateEnvelope>(
       `${this.API}/view/acp/${acpId}/item-explorer/state`,
+      { params: perspective ? { perspective } : {} },
     );
   }
 

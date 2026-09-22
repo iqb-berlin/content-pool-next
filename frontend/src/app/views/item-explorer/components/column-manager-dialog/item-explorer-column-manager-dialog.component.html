@@ -16,6 +16,29 @@
         @let visibleColumns = vm.tableColumns;
         @let allColumns = vm.allTableColumns;
         <h3>Tabellenspalten</h3>
+        @if (vm.canEditExplorer) {
+          <label>
+            <input
+              type="checkbox"
+              [ngModel]="vm.metadataSettings.restrictReviewerColumnsToManagerSelection === true"
+              (ngModelChange)="vm.setRestrictReviewerColumns($event)"
+            />
+            Ausgeblendete Spalten für Reviewer sperren
+          </label>
+          @if (vm.metadataSettings.restrictReviewerColumnsToManagerSelection) {
+            <p>
+              Nach der Veröffentlichung sind nur freigegebene Informationen zugänglich, auch in
+              Exporten. Rohdaten-Downloads werden eingeschränkt. Eigene persönliche Spalten bleiben
+              verfügbar.
+            </p>
+          }
+        }
+        @if (vm.reviewerColumnsRestricted) {
+          <p role="note">
+            Die verfügbaren Spalten sind durch die veröffentlichte ACP-Konfiguration begrenzt.
+            Eigene persönliche Spalten bleiben verfügbar.
+          </p>
+        }
         <div class="column-manager-toolbar">
           <div class="search-container">
             <input
@@ -45,6 +68,11 @@
                 <input
                   type="checkbox"
                   [checked]="vm.isColumnVisible(col)"
+                  [disabled]="
+                    col.key === 'system:itemId' &&
+                    (vm.reviewerColumnsRestricted ||
+                      vm.metadataSettings.restrictReviewerColumnsToManagerSelection === true)
+                  "
                   [attr.aria-label]="col.label"
                   (click)="$event.stopPropagation()"
                   (change)="vm.toggleColumnVisibility(col)"

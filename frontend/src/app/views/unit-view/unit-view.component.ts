@@ -1,29 +1,56 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import {
+  ChangeDetectorRef,
+  Component,
+  OnInit,
+  OnDestroy,
+  OnChanges,
+  ElementRef,
+  Inject,
+  Input,
+  SimpleChanges,
+  ViewChild,
+} from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { DomSanitizer } from '@angular/platform-browser';
+import { CodingAsText, CodingSchemeTextFactory } from '@iqb/responses';
+import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
-import { UnitViewData } from '../../core/models/api.models';
+import { FeatureConfig, FilePreviewVomdData, UnitViewData } from '../../core/models/api.models';
 import {
   GEOGEBRA_PLAYER_RESOURCE_BASE,
   rewriteGeoGebraAssetUrls,
 } from '../../core/utils/geogebra-player-html.util';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
-import { CommentDialogComponent } from '../comment-dialog/comment-dialog.component';
+import { ItemCommentThreadComponent } from '../comment-thread/item-comment-thread.component';
+
+import { CommentThreadDrafts } from '../comment-thread/comment-thread-drafts';
+import { AuthService } from '../../core/services/auth.service';
+import { PendingPersonalSessionStorageService } from '../../core/services/pending-personal-session-storage.service';
+
+type UnitPagingMode =
+  | 'buttons'
+  | 'separate'
+  | 'concat-scroll'
+  | 'concat-scroll-snap'
+  | 'view-all'
+  | 'print-ids';
 
 @Component({
   selector: 'app-unit-view',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent, FormsModule, CommentDialogComponent, CommonModule],
+  imports: [BreadcrumbComponent, FormsModule, ItemCommentThreadComponent, CommonModule],
   template: `
     @if (unit) {
-      <app-breadcrumb [items]="breadcrumbs" />
+      @if (!embedded) {
+        <app-breadcrumb [items]="breadcrumbs" />
+      }
 
       <div class="unit-header">
         <h1>{{ unit.name }}</h1>
         <div class="unit-actions">
-          @if (showMetadataToggle) {
+          @if (showMetadataToggle && !reviewMode) {
             <button
               class="btn btn-outline btn-sm btn-state"
               (click)="togglePanel()"
@@ -33,7 +60,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               {{ panelVisible ? 'Zusatzdaten ausblenden' : 'Zusatzdaten anzeigen' }}
             </button>
           }
-          @if (showMetadataToggle && panelVisible) {
+          @if (showMetadataToggle && panelVisible && !reviewMode) {
             <select
               class="btn btn-outline btn-sm panel-mode-select"
               [(ngModel)]="panelMode"
@@ -43,26 +70,56 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               <option value="overlay">Panel: Overlay</option>
             </select>
           }
-          @if (showCommentBtn) {
-            <button class="btn btn-outline btn-sm" (click)="openComment()">💬 Kommentar</button>
-          }
           @if (showDownloadBtn) {
             <button class="btn btn-outline btn-sm" (click)="downloadUnit()">⬇️ Download</button>
           }
+          @if (reviewMode) {
+            <button
+              class="btn btn-outline btn-sm btn-state"
+              type="button"
+              (click)="toggleReviewPanel()"
+              [attr.aria-expanded]="!reviewPanelCollapsed"
+              aria-controls="unit-additional-data"
+            >
+              {{ reviewPanelCollapsed ? 'Reviewbereich einblenden' : 'Reviewbereich ausblenden' }}
+            </button>
+          }
           <select
             class="btn btn-outline btn-sm"
-            [(ngModel)]="printMode"
-            (change)="onPrintModeChange()"
+            aria-label="Seitendarstellung der Aufgabe"
+            [(ngModel)]="pagingMode"
+            (change)="onPagingModeChange()"
           >
-            <option value="off">Print: Aus</option>
-            <option value="on">Print: Ein</option>
-            <option value="on-with-ids">Print: Ein + IDs</option>
+            <option value="buttons">Seiten mit Schaltflächen</option>
+            <option value="separate">Einzelseiten</option>
+            <option value="concat-scroll">Fortlaufend scrollen</option>
+            <option value="concat-scroll-snap">Scrollen mit Einrasten</option>
+            <option value="view-all">Alle Seiten (Druckansicht)</option>
+            <option value="print-ids">Alle Seiten mit IDs (Druckansicht)</option>
           </select>
         </div>
       </div>
 
-      <div class="unit-layout" [class.with-panel]="panelVisible && resolvedPanelMode === 'split'">
-        <div class="player-area">
+      @if (showCommentBtn && !reviewMode) {
+        <app-item-comment-thread
+          [drafts]="commentDrafts"
+          [sessionToken]="commentSessionToken"
+          [acpId]="acpId"
+          [targetType]="'UNIT'"
+          [unitId]="unitId"
+          [enabled]="showCommentBtn"
+        />
+      }
+
+      <div
+        class="unit-layout"
+        [class.with-panel]="
+          (reviewMode && !reviewPanelCollapsed) || (panelVisible && resolvedPanelMode === 'split')
+        "
+        [class.review-mode]="reviewMode"
+        [style.--review-panel-width.px]="reviewPanelWidth"
+      >
+        <div class="player-area" [class.print-mode]="printMode !== 'off'">
           <div class="player-container card" [class.print-mode]="printMode !== 'off'">
             @if (playerSrcDoc) {
               <iframe
@@ -84,7 +141,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             }
           </div>
 
-          @if (totalPages > 1 && printMode === 'off') {
+          @if (totalPages > 1 && pagingMode === 'buttons') {
             <div class="page-nav">
               <button
                 class="btn btn-outline"
@@ -104,7 +161,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             </div>
           }
 
-          @if (panelVisible && resolvedPanelMode === 'overlay') {
+          @if (panelVisible && resolvedPanelMode === 'overlay' && !reviewMode) {
             <div class="panel-overlay-backdrop" (click)="closeOverlayPanel()">
               <div
                 id="unit-additional-data"
@@ -121,8 +178,20 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
           }
         </div>
 
-        @if (panelVisible && resolvedPanelMode === 'split') {
+        @if (
+          (reviewMode && !reviewPanelCollapsed) || (panelVisible && resolvedPanelMode === 'split')
+        ) {
           <div id="unit-additional-data" class="meta-panel card split">
+            @if (reviewMode) {
+              <button
+                class="panel-resize-handle"
+                type="button"
+                aria-label="Breite des Reviewbereichs ändern"
+                title="Ziehen oder mit den Pfeiltasten verschieben"
+                (pointerdown)="startReviewPanelResize($event)"
+                (keydown)="resizeReviewPanelWithKeyboard($event)"
+              ></button>
+            }
             <ng-container [ngTemplateOutlet]="panelContent"></ng-container>
           </div>
         }
@@ -130,7 +199,18 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 
       <ng-template #panelContent>
         <div class="panel-tabs" role="group" aria-label="Zusatzdaten">
-          @if (featureConfig.showMetadata) {
+          @if (reviewMode) {
+            <button
+              class="tab"
+              type="button"
+              [class.active]="activeTab === 'comments'"
+              [attr.aria-pressed]="activeTab === 'comments'"
+              (click)="activeTab = 'comments'"
+            >
+              Kommentare
+            </button>
+          }
+          @if (showMetadata) {
             <button
               class="tab"
               type="button"
@@ -141,7 +221,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               Metadaten
             </button>
           }
-          @if (featureConfig.showCodingScheme) {
+          @if (showCodingScheme) {
             <button
               class="tab"
               type="button"
@@ -149,10 +229,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
               [attr.aria-pressed]="activeTab === 'coding'"
               (click)="activeTab = 'coding'"
             >
-              Kodierschema
+              Kodierung
             </button>
           }
-          @if (featureConfig.showRichText) {
+          @if (showRichText) {
             <button
               class="tab"
               type="button"
@@ -166,39 +246,125 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         </div>
 
         <div class="panel-content">
-          @if (activeTab === 'metadata') {
-            <dl class="meta-dl">
-              <dt>ID</dt>
-              <dd>
-                <code>{{ unit.id }}</code>
-              </dd>
-              @if (unit.lang) {
-                <dt>Sprache</dt>
-                <dd>{{ unit.lang }}</dd>
+          @if (activeTab === 'comments') {
+            @if (showCommentBtn || showBookletCommentBtn) {
+              @if (showCommentBtn && showBookletCommentBtn) {
+                <label class="comment-scope-select">
+                  Kommentarziel
+                  <select [(ngModel)]="commentScope">
+                    <option value="unit">Aufgabe</option>
+                    <option value="booklet">Testheft</option>
+                  </select>
+                </label>
               }
-              @if (unit.description) {
-                <dt>Beschreibung</dt>
-                <dd>{{ unit.description }}</dd>
+              @if (commentScope === 'booklet' && showBookletCommentBtn) {
+                <app-item-comment-thread
+                  [drafts]="commentDrafts"
+                  [sessionToken]="commentSessionToken"
+                  [acpId]="acpId"
+                  [targetType]="'BOOKLET'"
+                  [bookletId]="bookletId"
+                  [enabled]="showBookletCommentBtn"
+                  [initiallyOpen]="true"
+                  [hideToggle]="true"
+                />
+              } @else {
+                <app-item-comment-thread
+                  [drafts]="commentDrafts"
+                  [sessionToken]="commentSessionToken"
+                  [acpId]="acpId"
+                  [targetType]="'UNIT'"
+                  [unitId]="unitId"
+                  [enabled]="showCommentBtn"
+                  [initiallyOpen]="true"
+                  [hideToggle]="true"
+                />
               }
-            </dl>
-            @if (unit.items && unit.items.length) {
-              <h4>Items ({{ unit.items.length }})</h4>
-              <div class="items-list">
-                @for (item of unit.items; track item.id) {
-                  <a [routerLink]="['/view', acpId, 'item', item.id]" class="item-badge">{{
-                    item.name || item.id
-                  }}</a>
-                }
+            } @else {
+              <div class="comment-unavailable" role="status">
+                <strong>Kommentare sind für dieses Konto nicht verfügbar.</strong>
+                <p>
+                  Die Kommentarfunktion ist deaktiviert oder es fehlt die ACP-Berechtigung „Review
+                  teilnehmen“.
+                </p>
               </div>
+            }
+          }
+
+          @if (activeTab === 'metadata') {
+            @if (metadataLoading) {
+              <p class="help-text">Aufgabenmetadaten werden geladen...</p>
+            } @else if (unitMetadata.length) {
+              <dl class="meta-dl">
+                @for (entry of unitMetadata; track entry.id) {
+                  <dt>{{ entry.label || entry.id }}</dt>
+                  <dd>{{ entry.value || '–' }}</dd>
+                }
+              </dl>
+            } @else if (metadataError) {
+              <p class="help-text" role="alert">{{ metadataError }}</p>
+            } @else {
+              <p class="help-text">Keine Aufgabenmetadaten in der VOMD-Datei verfügbar.</p>
             }
           }
 
           @if (activeTab === 'coding') {
             <div class="coding-content">
-              @if (unit.codingScheme) {
-                <div [innerHTML]="unit.codingScheme"></div>
+              @if (codingSchemeLoading) {
+                <p class="help-text">Kodierung wird geladen...</p>
+              } @else if (codingSchemeAsText?.length) {
+                <label class="coding-filter">
+                  <span>Kodiervariablen filtern</span>
+                  <input
+                    type="search"
+                    aria-label="Kodiervariablen filtern"
+                    placeholder="ID, Name oder Code"
+                    [(ngModel)]="codingFilterText"
+                  />
+                </label>
+                @if (hiddenCodingVariableCount > 0) {
+                  <label class="coding-visibility-toggle">
+                    <input type="checkbox" [(ngModel)]="showAllCodingVariables" />
+                    <span>
+                      Alle Variablen anzeigen
+                      <small>({{ hiddenCodingVariableCount }} weitere)</small>
+                    </span>
+                  </label>
+                }
+                @if (visibleCodingSchemeAsText.length) {
+                  @for (coding of visibleCodingSchemeAsText; track coding.id) {
+                    <section class="coding-variable">
+                      <h4>{{ coding.label || coding.id }}</h4>
+                      @if ($any(coding).manualInstructionText) {
+                        <div class="coding-instruction">
+                          <strong>Variablenanweisung</strong>
+                          <div [innerHTML]="$any(coding).manualInstructionText"></div>
+                        </div>
+                      }
+                      <div class="coding-codes">
+                        @for (code of coding.codes; track code.id) {
+                          <div class="coding-code">
+                            <strong>{{ code.id }}</strong>
+                            <span class="coding-score">({{ code.score }})</span>
+                            <span>{{ code.label }}</span>
+                          </div>
+                          @if ($any(code).manualInstructionText) {
+                            <div class="coding-instruction code-instruction">
+                              <strong>Kodieranweisung</strong>
+                              <div [innerHTML]="$any(code).manualInstructionText"></div>
+                            </div>
+                          }
+                        }
+                      </div>
+                    </section>
+                  }
+                } @else {
+                  <p class="help-text">Keine passende Kodiervariable gefunden.</p>
+                }
+              } @else if (codingSchemeError) {
+                <p class="help-text" role="alert">{{ codingSchemeError }}</p>
               } @else {
-                <p class="help-text">Kein Kodierschema verfügbar.</p>
+                <p class="help-text">Keine Kodierung verfügbar.</p>
               }
             </div>
           }
@@ -213,33 +379,10 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
             </div>
           }
         </div>
-
-        @if (unit.dependencies && unit.dependencies.length) {
-          <div class="deps-section">
-            <h4>Abhängigkeiten</h4>
-            @for (dep of unit.dependencies; track dep.fileId) {
-              <div class="dep-item">
-                <span class="badge badge-info">{{ dep.type }}</span>
-                <a [href]="api.appendAuthToken(dep.downloadUrl)" target="_blank">{{
-                  dep.originalName
-                }}</a>
-              </div>
-            }
-          </div>
-        }
       </ng-template>
     } @else {
       <div class="empty-state"><h3>Lade Aufgabe...</h3></div>
     }
-
-    <app-comment-dialog
-      [open]="commentOpen"
-      [targetType]="'UNIT'"
-      [targetId]="unitId"
-      (submitted)="onCommentSubmitted($event)"
-      (closed)="commentOpen = false"
-    >
-    </app-comment-dialog>
   `,
   styles: [
     `
@@ -270,6 +413,13 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       .unit-layout.with-panel {
         grid-template-columns: 1fr 380px;
       }
+      .unit-layout.review-mode.with-panel {
+        grid-template-columns: minmax(0, 1fr) var(--review-panel-width, 420px);
+        align-items: start;
+      }
+      .unit-layout.review-mode {
+        --review-content-height: max(360px, calc(100dvh - 360px));
+      }
 
       .player-area {
         position: relative;
@@ -297,6 +447,18 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         min-height: 1000px;
         height: auto;
       }
+      .review-mode .player-container {
+        height: var(--review-content-height);
+        min-height: var(--review-content-height);
+        overflow: auto;
+      }
+      .review-mode .player-iframe:not(.print-mode) {
+        min-height: 100%;
+      }
+      .review-mode .player-iframe.print-mode {
+        height: 100% !important;
+        min-height: 100%;
+      }
 
       .page-nav {
         display: flex;
@@ -317,6 +479,67 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       }
       .meta-panel.split {
         max-height: calc(100vh - 180px);
+      }
+      .review-mode .meta-panel.split {
+        position: sticky;
+        top: 16px;
+        display: flex;
+        flex-direction: column;
+        box-sizing: border-box;
+        height: var(--review-content-height);
+        max-height: var(--review-content-height);
+        overflow: hidden;
+      }
+      .review-mode .meta-panel.split .panel-content {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+      }
+      .review-mode .player-container.print-mode {
+        height: var(--review-content-height);
+        min-height: var(--review-content-height);
+        max-height: var(--review-content-height);
+        overflow: auto;
+      }
+      .review-mode .player-area.print-mode {
+        height: var(--review-content-height);
+        min-height: 0;
+        overflow: hidden;
+      }
+      :host-context(.review-workspace:fullscreen) .unit-layout.review-mode,
+      :host-context(.review-workspace.fullscreen-fallback) .unit-layout.review-mode {
+        --review-content-height: max(360px, calc(100dvh - 220px));
+      }
+      .panel-resize-handle {
+        position: absolute;
+        inset: 0 auto 0 -9px;
+        width: 14px;
+        min-height: 100%;
+        padding: 0;
+        border: 0;
+        border-left: 3px solid transparent;
+        background: transparent;
+        cursor: col-resize;
+      }
+      .panel-resize-handle:hover,
+      .panel-resize-handle:focus-visible {
+        border-left-color: var(--color-primary-light);
+        outline: none;
+      }
+      .panel-resize-handle::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 3px;
+        width: 4px;
+        height: 40px;
+        border-radius: 4px;
+        background: var(--color-border);
+        transform: translateY(-50%);
+      }
+      .panel-resize-handle:hover::after,
+      .panel-resize-handle:focus-visible::after {
+        background: var(--color-primary-light);
       }
 
       .panel-overlay-backdrop {
@@ -351,6 +574,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 
       .panel-tabs {
         display: flex;
+        flex: none;
         gap: 0;
         border-bottom: 1px solid var(--color-border);
         margin: -24px -24px 16px;
@@ -379,7 +603,7 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
 
       .meta-dl {
         display: grid;
-        grid-template-columns: auto 1fr;
+        grid-template-columns: auto minmax(0, 1fr);
         gap: 8px 20px;
         font-size: 0.9rem;
       }
@@ -389,48 +613,80 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
       }
       .meta-dl dd {
         margin: 0;
+        overflow-wrap: anywhere;
       }
 
       h4 {
         font-size: 0.95rem;
         margin: 16px 0 8px;
       }
-      .items-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-      }
-      .item-badge {
-        display: inline-block;
-        padding: 4px 10px;
-        background: var(--color-bg);
-        border-radius: 4px;
-        font-size: 0.8rem;
-        text-decoration: none;
-        color: var(--color-primary-light);
-        transition: background 0.15s;
-      }
-      .item-badge:hover {
-        background: rgba(41, 128, 185, 0.1);
-        text-decoration: none;
-      }
-
-      .deps-section {
-        margin-top: 16px;
-        padding-top: 16px;
-        border-top: 1px solid var(--color-border);
-      }
-      .dep-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 4px 0;
-        font-size: 0.85rem;
-      }
-
       .coding-content,
       .richtext-content {
         font-size: 0.9rem;
+      }
+      .coding-filter {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 12px;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+      .coding-filter input {
+        width: 100%;
+        min-width: 0;
+        padding: 8px 10px;
+        border: 1px solid var(--color-border);
+        border-radius: 6px;
+        font: inherit;
+      }
+      .coding-visibility-toggle {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -2px 0 12px;
+        color: var(--color-text-secondary);
+        font-size: 0.82rem;
+        cursor: pointer;
+      }
+      .coding-visibility-toggle input {
+        margin: 0;
+      }
+      .coding-variable {
+        padding: 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.02);
+      }
+      .coding-variable + .coding-variable {
+        margin-top: 12px;
+      }
+      .coding-variable h4 {
+        margin-top: 0;
+        color: var(--color-primary);
+      }
+      .coding-codes {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .coding-code {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .coding-score {
+        color: var(--color-success);
+        font-weight: 600;
+      }
+      .coding-instruction {
+        margin: 8px 0;
+        padding: 8px;
+        border-left: 3px solid #f39c12;
+        background: rgba(243, 156, 18, 0.06);
+      }
+      .code-instruction {
+        margin: 0 0 6px 24px;
+        font-size: 0.82rem;
       }
       .coding-content :first-child,
       .richtext-content :first-child {
@@ -440,10 +696,45 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
         color: var(--color-text-secondary);
         font-size: 0.85rem;
       }
+      .comment-unavailable {
+        padding: 12px;
+        border-left: 3px solid var(--color-warning, #f39c12);
+        background: rgba(243, 156, 18, 0.06);
+      }
+      .comment-unavailable p {
+        margin: 6px 0 0;
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+      }
+      .comment-scope-select {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      .comment-scope-select select {
+        min-width: 130px;
+      }
 
       @media (max-width: 1100px) {
         .unit-layout.with-panel {
           grid-template-columns: 1fr;
+        }
+        .review-mode .meta-panel.split {
+          position: static;
+          display: block;
+          height: auto;
+          max-height: none;
+          overflow: visible;
+        }
+        .review-mode .meta-panel.split .panel-content {
+          max-height: none;
+        }
+        .panel-resize-handle {
+          display: none;
         }
         .panel-mode-select {
           opacity: 0.7;
@@ -469,16 +760,21 @@ import { CommentDialogComponent } from '../comment-dialog/comment-dialog.compone
     `,
   ],
 })
-export class UnitViewComponent implements OnInit, OnDestroy {
+export class UnitViewComponent implements OnInit, OnChanges, OnDestroy {
   @ViewChild('playerFrame') playerFrame!: ElementRef<HTMLIFrameElement>;
 
-  acpId = '';
-  unitId = '';
+  @Input() acpId = '';
+  @Input() unitId = '';
+  @Input() bookletId = '';
+  @Input() embedded = false;
+  @Input() reviewMode = false;
+  @Input() featureConfigOverride: FeatureConfig | null = null;
+
   unit: UnitViewData | null = null;
   playerSrcDoc: any = null;
   breadcrumbs: BreadcrumbItem[] = [];
   playerHeight = '100%';
-  printMode: 'off' | 'on' | 'on-with-ids' = 'off';
+  pagingMode: UnitPagingMode = 'buttons';
 
   // Page navigation
   currentPage = 1;
@@ -487,65 +783,212 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   // Panel state
   panelVisible = false;
   panelMode: 'split' | 'overlay' = 'split';
-  activeTab: 'metadata' | 'coding' | 'richtext' = 'metadata';
+  activeTab: 'comments' | 'metadata' | 'coding' | 'richtext' = 'metadata';
   isNarrowLayout = false;
+  reviewPanelCollapsed = false;
+  reviewPanelWidth = 420;
 
   // Feature config
-  featureConfig: any = {};
+  showMetadata = false;
+  showCodingScheme = false;
+  showRichText = false;
   showMetadataToggle = false;
   showCommentBtn = false;
+  showBookletCommentBtn = false;
   showDownloadBtn = false;
-  commentOpen = false;
+  showAudioVideoCodingVariables = true;
+  commentScope: 'unit' | 'booklet' = 'unit';
+  readonly commentDrafts = new CommentThreadDrafts();
+  commentSessionToken = 0;
+  private commentIdentity: string | null = null;
+  private authSubscription: Subscription | null = null;
+  codingFilterText = '';
+  showAllCodingVariables = false;
+  unitMetadata: FilePreviewVomdData['unitProfiles'] = [];
+  metadataLoading = false;
+  metadataError = '';
+  codingSchemeAsText: CodingAsText[] | null = null;
+  codingSchemeLoading = false;
+  codingSchemeError = '';
 
   private definitionContent: string | null = null;
   private playerFrameReady = false;
   private unitLoadToken = 0;
+  private initialized = false;
   private startSessionCounter = 0;
+  private featureConfigRequest: Subscription | null = null;
+  private unitRequest: Subscription | null = null;
+  private metadataRequest: Subscription | null = null;
+  private unitAbortController: AbortController | null = null;
+  private panelResizeStartX = 0;
+  private panelResizeStartWidth = 0;
 
   private messageHandler = this.onPlayerMessage.bind(this);
   private resizeHandler = this.onWindowResize.bind(this);
+  private panelResizeMoveHandler = (event: PointerEvent) => {
+    this.reviewPanelWidth = this.clampReviewPanelWidth(
+      this.panelResizeStartWidth + this.panelResizeStartX - event.clientX,
+    );
+    this.changeDetector.markForCheck();
+  };
+  private panelResizeEndHandler = () => this.stopReviewPanelResize();
   private autoResizeInterval: any;
 
   constructor(
-    private route: ActivatedRoute,
-    public api: ApiService,
-    private sanitizer: DomSanitizer,
+    @Inject(ActivatedRoute) private route: ActivatedRoute,
+    @Inject(ApiService) public api: ApiService,
+    @Inject(DomSanitizer) private sanitizer: DomSanitizer,
+    @Inject(ChangeDetectorRef) private changeDetector: ChangeDetectorRef,
+    @Inject(AuthService) private auth: AuthService,
+    @Inject(PendingPersonalSessionStorageService)
+    private personalSession: PendingPersonalSessionStorageService,
   ) {}
+
+  get printMode(): 'off' | 'on' | 'on-with-ids' {
+    if (this.pagingMode === 'view-all') return 'on';
+    if (this.pagingMode === 'print-ids') return 'on-with-ids';
+    return 'off';
+  }
+
+  get visibleCodingSchemeAsText(): CodingAsText[] {
+    const visibleCodings = this.showAllCodingVariables
+      ? this.availableCodingSchemeAsText
+      : this.availableCodingSchemeAsText.filter((coding) => this.isRelevantCodingVariable(coding));
+    const term = this.codingFilterText.trim().toLowerCase();
+    if (!term) return visibleCodings;
+    return visibleCodings.filter((coding) => {
+      const searchableText = [
+        coding.id,
+        coding.label,
+        (coding as any).manualInstructionText,
+        ...coding.codes.flatMap((code) => [
+          code.id,
+          code.label,
+          (code as any).manualInstructionText,
+        ]),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return searchableText.includes(term);
+    });
+  }
+
+  get hiddenCodingVariableCount(): number {
+    return this.availableCodingSchemeAsText.filter(
+      (coding) => !this.isRelevantCodingVariable(coding),
+    ).length;
+  }
+
+  private get availableCodingSchemeAsText(): CodingAsText[] {
+    const codings = this.codingSchemeAsText || [];
+    const hideAudioVideoVariables = this.reviewMode || !this.showAudioVideoCodingVariables;
+    return hideAudioVideoVariables
+      ? codings.filter((coding) => !this.isAudioVideoCodingVariable(coding))
+      : codings;
+  }
 
   get resolvedPanelMode(): 'split' | 'overlay' {
     return this.isNarrowLayout ? 'overlay' : this.panelMode;
   }
 
   ngOnInit() {
-    this.acpId = this.route.snapshot.paramMap.get('acpId') || '';
-    this.unitId = this.route.snapshot.paramMap.get('unitId') || '';
+    this.authSubscription = this.auth.currentUser$.subscribe(() => {
+      const identity = this.personalSession.resolveIdentityFromToken(this.auth.getToken());
+      if (identity !== this.commentIdentity) {
+        this.commentDrafts.clear();
+        this.commentIdentity = identity;
+        this.commentSessionToken += 1;
+        this.changeDetector.markForCheck();
+      }
+    });
+    this.acpId = this.acpId || this.route.snapshot.paramMap.get('acpId') || '';
+    this.unitId = this.unitId || this.route.snapshot.paramMap.get('unitId') || '';
 
     this.onWindowResize();
     window.addEventListener('resize', this.resizeHandler);
     window.addEventListener('message', this.messageHandler);
 
-    this.api.getAcpStartPage(this.acpId).subscribe((data) => {
-      this.featureConfig = data?.featureConfig || {};
-      this.showMetadataToggle = !!(
-        this.featureConfig.showMetadata ||
-        this.featureConfig.showCodingScheme ||
-        this.featureConfig.showRichText
-      );
+    this.initialized = true;
+    if (this.featureConfigOverride) {
+      this.applyFeatureConfig(this.featureConfigOverride);
+    } else {
+      this.loadFeatureConfig();
+    }
+    this.loadUnit();
+  }
 
-      const commentTargets = Array.isArray(this.featureConfig.commentTargets)
-        ? this.featureConfig.commentTargets
-        : [];
-      this.showCommentBtn = !!(
-        this.featureConfig.enableCommenting && commentTargets.includes('UNIT')
-      );
-      this.showDownloadBtn = !!this.featureConfig.allowUnitDownload;
+  ngOnChanges(changes: SimpleChanges) {
+    if (!this.initialized) return;
 
-      if (this.featureConfig.showMetadata) this.activeTab = 'metadata';
-      else if (this.featureConfig.showCodingScheme) this.activeTab = 'coding';
-      else if (this.featureConfig.showRichText) this.activeTab = 'richtext';
+    if (changes['featureConfigOverride'] || changes['reviewMode'] || changes['bookletId']) {
+      if (this.featureConfigOverride) {
+        this.featureConfigRequest?.unsubscribe();
+        this.featureConfigRequest = null;
+        this.applyFeatureConfig(this.featureConfigOverride);
+      } else this.loadFeatureConfig();
+    }
+
+    if (changes['acpId'] || changes['unitId']) this.loadUnit();
+  }
+
+  private loadFeatureConfig() {
+    this.featureConfigRequest?.unsubscribe();
+    this.featureConfigRequest = this.api.getAcpStartPage(this.acpId).subscribe((data) => {
+      this.applyFeatureConfig(data?.featureConfig || {});
     });
+  }
 
-    this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
+  private applyFeatureConfig(featureConfig: FeatureConfig) {
+    this.showMetadata = this.reviewMode || !!featureConfig.showMetadata;
+    this.showCodingScheme = this.reviewMode || !!featureConfig.showCodingScheme;
+    this.showRichText = !!featureConfig.showRichText;
+    this.showMetadataToggle = this.showMetadata || this.showCodingScheme || this.showRichText;
+
+    const commentTargets = Array.isArray(featureConfig.commentTargets)
+      ? featureConfig.commentTargets
+      : [];
+    this.showCommentBtn = !!(featureConfig.enableCommenting && commentTargets.includes('UNIT'));
+    this.showBookletCommentBtn = !!(
+      this.reviewMode &&
+      this.bookletId &&
+      featureConfig.enableCommenting &&
+      commentTargets.includes('BOOKLET')
+    );
+    if (!this.showCommentBtn && this.showBookletCommentBtn) this.commentScope = 'booklet';
+    else if (!this.showBookletCommentBtn) this.commentScope = 'unit';
+    this.showDownloadBtn = !!featureConfig.allowUnitDownload;
+    this.showAudioVideoCodingVariables = featureConfig.showAudioVideoCodingVariables !== false;
+
+    if (this.reviewMode) this.activeTab = 'comments';
+    else if (this.showMetadata) this.activeTab = 'metadata';
+    else if (this.showCodingScheme) this.activeTab = 'coding';
+    else if (this.showRichText) this.activeTab = 'richtext';
+    if (!this.showMetadataToggle) this.panelVisible = false;
+  }
+
+  private loadUnit() {
+    if (!this.acpId || !this.unitId) return;
+    const requestToken = ++this.unitLoadToken;
+    this.unitRequest?.unsubscribe();
+    this.metadataRequest?.unsubscribe();
+    this.unitAbortController?.abort();
+    this.unitAbortController = new AbortController();
+    this.stopAutoResize();
+    this.unit = null;
+    this.playerSrcDoc = null;
+    this.playerFrameReady = false;
+    this.definitionContent = null;
+    this.unitMetadata = [];
+    this.metadataLoading = false;
+    this.metadataError = '';
+    this.codingSchemeAsText = null;
+    this.codingSchemeLoading = false;
+    this.codingSchemeError = '';
+    this.codingFilterText = '';
+    this.showAllCodingVariables = false;
+    this.unitRequest = this.api.getViewUnit(this.acpId, this.unitId).subscribe((u) => {
+      if (requestToken !== this.unitLoadToken) return;
       this.unit = u;
       this.breadcrumbs = [
         { label: 'Assessment Content Pool', route: ['/'] },
@@ -563,13 +1006,23 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       this.playerFrameReady = false;
       this.definitionContent = null;
 
-      const token = ++this.unitLoadToken;
-      this.loadPlayerSource(u.dependencies || [], token);
-      this.loadDefinitionSource(u.dependencies || [], token);
+      const signal = this.unitAbortController?.signal;
+      this.loadPlayerSource(u.dependencies || [], requestToken, signal);
+      this.loadDefinitionSource(u.dependencies || [], requestToken, signal);
+      this.loadMetadataSource(u.dependencies || [], requestToken);
+      this.loadCodingSchemeSource(u, requestToken, signal);
     });
   }
 
   ngOnDestroy() {
+    this.authSubscription?.unsubscribe();
+    this.commentDrafts.clear();
+    this.unitLoadToken += 1;
+    this.featureConfigRequest?.unsubscribe();
+    this.unitRequest?.unsubscribe();
+    this.metadataRequest?.unsubscribe();
+    this.unitAbortController?.abort();
+    this.stopReviewPanelResize();
     window.removeEventListener('resize', this.resizeHandler);
     window.removeEventListener('message', this.messageHandler);
     this.stopAutoResize();
@@ -581,7 +1034,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     this.startPlayerIfReady();
   }
 
-  onPrintModeChange() {
+  onPagingModeChange() {
     const src = this.playerSrcDoc;
     if (!src) return;
     this.playerFrameReady = false;
@@ -632,7 +1085,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   }
 
   navigateToPage(page: number) {
-    if (this.printMode !== 'off') return;
+    if (this.pagingMode !== 'buttons') return;
     if (!this.playerFrameReady) return;
 
     const target = Math.trunc(page);
@@ -650,22 +1103,31 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     this.panelVisible = !this.panelVisible;
   }
 
+  toggleReviewPanel() {
+    this.reviewPanelCollapsed = !this.reviewPanelCollapsed;
+  }
+
+  startReviewPanelResize(event: PointerEvent) {
+    if (!this.reviewMode || this.isNarrowLayout) return;
+    event.preventDefault();
+    (event.currentTarget as HTMLElement | null)?.focus();
+    this.panelResizeStartX = event.clientX;
+    this.panelResizeStartWidth = this.reviewPanelWidth;
+    document.addEventListener('pointermove', this.panelResizeMoveHandler);
+    document.addEventListener('pointerup', this.panelResizeEndHandler, { once: true });
+  }
+
+  resizeReviewPanelWithKeyboard(event: KeyboardEvent) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowLeft' ? 24 : -24;
+    this.reviewPanelWidth = this.clampReviewPanelWidth(this.reviewPanelWidth + delta);
+  }
+
   closeOverlayPanel() {
     if (this.resolvedPanelMode === 'overlay') {
       this.panelVisible = false;
     }
-  }
-
-  openComment() {
-    this.commentOpen = true;
-  }
-
-  onCommentSubmitted(event: { targetType: string; targetId: string; commentText: string }) {
-    this.api.createComment(this.acpId, event).subscribe({
-      next: () => {
-        this.commentOpen = false;
-      },
-    });
   }
 
   downloadUnit() {
@@ -673,12 +1135,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
     window.open(this.api.appendAuthToken(url), '_blank');
   }
 
-  private findDependency(types: string[]): any | undefined {
-    const typeSet = new Set(types.map((t) => t.toLowerCase()));
-    return this.unit?.dependencies?.find((d) => typeSet.has((d.type || '').toLowerCase()));
-  }
-
-  private loadPlayerSource(dependencies: any[], token: number) {
+  private loadPlayerSource(dependencies: any[], token: number, signal?: AbortSignal) {
     const playerDep = dependencies.find((d: any) => {
       const type = String(d?.type || '').toLowerCase();
       return type === 'player';
@@ -689,7 +1146,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       return;
     }
 
-    fetch(playerDep.downloadUrl)
+    fetch(playerDep.downloadUrl, { signal })
       .then((res) => res.text())
       .then((html) => {
         if (token !== this.unitLoadToken) return;
@@ -701,7 +1158,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       });
   }
 
-  private loadDefinitionSource(dependencies: any[], token: number) {
+  private loadDefinitionSource(dependencies: any[], token: number, signal?: AbortSignal) {
     const definitionDep = dependencies.find((d: any) => {
       const type = String(d?.type || '').toLowerCase();
       return type === 'unit_definition' || type === 'unitdefinition' || type === 'definition';
@@ -712,7 +1169,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       return;
     }
 
-    fetch(definitionDep.downloadUrl)
+    fetch(definitionDep.downloadUrl, { signal })
       .then((res) => res.text())
       .then((definition) => {
         if (token !== this.unitLoadToken) return;
@@ -723,6 +1180,96 @@ export class UnitViewComponent implements OnInit, OnDestroy {
         if (token !== this.unitLoadToken) return;
         this.definitionContent = null;
       });
+  }
+
+  private loadMetadataSource(dependencies: any[], token: number) {
+    const metadataDep = dependencies.find(
+      (dependency: any) => String(dependency?.type || '').toLowerCase() === 'metadata',
+    );
+    if (!metadataDep?.fileId) return;
+
+    this.metadataLoading = true;
+    this.metadataRequest = this.api.getFilePreview(this.acpId, metadataDep.fileId).subscribe({
+      next: (preview) => {
+        if (token !== this.unitLoadToken) return;
+        const structuredData = preview.structuredData;
+        if (structuredData?.type !== 'vomd') {
+          this.metadataError = 'Die referenzierte Metadatendatei ist keine gültige VOMD-Datei.';
+          this.metadataLoading = false;
+          return;
+        }
+        this.unitMetadata = structuredData.unitProfiles || [];
+        this.metadataError = '';
+        this.metadataLoading = false;
+      },
+      error: () => {
+        if (token !== this.unitLoadToken) return;
+        this.metadataLoading = false;
+        this.metadataError = 'Aufgabenmetadaten konnten nicht geladen werden.';
+      },
+    });
+  }
+
+  private loadCodingSchemeSource(unit: UnitViewData, token: number, signal?: AbortSignal) {
+    if (unit.codingScheme) {
+      this.applyCodingScheme(unit.codingScheme, token);
+      return;
+    }
+
+    const codingDep = (unit.dependencies || []).find((dependency) => {
+      const type = String(dependency?.type || '').toLowerCase();
+      return type === 'coding_scheme' || type === 'codingscheme' || type === 'coding';
+    });
+    if (!codingDep?.downloadUrl) return;
+
+    this.codingSchemeLoading = true;
+    fetch(codingDep.downloadUrl, { signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      })
+      .then((content) => {
+        if (token !== this.unitLoadToken) return;
+        this.applyCodingScheme(content, token);
+      })
+      .catch(() => {
+        if (token !== this.unitLoadToken) return;
+        this.codingSchemeLoading = false;
+        this.codingSchemeError = 'Kodierung konnte nicht geladen werden.';
+      });
+  }
+
+  private applyCodingScheme(rawCodingScheme: unknown, token: number) {
+    if (token !== this.unitLoadToken) return;
+    try {
+      const codingScheme =
+        typeof rawCodingScheme === 'string' ? JSON.parse(rawCodingScheme) : rawCodingScheme;
+      const variableCodings = Array.isArray(codingScheme)
+        ? codingScheme
+        : Array.isArray((codingScheme as any)?.variableCodings)
+          ? (codingScheme as any).variableCodings
+          : [];
+      const codingSchemeAsText = CodingSchemeTextFactory.asText(variableCodings);
+      codingSchemeAsText.forEach((coding) => {
+        const rawVariable = variableCodings.find((variable: any) => variable.id === coding.id);
+        if (!rawVariable) return;
+        (coding as any).manualInstructionText = rawVariable.manualInstruction;
+        coding.codes.forEach((code) => {
+          const rawCode = rawVariable.codes?.find(
+            (candidate: any) =>
+              (candidate.id === null ? 'null' : candidate.id?.toString(10)) === code.id,
+          );
+          if (rawCode) (code as any).manualInstructionText = rawCode.manualInstruction;
+        });
+      });
+      this.codingSchemeAsText = codingSchemeAsText;
+      this.codingSchemeError = '';
+    } catch {
+      this.codingSchemeAsText = null;
+      this.codingSchemeError = 'Kodierung konnte nicht gelesen werden.';
+    } finally {
+      this.codingSchemeLoading = false;
+    }
   }
 
   private startPlayerIfReady() {
@@ -736,7 +1283,10 @@ export class UnitViewComponent implements OnInit, OnDestroy {
       unitState: { dataParts: {} },
       playerConfig: {
         stateReportPolicy: 'none',
-        pagingMode: this.printMode !== 'off' ? 'concat-scroll' : 'buttons',
+        pagingMode:
+          this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
+            ? 'concat-scroll'
+            : this.pagingMode,
         printMode: this.printMode,
         logPolicy: 'disabled',
         directDownloadUrl: GEOGEBRA_PLAYER_RESOURCE_BASE,
@@ -750,7 +1300,7 @@ export class UnitViewComponent implements OnInit, OnDestroy {
   }
 
   private applyPrintModeLayout() {
-    if (this.printMode === 'off') {
+    if (this.printMode === 'off' || this.reviewMode) {
       this.playerHeight = '100%';
       this.stopAutoResize();
       return;
@@ -769,6 +1319,34 @@ export class UnitViewComponent implements OnInit, OnDestroy {
 
   private onWindowResize() {
     this.isNarrowLayout = window.innerWidth <= 1100;
+    this.reviewPanelWidth = this.clampReviewPanelWidth(this.reviewPanelWidth);
+  }
+
+  private isAudioVideoCodingVariable(coding: CodingAsText): boolean {
+    const id = coding.id?.toLowerCase() || '';
+    const label = coding.label?.toLowerCase() || '';
+    return (
+      id.includes('audio') ||
+      id.includes('video') ||
+      label.includes('audio') ||
+      label.includes('video')
+    );
+  }
+
+  private isRelevantCodingVariable(coding: CodingAsText): boolean {
+    return Boolean(
+      coding.codes.length || coding.hasManualInstruction || (coding as any).manualInstructionText,
+    );
+  }
+
+  private clampReviewPanelWidth(width: number): number {
+    const maxWidth = Math.min(720, Math.max(320, window.innerWidth * 0.6));
+    return Math.round(Math.min(maxWidth, Math.max(320, width)));
+  }
+
+  private stopReviewPanelResize() {
+    document.removeEventListener('pointermove', this.panelResizeMoveHandler);
+    document.removeEventListener('pointerup', this.panelResizeEndHandler);
   }
 
   private startAutoResize() {

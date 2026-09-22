@@ -114,10 +114,10 @@
     ],
     "coverageThreshold": {
       "./src/acp/acp.service.ts": {
-        "statements": 92.69,
-        "branches": 81.65,
-        "functions": 97.87,
-        "lines": 93.13
+        "statements": 96.2,
+        "branches": 83.59,
+        "functions": 100,
+        "lines": 96.09
       },
       "./src/api/server-api-auth.guard.ts": {
         "statements": 100,
@@ -172,6 +172,12 @@
         "branches": 68.29,
         "functions": 94.54,
         "lines": 91.09
+      },
+      "./src/acp/acp-credentials.service.ts": {
+        "statements": 91.8,
+        "branches": 74,
+        "functions": 100,
+        "lines": 92.3
       }
     }
   }

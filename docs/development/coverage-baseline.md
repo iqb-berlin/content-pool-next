@@ -23,7 +23,8 @@ regression floors, not claims of sufficient correctness or aspirational targets.
 
 | Module | Statements | Branches | Functions | Lines |
 | --- | ---: | ---: | ---: | ---: |
-| `backend/src/acp/acp.service.ts` | 92.69% | 81.65% | 97.87% | 93.13% |
+| `backend/src/acp/acp.service.ts` | 96.2% | 83.59% | 100% | 96.09% |
+| `backend/src/acp/acp-credentials.service.ts` | 91.8% | 74% | 100% | 92.3% |
 | `backend/src/api/server-api-auth.guard.ts` | 100% | 93.33% | 100% | 100% |
 | `backend/src/api/server-api-auth.service.ts` | 93.63% | 77.27% | 100% | 93.33% |
 | `backend/src/auth/capabilities/acp-capabilities.service.ts` | 100% | 89.18% | 100% | 100% |
@@ -91,3 +92,15 @@ are not directly comparable.
   editing controls. The redundant raw-template substring tests are removed.
 
 Existing data-loss, permission, and database transaction tests remain in place.
+
+
+## Work package 5: ACP service split
+
+Credential import, hashing, and CRUD now live in `AcpCredentialsService`.
+The existing ACP service suite exercises the real injected credentials service,
+including transaction locks, duplicate handling, and capability preservation.
+Both resulting files have independent floors measured after the split. The
+credentials file's branch percentage reflects the moved credential branches;
+it does not represent lost tests. The remaining ACP service has higher floors,
+with additional tests for capability updates and missing assignments.
+The historical overall measurements above remain the work-package-4 baseline.

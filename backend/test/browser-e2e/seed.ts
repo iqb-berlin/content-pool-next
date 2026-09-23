@@ -1,5 +1,5 @@
 import { NestFactory } from "@nestjs/core";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { DataSource } from "typeorm";
 import * as bcrypt from "bcryptjs";
@@ -256,6 +256,11 @@ async function seed(): Promise<void> {
                 {
                   id: "u1",
                   name: "Regression Aufgabe 1",
+                  dependencies: [
+                    { id: "u1.voud", type: "UNIT_DEFINITION" },
+                    { id: "u1.vomd", type: "METADATA" },
+                    { id: "iqb-player-aspect-2.11.6.html", type: "PLAYER" },
+                  ],
                   items: [
                     {
                       id: "i1",
@@ -274,6 +279,11 @@ async function seed(): Promise<void> {
                 {
                   id: "u2",
                   name: "Regression Aufgabe 2",
+                  dependencies: [
+                    { id: "u2.voud", type: "UNIT_DEFINITION" },
+                    { id: "u2.vomd", type: "METADATA" },
+                    { id: "iqb-player-aspect-2.11.6.html", type: "PLAYER" },
+                  ],
                   items: [
                     { id: "i5", name: "Unit-Wechsel", sourceVariable: "V5" },
                   ],
@@ -801,6 +811,127 @@ async function seed(): Promise<void> {
           fileSize: Buffer.byteLength(file.content),
         }),
       );
+    }
+
+    // Stateful journeys use separate ACPs. The three publishing fixtures are
+    // also split by browser so a failed run cannot leak draft state into the
+    // next Playwright project.
+    const isolatedProjects = [
+      { id: "10000000-0000-4000-8000-000000000301", name: "files" },
+      { id: "10000000-0000-4000-8000-000000000302", name: "snapshots" },
+      { id: "10000000-0000-4000-8000-000000000303", name: "review" },
+      { id: "10000000-0000-4000-8000-000000000304", name: "explorer-chromium" },
+      { id: "10000000-0000-4000-8000-000000000305", name: "explorer-firefox" },
+      { id: "10000000-0000-4000-8000-000000000306", name: "explorer-webkit" },
+    ];
+    for (const project of isolatedProjects) {
+      const acpIndex = structuredClone(regressionAcp.acpIndex);
+      acpIndex.packageId = `browser-e2e-${project.name}`;
+      if (project.name === "review") {
+        const part = (acpIndex.assessmentParts as Record<string, unknown>[])[0];
+        part.instruments = [
+          {
+            id: "review-instrument",
+            testcenterBooklet: [
+              {
+                id: "review-e2e",
+                name: "Review E2E",
+                definitionId: "review.xml",
+              },
+            ],
+          },
+        ];
+      }
+      const isolatedAcp = await dataSource.getRepository(Acp).save(
+        dataSource.getRepository(Acp).create({
+          id: project.id,
+          packageId: `browser-e2e-${project.name}`,
+          name: `Browser E2E ${project.name}`,
+          acpIndex,
+          itemProperties: structuredClone(regressionItemProperties),
+          settings: {},
+        }),
+      );
+      await dataSource.getRepository(AcpUserRole).save(
+        dataSource.getRepository(AcpUserRole).create({
+          userId: manager.id,
+          acpId: isolatedAcp.id,
+          role: AcpRole.ACP_MANAGER,
+          capabilities: [
+            "review:participate",
+            "review:manage",
+            "item-explorer:view",
+            "item-explorer:edit",
+          ],
+        }),
+      );
+      if (project.name === "review") {
+        await dataSource.getRepository(AcpUserRole).save(
+          dataSource.getRepository(AcpUserRole).create({
+            userId: VIEWER_ID,
+            acpId: isolatedAcp.id,
+            role: AcpRole.READ_ONLY,
+            capabilities: ["review:participate"],
+          }),
+        );
+      }
+      await dataSource.getRepository(AcpAccessConfig).save(
+        dataSource.getRepository(AcpAccessConfig).create({
+          acpId: isolatedAcp.id,
+          accessModel: AccessModel.REGISTERED,
+          allowRegistered: true,
+          featureConfig: {
+            enableItemList: true,
+            enableItemClick: true,
+            enableUnitView: true,
+          },
+        }),
+      );
+      await dataSource.getRepository(AcpItemExplorerState).save(
+        dataSource.getRepository(AcpItemExplorerState).create({
+          acpId: isolatedAcp.id,
+          publishedState: structuredClone(regressionSharedState),
+          draftState: structuredClone(regressionSharedState),
+          status: "CLEAN",
+          version: 1,
+          publishedVersion: 1,
+        }),
+      );
+      const projectDirectory = join(fixtureDirectory, project.name);
+      await mkdir(projectDirectory, { recursive: true });
+      const sourceFiles = await dataSource.getRepository(AcpFile).find({
+        where: { acpId: regressionAcp.id },
+      });
+      for (const sourceFile of sourceFiles) {
+        const content = await readFile(sourceFile.filePath);
+        const filePath = join(projectDirectory, sourceFile.originalName);
+        await writeFile(filePath, content);
+        await dataSource.getRepository(AcpFile).save(
+          dataSource.getRepository(AcpFile).create({
+            acpId: isolatedAcp.id,
+            filePath,
+            originalName: sourceFile.originalName,
+            fileType: sourceFile.fileType,
+            fileSize: content.length,
+          }),
+        );
+      }
+      if (project.name === "review") {
+        const content = `<?xml version="1.0" encoding="UTF-8"?>
+<Booklet><Metadata><Id>review-e2e</Id><Label>Review E2E</Label></Metadata>
+<Units><Unit id="u1" label="Regression Aufgabe 1"/></Units></Booklet>`;
+        const filePath = join(projectDirectory, "review.xml");
+        await writeFile(filePath, content, "utf8");
+        await dataSource.getRepository(AcpFile).save(
+          dataSource.getRepository(AcpFile).create({
+            acpId: isolatedAcp.id,
+            filePath,
+            originalName: "review.xml",
+            fileType: "BOOKLET_XML",
+            fileSize: Buffer.byteLength(content),
+          }),
+        );
+      }
     }
 
     process.stdout.write(

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { resolveDropListTarget, PlayerDropList } from './voud-drop-lists';
 
 export interface TransformedVariablePage {
   variable_page_always_visible: string[];
@@ -24,6 +25,8 @@ export interface PlayerResponseTarget {
   optionCount?: number;
   label?: string;
   options?: Array<{ position: number; label: string }>;
+  valueOptions?: Array<{ value: string; label: string }>;
+  dropLists?: PlayerDropList[];
 }
 
 interface IdentifierBearingNode {
@@ -36,11 +39,14 @@ interface IdentifierBearingNode {
   prompt?: unknown;
   title?: unknown;
   name?: unknown;
+  rowLabel?: unknown;
+  columnCount?: unknown;
 }
 
 interface IdentifierNodeMatch {
   pageIndex: number;
   node: IdentifierBearingNode;
+  parent?: IdentifierBearingNode;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -212,10 +218,24 @@ export class VoudService {
       const identifiers = this.getNodeIdentifiers(match.node);
       const responseId = String(match.node.alias || match.node.id || '').trim();
       if (!responseId) return undefined;
-      const rawOptions = Array.isArray(match.node.options) ? match.node.options : undefined;
+      const elementType = String(match.node.type || '')
+        .trim()
+        .toLowerCase();
+      const isLikertRow = elementType === 'likert-row';
+      const optionSource = isLikertRow ? match.parent : match.node;
+      const hasValidOptions =
+        Array.isArray(optionSource?.options) &&
+        (!isLikertRow ||
+          (String(match.parent?.type || '').toLowerCase() === 'likert' &&
+            (match.node.columnCount === undefined ||
+              match.node.columnCount === optionSource.options.length)));
+      // Keep malformed rows identifiable so callers fall back to rules instead of
+      // treating an unvalidated raw codebook value as a player-independent answer.
+      const rawOptions = hasValidOptions ? (optionSource!.options as unknown[]) : undefined;
       const optionCount = rawOptions?.length;
       const label = this.extractDisplayText(
-        match.node.label ||
+        (isLikertRow ? match.node.rowLabel : undefined) ||
+          match.node.label ||
           match.node.prompt ||
           match.node.text ||
           match.node.title ||
@@ -225,6 +245,10 @@ export class VoudService {
         position: index + 1,
         label: this.extractDisplayText(option) || `Option ${index + 1}`,
       }));
+      const dropListTarget =
+        elementType === 'drop-list'
+          ? resolveDropListTarget(pages, match.node, (value) => this.extractDisplayText(value))
+          : undefined;
 
       return {
         responseId,
@@ -233,6 +257,7 @@ export class VoudService {
         ...(optionCount !== undefined ? { optionCount } : {}),
         ...(label ? { label } : {}),
         ...(options ? { options } : {}),
+        ...(dropListTarget || {}),
       };
     } catch (e) {
       console.error('Error resolving player response target from VOUD:', e);
@@ -260,14 +285,16 @@ export class VoudService {
     const findBy = (key: 'alias' | 'id'): IdentifierNodeMatch | undefined => {
       for (let pageIndex = 0; pageIndex < pages.length; pageIndex += 1) {
         let matchingNode: IdentifierBearingNode | undefined;
-        this.visitNodes(pages[pageIndex], (node) => {
+        let parent: IdentifierBearingNode | undefined;
+        this.visitNodes(pages[pageIndex], (node, nodeParent) => {
           if (matchingNode) return;
           const value = String(node[key] || '').trim();
           if (value && value.toLowerCase() === normalizedTarget) {
             matchingNode = node;
+            parent = nodeParent;
           }
         });
-        if (matchingNode) return { pageIndex, node: matchingNode };
+        if (matchingNode) return { pageIndex, node: matchingNode, parent };
       }
       return undefined;
     };
@@ -331,25 +358,26 @@ export class VoudService {
 
   private visitNodes(
     node: unknown,
-    visitor: (node: IdentifierBearingNode) => void,
+    visitor: (node: IdentifierBearingNode, parent?: IdentifierBearingNode) => void,
     noParent: string[] = ['visibilityRules'],
+    parent?: IdentifierBearingNode,
   ): void {
     if (typeof node !== 'object' || node === null) {
       return;
     }
 
     if (!Array.isArray(node)) {
-      visitor(node as IdentifierBearingNode);
+      visitor(node as IdentifierBearingNode, parent);
     }
 
     if (Array.isArray(node)) {
-      node.forEach((item) => this.visitNodes(item, visitor, noParent));
+      node.forEach((item) => this.visitNodes(item, visitor, noParent, parent));
       return;
     }
 
     Object.entries(node).forEach(([key, value]) => {
       if (!noParent.includes(key)) {
-        this.visitNodes(value, visitor, noParent);
+        this.visitNodes(value, visitor, noParent, node as IdentifierBearingNode);
       }
     });
   }

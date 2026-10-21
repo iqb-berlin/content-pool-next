@@ -287,7 +287,11 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
   private getPlayerStartDataParts(solution: PlayerSolutionPrefill | null): Record<string, any> {
     if (solution) {
-      return mergePlayerSolutionIntoDataParts(this.currentResponseData, solution.responses);
+      return mergePlayerSolutionIntoDataParts(
+        this.currentResponseData,
+        solution.responses,
+        solution.status === 'available' ? solution.dropLists : undefined,
+      );
     }
     if (
       this.currentResponseData &&

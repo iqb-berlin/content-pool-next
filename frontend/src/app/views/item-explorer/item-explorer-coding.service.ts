@@ -625,11 +625,19 @@ export class ItemExplorerCodingService {
       .toLowerCase();
     let valueLabel = String(value);
     if (
-      ['radio', 'radio-group-images', 'dropdown', 'toggle-button'].includes(elementType) &&
+      ['radio', 'radio-group-images', 'dropdown', 'toggle-button', 'likert-row'].includes(
+        elementType,
+      ) &&
       typeof value === 'number'
     ) {
       valueLabel =
         target?.options?.find((option) => option.position === value)?.label || `Option ${value}`;
+    } else if (elementType === 'drop-list' && Array.isArray(value)) {
+      valueLabel = value
+        .map(
+          (token) => target?.valueOptions?.find((option) => option.value === token)?.label || token,
+        )
+        .join(', ');
     } else if (typeof value === 'boolean') {
       valueLabel = value ? 'ausgewählt' : 'nicht ausgewählt';
     }

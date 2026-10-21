@@ -136,4 +136,55 @@ describe('ItemExplorerPlayerService', () => {
     expect(dom.postMessage).not.toHaveBeenCalled();
     player.ngOnDestroy();
   });
+  it('balances a drag-and-drop preview without overwriting the saved response state', () => {
+    vi.useFakeTimers();
+    const { player, dom, request } = createPlayer();
+    const saved = {
+      elementCodes: JSON.stringify([
+        { id: 'POOL', value: ['X'], status: 'VALUE_CHANGED' },
+        { id: 'SLOT', value: ['Y'], status: 'VALUE_CHANGED' },
+      ]),
+      stateVariableCodes: 'saved context',
+    };
+    player.applyResponseState(saved);
+    player.start({
+      ...request,
+      solution: {
+        status: 'available',
+        message: 'Solution',
+        responses: [{ id: 'SLOT', value: ['X'], status: 'VALUE_CHANGED' }],
+        dropLists: [
+          {
+            id: 'pool',
+            responseId: 'POOL',
+            connectedTo: ['slot'],
+            onlyOneItem: false,
+            copyOnDrop: false,
+            items: [
+              { value: 'X', label: 'First' },
+              { value: 'Y', label: 'Second' },
+            ],
+          },
+          {
+            id: 'slot',
+            responseId: 'SLOT',
+            connectedTo: ['pool'],
+            onlyOneItem: true,
+            copyOnDrop: false,
+            items: [],
+          },
+        ],
+      },
+    });
+    expect(
+      JSON.parse(dom.postMessage.mock.calls[0][0].unitState.dataParts.elementCodes),
+    ).toMatchObject([
+      { id: 'POOL', value: ['Y'] },
+      { id: 'SLOT', value: ['X'] },
+    ]);
+    expect(player.currentResponseData).toBe(saved);
+    player.start(request);
+    expect(dom.postMessage.mock.calls[1][0].unitState.dataParts).toEqual(saved);
+    player.ngOnDestroy();
+  });
 });

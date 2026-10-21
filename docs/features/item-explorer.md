@@ -649,3 +649,25 @@ Create a snapshot before a large explorer publishing step if the changes are imp
 - [ACP Workflows](acp-workflows.md)
 - [Data Model](../architecture/data-model.md)
 - [Backend Architecture](../architecture/backend.md)
+
+## Coding Information and Sample Solutions
+
+The coding dialog prefers configured manual instructions and otherwise derives an answer only
+from explicit, unambiguous `FULL_CREDIT` rules. The coding engine validates the generated response
+values before the dialog or player labels them as a correct solution. Unsupported or ambiguous
+cases retain the relevant codebook rules.
+
+Likert rows use their containing table's columns, with one-based response values and readable row
+and column labels. Missing or inconsistent column definitions cannot produce a sample solution.
+Direct `SUM_SCORE` combinations can combine supported checkbox, Likert-row, and drop-list answers
+when every contribution and the resulting aggregate are validated as full credit.
+
+Drag-and-drop supports initially empty single-object targets connected to palettes of uniquely
+identified objects. The player receives arrays of object aliases. The preview removes moved
+objects from their palettes and other targets, returns displaced objects, preserves other valid
+placements, and retains palette objects only when copy-on-drop explicitly allows copies. This
+reconciliation affects only the temporary sample-solution state; hiding the solution restores the
+saved answers. Unrelated response groups and state-variable data remain separate.
+
+Sorting tasks, multi-object target answers, duplicate identifiers, invalid connections, and
+conflicting allocations continue to show codebook information instead of an invented solution.

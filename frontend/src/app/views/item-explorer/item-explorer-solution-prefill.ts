@@ -1,10 +1,16 @@
 import type { PlayerResponseTarget } from '../../core/services/voud.service';
+import type { PlayerDropList } from '../../core/services/voud-drop-lists';
+import {
+  mergeDropListSolutionResponses,
+  validateDropListAssignments,
+} from './item-explorer-drop-list-solution';
 import {
   CodingVariableLike,
   deriveSolutionAnalysis,
   getValidatedFullCreditCodeId,
   normalizeSolutionIdentifier,
   SolutionScalar,
+  SolutionResponseValue,
 } from './item-explorer-solution-analysis';
 
 export type { CodingVariableLike } from './item-explorer-solution-analysis';
@@ -12,7 +18,7 @@ export type { CodingVariableLike } from './item-explorer-solution-analysis';
 export interface PlayerSolutionResponse {
   id: string;
   status: 'VALUE_CHANGED';
-  value: SolutionScalar;
+  value: SolutionResponseValue;
 }
 
 export type PlayerSolutionPrefill =
@@ -20,6 +26,7 @@ export type PlayerSolutionPrefill =
       status: 'available';
       responses: PlayerSolutionResponse[];
       message: string;
+      dropLists?: PlayerDropList[];
     }
   | {
       status: 'unavailable';
@@ -40,7 +47,7 @@ const unavailable = (message: string): PlayerSolutionPrefill => ({
 const coercePlayerValue = (
   value: SolutionScalar,
   target: PlayerResponseTarget,
-): SolutionScalar | null => {
+): SolutionResponseValue | null => {
   switch (target.elementType.trim().toLowerCase()) {
     case 'checkbox': {
       if (typeof value === 'boolean') return value;
@@ -52,6 +59,7 @@ const coercePlayerValue = (
     case 'radio':
     case 'radio-group-images':
     case 'dropdown':
+    case 'likert-row':
     case 'toggle-button': {
       const normalized = String(value).trim().replace(',', '.');
       const numericValue = Number(normalized);
@@ -67,6 +75,12 @@ const coercePlayerValue = (
     case 'text-field-simple':
     case 'text-area':
       return typeof value === 'string' ? value : String(value);
+    case 'drop-list':
+      return typeof value === 'string' &&
+        target.dropLists?.length &&
+        target.valueOptions?.some((option) => option.value === value)
+        ? [value]
+        : null;
     default:
       return null;
   }
@@ -98,10 +112,13 @@ export function derivePlayerSolutionPrefill(
     .toUpperCase();
   if (
     selectedSourceType === 'SUM_SCORE' &&
-    resolved.some(({ target }) => target?.elementType.trim().toLowerCase() !== 'checkbox')
+    resolved.some(
+      ({ target }) =>
+        !['checkbox', 'likert-row', 'drop-list'].includes(target!.elementType.trim().toLowerCase()),
+    )
   ) {
     return unavailable(
-      'Die zusammengesetzte Lösung ist nicht vollständig auf Kontrollkästchen abbildbar.',
+      'Die zusammengesetzte Lösung ist nicht vollständig auf unterstützte Antwortfelder abbildbar.',
     );
   }
 
@@ -117,6 +134,20 @@ export function derivePlayerSolutionPrefill(
     responses.push({ id: responseId, status: 'VALUE_CHANGED', value: value! });
   }
 
+  const dropLists = Array.from(
+    new Map(
+      resolved.flatMap(({ target }) =>
+        (target?.dropLists || []).map((list) => [list.id, list] as const),
+      ),
+    ).values(),
+  );
+  const dropResponses = responses.filter((response) =>
+    dropLists.some((list) => list.responseId.toLowerCase() === response.id.toLowerCase()),
+  );
+  if (dropLists.length && !validateDropListAssignments(dropLists, dropResponses)) {
+    return unavailable('Die Drag-and-drop-Zuordnung enthält widersprüchliche Objektbelegungen.');
+  }
+
   if (
     getValidatedFullCreditCodeId(
       selectedVariable,
@@ -129,12 +160,18 @@ export function derivePlayerSolutionPrefill(
     );
   }
 
-  return { status: 'available', responses, message: analysis.message };
+  return {
+    status: 'available',
+    responses,
+    message: analysis.message,
+    ...(dropLists.length ? { dropLists } : {}),
+  };
 }
 
 export function mergePlayerSolutionIntoDataParts(
   dataParts: Record<string, any> | null | undefined,
   solutionResponses: PlayerSolutionResponse[],
+  dropLists: PlayerDropList[] = [],
 ): Record<string, any> {
   const merged = { ...(dataParts || {}) };
   let existingResponses: Array<{ id?: unknown; [key: string]: unknown }> = [];
@@ -147,13 +184,24 @@ export function mergePlayerSolutionIntoDataParts(
   }
 
   const solutionIds = new Set(
-    solutionResponses.map((response) => normalizeSolutionIdentifier(response.id)),
+    [
+      ...solutionResponses.map((response) => response.id),
+      ...dropLists.map((list) => list.responseId),
+    ].map(normalizeSolutionIdentifier),
+  );
+  const dropListResponses = mergeDropListSolutionResponses(
+    existingResponses,
+    solutionResponses,
+    dropLists,
   );
   merged['elementCodes'] = JSON.stringify([
     ...existingResponses.filter(
       (response) => !solutionIds.has(normalizeSolutionIdentifier(response?.id)),
     ),
-    ...solutionResponses,
+    ...solutionResponses.filter(
+      (response) => !dropLists.some((list) => list.responseId === response.id),
+    ),
+    ...dropListResponses,
   ]);
   return merged;
 }

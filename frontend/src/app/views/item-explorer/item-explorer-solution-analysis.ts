@@ -2,6 +2,7 @@ import { CodingSchemeFactory } from '@iqb/responses';
 import type { VariableCodingData } from '@iqbspecs/coding-scheme';
 
 export type SolutionScalar = string | number | boolean;
+export type SolutionResponseValue = SolutionScalar | string[];
 
 export interface CodingRuleLike {
   method?: string;
@@ -109,8 +110,8 @@ const collectBaseVariables = (
     .trim()
     .toUpperCase();
   if (sourceType === 'BASE') return [variable];
-  // Only the Studio convention in which SUM_SCORE combines direct checkbox variables
-  // is safely invertible. Other derivations stay visible as rules.
+  // Only direct BASE contributions with independently validated full-credit values
+  // can be inverted. Other derivations stay visible as rules.
   if (sourceType !== 'SUM_SCORE') return null;
   const sources = Array.isArray(variable?.deriveSources) ? variable.deriveSources : [];
   if (!sources.length) return null;
@@ -238,7 +239,7 @@ const hasFullCreditCode = (variable: CodingVariableLike): boolean =>
 export function getValidatedFullCreditCodeId(
   selectedVariable: CodingVariableLike,
   variables: CodingVariableLike[],
-  baseResponses: Array<{ variable: CodingVariableLike; value: SolutionScalar }>,
+  baseResponses: Array<{ variable: CodingVariableLike; value: SolutionResponseValue }>,
 ): string | null {
   try {
     const coded = CodingSchemeFactory.code(

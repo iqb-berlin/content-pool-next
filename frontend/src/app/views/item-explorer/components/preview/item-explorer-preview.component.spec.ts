@@ -1,7 +1,22 @@
-import { ElementRef } from '@angular/core';
+import { Component, ElementRef, inject, NO_ERRORS_SCHEMA } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter, RouterLink } from '@angular/router';
+import { ItemExplorerFacade } from '../../item-explorer.facade';
 import { describe, expect, it, vi } from 'vitest';
 import { ItemExplorerPreviewComponent } from './item-explorer-preview.component';
 import template from './item-explorer-preview.component.html?raw';
+
+@Component({
+  standalone: true,
+  imports: [CommonModule, FormsModule, RouterLink],
+  schemas: [NO_ERRORS_SCHEMA],
+  template,
+})
+class PreviewAccessTemplateHarness {
+  readonly vm = inject(ItemExplorerFacade).previewViewModel;
+}
 
 function createPreview() {
   const feature = {
@@ -16,6 +31,43 @@ function createPreview() {
 }
 
 describe('ItemExplorerPreviewComponent', () => {
+  it.each([false, true])(
+    'offers the complete unit only with effective access (%s)',
+    async (canOpenFullUnit) => {
+      const item = { itemId: 'item', unitId: 'unit' };
+      const feature = {
+        registerPlayerDom: vi.fn(),
+        unregisterPlayerDom: vi.fn(),
+        playerFrameChanged: vi.fn(),
+        previewViewModel: {
+          acpId: 'acp',
+          selectedItem: item,
+          selectedIndex: 0,
+          filteredItems: [item],
+          isItemExcluded: () => false,
+          previewUnavailableReason: 'unsupported condition',
+          previewUnavailableMessage: 'Keine Vorschau verfügbar.',
+          canOpenFullUnit,
+        },
+      };
+      TestBed.configureTestingModule({
+        imports: [PreviewAccessTemplateHarness],
+        providers: [provideRouter([]), { provide: ItemExplorerFacade, useValue: feature }],
+      });
+      const fixture = TestBed.createComponent(PreviewAccessTemplateHarness);
+      try {
+        fixture.detectChanges();
+        await fixture.whenStable();
+        const link = fixture.nativeElement.querySelector('.empty-state a');
+        expect(Boolean(link)).toBe(canOpenFullUnit);
+        if (link) expect(link.getAttribute('href')).toBe('/view/acp/unit/unit');
+      } finally {
+        fixture.destroy();
+        TestBed.resetTestingModule();
+      }
+    },
+  );
+
   it('exposes metadata and exclusion state with the matching semantics', () => {
     expect(template.match(/class="btn btn-outline btn-sm btn-state"/g)).toHaveLength(4);
     expect(template).toContain('[attr.aria-expanded]="vm.showMetadataDrawer"');

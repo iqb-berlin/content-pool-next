@@ -1,4 +1,9 @@
 import { Injectable, Inject, OnDestroy } from '@angular/core';
+import { Subject } from 'rxjs';
+import {
+  readPreviewDefinition,
+  resolvePreviewVisibility,
+} from '../../core/services/preview-visibility';
 import { VoudService } from '../../core/services/voud.service';
 import { GEOGEBRA_PLAYER_RESOURCE_BASE } from '../../core/utils/geogebra-player-html.util';
 import { ItemExplorerPlayerDomPort } from './item-explorer.dom-ports';
@@ -17,7 +22,15 @@ export interface ItemExplorerPlayerStartRequest {
 }
 export type ItemExplorerPlayerStartResult =
   | { kind: 'waiting' | 'started' }
-  | { kind: 'unavailable'; reason: 'missing-target' | 'unresolved-target' };
+  | { kind: 'unavailable'; reason: 'missing-target' | 'unresolved-target' }
+  | { kind: 'unavailable'; reason: 'unresolved-visibility'; message: string };
+
+interface PreviewResponseSession {
+  id: string | null;
+  origin: 'answers' | 'visibility' | 'solution';
+  initialDataParts: Record<string, any>;
+  dataParts: Record<string, any> | null;
+}
 
 /** Owns the frame, protocol session and all delayed player work. */
 @Injectable()
@@ -63,17 +76,79 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
   playerFrameReady = false;
 
-  activePlayerSessionId: string | null = null;
+  readonly sessionChanges$ = new Subject<void>();
+
+  private responseSession: PreviewResponseSession = {
+    id: null,
+    origin: 'answers',
+    initialDataParts: {},
+    dataParts: null,
+  };
+
+  get activePlayerSessionId(): string | null {
+    return this.responseSession.id;
+  }
+
+  get responseSessionToken(): object {
+    return this.responseSession;
+  }
+
+  get syntheticPreviewState(): boolean {
+    return this.responseSession.origin === 'visibility';
+  }
+
+  get isAnswerSession(): boolean {
+    return this.responseSession.origin === 'answers';
+  }
 
   private startSessionCounter = 0;
 
-  currentResponseData: Record<string, any> | null = null;
+  get currentResponseData(): Record<string, any> | null {
+    return this.responseSession.dataParts;
+  }
+
+  private savedResponseData: Record<string, any> | null = null;
 
   hasResponseState = false;
 
   isFallbackState = false;
 
-  restoreResponseDataAfterSolution = false;
+  private responseBeforeSolution: {
+    origin: 'answers' | 'visibility';
+    dataParts: Record<string, any> | null;
+  } | null = null;
+
+  private previewDefinitionSource: string | null | undefined;
+  private previewDefinitionCache: ReturnType<typeof readPreviewDefinition> = null;
+
+  get previewDefinition() {
+    if (this.previewDefinitionSource !== this.definitionContent) {
+      this.previewDefinitionSource = this.definitionContent;
+      this.previewDefinitionCache = readPreviewDefinition(this.definitionContent || '');
+    }
+    return this.previewDefinitionCache;
+  }
+
+  resolveTargetLocation(target: string) {
+    return this.definitionContent
+      ? this.voudService.resolvePlayerTargetLocation(this.definitionContent, target)
+      : undefined;
+  }
+
+  captureAnswersForSolution(): void {
+    if (this.responseSession.origin === 'solution') return;
+    // Preserve edits in prepared contexts too, without making that context saveable.
+    // A restarted frame may not have reported yet; retain its initial snapshot.
+    this.responseBeforeSolution = {
+      origin: this.responseSession.origin,
+      dataParts:
+        this.currentResponseData ||
+        this.responseBeforeSolution?.dataParts ||
+        (Object.keys(this.responseSession.initialDataParts).length
+          ? this.responseSession.initialDataParts
+          : this.savedResponseData),
+    };
+  }
 
   applyAssets(assets: { unit: any; srcDoc: any; definition: string | null }): void {
     if (this.destroyed) return;
@@ -84,16 +159,33 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
   applyResponseState(data: Record<string, any> | null, isFallback = false): void {
     if (this.destroyed) return;
-    this.currentResponseData = data && Object.keys(data).length ? data : null;
-    this.hasResponseState = this.currentResponseData !== null;
+    this.savedResponseData = data && Object.keys(data).length ? data : null;
+    this.responseBeforeSolution = null;
+    this.responseSession.dataParts = null;
+    this.responseSession.initialDataParts = {};
+    this.hasResponseState = this.savedResponseData !== null;
     this.isFallbackState = this.hasResponseState && isFallback;
+  }
+
+  markResponseStateSaved(data: Record<string, any>): void {
+    this.savedResponseData = data;
+    this.hasResponseState = true;
+    this.isFallbackState = false;
+  }
+
+  clearResponseState(): void {
+    this.savedResponseData = null;
+    this.hasResponseState = false;
+    this.isFallbackState = false;
+    this.responseSession.dataParts = null;
+    this.responseSession.initialDataParts = {};
+    this.responseBeforeSolution = null;
   }
 
   beginSelection(resetPages = false): void {
     if (this.destroyed) return;
     this.invalidateSession();
-    this.applyResponseState(null);
-    this.restoreResponseDataAfterSolution = false;
+    this.clearResponseState();
     if (resetPages) {
       this.currentPage = 1;
       this.totalPages = 1;
@@ -101,7 +193,8 @@ export class ItemExplorerPlayerService implements OnDestroy {
   }
 
   private invalidateSession(): void {
-    this.activePlayerSessionId = null;
+    const session = this.responseSession;
+    this.beginResponseSession(null, session.origin, session.dataParts || session.initialDataParts);
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
     this.playerDom?.stopAutoResize();
@@ -168,9 +261,13 @@ export class ItemExplorerPlayerService implements OnDestroy {
           this.totalPages = playerMessage['playerState'].validPages.length || this.totalPages;
         }
         // Capture response data from unitState.dataParts
-        if (playerMessage['unitState']?.dataParts && !context.solutionActive) {
-          this.currentResponseData = playerMessage['unitState'].dataParts;
-          this.restoreResponseDataAfterSolution = false;
+        if (
+          playerMessage['unitState']?.dataParts &&
+          this.responseSession.origin !== 'solution' &&
+          !context.solutionActive
+        ) {
+          this.responseSession.dataParts = playerMessage['unitState'].dataParts;
+          this.responseBeforeSolution = null;
         }
         break;
 
@@ -226,29 +323,52 @@ export class ItemExplorerPlayerService implements OnDestroy {
     if (!previewTarget) {
       return { kind: 'unavailable', reason: 'missing-target' };
     }
-    const targetLocation = this.voudService.resolvePlayerTargetLocation(
-      this.definitionContent,
-      previewTarget,
-    );
+    const targetLocation = this.resolveTargetLocation(previewTarget);
     if (!targetLocation) {
       return { kind: 'unavailable', reason: 'unresolved-target' };
     }
-    const startPage = targetLocation.scrollPageIndex;
+    let startPage = targetLocation.scrollPageIndex;
+    let origin: PreviewResponseSession['origin'] = this.responseBeforeSolution?.origin || 'answers';
+    let dataParts = this.getPlayerStartDataParts();
+    if (this.itemExplorerConditionalVisibilityEnabled && !this.hasResponseState) {
+      const resolved = resolvePreviewVisibility(
+        this.definitionContent,
+        previewTarget,
+        request.item.previewStart,
+      );
+      if (resolved.kind === 'unavailable') {
+        this.invalidateSession();
+        return { kind: 'unavailable', reason: 'unresolved-visibility', message: resolved.reason };
+      }
+      startPage = resolved.page;
+      if (resolved.codes.length) origin = 'visibility';
+      if (resolved.codes.length) {
+        dataParts = { ...dataParts, stateVariableCodes: JSON.stringify(resolved.codes) };
+      }
+    }
+    if (request.solution) {
+      dataParts = mergePlayerSolutionIntoDataParts(
+        dataParts,
+        request.solution.responses,
+        request.solution.status === 'available' ? request.solution.dropLists : undefined,
+      );
+      origin = 'solution';
+    }
     const sessionId = `explorer-${request.rowKey || 'none'}-${this.startSessionCounter + 1}`;
     const usesPagedNavigation = this.pagingMode !== 'view-all' && this.pagingMode !== 'print-ids';
     const playerDefinition = this.getPlayerDefinitionContent();
 
     this.startSessionCounter += 1;
-    this.activePlayerSessionId = sessionId;
+    this.beginResponseSession(sessionId, origin, dataParts);
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
       unitDefinition: playerDefinition,
       unitState: {
-        dataParts: this.getPlayerStartDataParts(request.solution),
+        dataParts,
       },
       playerConfig: {
-        stateReportPolicy: 'none',
+        stateReportPolicy: 'eager',
         pagingMode:
           this.pagingMode === 'view-all' || this.pagingMode === 'print-ids'
             ? 'concat-scroll'
@@ -285,21 +405,23 @@ export class ItemExplorerPlayerService implements OnDestroy {
     return { kind: 'started' };
   }
 
-  private getPlayerStartDataParts(solution: PlayerSolutionPrefill | null): Record<string, any> {
-    if (solution) {
-      return mergePlayerSolutionIntoDataParts(
-        this.currentResponseData,
-        solution.responses,
-        solution.status === 'available' ? solution.dropLists : undefined,
-      );
-    }
-    if (
-      this.currentResponseData &&
-      (this.hasResponseState || this.restoreResponseDataAfterSolution)
-    ) {
-      return this.currentResponseData;
-    }
-    return {};
+  private beginResponseSession(
+    id: string | null,
+    origin: PreviewResponseSession['origin'],
+    initialDataParts: Record<string, any> = {},
+  ): void {
+    this.responseSession = { id, origin, initialDataParts, dataParts: null };
+    this.sessionChanges$.next();
+  }
+
+  private getPlayerStartDataParts(): Record<string, any> {
+    const answers = this.isAnswerSession
+      ? this.currentResponseData || this.responseSession.initialDataParts
+      : null;
+    if (this.responseBeforeSolution?.dataParts) return this.responseBeforeSolution.dataParts;
+    if (!this.hasResponseState) return {};
+    if (answers && Object.keys(answers).length) return answers;
+    return this.savedResponseData || {};
   }
 
   private getPlayerDefinitionContent(): string {
@@ -457,9 +579,8 @@ export class ItemExplorerPlayerService implements OnDestroy {
     this.unit = null;
     this.definitionContent = null;
     this.playerFrameReady = false;
-    this.activePlayerSessionId = null;
     this.playerFrameRefreshPending = false;
-    this.restoreResponseDataAfterSolution = false;
+    this.clearResponseState();
   }
 
   ngOnDestroy(): void {
@@ -467,5 +588,6 @@ export class ItemExplorerPlayerService implements OnDestroy {
     this.destroyed = true;
     this.reset();
     this.playerDom = undefined;
+    this.sessionChanges$.complete();
   }
 }

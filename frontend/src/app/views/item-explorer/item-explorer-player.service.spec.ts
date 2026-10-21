@@ -63,7 +63,8 @@ describe('ItemExplorerPlayerService', () => {
     );
     player.handlePlayerMessage(message, { ready: false, solutionActive: false });
     player.handlePlayerMessage(message, { ready: true, solutionActive: true });
-    expect(player.currentResponseData).toEqual({ answer: 'saved' });
+    expect(player.currentResponseData).toBeNull();
+    expect((player as any).savedResponseData).toEqual({ answer: 'saved' });
     player.handlePlayerMessage(message, { ready: true, solutionActive: false });
     expect(player.currentResponseData).toEqual({ answer: 'new' });
     expect(player.currentPage).toBe(3);
@@ -82,6 +83,62 @@ describe('ItemExplorerPlayerService', () => {
     expect(player.activePlayerSessionId).toBeNull();
     expect(player.currentPage).toBe(1);
     expect(player.definitionContent).toBe('{}');
+    player.ngOnDestroy();
+  });
+
+  it('preserves edited saved answers across a frame restart and rejects the old session', () => {
+    vi.useFakeTimers();
+    const { player, dom, request } = createPlayer();
+    player.applyResponseState({ answer: 'saved' });
+    player.start(request);
+    const sessionId = player.activePlayerSessionId;
+    player.handlePlayerMessage(
+      {
+        type: 'vopStateChangedNotification',
+        sessionId,
+        unitState: { dataParts: { answer: 'edited' } },
+      },
+      { ready: true, solutionActive: false },
+    );
+    player.onPagingModeChange();
+    player.handlePlayerMessage(
+      {
+        type: 'vopStateChangedNotification',
+        sessionId,
+        unitState: { dataParts: { answer: 'stale' } },
+      },
+      { ready: true, solutionActive: false },
+    );
+    vi.advanceTimersByTime(50);
+    player.onPlayerLoaded();
+    player.start(request);
+    expect(dom.postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual({ answer: 'edited' });
+    expect(player.currentResponseData).toBeNull();
+    player.ngOnDestroy();
+  });
+
+  it('keeps synthetic data unsaveable while a replacement frame loads', () => {
+    vi.useFakeTimers();
+    const { player, request } = createPlayer();
+    player.itemExplorerConditionalVisibilityEnabled = true;
+    player.definitionContent = JSON.stringify({
+      stateVariables: [{ id: 'context', alias: 'Context', value: '0' }],
+      pages: [
+        {
+          sections: [
+            {
+              visibilityRules: [{ id: 'context', operator: '=', value: '2' }],
+              elements: [{ alias: 'v' }],
+            },
+          ],
+        },
+      ],
+    });
+    player.start(request);
+    player.onPagingModeChange();
+    expect(player.syntheticPreviewState).toBe(true);
+    expect(player.isAnswerSession).toBe(false);
+    expect(player.activePlayerSessionId).toBeNull();
     player.ngOnDestroy();
   });
 
@@ -182,9 +239,32 @@ describe('ItemExplorerPlayerService', () => {
       { id: 'POOL', value: ['Y'] },
       { id: 'SLOT', value: ['X'] },
     ]);
-    expect(player.currentResponseData).toBe(saved);
+    expect(player.currentResponseData).toBeNull();
+    expect(player.isAnswerSession).toBe(false);
+    expect((player as any).savedResponseData).toBe(saved);
     player.start(request);
     expect(dom.postMessage.mock.calls[1][0].unitState.dataParts).toEqual(saved);
+    const reloaded = { ...saved, stateVariableCodes: 'new saved context' };
+    player.applyResponseState(reloaded);
+    player.start(request);
+    expect(dom.postMessage.mock.calls[2][0].unitState.dataParts).toEqual(reloaded);
+    player.ngOnDestroy();
+  });
+
+  it('updates the available visibility configuration when the task definition changes', () => {
+    const { player } = createPlayer();
+    player.definitionContent = JSON.stringify({
+      pages: [],
+      stateVariables: [{ id: 'context-a', alias: 'Context A', value: '1' }],
+    });
+    expect(player.previewDefinition?.stateVariables?.map((v) => v.id)).toEqual(['context-a']);
+    player.definitionContent = JSON.stringify({
+      pages: [],
+      stateVariables: [{ id: 'context-b', alias: 'Context B', value: '2' }],
+    });
+    expect(player.previewDefinition?.stateVariables?.map((v) => v.id)).toEqual(['context-b']);
+    player.reset();
+    expect(player.previewDefinition).toBeNull();
     player.ngOnDestroy();
   });
 });

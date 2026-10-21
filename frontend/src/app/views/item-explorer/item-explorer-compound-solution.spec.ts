@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { ItemExplorerPlayerService } from './item-explorer-player.service';
 import { CodingSchemeFactory } from '@iqb/responses';
 import type { VariableCodingData } from '@iqbspecs/coding-scheme';
 import { VoudService } from '../../core/services/voud.service';
@@ -178,5 +179,117 @@ describe('compound solutions from structured player definitions', () => {
     const { service } = serviceFor('X', 'X');
     service.refreshCorrectSolutionPrefill(item, drag(true));
     expect(service.correctSolutionPrefill.status).toBe('available');
+  });
+});
+
+describe('compound solutions with conditional preview sessions', () => {
+  it.each(['likert', 'drop-list'])('preserves visibility and answer isolation for %s', (type) => {
+    vi.useFakeTimers();
+    const voud = new VoudService();
+    const player = new ItemExplorerPlayerService(voud);
+    const postMessage = vi.fn();
+    player.registerPlayerDom({
+      hasFrame: () => true,
+      postMessage,
+      focus: () => true,
+      setPrintLabelOverrides: () => {},
+      startAutoResize: () => {},
+      stopAutoResize: () => {},
+    });
+    try {
+      const { service } = serviceFor(type === 'likert' ? '1' : 'X', type === 'likert' ? '2' : 'Y');
+      const definition = JSON.parse(type === 'likert' ? likert() : drag());
+      definition.stateVariables = [{ id: 'context', alias: 'CONTEXT', value: '0' }];
+      definition.pages[0] = {
+        sections: [
+          {
+            visibilityRules: [{ id: 'context', operator: '=', value: '2' }],
+            elements: definition.pages[0].elements,
+          },
+        ],
+      };
+      const content = JSON.stringify(definition);
+      service.refreshCorrectSolutionPrefill(item, content);
+      const solution = service.correctSolutionPrefill;
+      expect(solution.status).toBe('available');
+      player.applyAssets({ unit: { id: 'UNIT' }, srcDoc: '', definition: content });
+      player.itemExplorerConditionalVisibilityEnabled = true;
+      player.onPlayerLoaded();
+      const request = { item, rowKey: 'row', target: 'A', printLabels: {}, solution: null };
+      expect(player.start({ ...request, solution })).toEqual({ kind: 'started' });
+      const start = postMessage.mock.calls.at(-1)![0];
+      expect(start.unitDefinition).toBe(content);
+      expect(JSON.parse(start.unitState.dataParts.stateVariableCodes)).toEqual([
+        { id: 'CONTEXT', status: 'VALUE_CHANGED', value: '2' },
+      ]);
+      const responses = JSON.parse(start.unitState.dataParts.elementCodes);
+      expect(responses.find((response: { id: string }) => response.id === 'A').value).toEqual(
+        type === 'likert' ? 1 : ['X'],
+      );
+      if (type === 'drop-list') {
+        expect(responses.find((response: { id: string }) => response.id === 'POOL').value).toEqual(
+          [],
+        );
+      }
+      player.handlePlayerMessage(
+        {
+          type: 'vopStateChangedNotification',
+          sessionId: start.sessionId,
+          unitState: { dataParts: start.unitState.dataParts },
+        },
+        { ready: true, solutionActive: false },
+      );
+      expect(player.isAnswerSession).toBe(false);
+      expect(player.currentResponseData).toBeNull();
+      expect(player.hasResponseState).toBe(false);
+
+      player.start(request);
+      const restored = postMessage.mock.calls.at(-1)![0];
+      expect(restored.unitState.dataParts.elementCodes).toBeUndefined();
+      expect(restored.unitState.dataParts.stateVariableCodes).toBe(
+        start.unitState.dataParts.stateVariableCodes,
+      );
+      expect(player.syntheticPreviewState).toBe(true);
+      player.handlePlayerMessage(
+        {
+          type: 'vopStateChangedNotification',
+          sessionId: start.sessionId,
+          unitState: { dataParts: start.unitState.dataParts },
+        },
+        { ready: true, solutionActive: false },
+      );
+      expect(player.currentResponseData).toBeNull();
+
+      const ownAnswers = {
+        stateVariableCodes: restored.unitState.dataParts.stateVariableCodes,
+        elementCodes: JSON.stringify([
+          { id: 'A', value: type === 'likert' ? 2 : ['Y'], status: 'VALUE_CHANGED' },
+        ]),
+      };
+      player.handlePlayerMessage(
+        {
+          type: 'vopStateChangedNotification',
+          sessionId: restored.sessionId,
+          unitState: { dataParts: ownAnswers },
+        },
+        { ready: true, solutionActive: false },
+      );
+      player.captureAnswersForSolution();
+      player.start({ ...request, solution });
+      player.start(request);
+      expect(postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual(ownAnswers);
+      expect(player.syntheticPreviewState).toBe(true);
+      expect(player.isAnswerSession).toBe(false);
+      expect(player.hasResponseState).toBe(false);
+
+      const reloaded = { ...ownAnswers, elementCodes: JSON.stringify([]) };
+      player.applyResponseState(reloaded);
+      player.start(request);
+      expect(postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual(reloaded);
+      expect(player.isAnswerSession).toBe(true);
+    } finally {
+      player.ngOnDestroy();
+      vi.useRealTimers();
+    }
   });
 });

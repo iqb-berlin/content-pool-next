@@ -1,5 +1,6 @@
 import { Component, ElementRef, HostListener, Inject, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ItemExplorerFacade } from '../../item-explorer.facade';
 import { ItemExplorerPreviewViewModel } from '../../item-explorer.view-models';
@@ -9,7 +10,7 @@ import { ItemCommentThreadComponent } from '../../../comment-thread/item-comment
 @Component({
   selector: 'app-item-explorer-preview',
   standalone: true,
-  imports: [CommonModule, FormsModule, ItemCommentThreadComponent],
+  imports: [CommonModule, FormsModule, RouterLink, ItemCommentThreadComponent],
   templateUrl: './item-explorer-preview.component.html',
   styleUrl: './item-explorer-preview.component.css',
 })

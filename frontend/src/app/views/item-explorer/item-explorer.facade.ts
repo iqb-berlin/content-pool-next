@@ -1,3 +1,4 @@
+import type { PreviewStart } from '../../core/services/preview-visibility';
 import {
   ItemExplorerImportService,
   ItemExplorerImportResult,
@@ -80,6 +81,8 @@ export class ItemExplorerFacade implements OnDestroy {
   private tableDom?: ItemExplorerTableDomPort;
 
   acpId = '';
+  canOpenFullUnit = false;
+  private unitViewAccessRequest?: Subscription;
   get columns() {
     return this.table.columns;
   }
@@ -176,6 +179,63 @@ export class ItemExplorerFacade implements OnDestroy {
   get playerFocusHighlightEnabled() {
     return this.player.playerFocusHighlightEnabled;
   }
+  get syntheticPreviewState(): boolean {
+    return this.player.syntheticPreviewState;
+  }
+
+  get previewStateVariables() {
+    return (this.player.previewDefinition?.stateVariables || []).map((v) => ({
+      id: v.id!,
+      label: v.alias || v.id!,
+      value: this.selectedItem?.previewStart?.values?.[v.id!] ?? '',
+    }));
+  }
+
+  get previewStartPage() {
+    return this.selectedItem?.previewStart?.page ?? '';
+  }
+
+  get previewStartPages() {
+    return (this.player.previewDefinition?.pages || [])
+      .filter(
+        (p) => p.alwaysVisible !== true && p.alwaysVisible !== 'true' && p.alwaysVisible !== 1,
+      )
+      .map((_, i) => i);
+  }
+
+  get showPreviewStartPageSelector(): boolean {
+    if (!this.definitionContent || !this.selectedItem) return false;
+    const target = this.getEffectivePlayerTarget(this.selectedItem);
+    if (!target) return false;
+    return this.player.resolveTargetLocation(target)?.isAlwaysVisiblePage === true;
+  }
+
+  setPreviewStartPage(value: string) {
+    this.persistPreviewStart({
+      values: this.selectedItem?.previewStart?.values || {},
+      ...(value === '' ? {} : { page: Number(value) }),
+    });
+  }
+
+  setPreviewStateValue(id: string, value: string) {
+    const values = { ...this.selectedItem?.previewStart?.values };
+    if (value === '') delete values[id];
+    else values[id] = value;
+    this.persistPreviewStart({ ...this.selectedItem?.previewStart, values });
+  }
+
+  private persistPreviewStart(start: PreviewStart) {
+    if (!this.canEditExplorer || !this.selectedItem) return;
+    this.selectedItem.previewStart = start;
+    this.queueItemPropertyPatch(
+      this.selectedItem,
+      'PREVIEW_START_CHANGED',
+      { previewStart: start },
+      true,
+    );
+    this.updatePreviewTargetSelection(this.getStoredPreviewTargetId(this.selectedItem));
+  }
+
   itemExplorerPlayerTargetInfoEnabled = false;
   get itemCommentsEnabled() {
     return this.comments.itemCommentsEnabled;
@@ -702,7 +762,9 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   get canSaveCurrentResponseState(): boolean {
-    return !this.previewUpdateInProgress && !this.isCorrectSolutionActive;
+    return (
+      !this.previewUpdateInProgress && !this.isCorrectSolutionActive && this.player.isAnswerSession
+    );
   }
 
   get loadingUnit(): boolean {
@@ -842,6 +904,12 @@ export class ItemExplorerFacade implements OnDestroy {
     this.comments.countsChanged$.pipe(takeUntil(this.destroy$)).subscribe(() => {
       this.ensureTableColumnDefaults();
       this.applyFilter(false);
+    });
+    this.player.sessionChanges$.pipe(takeUntil(this.destroy$)).subscribe(() => {
+      this.confirmDialogState = 'idle';
+      this.confirmDialogError = '';
+      this.showSaveConfirmDialog = false;
+      this.showDeleteConfirmDialog = false;
     });
     this.previewCoordinator.results$
       .pipe(takeUntil(this.destroy$))
@@ -1810,7 +1878,6 @@ export class ItemExplorerFacade implements OnDestroy {
       responses: [],
       message: 'Die Player-Daten für die Musterlösung werden geladen.',
     };
-    this.player.restoreResponseDataAfterSolution = false;
   }
 
   private startItemListSlowTimer(): void {
@@ -1969,6 +2036,12 @@ export class ItemExplorerFacade implements OnDestroy {
   // --- Response State ---
   saveCurrentResponseState() {
     this.rememberFocusBeforeOverlay();
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      this.showSaveConfirmDialog = true;
+      return;
+    }
     if (this.isCorrectSolutionActive) {
       this.confirmDialogError =
         'Die Musterlösung ist nur eine Vorschau und kann nicht als Player-Eingabe gespeichert werden. Blenden Sie sie zuerst aus.';
@@ -1992,10 +2065,17 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   confirmSaveResponseState() {
+    if (this.syntheticPreviewState) {
+      this.confirmDialogError =
+        'Ein vorbereiteter Vorschauzustand kann nicht als Antwortzustand gespeichert werden.';
+      return;
+    }
     if (
       !this.selectedItem ||
       !this.currentResponseData ||
       this.isCorrectSolutionActive ||
+      !this.player.isAnswerSession ||
+      !this.player.activePlayerSessionId ||
       this.previewCoordinator.status.kind !== 'ready'
     ) {
       this.confirmDialogError =
@@ -2004,23 +2084,36 @@ export class ItemExplorerFacade implements OnDestroy {
     }
 
     this.confirmDialogState = 'saving';
+    const responseData = this.currentResponseData;
+    const responseItem = this.selectedItem;
+    const responseSession = this.player.responseSessionToken;
 
     this.api
       .saveResponseState(
         this.acpId,
         this.selectedItem.itemId,
         this.selectedItem.unitId,
-        this.currentResponseData,
+        responseData,
         this.selectedItem.rowKey,
       )
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          this.player.applyResponseState(this.currentResponseData);
+          if (
+            this.selectedItem !== responseItem ||
+            this.player.responseSessionToken !== responseSession
+          )
+            return;
+          this.player.markResponseStateSaved(responseData);
           this.confirmDialogState = 'idle';
           this.closeSaveConfirmDialog();
         },
         error: (err) => {
+          if (
+            this.selectedItem !== responseItem ||
+            this.player.responseSessionToken !== responseSession
+          )
+            return;
           console.error('Error saving response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Speichern des Zustands.';
@@ -2039,6 +2132,8 @@ export class ItemExplorerFacade implements OnDestroy {
     if (!this.selectedItem) return;
 
     this.confirmDialogState = 'deleting';
+    const responseItem = this.selectedItem;
+    const responseSession = this.player.responseSessionToken;
 
     this.api
       .deleteResponseState(
@@ -2050,11 +2145,21 @@ export class ItemExplorerFacade implements OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          this.player.applyResponseState(null);
+          if (
+            this.selectedItem !== responseItem ||
+            this.player.responseSessionToken !== responseSession
+          )
+            return;
+          this.player.clearResponseState();
           this.confirmDialogState = 'idle';
           this.closeDeleteConfirmDialog();
         },
         error: (err) => {
+          if (
+            this.selectedItem !== responseItem ||
+            this.player.responseSessionToken !== responseSession
+          )
+            return;
           console.error('Error deleting response state:', err);
           this.confirmDialogState = 'idle';
           this.confirmDialogError = 'Fehler beim Löschen des Zustands.';
@@ -2089,7 +2194,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const wasActive = this.isCorrectSolutionActive;
     this.correctSolutionRequested = !this.correctSolutionRequested;
     const isActive = this.isCorrectSolutionActive;
-    this.player.restoreResponseDataAfterSolution = wasActive && !isActive;
+    if (!wasActive && isActive) this.player.captureAnswersForSolution();
 
     if (wasActive === isActive || this.previewCoordinator.status.kind !== 'ready') return;
     this.startPlayerIfReady();
@@ -2194,10 +2299,14 @@ export class ItemExplorerFacade implements OnDestroy {
     });
     if (result.kind === 'waiting') return;
     if (result.kind === 'unavailable') {
+      this.previewUserFacingMessage =
+        result.reason === 'unresolved-visibility' ? result.message : '';
       this.previewCoordinator.markUnavailable(
-        result.reason === 'missing-target'
-          ? this.getMissingPreviewTargetMessage()
-          : `Das Player-Ziel "${target}" kommt in der Aufgabendefinition nicht vor.`,
+        result.reason === 'unresolved-visibility'
+          ? result.message
+          : result.reason === 'missing-target'
+            ? this.getMissingPreviewTargetMessage()
+            : `Das Player-Ziel "${target}" kommt in der Aufgabendefinition nicht vor.`,
       );
     }
     this.diagnostics?.finish(this.playerReadyTiming, {
@@ -2609,6 +2718,19 @@ export class ItemExplorerFacade implements OnDestroy {
 
   // --- Metadata Column Management ---
   checkUserRole() {
+    this.canOpenFullUnit = false;
+    this.unitViewAccessRequest?.unsubscribe();
+    this.unitViewAccessRequest = this.api
+      .getCapabilities(this.acpId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (access) => {
+          this.canOpenFullUnit = access.canViewUnit === true;
+        },
+        error: () => {
+          this.canOpenFullUnit = false;
+        },
+      });
     this.isAcpManager = this.authService.hasAcpRole(this.acpId, 'ACP_MANAGER');
     this.hasExplorerEditPermission = this.latestExplorerState?.canEdit ?? false;
     this.hasExplorerPublishPermission = this.hasExplorerEditPermission;
@@ -2971,6 +3093,13 @@ export class ItemExplorerFacade implements OnDestroy {
     return Number.isInteger(responseVersion) && responseVersion === expectedVersion;
   }
 
+  private getPreviewStartFingerprint(item: ReadonlyExplorerItem | null): string {
+    return JSON.stringify([
+      item?.previewStart?.page ?? null,
+      Object.entries(item?.previewStart?.values || {}).sort(([a], [b]) => a.localeCompare(b)),
+    ]);
+  }
+
   private applySharedExplorerEnvelope(envelope: ItemExplorerStateEnvelope, markSaved = false) {
     this.draft.acceptEnvelope(envelope, markSaved);
     this.hasExplorerEditPermission = envelope.canEdit;
@@ -3001,6 +3130,7 @@ export class ItemExplorerFacade implements OnDestroy {
       this.draft.setPatchSuppressed(false);
     }
 
+    const previousPreviewStart = this.getPreviewStartFingerprint(this.selectedItem);
     const previousPreviewTarget = this.selectedItem
       ? this.getEffectivePlayerTarget(this.selectedItem)
       : '';
@@ -3009,14 +3139,14 @@ export class ItemExplorerFacade implements OnDestroy {
       this.syncPreviewTargetResolution(this.selectedItem);
       const nextPreviewTarget = this.getEffectivePlayerTarget(this.selectedItem);
       if (
-        previousPreviewTarget !== nextPreviewTarget &&
-        this.playerFrameReady &&
+        (previousPreviewTarget !== nextPreviewTarget ||
+          previousPreviewStart !== this.getPreviewStartFingerprint(this.selectedItem)) &&
         this.definitionContent &&
         this.unit
       ) {
         const previewStatus = this.previewCoordinator.status.kind;
         if (previewStatus === 'ready') {
-          this.startPlayerIfReady();
+          if (this.playerFrameReady) this.startPlayerIfReady();
         } else if (previewStatus !== 'loading-unit' && previewStatus !== 'loading-response') {
           this.reloadPreviewAfterTargetChange(this.selectedItem);
         }
@@ -3050,6 +3180,8 @@ export class ItemExplorerFacade implements OnDestroy {
           delete item.empiricalDifficulty;
         }
       }
+
+      item.previewStart = itemProps?.['previewStart'] as PreviewStart | undefined;
 
       const previewTargetId = String(itemProps?.[this.previewTargetItemPropertyKey] || '').trim();
       if (previewTargetId) {
@@ -3435,7 +3567,6 @@ export class ItemExplorerFacade implements OnDestroy {
       responses: [],
       message: 'Für dieses Item wurde noch keine Musterlösung ermittelt.',
     };
-    this.player.restoreResponseDataAfterSolution = false;
     this.coding.selectedPreviewTargetId = '';
     this.coding.customPreviewTargetDraft = '';
     this.syncPreviewTargetResolution(null);

@@ -35,7 +35,10 @@ import {
 } from "../database/entities";
 import { AcpAccessGuard } from "../auth/guards/acp-access.guard";
 import { AcpCapabilitiesService } from "../auth/capabilities/acp-capabilities.service";
-import { hasCapability } from "../auth/capabilities/acp-capabilities";
+import {
+  hasCapability,
+  isExplorerAvailable,
+} from "../auth/capabilities/acp-capabilities";
 import { UuidParam } from "../common/uuid-param";
 import { ReviewManifestService } from "./review-manifest.service";
 import { ReviewReadinessService } from "./review-readiness.service";
@@ -93,13 +96,16 @@ export class ReviewController {
   ) {
     const grants = await this.capabilities.resolve(req);
     const config = await this.configs.findOne({ where: { acpId } });
+    const explorerAvailable = isExplorerAvailable(req, config?.featureConfig);
     return {
       capabilities: grants,
       canViewExplorer:
-        hasCapability(grants, "item-explorer:view") ||
-        (config?.accessModel === "PUBLIC" &&
-          config.featureConfig?.enableItemList !== false),
-      canEditExplorer: hasCapability(grants, "item-explorer:edit"),
+        explorerAvailable &&
+        (hasCapability(grants, "item-explorer:view") ||
+          (config?.accessModel === "PUBLIC" &&
+            config.featureConfig?.enableItemList !== false)),
+      canEditExplorer:
+        explorerAvailable && hasCapability(grants, "item-explorer:edit"),
       canReview:
         grants.includes("review:manage") ||
         (config?.featureConfig?.enableReview === true &&

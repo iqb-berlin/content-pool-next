@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { UnitViewData } from '../../core/models/api.models';
 import { UnitViewComponent } from './unit-view.component';
@@ -17,6 +18,8 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
     enabled = false;
     initiallyOpen = false;
     hideToggle = false;
+    drafts: unknown;
+    sessionToken = 0;
   }
   Component({
     selector: 'app-item-comment-thread',
@@ -31,6 +34,8 @@ vi.mock('../comment-thread/item-comment-thread.component', async () => {
       'enabled',
       'initiallyOpen',
       'hideToggle',
+      'drafts',
+      'sessionToken',
     ],
   })(ItemCommentThreadStub);
   return { ItemCommentThreadComponent: ItemCommentThreadStub };
@@ -70,7 +75,13 @@ describe('UnitViewComponent', () => {
         dependencies: [],
         codingScheme: {
           variableCodings: [
-            { id: 'VAR_2', label: 'Variable 2', sourceType: 'BASE', deriveSources: [] },
+            {
+              id: 'VAR_2',
+              label: 'Variable 2',
+              sourceType: 'BASE',
+              deriveSources: [],
+              codes: [{ id: 1, score: 1, label: 'richtig', ruleSets: [] }],
+            },
           ],
         },
       },
@@ -104,9 +115,35 @@ describe('UnitViewComponent', () => {
       text: async () =>
         JSON.stringify({
           variableCodings: [
-            { id: 'VAR_2', label: 'Variable 2', sourceType: 'BASE', deriveSources: [] },
-            { id: 'VAR_1', label: 'Variable 1', sourceType: 'BASE', deriveSources: [] },
-            { id: '_audio01', label: 'Audio 1', sourceType: 'BASE', deriveSources: [] },
+            {
+              id: 'VAR_2',
+              label: 'Variable 2',
+              sourceType: 'BASE',
+              deriveSources: [],
+              manualInstruction: '<p>Variable prüfen.</p>',
+              codes: [],
+            },
+            {
+              id: 'VAR_1',
+              label: 'Variable 1',
+              sourceType: 'BASE',
+              deriveSources: [],
+              codes: [{ id: 1, score: 1, label: 'richtig', ruleSets: [] }],
+            },
+            {
+              id: 'text_1',
+              label: 'Textinhalt',
+              sourceType: 'BASE',
+              deriveSources: [],
+              codes: [],
+            },
+            {
+              id: '_audio01',
+              label: 'Audio 1',
+              sourceType: 'BASE',
+              deriveSources: [],
+              codes: [{ id: 1, score: 1, label: 'vorhanden', ruleSets: [] }],
+            },
           ],
         }),
     });
@@ -126,6 +163,7 @@ describe('UnitViewComponent', () => {
           },
         },
         { provide: ApiService, useValue: api },
+        { provide: AuthService, useValue: { currentUser$: of(null), getToken: () => null } },
       ],
     }).compileComponents();
 
@@ -216,6 +254,22 @@ describe('UnitViewComponent', () => {
       ).map((heading) => heading.textContent?.trim()),
     ).toEqual(['Variable 2', 'Variable 1']);
     expect(fixture.nativeElement.textContent).not.toContain('Audio 1');
+    expect(fixture.nativeElement.textContent).not.toContain('Textinhalt');
+    const showAllCodingVariables = fixture.nativeElement.querySelector(
+      '.coding-visibility-toggle input',
+    ) as HTMLInputElement;
+    expect(showAllCodingVariables).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.coding-visibility-toggle').textContent).toContain(
+      '1 weitere',
+    );
+    showAllCodingVariables.click();
+    fixture.detectChanges();
+    expect(
+      Array.from(
+        fixture.nativeElement.querySelectorAll('.coding-variable h4') as NodeListOf<HTMLElement>,
+      ).map((heading) => heading.textContent?.trim()),
+    ).toEqual(['Variable 2', 'Variable 1', 'Textinhalt']);
+    expect(fixture.nativeElement.textContent).not.toContain('Audio 1');
     const codingFilter = fixture.nativeElement.querySelector(
       'input[aria-label="Kodiervariablen filtern"]',
     ) as HTMLInputElement;
@@ -268,6 +322,7 @@ describe('UnitViewComponent', () => {
     fixture.detectChanges();
 
     component.codingFilterText = 'VAR_1';
+    component.showAllCodingVariables = true;
     fixture.componentRef.setInput('unitId', 'u2');
     fixture.detectChanges();
     unitResponses['u2'].next(units['u2']);
@@ -278,6 +333,7 @@ describe('UnitViewComponent', () => {
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
     expect(component.codingFilterText).toBe('');
+    expect(component.showAllCodingVariables).toBe(false);
     expect(api.getViewUnit).toHaveBeenLastCalledWith('acp-1', 'u2');
     expect(fixture.nativeElement.querySelector('h1').textContent).toContain('Aufgabe 2');
     (fixture.nativeElement.querySelectorAll('.panel-tabs .tab')[0] as HTMLButtonElement).click();
@@ -287,5 +343,14 @@ describe('UnitViewComponent', () => {
         'unitId'
       ],
     ).toBe('u2');
+
+    // Returning to ordinary booklet navigation must restore the ACP's hidden
+    // metadata and coding settings even after review data has been loaded.
+    fixture.componentRef.setInput('reviewMode', false);
+    fixture.detectChanges();
+    expect(component.showMetadata).toBe(false);
+    expect(component.showCodingScheme).toBe(false);
+    expect(fixture.nativeElement.querySelector('.meta-dl')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.coding-variable')).toBeNull();
   });
 });

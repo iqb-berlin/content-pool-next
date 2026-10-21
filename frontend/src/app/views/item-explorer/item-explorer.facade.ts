@@ -3934,11 +3934,32 @@ export class ItemExplorerFacade implements OnDestroy {
       );
 
     if (analysis.status === 'exact' && !preferredManualInstruction) {
+      const visibleAnswers = analysis.answers.filter((answer) =>
+        this.isCodingVariableVisible(answer.variable, variables),
+      );
+      const answers = visibleAnswers.map((answer) => this.toCodingInformationAnswer(answer));
+      if (!answers.length || answers.some((answer) => answer === null)) {
+        this.codingInformation = {
+          status: ruleGroups.length ? 'rules' : 'unavailable',
+          title: ruleGroups.length
+            ? 'Kodierinformation aus dem Codebook'
+            : 'Kodierinformation ausgeblendet',
+          message: answers.length
+            ? this.correctSolutionPrefill.message
+            : 'Die Antwortvariablen sind durch die Anzeigeeinstellungen ausgeblendet.',
+          answers: [],
+          ruleGroups,
+        };
+        return;
+      }
       this.codingInformation = {
         status: 'exact',
         title: 'Richtige Antwort',
-        message: analysis.message,
-        answers: analysis.answers.map((answer) => this.toCodingInformationAnswer(answer)),
+        message:
+          visibleAnswers.length === analysis.answers.length
+            ? analysis.message
+            : 'Die sichtbaren Teilantworten werden angezeigt. Weitere Antwortvariablen sind durch die Anzeigeeinstellungen ausgeblendet.',
+        answers: answers.filter((answer): answer is CodingInformationAnswer => answer !== null),
         ruleGroups,
       };
       return;
@@ -4031,18 +4052,20 @@ export class ItemExplorerFacade implements OnDestroy {
     return undefined;
   }
 
-  private toCodingInformationAnswer(answer: DerivedSolutionAnswer): CodingInformationAnswer {
+  private toCodingInformationAnswer(answer: DerivedSolutionAnswer): CodingInformationAnswer | null {
     const target = this.resolvePlayerResponseTarget(answer.variable);
     const responseId = String(
       target?.responseId || answer.variable.alias || answer.variable.id || '',
     ).trim();
-    const playerValue =
+    const playerResponse =
       this.correctSolutionPrefill.status === 'available'
         ? this.correctSolutionPrefill.responses.find(
             (response) => response.id.toLowerCase() === responseId.toLowerCase(),
-          )?.value
+          )
         : undefined;
-    const value = playerValue ?? answer.value;
+    // Known player targets must use the same validated value as the player preview.
+    if (target && !playerResponse) return null;
+    const value = playerResponse?.value ?? answer.value;
     const elementType = String(target?.elementType || '')
       .trim()
       .toLowerCase();
@@ -4053,12 +4076,8 @@ export class ItemExplorerFacade implements OnDestroy {
     ) {
       valueLabel =
         target?.options?.find((option) => option.position === value)?.label || `Option ${value}`;
-    } else if (elementType === 'checkbox' || typeof value === 'boolean') {
-      const selected =
-        typeof value === 'boolean'
-          ? value
-          : ['true', '1'].includes(String(value).trim().toLowerCase());
-      valueLabel = selected ? 'ausgewählt' : 'nicht ausgewählt';
+    } else if (typeof value === 'boolean') {
+      valueLabel = value ? 'ausgewählt' : 'nicht ausgewählt';
     }
 
     const rawLabel = String((answer.variable as any)?.label || '').trim();
@@ -4069,6 +4088,17 @@ export class ItemExplorerFacade implements OnDestroy {
     };
   }
 
+  private isCodingVariableVisible(
+    variable: CodingVariableLike,
+    variables: CodingVariableLike[],
+  ): boolean {
+    const index = variables.indexOf(variable);
+    const coding = index >= 0 ? this.currentCodingSchemeAsText?.[index] : undefined;
+    return Boolean(
+      coding && (this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding)),
+    );
+  }
+
   private hasPreferredManualInstruction(
     selectedVariable: CodingVariableLike,
     selectedCodeId: string,
@@ -4076,13 +4106,8 @@ export class ItemExplorerFacade implements OnDestroy {
     variables: CodingVariableLike[],
   ): boolean {
     const hasManualCode = (variable: CodingVariableLike, codeIds: string[]): boolean => {
-      const index = variables.indexOf(variable);
-      const coding = index >= 0 ? this.currentCodingSchemeAsText?.[index] : undefined;
-      const isVisible = Boolean(
-        coding && (this.showAudioVideoCodingVariables || !this.isAudioVideoCodingVariable(coding)),
-      );
       return (
-        isVisible &&
+        this.isCodingVariableVisible(variable, variables) &&
         (Array.isArray(variable.codes) ? variable.codes : []).some(
           (code) =>
             codeIds.includes(String(code.id)) &&
@@ -4130,6 +4155,7 @@ export class ItemExplorerFacade implements OnDestroy {
         rawVariable.manualInstruction,
       );
       coding.codes.forEach((code) => {
+        code.ruleSetDescriptions ??= [];
         const rawCode = rawVariable.codes?.find(
           (candidate: any) =>
             String(candidate?.id === null ? 'null' : candidate?.id) === String(code.id),

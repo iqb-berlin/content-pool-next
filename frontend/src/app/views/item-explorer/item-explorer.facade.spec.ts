@@ -4436,6 +4436,168 @@ describe('ItemExplorerFacade', () => {
     });
   });
 
+  describe('coding information regression coverage', () => {
+    const residual = { id: 0, type: 'RESIDUAL', score: 0, ruleSets: [] };
+    const itemFor = (variableId: string) =>
+      ({
+        itemId: 'ITEM_1',
+        uuid: 'uuid-1',
+        rowKey: 'row-1',
+        unitId: 'UNIT_1',
+        unitLabel: 'Unit 1',
+        variableId,
+        metadata: {},
+      }) as any;
+
+    const configureCoding = (component: ItemExplorerFacade, variables: any[]) => {
+      component.selectedItem = itemFor(variables[0].id);
+      component.currentCodingScheme = { variableCodings: variables };
+      component.currentCodingSchemeAsText = (component as any).createCodingSchemeAsText(variables);
+    };
+
+    it('loads the preview and manual instruction when optional ruleSets are absent', () => {
+      const previewLoader = {
+        load: vi.fn(() => of({ unit: null, playerHtml: null, definition: null })),
+        clear: vi.fn(),
+      };
+      const component = createFacade({
+        previewLoader,
+        api: { getResponseStateWithFallback: () => of(null) },
+      });
+      const variables = [
+        {
+          id: 'A1',
+          sourceType: 'BASE',
+          codeModel: 'MANUAL_ONLY',
+          codes: [
+            { id: 1, type: 'FULL_CREDIT', manualInstruction: '<p>Antwort fachlich prüfen.</p>' },
+          ],
+        },
+      ];
+      (component as any).codingSchemeCache = { UNIT_1: { variableCodings: variables } };
+      const item = itemFor('A1');
+      component.filteredItems = [item];
+
+      try {
+        expect(() => component.selectItem(item, 0)).not.toThrow();
+        expect(previewLoader.load).toHaveBeenCalledOnce();
+        expect(component.codingInformation.title).toBe('Manuelle Kodieranweisung');
+        const code = component.codingInformation.ruleGroups[0].codes[0];
+        expect(code).toMatchObject({
+          ruleSetDescriptions: [],
+          manualInstructionText: '<p>Antwort fachlich prüfen.</p>',
+        });
+        expect(component.shouldShowAutomaticCodingRules(code)).toBe(false);
+      } finally {
+        component.ngOnDestroy();
+      }
+    });
+
+    it.each([
+      { elementType: 'radio', method: 'NUMERIC_MATCH', parameter: '5' },
+      { elementType: 'dropdown', method: 'MATCH', parameter: '5' },
+      { elementType: 'radio-group-images', method: 'NUMERIC_MATCH', parameter: '0' },
+      { elementType: 'toggle-button', method: 'NUMERIC_MATCH', parameter: '1.5' },
+      { elementType: 'checkbox', method: 'NUMERIC_MATCH', parameter: '2' },
+      { elementType: 'checkbox', method: 'MATCH', parameter: 'unbekannt' },
+      { elementType: 'checkbox', method: 'MATCH', parameter: '1' },
+    ])(
+      'shows rules for an unrepresentable $elementType answer $parameter',
+      ({ elementType, method, parameter }) => {
+        const voud = new VoudService();
+        const component = createFacade({
+          resolvePlayerResponseTarget: (definition, id) =>
+            voud.resolvePlayerResponseTarget(definition, id),
+        });
+        configureCoding(component, [
+          {
+            id: 'A1',
+            sourceType: 'BASE',
+            codes: [
+              {
+                id: 1,
+                type: 'FULL_CREDIT',
+                ruleSets: [{ rules: [{ method, parameters: [parameter] }] }],
+              },
+              residual,
+            ],
+          },
+        ]);
+        (component as any).definitionContent = JSON.stringify({
+          pages: [{ elements: [{ id: 'A1', type: elementType, options: ['Rot', 'Blau'] }] }],
+        });
+
+        (component as any).refreshCodingInformation();
+
+        expect(component.correctSolutionPrefill.status).toBe('unavailable');
+        expect(component.codingInformation).toMatchObject({
+          status: 'rules',
+          title: 'Kodierinformation aus dem Codebook',
+          answers: [],
+          ruleGroups: component.currentCodingSchemeAsText,
+        });
+      },
+    );
+
+    it('retains an exact codebook answer without a player definition', () => {
+      const component = createFacade();
+      configureCoding(component, [
+        {
+          id: 'TEXT_1',
+          sourceType: 'BASE',
+          codes: [
+            {
+              id: 1,
+              type: 'FULL_CREDIT',
+              ruleSets: [{ rules: [{ method: 'MATCH', parameters: ['Musterantwort'] }] }],
+            },
+            residual,
+          ],
+        },
+      ]);
+
+      (component as any).refreshCodingInformation();
+
+      expect(component.correctSolutionPrefill.status).toBe('unavailable');
+      expect(component.codingInformation).toMatchObject({
+        status: 'exact',
+        answers: [{ responseId: 'TEXT_1', valueLabel: 'Musterantwort' }],
+      });
+    });
+
+    it.each([
+      { id: 'AUDIO_STATUS', alias: '', label: '' },
+      { id: 'STATUS', alias: 'VIDEO_STATUS', label: '' },
+      { id: 'STATUS', alias: '', label: 'Audio wiedergegeben' },
+    ])('hides answers consistently with the rule group for $id / $alias / $label', (identity) => {
+      const component = createFacade();
+      configureCoding(component, [
+        {
+          ...identity,
+          sourceType: 'BASE',
+          codes: [
+            { id: 1, type: 'FULL_CREDIT', ruleSets: [{ rules: [{ method: 'IS_TRUE' }] }] },
+            residual,
+          ],
+        },
+      ]);
+      component.showAudioVideoCodingVariables = false;
+
+      (component as any).refreshCodingInformation();
+
+      expect(component.codingInformation.ruleGroups).toEqual([]);
+      expect(component.codingInformation.answers).toEqual([]);
+      expect(component.codingInformation.status).not.toBe('exact');
+
+      component.showAudioVideoCodingVariables = true;
+      (component as any).refreshCodingInformation();
+
+      expect(component.codingInformation.status).toBe('exact');
+      expect(component.codingInformation.answers).toHaveLength(1);
+      expect(component.codingInformation.ruleGroups).toHaveLength(1);
+    });
+  });
+
   it('keeps multiple FULL_CREDIT answers as rules instead of choosing one', () => {
     const component = createFacade();
     const variables = [
@@ -4639,6 +4801,10 @@ describe('ItemExplorerFacade', () => {
       'RESULT',
       'TEXT_OPTION',
     ]);
+    expect(component.codingInformation.answers).toMatchObject([
+      { responseId: 'TEXT_OPTION', valueLabel: 'nicht ausgewählt' },
+    ]);
+    expect(component.codingInformation.message).toContain('ausgeblendet');
   });
 
   it('focuses a valid alias-shadowing aggregate when its internal id is targeted', () => {

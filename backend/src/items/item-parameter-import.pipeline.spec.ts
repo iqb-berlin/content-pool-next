@@ -104,6 +104,34 @@ describe("ItemParameterImportPipeline", () => {
     });
   });
 
+  it("ignores empty CSV records while preserving source row numbers for errors", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from(
+        [
+          "item;est;infit",
+          "I1;0.5;1.0",
+          ";;",
+          '"";" ";""',
+          "   ",
+          ";0.7;",
+          "I2;0.8;1.1",
+          ";;",
+        ].join("\r\n"),
+      ),
+      items,
+      itemProperties: {},
+    });
+
+    expect(result.updated).toBe(2);
+    expect(result.failed).toEqual([
+      { csvRow: "Zeile 6", reason: "Item fehlt" },
+    ]);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { empiricalDifficulty: 0.5, infit: 1.0 },
+      "uuid-2": { empiricalDifficulty: 0.8, infit: 1.1 },
+    });
+  });
+
   it("distinguishes an absent column from an explicitly empty value", () => {
     const result = pipeline.execute({
       fileBuffer: Buffer.from("item;est\nI1;"),
@@ -195,6 +223,79 @@ describe("ItemParameterImportPipeline", () => {
     expect(result.nextItemProperties).toEqual({
       "uuid-1": { infit: 1.05 },
     });
+  });
+
+  it("imports kstufe once per item and normalizes valid values", () => {
+    const result = pipeline.execute({
+      fileBuffer: Buffer.from("item;sub_id;kstufe\nI1;A; ii \nI1;B;II"),
+      items,
+      itemProperties: {
+        "uuid-1::A": {
+          itemUuid: "uuid-1",
+          subId: "A",
+          competenceLevel: "I",
+        },
+      },
+    });
+
+    expect(result.failed).toEqual([]);
+    expect(result.successes).toEqual([
+      expect.objectContaining({ subId: "A", fields: ["kstufe"] }),
+      expect.objectContaining({ subId: "B", fields: ["kstufe"] }),
+    ]);
+    expect(result.nextItemProperties).toEqual({
+      "uuid-1": { competenceLevel: "II" },
+      "uuid-1::A": { itemUuid: "uuid-1", subId: "A" },
+      "uuid-1::B": { itemUuid: "uuid-1", subId: "B" },
+    });
+  });
+
+  it("clears kstufe only when the column is present and explicitly empty", () => {
+    const cleared = pipeline.execute({
+      fileBuffer: Buffer.from("item;kstufe\nI1;"),
+      items,
+      itemProperties: {
+        "uuid-1": { competenceLevel: "III", infit: 1.05 },
+      },
+    });
+    const preserved = pipeline.execute({
+      fileBuffer: Buffer.from("item;infit\nI1;1.1"),
+      items,
+      itemProperties: {
+        "uuid-1": { competenceLevel: "III" },
+      },
+    });
+
+    expect(cleared.nextItemProperties).toEqual({
+      "uuid-1": { infit: 1.05 },
+    });
+    expect(preserved.nextItemProperties).toEqual({
+      "uuid-1": { competenceLevel: "III", infit: 1.1 },
+    });
+  });
+
+  it("rejects invalid and conflicting kstufe values without overwriting data", () => {
+    const invalid = pipeline.execute({
+      fileBuffer: Buffer.from("item;kstufe\nI1;VI"),
+      items,
+      itemProperties: { "uuid-1": { competenceLevel: "IV" } },
+    });
+
+    expect(invalid.updated).toBe(0);
+    expect(invalid.failed).toEqual([
+      { csvRow: "I1", reason: "kstufe muss I, II, III, IV oder V sein" },
+    ]);
+    expect(invalid.nextItemProperties).toEqual({
+      "uuid-1": { competenceLevel: "IV" },
+    });
+
+    expect(() =>
+      pipeline.execute({
+        fileBuffer: Buffer.from("item;sub_id;kstufe\nI1;A;I\nI1;B;II"),
+        items,
+        itemProperties: {},
+      }),
+    ).toThrow(BadRequestException);
   });
 
   it("parses BOM, quoted Sub-IDs, decimal commas and grouped booklet rows", () => {
@@ -505,10 +606,10 @@ describe("ItemParameterImportPipeline", () => {
       (mutation) => mutation.action === "keep",
     );
 
-    expect(keepMutations).toHaveLength(8);
+    expect(keepMutations).toHaveLength(9);
     expect(keepMutations.every((mutation) => !("targetKeys" in mutation))).toBe(
       true,
     );
-    expect(plan.mutations).toHaveLength(manyItems.length + 8);
+    expect(plan.mutations).toHaveLength(manyItems.length + 9);
   });
 });

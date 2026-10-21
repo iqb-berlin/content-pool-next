@@ -561,6 +561,9 @@ export class ViewsService {
     const personalTagColors = this.getPersonalTagColors(
       accessConfig?.featureConfig,
     );
+    const personalCategoryLabel = this.getPersonalCategoryExportLabel(
+      accessConfig?.featureConfig,
+    );
 
     const rows = items.map((item, index) => {
       const projection = projectItemExportRow({
@@ -573,7 +576,7 @@ export class ViewsService {
         ...projection,
         sequenceNumber: index + 1,
         markers: this.formatPersonalMarkers(projection.tags, personalTagColors),
-        competenceLevel: projection.category,
+        personalCompetenceLevel: projection.category,
       };
     });
 
@@ -585,6 +588,7 @@ export class ViewsService {
             ? undefined
             : explorerState.publishedState.metadataColumns,
         ),
+      personalCategoryLabel,
     );
   }
 
@@ -793,6 +797,18 @@ export class ViewsService {
     return colors;
   }
 
+  private getPersonalCategoryExportLabel(rawFeatureConfig: unknown): string {
+    const featureConfig = normalizeFeatureConfig(
+      this.isRecord(rawFeatureConfig) ? rawFeatureConfig : {},
+    ) as Record<string, unknown>;
+    const configuredLabel =
+      this.normalizePlainText(featureConfig.personalItemCategoryLabel, 100) ||
+      "Kompetenzstufe";
+    return configuredLabel.toLocaleLowerCase("de-DE") === "kompetenzstufe"
+      ? "Kompetenzstufe (persönlich)"
+      : configuredLabel;
+  }
+
   private formatPersonalMarkers(
     tags: string[],
     tagColors: Map<string, string>,
@@ -811,10 +827,11 @@ export class ViewsService {
       ItemExportProjection & {
         sequenceNumber: number;
         markers: string | null;
-        competenceLevel: string | null;
+        personalCompetenceLevel: string | null;
       }
     >,
     policy = new ReviewerColumnPolicy(),
+    personalCategoryLabel = "Kompetenzstufe (persönlich)",
   ): Promise<Buffer> {
     const ExcelJS = await import("exceljs");
     const workbook = new ExcelJS.Workbook();
@@ -827,7 +844,11 @@ export class ViewsService {
       ...ITEM_EXPORT_IDENTITY_WITH_UUID_COLUMNS,
       { header: "Markierung/Farbe", key: "markers", width: 32 },
       { header: "Notiz", key: "note", width: 50 },
-      { header: "Kompetenzstufe", key: "competenceLevel", width: 22 },
+      {
+        header: personalCategoryLabel,
+        key: "personalCompetenceLevel",
+        width: 28,
+      },
       ...ITEM_EXPORT_PARAMETER_COLUMNS,
       MEAN_DIFFICULTY_EXPORT_COLUMN,
     ].filter((column) => policy.allowsExportField(column.key));

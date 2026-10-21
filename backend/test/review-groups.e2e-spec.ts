@@ -616,7 +616,7 @@ describe("Review visibility, groups and synchronization API", () => {
     expect(visible.groups).toHaveLength(1);
   });
 
-  it("keeps disabled reviews accessible to management only and persists transactional revisions", async () => {
+  it("retains item comments when the booklet review is disabled and persists revisions", async () => {
     expect(
       Number(
         (
@@ -632,16 +632,20 @@ describe("Review visibility, groups and synchronization API", () => {
         .get(api())
         .query(item)
         .set(headers(actor.token))
-        .expect(403);
+        .expect(200);
       await request(server)
         .get(`${api()}/visible`)
         .set(headers(actor.token))
-        .expect(403);
+        .expect(200);
       await request(server)
         .get(`${api()}/export/mine.csv`)
         .set(headers(actor.token))
-        .expect(403);
+        .expect(200);
     }
+    await request(server)
+      .get(`/api/view/acp/${acpId}/review`)
+      .set(headers(actors[0].token))
+      .expect(403);
     await request(server)
       .get(api())
       .query(item)

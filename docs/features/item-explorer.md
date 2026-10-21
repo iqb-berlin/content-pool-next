@@ -442,10 +442,13 @@ The same distinction exists when clearing empirical difficulty values.
 
 Managers can also upload a semicolon-separated wide CSV through the Item Explorer. Its canonical
 headers are `item`, `sub_id`, `est`, `infit`, `discrimination`, `solution_rate`, `item_time_s`,
-`stimulus_time_s`, `text_complexity`, `booklet`, and `position`. Only `item` and at least one
+`stimulus_time_s`, `text_complexity`, `kstufe`, `booklet`, and `position`. Only `item` and at least one
 parameter column are required. `text_complexity` is imported and filtered as free text, including
-content that looks numeric. Time values are non-negative seconds; decimal point and decimal comma
-are accepted.
+content that looks numeric. `kstufe` accepts the shared competence levels `I` to `V`
+(case-insensitive) and is normalized to upper case. It belongs to the item, so all partial-credit
+rows inherit the same value; conflicting values for the same item are rejected. An empty `kstufe`
+cell clears the value, while omitting the column preserves it. Time values are non-negative seconds;
+decimal point and decimal comma are accepted.
 
 Without a CSV import, the Explorer uses the numeric raw `value` of `iqb_time_item` from each VOMD
 item profile and `iqb_time_stimulus` from the VOMD unit profile. The legacy item property

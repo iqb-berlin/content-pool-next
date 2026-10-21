@@ -107,3 +107,24 @@ describe('Dashboard assignment persistence', () => {
     expect(component.roleBusy).toBe(false);
   });
 });
+
+describe('Dashboard sequence presentation', () => {
+  it('separates booklets from generic task sequences without relying on package-specific IDs', () => {
+    const { component } = setup();
+    component.contentData = {
+      sequences: [
+        { id: 'instrument-a', name: 'Teil 1', kind: 'booklet' },
+        { id: 'instrument-b', name: 'Teil 1', kind: 'booklet' },
+        { id: 'legacy-sequence', name: 'Aufgabenfolge', kind: 'module' },
+      ],
+    };
+
+    expect(component.bookletSequences.map((sequence) => sequence.id)).toEqual([
+      'instrument-a',
+      'instrument-b',
+    ]);
+    expect(component.nonBookletSequences.map((sequence) => sequence.id)).toEqual([
+      'legacy-sequence',
+    ]);
+  });
+});

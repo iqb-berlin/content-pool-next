@@ -441,9 +441,9 @@ describe("ItemsService", () => {
     });
 
     const csv = [
-      "item;sub_id;est;infit;discrimination;solution_rate;text_complexity;item_time_s;stimulus_time_s;booklet;position",
-      "I1;;0,25;1,05;0,42;0,73;anspruchsvoll;35;12;B2;8",
-      "I1;;0.25;1.05;0.42;0.73;anspruchsvoll;35;12;B1;3",
+      "item;sub_id;est;infit;discrimination;solution_rate;text_complexity;kstufe;item_time_s;stimulus_time_s;booklet;position",
+      "I1;;0,25;1,05;0,42;0,73;anspruchsvoll;iii;35;12;B2;8",
+      "I1;;0.25;1.05;0.42;0.73;anspruchsvoll;III;35;12;B1;3",
     ].join("\n");
     const result = await service.uploadItemParameters(
       "acp-1",
@@ -462,6 +462,7 @@ describe("ItemsService", () => {
           "item_time_s",
           "stimulus_time_s",
           "text_complexity",
+          "kstufe",
           "booklet",
           "position",
         ],
@@ -479,6 +480,7 @@ describe("ItemsService", () => {
         discrimination: 0.42,
         solutionRate: 0.73,
         textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         itemTimeSeconds: 35,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [

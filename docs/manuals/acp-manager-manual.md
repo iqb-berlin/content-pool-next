@@ -236,22 +236,21 @@ noch brauchen.
 Im Bereich `Zugriffskonfiguration` verwalten Sie sowohl das Zugriffsmodell als auch die
 Nur-Lese-Features fuer andere Nutzerinnen und Nutzer.
 
-Wichtig: Es gibt zwei getrennte Speichervorgaenge.
-
-- `Zugriffsmodell speichern` speichert nur das Zugriffsmodell.
-- `Features speichern` speichert nur die Feature-Konfiguration.
+Die Aktion `Änderungen speichern` speichert Zugangsart, Funktionen und Darstellung gemeinsam.
+Die Speicherleiste zeigt ungespeicherte Änderungen und Fehler an. Technische Optionen
+stehen im eingeklappten Bereich `Erweiterte Einstellungen`.
 
 ### Zugriffsmodell waehlen
 
 Sie koennen eines der Basismodelle waehlen:
 
-- `Privat`
-- `Oeffentlich (Public)`
-- `Zugangsliste`
+- `Nur zugewiesene Personen`
+- `Öffentlich – ohne Anmeldung`
+- `Zugang mit ACP-Zugangsdaten`
 
-Zusatzoption:
-
-- `Registrierte Nutzer` zusaetzlich zu oben
+App-Admins und Personen mit zugewiesener ACP-Rolle haben unabhängig von der
+Zugangsart Zugriff. Eine Registrierung allein reicht nicht. Die Rollen werden
+unter `Personen und Rollen verwalten` auf der ACP-Übersicht gepflegt.
 
 #### 1. Privat
 
@@ -337,6 +336,21 @@ Vor dem Import sehen Sie eine Vorschau mit:
 
 Die Feature-Schalter steuern die Lesesicht fuer andere Nutzerinnen und Nutzer.
 
+#### Auf dieser Startseite anzeigen
+
+Hier legen Sie fest, welche Einstiege auf der ACP-Startseite erscheinen:
+
+- Item-Explorer
+- Aufgaben ansehen
+- Testhefte und Aufgabenfolgen
+- Paketstruktur (ACP-Index)
+
+Diese Schalter aendern keine Funktionsrechte. Die fachlichen Funktionen werden weiterhin in den
+Bereichen `Aufgaben-Ansicht`, `Navigation`, `Kommentare` und `Item-Explorer` aktiviert. Auch ein
+ausgeblendeter Einstieg ist keine Zugriffssperre; Zugriffe werden ueber das Zugriffsmodell und die
+Funktionsrechte geregelt. Bestehende ACPs zeigen alle Eintraege weiterhin an. Eine vorhandene,
+deaktivierte Einstellung `Navigation ueber die Unit-Liste` bleibt als Alt-Konfiguration erhalten.
+
 #### Downloads
 
 Sie koennen einzeln erlauben:
@@ -353,8 +367,7 @@ Hier steuern Sie unter anderem, ob die Unit-Ansicht mit Verona-Player verfuegbar
 
 Hier steuern Sie unter anderem:
 
-- Navigation ueber die Unit-Liste
-- Aufgabenfolgen aus Testheften
+- Verfuegbarkeit von Testheften und Aufgabenfolgen
 
 #### Kommentare
 
@@ -526,8 +539,10 @@ Ueber `Spalten verwalten` bestimmen Sie:
 - welche Breite die einzelnen Spalten haben
 
 Die Verwaltung umfasst feste Spalten wie `Item-ID` und `Aufgabe`, konfigurierte
-Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe`, `Markierungen`
-und `Notiz`. Technische Bedienungsspalten wie die laufende Position oder die Auswahl
+Metadatenspalten sowie - falls aktiviert - `Tags`, `Kompetenzstufe (persönlich)`, `Markierungen`
+und `Notiz`. Die gemeinsame, per CSV-Feld `kstufe` importierte Kompetenzstufe ist davon getrennt
+und erscheint als fachliche Spalte `Kompetenzstufe`. Erlaubt sind die Werte `I` bis `V`.
+Technische Bedienungsspalten wie die laufende Position oder die Auswahl
 fuer eine Auswahlliste bleiben fest.
 
 Diese Einstellungen werden veroeffentlicht und damit Teil der gemeinsamen ACP-Konfiguration.
@@ -597,8 +612,16 @@ nur die Sichtbarkeit von Kommentaren und vergeben keinen Zugang.
 
 Wenn Kommentare aktiviert sind, koennen angemeldete Nutzerinnen und Nutzer Kommentare im
 jeweiligen fachlichen Kontext anlegen. Item-Kommentare werden beim ausgewaehlten Item im
-Item-Explorer erfasst; Unit-Kommentare in der Ansicht der jeweiligen Unit. Auf der
-ACP-Startseite stehen dann typischerweise zur Verfuegung:
+Item-Explorer erfasst; Unit-Kommentare in der Ansicht der jeweiligen Unit.
+
+Im Review-Arbeitsplatz kann unter `Kommentarziel` zwischen `Aufgabe`, `Item` und `Testheft`
+gewechselt werden, soweit diese Ziele fuer den ACP aktiviert sind. Fuer `Item` waehlen Sie
+anschliessend das gewuenschte Item der aktuellen Aufgabe aus. Die Auswahl zeigt die Item-ID
+und, soweit vorhanden, die Bezeichnung. Nicht abgesendete Kommentare bleiben beim Wechsel
+zwischen Items und Kommentarzielen erhalten. Ein separater Zugang zum Item-Explorer ist fuer
+diese Kommentierung nicht erforderlich.
+
+Auf der ACP-Startseite stehen dann typischerweise zur Verfuegung:
 
 - ein Link zu den Item-Kommentaren im Item-Explorer, falls diese aktiviert sind
 - `Kommentare exportieren (XLSX)`

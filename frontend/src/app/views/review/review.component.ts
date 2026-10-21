@@ -5,6 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { ReviewReadiness } from '../../core/models/api.models';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 interface ReviewMember {
   kind: 'user' | 'credential';
@@ -26,7 +27,7 @@ interface ReviewConfig {
 
 @Component({
   standalone: true,
-  imports: [RouterLink, FormsModule, DatePipe],
+  imports: [RouterLink, FormsModule, DatePipe, BookletSelectionComponent],
   selector: 'app-review',
   styles: [
     `
@@ -395,16 +396,9 @@ interface ReviewConfig {
       @if (manifest) {
         <h2>2. Prüfansicht testen</h2>
         <p>Testheft auswählen und die Ansicht für das Review prüfen.</p>
-        @for (booklet of manifest.booklets; track $index) {
-          <section class="card">
-            <h3>{{ booklet.name || booklet.id }}</h3>
-            <a
-              [routerLink]="['/view', acpId, 'sequence', booklet.id]"
-              [queryParams]="{ kind: 'booklet' }"
-              >Prüfansicht öffnen</a
-            >
-          </section>
-        } @empty {
+        @if (manifest.booklets?.length) {
+          <app-booklet-selection [acpId]="acpId" [booklets]="manifest.booklets" />
+        } @else {
           <p>Dieser ACP enthält noch keine Testhefte.</p>
         }
       }

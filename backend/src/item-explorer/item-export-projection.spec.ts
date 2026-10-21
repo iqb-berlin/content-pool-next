@@ -30,6 +30,7 @@ describe("item export projection", () => {
       "Trennschärfe",
       "Lösungshäufigkeit",
       "Textkomplexität",
+      "Kompetenzstufe",
       "Itemzeit (s)",
       "Stimuluszeit (s)",
       "Booklet",
@@ -54,6 +55,7 @@ describe("item export projection", () => {
         discrimination: 0.4,
         solutionRate: 0.75,
         textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         itemTimeSeconds: 20,
         stimulusTimeSeconds: 12,
         bookletOccurrences: [
@@ -77,6 +79,7 @@ describe("item export projection", () => {
         tags: ["Prüfen"],
         bista: 503.25,
         textComplexity: "anspruchsvoll",
+        competenceLevel: "III",
         booklets: "B1 | B2",
         bookletPositions: "3 | ",
         meanTaskDifficulty: 0.5,

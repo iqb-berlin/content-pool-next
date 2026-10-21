@@ -5,11 +5,12 @@ import { Subject, takeUntil } from 'rxjs';
 import { ApiService } from '../../core/services/api.service';
 import { AuthService } from '../../core/services/auth.service';
 import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/breadcrumb.component';
+import { BookletSelectionComponent } from '../../shared/components/booklet-selection.component';
 
 @Component({
   selector: 'app-acp-start',
   standalone: true,
-  imports: [RouterLink, BreadcrumbComponent],
+  imports: [RouterLink, BreadcrumbComponent, BookletSelectionComponent],
   template: `
     @if (data) {
       <app-breadcrumb [items]="breadcrumbs" />
@@ -29,33 +30,8 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
       </div>
 
       <div class="sections-grid">
-        @if (capabilityAccess?.canReview) {
-          <section class="card section-card review-card" aria-labelledby="review-heading">
-            <div class="section-icon">💬</div>
-            <h3 id="review-heading">Review</h3>
-            @if (capabilityAccess?.canManageReview) {
-              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
-                >Review verwalten</a
-              >
-            }
-            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
-            <div class="seq-list">
-              @for (booklet of reviewBooklets; track booklet.id) {
-                <a
-                  [routerLink]="['/view', acpId, 'sequence', booklet.id]"
-                  [queryParams]="{ kind: 'booklet' }"
-                  class="seq-link"
-                >
-                  {{ sequenceLabel(booklet) }} im Review öffnen
-                </a>
-              } @empty {
-                <span class="download-info">Noch kein Booklet verfügbar.</span>
-              }
-            </div>
-          </section>
-        }
-        <!-- Item Explorer — only if enableItemList -->
-        @if (capabilityAccess?.canViewExplorer) {
+        <!-- Item Explorer — availability and start-page visibility are configured separately -->
+        @if (capabilityAccess?.canViewExplorer && fc.showItemExplorerOnStartPage !== false) {
           <a [routerLink]="['/view', acpId, 'item-explorer']" class="card section-card">
             <div class="section-icon">🔭</div>
             <h3>Item-Explorer</h3>
@@ -63,8 +39,11 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </a>
         }
 
-        <!-- Units list — always available if units exist -->
-        @if (data.units?.length && fc.enableUnitListNavigation !== false) {
+        <!-- Preserve the legacy navigation flag as fallback for existing ACPs. -->
+        @if (
+          data.units?.length &&
+          (fc.showUnitListOnStartPage ?? fc.enableUnitListNavigation) !== false
+        ) {
           <a [routerLink]="['/view', acpId, 'units']" class="card section-card">
             <div class="section-icon">📝</div>
             <h3>Aufgaben ansehen</h3>
@@ -75,8 +54,12 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
           </a>
         }
 
-        <!-- Task sequences — only if enableSequenceNavigation -->
-        @if (visibleSequences.length && fc.enableSequenceNavigation !== false) {
+        <!-- Sequence availability and start-page visibility are configured separately. -->
+        @if (
+          visibleSequences.length &&
+          fc.enableSequenceNavigation !== false &&
+          fc.showSequencesOnStartPage !== false
+        ) {
           <div class="card section-card sequences-card">
             <div class="section-icon">📋</div>
             <h3>Testhefte und Aufgabenfolgen</h3>
@@ -111,10 +94,30 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
             </div>
           </div>
         }
+
+        @if (capabilityAccess?.canReview) {
+          <section class="card section-card review-card" aria-labelledby="review-heading">
+            <div class="section-icon">💬</div>
+            <h3 id="review-heading">Review</h3>
+            @if (capabilityAccess?.canManageReview) {
+              <a class="btn btn-outline btn-sm" [routerLink]="['/view', acpId, 'review', 'manage']"
+                >Review verwalten</a
+              >
+            }
+            <p>Testheft auswählen und direkt im Review-Arbeitsplatz öffnen.</p>
+            <app-booklet-selection
+              [acpId]="acpId"
+              [booklets]="reviewBooklets"
+              actionLabel="Review öffnen"
+            />
+          </section>
+        }
       </div>
-      <a class="index-link" [routerLink]="['/view', acpId, 'index']"
-        >Paketstruktur (ACP-Index) ansehen</a
-      >
+      @if (fc.showIndexOnStartPage !== false) {
+        <a class="index-link" [routerLink]="['/view', acpId, 'index']"
+          >Paketstruktur (ACP-Index) ansehen</a
+        >
+      }
     } @else {
       <div class="empty-state">
         <h3>Lade ACP-Daten...</h3>
@@ -182,6 +185,9 @@ import { BreadcrumbComponent, BreadcrumbItem } from '../../shared/components/bre
         color: var(--color-text-secondary);
         font-size: 0.9rem;
         line-height: 1.5;
+      }
+      .review-card {
+        grid-column: 1 / -1;
       }
 
       .seq-list {

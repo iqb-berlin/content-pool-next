@@ -16,6 +16,7 @@ export interface ItemExportProjection {
   discrimination: number | null;
   solutionRate: number | null;
   textComplexity: string | null;
+  competenceLevel: string | null;
   itemTimeSeconds: number | null;
   stimulusTimeSeconds: number | null;
   booklets: string | null;
@@ -82,6 +83,11 @@ export const ITEM_EXPORT_PARAMETER_COLUMNS: readonly ItemExportColumnDefinition[
       width: 30,
     },
     {
+      header: "Kompetenzstufe",
+      key: "competenceLevel",
+      width: 22,
+    },
+    {
       header: "Itemzeit (s)",
       key: "itemTimeSeconds",
       width: 18,
@@ -135,6 +141,7 @@ export function projectItemExportRow(input: {
     discrimination: item?.discrimination ?? null,
     solutionRate: item?.solutionRate ?? null,
     textComplexity: item?.textComplexity ?? null,
+    competenceLevel: item?.competenceLevel ?? null,
     itemTimeSeconds: item?.itemTimeSeconds ?? null,
     stimulusTimeSeconds: item?.stimulusTimeSeconds ?? null,
     booklets: occurrences.length

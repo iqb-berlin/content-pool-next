@@ -231,6 +231,7 @@ export type ItemExplorerPreviewViewModel = ReadonlyViewModelSlice<
     ItemExplorerFacade,
     | 'itemExplorerConditionalVisibilityEnabled'
     | 'syntheticPreviewState'
+    | 'canOpenFullUnit'
     | 'previewStateVariables'
     | 'previewStartPage'
     | 'previewStartPages'

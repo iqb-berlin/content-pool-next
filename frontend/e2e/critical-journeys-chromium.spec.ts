@@ -42,7 +42,7 @@ test('file upload completes processing and the uploaded file can be downloaded',
 }) => {
   await installOidcSession(page, managerId, 'e2e-manager');
   await page.goto(`/manage/${filesAcp}/files`);
-  await expect(page.getByRole('heading', { name: 'Dateien' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dateien', exact: true })).toBeVisible();
   await page.locator('input[type=file]').setInputFiles({
     name: 'browser-e2e-note.txt',
     mimeType: 'text/plain',

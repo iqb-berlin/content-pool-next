@@ -2,7 +2,7 @@ import {
   CapabilitiesComponent,
   capabilityLabels,
 } from '../../shared/capabilities/capabilities.component';
-import { Component, Inject, OnInit } from '@angular/core';
+import { Component, Inject, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../core/services/api.service';
@@ -134,37 +134,53 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
             <h4 style="margin: 0 0 12px 0; font-size: 0.95rem;">ACP-Zugang hinzufügen</h4>
             <div class="form-row">
               <div class="form-group">
-                <label>Benutzername</label>
+                <label for="new-credential-username">Benutzername</label>
                 <input
+                  id="new-credential-username"
                   type="text"
                   [(ngModel)]="newUsername"
+                  [disabled]="addingCredential()"
                   placeholder="Benutzername"
                   maxlength="50"
                 />
               </div>
               <div class="form-group">
-                <label>Kennwort</label>
+                <label for="new-credential-password">Kennwort</label>
                 <input
+                  id="new-credential-password"
                   type="password"
                   [(ngModel)]="newPassword"
+                  [disabled]="addingCredential()"
+                  aria-describedby="credential-password-hint"
+                  autocomplete="new-password"
                   placeholder="Kennwort"
                   minlength="12"
                 />
+                <span id="credential-password-hint" class="help-text">{{
+                  strongPasswordHint
+                }}</span>
               </div>
             </div>
-            <app-capabilities [(value)]="newCapabilities" />
+            <app-capabilities [(value)]="newCapabilities" [disabled]="addingCredential()" />
             @if (addError) {
-              <div class="alert alert-error" style="margin-top: 8px;">{{ addError }}</div>
+              <div class="alert alert-error" role="alert" style="margin-top: 8px;">
+                {{ addError }}
+              </div>
+            }
+            @if (addSuccess()) {
+              <div class="alert alert-success" role="status" style="margin-top: 8px;">
+                {{ addSuccess() }}
+              </div>
             }
             <button
               class="btn btn-accent"
+              type="button"
               style="margin-top: 8px;"
               (click)="addCredential()"
-              [disabled]="
-                !newUsername.trim() || !newPassword.trim() || !isStrongPassword(newPassword)
-              "
+              [disabled]="addingCredential()"
+              [attr.aria-busy]="addingCredential()"
             >
-              Hinzufügen
+              {{ addingCredential() ? 'Wird hinzugefügt …' : 'Hinzufügen' }}
             </button>
           </div>
 
@@ -502,6 +518,14 @@ import { AcpManagerContextComponent } from '../shared/acp-manager-context.compon
         <div class="explorer-options">
           <details class="settings-details">
             <summary>Inhalte und Darstellung</summary>
+            <label class="feature-toggle">
+              <input type="checkbox" [(ngModel)]="featureConfig.showStudioItemComments" />
+              <span>Studio-Kommentare im Item-Explorer anzeigen</span>
+            </label>
+            <p class="help-text">
+              Zeigt importierte Item-Kommentare aus dem Studio schreibgeschützt bei der Vorschau.
+              Diese Hinweise sind unabhängig von Review-Kommentaren.
+            </p>
             <label class="feature-toggle">
               <input
                 type="checkbox"
@@ -1142,7 +1166,7 @@ export class AccessConfigComponent implements OnInit {
     skip: 'Unverändert lassen',
   };
   private readonly strongPasswordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/;
-  private readonly strongPasswordHint =
+  readonly strongPasswordHint =
     'Kennwort muss mindestens 12 Zeichen lang sein und Groß-/Kleinbuchstaben, Zahl und Sonderzeichen enthalten.';
   readonly showAudioVideoCodingVariablesKey = 'showAudioVideoCodingVariables';
   readonly showGeneralCodingInstructionsKey = 'showGeneralCodingInstructions';
@@ -1216,6 +1240,8 @@ export class AccessConfigComponent implements OnInit {
   newUsername = '';
   newPassword = '';
   addError = '';
+  readonly addingCredential = signal(false);
+  readonly addSuccess = signal('');
 
   // CSV upload
   csvMode: CredentialUploadMode = 'replace';
@@ -1512,6 +1538,7 @@ export class AccessConfigComponent implements OnInit {
 
     this.featureConfig[this.showGeneralCodingInstructionsKey] =
       this.featureConfig[this.showGeneralCodingInstructionsKey] === true;
+    this.featureConfig.showStudioItemComments = this.featureConfig.showStudioItemComments === true;
     this.featureConfig[this.preferManualCodingInstructionsKey] =
       this.featureConfig[this.preferManualCodingInstructionsKey] !== false;
 
@@ -1579,7 +1606,9 @@ export class AccessConfigComponent implements OnInit {
 
   // Manual credential management
   addCredential() {
+    if (this.addingCredential()) return;
     this.addError = '';
+    this.addSuccess.set('');
     const username = this.newUsername.trim();
     const password = this.newPassword;
 
@@ -1596,15 +1625,19 @@ export class AccessConfigComponent implements OnInit {
       return;
     }
 
+    this.addingCredential.set(true);
     this.api.createCredential(this.acpId, username, password, this.newCapabilities).subscribe({
       next: (cred) => {
         this.credentials.push(cred);
         this.newUsername = '';
         this.newPassword = '';
         this.credentialCount = this.credentials.length;
+        this.addSuccess.set(`ACP-Zugang „${cred.username}“ wurde hinzugefügt.`);
+        this.addingCredential.set(false);
       },
       error: (err) => {
         this.addError = err.error?.message || 'Fehler beim Hinzufügen.';
+        this.addingCredential.set(false);
       },
     });
   }

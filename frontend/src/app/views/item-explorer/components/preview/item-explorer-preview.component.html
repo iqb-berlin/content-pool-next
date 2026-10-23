@@ -55,6 +55,9 @@
           nicht als Antwort gespeichert werden.
         </p>
       }
+      @if (vm.presentationMessage) {
+        <p class="preview-state-note" role="status">{{ vm.presentationMessage }}</p>
+      }
       <details #previewSettings class="preview-settings">
         <summary
           class="btn btn-outline btn-sm"
@@ -63,6 +66,24 @@
           Vorschau einstellen ▾
         </summary>
         <div class="preview-settings-body">
+          @if (vm.itemExplorerConditionalVisibilityEnabled) {
+            <div class="preview-target-selector">
+              <label for="preview-context-mode">Ansicht</label>
+              <select
+                id="preview-context-mode"
+                [ngModel]="vm.previewMode"
+                (ngModelChange)="vm.setPreviewMode($event)"
+              >
+                <option value="reference">Referenzansicht des Items</option>
+                <option value="answers">Bearbeitungsstand</option>
+                <option value="flow">Regulärer Aufgabenablauf</option>
+              </select>
+              <small
+                >Die Referenzansicht verwendet den Itemkontext. Gespeicherte Antworten werden nur im
+                Bearbeitungsstand geladen.</small
+              >
+            </div>
+          }
           <div class="preview-target-selector">
             <label for="preview-paging-mode">Seitendarstellung</label>
             <select
@@ -83,6 +104,30 @@
             </select>
           </div>
           @if (vm.canEditExplorer && vm.itemExplorerConditionalVisibilityEnabled) {
+            <div class="preview-target-controls">
+              <button
+                type="button"
+                class="btn btn-outline btn-sm"
+                (click)="vm.capturePreviewContext()"
+                [disabled]="
+                  vm.preparingPresentation ||
+                  !vm.hasCurrentResponseState ||
+                  vm.isCorrectSolutionActive ||
+                  !vm.canPreviewSelectedItem
+                "
+              >
+                Diese Itemansicht als Kontext übernehmen
+              </button>
+              @if (vm.hasPreviewContext) {
+                <button
+                  type="button"
+                  class="btn btn-outline btn-sm"
+                  (click)="vm.clearPreviewContext()"
+                >
+                  Übernommenen Kontext zurücksetzen
+                </button>
+              }
+            </div>
             @if (vm.showPreviewStartPageSelector) {
               <div class="preview-target-selector">
                 <label for="preview-start-page">Aufgabenkontext</label>
@@ -116,8 +161,8 @@
               </div>
             }
             <small
-              >Leere Werte werden automatisch abgeleitet. Gespeicherte Antwortzustände haben
-              Vorrang.</small
+              >Leere Werte folgen der Aufgabenkonfiguration. Ein übernommener Kontext gehört zur
+              Referenzansicht und wird getrennt von Antworten gespeichert.</small
             >
           }
           @if (vm.canEditExplorer) {
@@ -348,6 +393,12 @@
           <p>Aufgabe wird geladen...</p>
         </div>
       } @else if (vm.shouldRenderPlayerFrame) {
+        @if (vm.preparingPresentation) {
+          <div class="preview-update-status" role="status" aria-live="polite">
+            <div class="spinner"></div>
+            <span>Itemansicht wird vorbereitet …</span>
+          </div>
+        }
         @if (vm.previewUpdateInProgress) {
           <div class="preview-update-status" role="status" aria-live="polite">
             <div class="spinner"></div>

@@ -168,7 +168,7 @@ function registerPlayerDom(component: ItemExplorerFacade, postMessage = vi.fn())
 
 function setPreviewStatus(
   component: ItemExplorerFacade,
-  kind: 'idle' | 'loading-unit' | 'loading-response' | 'ready',
+  kind: 'idle' | 'loading-unit' | 'loading-response' | 'ready' | 'unavailable',
 ) {
   const item =
     component.selectedItem ||
@@ -184,6 +184,8 @@ function setPreviewStatus(
     } as any);
   if (kind === 'idle') {
     (component as any).previewCoordinator.status = { kind: 'idle' };
+  } else if (kind === 'unavailable') {
+    (component as any).previewCoordinator.markUnavailable('missing mapping');
   } else if (kind === 'loading-response') {
     (component as any).previewCoordinator.status = { kind, item, reuseUnit: true };
   } else {
@@ -8339,7 +8341,7 @@ describe('prepared preview response isolation', () => {
 });
 
 describe('visibility start protocol', () => {
-  it('seeds a fresh preview, preserves saved answers, and resets synthetic state', () => {
+  it('keeps the item reference independent from saved answers and loads them only on request', () => {
     vi.useFakeTimers();
     const component = createFacade();
     const postMessage = vi.fn();
@@ -8379,12 +8381,15 @@ describe('visibility start protocol', () => {
       const saved = { responses: 'saved answers', stateVariableCodes: 'saved state' };
       (component as any).applyResponseStateResult({ state: { responseData: saved } });
       (component as any).startPlayerIfReady();
-      expect(postMessage.mock.calls[1][0].unitState.dataParts).toEqual(saved);
+      expect(postMessage.mock.calls[1][0].unitState.dataParts).toEqual(first.unitState.dataParts);
       expect(component.currentResponseData).toBeNull();
+      expect(component.syntheticPreviewState).toBe(true);
+      component.setPreviewMode('answers');
+      expect(postMessage.mock.calls[2][0].unitState.dataParts).toEqual(saved);
       expect(component.syntheticPreviewState).toBe(false);
       // A second start before a player reply still uses the loaded saved state.
       (component as any).startPlayerIfReady();
-      expect(postMessage.mock.calls[2][0].unitState.dataParts).toEqual(saved);
+      expect(postMessage.mock.calls[3][0].unitState.dataParts).toEqual(saved);
       expect(component.currentResponseData).toBeNull();
       vi.runAllTimers();
     } finally {
@@ -8394,6 +8399,100 @@ describe('visibility start protocol', () => {
 });
 
 describe('shared preview start changes', () => {
+  it('shares an explicitly captured item context, resets it, and preserves edit permissions', () => {
+    const component = createFacade();
+    vi.spyOn(component as any, 'reloadPreviewAfterTargetChange').mockImplementation(() => {});
+    const context = {
+      definitionKey: '10-abc-def',
+      target: 'v',
+      page: 0,
+      dataParts: { elementCodes: '[]' },
+    };
+    const capture = vi.spyOn(component.player, 'capturePreviewContext').mockReturnValue(null);
+    const patch = vi.spyOn(component as any, 'queueItemPropertyPatch').mockImplementation(() => {});
+    const item = {
+      itemId: 'i',
+      unitId: 'u',
+      uuid: 'row',
+      rowKey: 'row',
+      variableId: 'v',
+      metadata: {},
+    } as any;
+    component.capturePreviewContext();
+    component.clearPreviewContext();
+    expect(capture).not.toHaveBeenCalled();
+    component.selectedItem = item;
+    component.capturePreviewContext();
+    expect(capture).not.toHaveBeenCalled();
+    (component as any).explorerEditingAllowed = true;
+    component.capturePreviewContext();
+    expect(component.presentationMessage).toContain('sichtbar öffnen');
+    capture.mockReturnValue(context);
+    component.player.changePreviewMode('flow');
+    component.capturePreviewContext();
+    expect(component.previewMode).toBe('reference');
+    expect(component.hasPreviewContext).toBe(true);
+    expect(item.previewStart).toEqual({ values: {}, context });
+    expect(patch).toHaveBeenCalledWith(
+      item,
+      'PREVIEW_START_CHANGED',
+      { previewStart: { values: {}, context } },
+      true,
+    );
+    component.clearPreviewContext();
+    expect(component.hasPreviewContext).toBe(false);
+    expect(item.previewStart).toEqual({ values: {} });
+    item.previewStart = { values: { state: '2' }, page: 1, context };
+    component.clearPreviewContext();
+    expect(item.previewStart).toEqual({ values: { state: '2' }, page: 1 });
+    destroyFacade(component);
+  });
+
+  it('switches an unavailable loaded preview into regular flow without losing its assets', () => {
+    const component = createFacade();
+    component.player.itemExplorerConditionalVisibilityEnabled = true;
+    const item = {
+      itemId: 'i',
+      unitId: 'u',
+      uuid: 'row',
+      rowKey: 'row',
+      variableId: '',
+      metadata: {},
+    } as any;
+    component.selectedItem = item;
+    component.player.applyAssets({ unit: { id: 'u' }, srcDoc: '<html></html>', definition: '{}' });
+    setPreviewStatus(component, 'unavailable');
+    const start = vi.spyOn(component as any, 'startPlayerIfReady').mockImplementation(() => {});
+    component.setPreviewMode('unsupported');
+    expect(start).not.toHaveBeenCalled();
+    component.setPreviewMode('flow');
+    expect(component.previewMode).toBe('flow');
+    expect(component.canPreviewItem(item)).toBe(true);
+    expect((component as any).previewCoordinator.status.kind).toBe('ready');
+    expect(component.preparingPresentation).toBe(false);
+    component.setPreviewMode('reference');
+    expect(component.canPreviewItem(item)).toBe(false);
+    destroyFacade(component);
+  });
+
+  it('loads target choices for an unmapped item when conditional preview is enabled', () => {
+    const load = vi.fn(() =>
+      of({ unit: { id: 'u' }, playerHtml: '<html></html>', definition: '{"pages":[]}' }),
+    );
+    const component = createFacade({
+      previewLoader: { load, clear: vi.fn() },
+      api: { getResponseStateWithFallback: () => of(null) },
+    });
+    component.player.itemExplorerConditionalVisibilityEnabled = true;
+    component.selectItem(
+      { itemId: 'i', unitId: 'u', uuid: 'row', rowKey: 'row', variableId: '', metadata: {} } as any,
+      0,
+    );
+    expect(load).toHaveBeenCalledOnce();
+    expect(component.player.definitionContent).toBe('{"pages":[]}');
+    destroyFacade(component);
+  });
+
   it.each([
     [{ page: 0, values: { state: '2' } }, { page: 0, values: { state: '1' } }, true],
     [{ page: 0, values: {} }, { page: 1, values: {} }, true],
@@ -8535,7 +8634,7 @@ describe('preview response session isolation', () => {
       component.selectedItem!.previewTargetId = 'targetB';
       (component as any).startPlayerIfReady();
       expect(postMessage.mock.calls[1][0].unitState.dataParts).toEqual({});
-      expect(component.syntheticPreviewState).toBe(false);
+      expect(component.syntheticPreviewState).toBe(true);
       component.confirmSaveResponseState();
       expect(saveResponseState).not.toHaveBeenCalled();
       // A delayed notification from the old session must not restore that payload.
@@ -8550,6 +8649,15 @@ describe('preview response session isolation', () => {
       component.handlePlayerMessage({
         type: 'vopStateChangedNotification',
         sessionId: second.sessionId,
+        unitState: { dataParts: answers },
+      });
+      component.confirmSaveResponseState();
+      expect(saveResponseState).not.toHaveBeenCalled();
+      component.setPreviewMode('answers');
+      const answerSession = component.player.activePlayerSessionId;
+      component.handlePlayerMessage({
+        type: 'vopStateChangedNotification',
+        sessionId: answerSession,
         unitState: { dataParts: answers },
       });
       component.confirmSaveResponseState();
@@ -8613,6 +8721,7 @@ describe('PR186 independent review reproduction', () => {
       });
       component.player.playerFrameReady = true;
       setPreviewStatus(component, 'ready');
+      component.player.changePreviewMode('answers');
       (component as any).startPlayerIfReady();
       const initial = postMessage.mock.calls.at(-1)![0];
       component.handlePlayerMessage({
@@ -8622,6 +8731,7 @@ describe('PR186 independent review reproduction', () => {
       });
       component.confirmSaveResponseState();
       component.selectedItem!.previewTargetId = 'B';
+      component.player.changePreviewMode('reference');
       (component as any).startPlayerIfReady();
       const seeded = postMessage.mock.calls.at(-1)![0];
       component.handlePlayerMessage({

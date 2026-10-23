@@ -41,6 +41,44 @@ function createPreview() {
 }
 
 describe('ItemExplorerPreviewComponent', () => {
+  it('tracks frame inputs and native media changes, and stops tracking replaced frames', () => {
+    vi.useFakeTimers();
+    const { component } = createPreview();
+    const frame = document.createElement('iframe');
+    document.body.append(frame);
+    const doc = frame.contentDocument!;
+    doc.body.innerHTML =
+      '<input><div data-element-id="audio"><audio></audio><input type="range"><button>Lautstärke</button></div><button>Weiter</button><p>Text</p>';
+    try {
+      component.playerFrame = new ElementRef(frame);
+      component.postMessage({ type: 'vopStartCommand' });
+      expect(component.getLastInteractionTime()).toBe(0);
+      doc.querySelector('p')!.click();
+      expect(component.getLastInteractionTime()).toBe(0);
+      doc.querySelector('input')!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(component.getLastInteractionTime()).toBe(Date.now());
+      vi.advanceTimersByTime(20);
+      const inputTime = component.getLastInteractionTime();
+      doc.querySelector('input')!.dispatchEvent(new Event('change', { bubbles: true }));
+      doc
+        .querySelector('input[type="range"]')!
+        .dispatchEvent(new Event('input', { bubbles: true }));
+      doc.querySelector('[data-element-id="audio"] button')!.click();
+      expect(component.getLastInteractionTime()).toBe(inputTime);
+      doc.querySelector('audio')!.dispatchEvent(new Event('timeupdate'));
+      expect(component.getLastInteractionTime()).toBe(Date.now());
+      component.playerFrame = undefined;
+      const last = component.getLastInteractionTime();
+      vi.advanceTimersByTime(20);
+      doc.querySelector('input')!.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(component.getLastInteractionTime()).toBe(last);
+    } finally {
+      component.ngOnDestroy();
+      frame.remove();
+      vi.useRealTimers();
+    }
+  });
+
   it.each([false, true])(
     'offers the complete unit only with effective access (%s)',
     async (canOpenFullUnit) => {
@@ -77,6 +115,56 @@ describe('ItemExplorerPreviewComponent', () => {
       }
     },
   );
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('shows Studio comments only for the selected item when the ACP enables them', async () => {
+    const comments = [{ id: 1, body: 'Studio hint for item 1', hidden: false }];
+    const item = { itemId: 'i1', unitId: 'u1', uuid: 'a', studioComments: comments };
+    const vm = {
+      selectedItem: item,
+      filteredItems: [item],
+      showStudioItemComments: false,
+      isItemExcluded: () => false,
+      updateItemCommentCount: vi.fn(),
+    };
+    const feature = {
+      previewViewModel: vm,
+      registerPlayerDom: vi.fn(),
+      unregisterPlayerDom: vi.fn(),
+      playerFrameChanged: vi.fn(),
+    };
+    await ɵresolveComponentResources(async (url: string) => {
+      if (url.endsWith('item-explorer-preview.component.html')) return template;
+      if (url.endsWith('item-comment-thread.component.html')) return commentThreadTemplate;
+      if (url.endsWith('.css')) return '';
+      throw new Error(`Unexpected component resource: ${url}`);
+    });
+    (ItemCommentThreadComponent as any).ctorParameters = () => [{ type: ApiService }];
+    await TestBed.configureTestingModule({
+      imports: [ItemExplorerPreviewComponent],
+      providers: [
+        provideZonelessChangeDetection(),
+        { provide: ItemExplorerFacade, useValue: feature },
+        { provide: ApiService, useValue: {} },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(ItemExplorerPreviewComponent);
+    const root: HTMLElement = fixture.nativeElement;
+    fixture.detectChanges();
+    expect(root.querySelector('[aria-label="Studio-Kommentare"]')).toBeNull();
+
+    vm.showStudioItemComments = true;
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(root.querySelector('[aria-label="Studio-Kommentare"]')?.textContent).toContain(
+      'Studio hint for item 1',
+    );
+    vm.selectedItem = { ...item, itemId: 'i2', uuid: 'b', studioComments: [] };
+    fixture.changeDetectorRef.markForCheck();
+    fixture.detectChanges();
+    expect(root.querySelector('[aria-label="Studio-Kommentare"]')).toBeNull();
+  });
+
   afterEach(() => TestBed.resetTestingModule());
 
   it('shows Studio comments only for the selected item when the ACP enables them', async () => {
@@ -309,6 +397,7 @@ describe('ItemExplorerPreviewComponent', () => {
     document.body.appendChild(iframe);
     const target = iframe.contentDocument!.createElement('button');
     target.id = 'target';
+    Object.defineProperty(target, 'getClientRects', { value: () => [{ width: 10, height: 10 }] });
     const scrollIntoView = vi.fn();
     const focus = vi.fn();
     Object.defineProperty(target, 'scrollIntoView', { value: scrollIntoView });
@@ -321,6 +410,19 @@ describe('ItemExplorerPreviewComponent', () => {
     expect(scrollIntoView).toHaveBeenCalled();
     expect(focus).toHaveBeenCalled();
 
+    component.ngOnDestroy();
+    iframe.remove();
+  });
+
+  it('does not focus a hidden target through an unrelated text fallback', () => {
+    const { component } = createPreview();
+    const iframe = document.createElement('iframe');
+    document.body.appendChild(iframe);
+    iframe.contentDocument!.body.innerHTML =
+      '<button id="target" style="display:none">Item</button><p>Item</p>';
+    component.playerFrame = new ElementRef(iframe);
+    expect(component.isTargetVisible(['#target'])).toBe(false);
+    expect(component.focus(['#target'], ['Item'], true)).toBe(false);
     component.ngOnDestroy();
     iframe.remove();
   });

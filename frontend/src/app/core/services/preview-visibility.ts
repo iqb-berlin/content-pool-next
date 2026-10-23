@@ -1,11 +1,18 @@
 import { collectVoudNodes, findVoudIdentifierMatches } from './voud-nodes';
+export interface PreviewContext {
+  definitionKey: string;
+  target: string;
+  page: number;
+  dataParts: Record<string, string>;
+}
 
 /** Preview state is a transient input to the player, never an answer. */
 export interface PreviewStart {
   page?: number;
   values: Record<string, string>;
+  context?: PreviewContext;
 }
-interface Node {
+export interface PreviewNode {
   id?: string;
   alias?: string;
   value?: string;
@@ -13,20 +20,23 @@ interface Node {
   action?: string;
   actionParam?: { id: string; value: string };
   alwaysVisible?: boolean | string | number;
-  sections?: Node[];
-  elements?: Node[];
+  sections?: PreviewNode[];
+  elements?: PreviewNode[];
   visibilityRules?: { id: string; operator: string; value: string }[];
   logicalConnectiveOfRules?: string;
   visibilityDelay?: number;
   activeAfterID?: string;
+  enableReHide?: boolean;
 }
 export interface PreviewDefinition {
-  pages: Node[];
-  stateVariables?: Node[];
+  pages: PreviewNode[];
+  stateVariables?: PreviewNode[];
 }
-export type VisibilityResolution =
-  | { kind: 'ready'; page?: number; codes: { id: string; status: string; value: string }[] }
-  | { kind: 'unavailable'; reason: string };
+export interface PreviewStateCode {
+  id: string;
+  status: string;
+  value: string;
+}
 
 export function readPreviewDefinition(content: string): PreviewDefinition | null {
   try {
@@ -57,81 +67,137 @@ export function readPreviewDefinition(content: string): PreviewDefinition | null
     return null;
   }
 }
-const always = (node: Node) =>
+export const isAlwaysVisible = (node: PreviewNode) =>
   node.alwaysVisible === true || node.alwaysVisible === 'true' || node.alwaysVisible === 1;
-const children = (node: Node): Node[] => collectVoudNodes(node) as Node[];
+export const previewNodes = (node: PreviewNode): PreviewNode[] =>
+  collectVoudNodes(node) as PreviewNode[];
 
-/** Conservative finite equality solver. It chooses a stable context, not a replay of user actions.
- * External responses, timers and non-equality predicates remain the player's responsibility.
- */
-export function resolvePreviewVisibility(
+export interface PreviewSetup {
+  kind: 'ready';
+  definition: PreviewDefinition;
+  locations: { node: PreviewNode; section: PreviewNode; pi: number }[];
+  location: PreviewSetup['locations'][number];
+  navigable: number[];
+  page?: number;
+  byId: Map<string, PreviewNode>;
+}
+
+/** Parse and validate identities, pages and state inputs once for both start strategies. */
+export function preparePreviewDefinition(
   content: string,
   target: string,
   manual?: PreviewStart,
-): VisibilityResolution {
-  const fail = (reason: string): VisibilityResolution => ({ kind: 'unavailable', reason });
+): PreviewSetup | { kind: 'unavailable'; reason: string } {
+  const fail = (reason: string) => ({ kind: 'unavailable' as const, reason });
   const definition = readPreviewDefinition(content);
   if (!definition) return fail('Die Aufgabendefinition kann nicht gelesen werden.');
-  const { pages } = definition;
-  const locations = pages.flatMap((page, pi) =>
+  const locations = definition.pages.flatMap((page, pi) =>
     (page.sections || []).flatMap((section) =>
-      children(section).map((node) => ({ node, section, pi })),
+      previewNodes(section).map((node) => ({ node, section, pi })),
     ),
   );
   const targets = findVoudIdentifierMatches(locations, target);
-  if (targets.length > 1) return fail('Das Player-Ziel ist nicht eindeutig.');
+  if (targets.length !== 1) return fail('Das Player-Ziel fehlt oder ist nicht eindeutig.');
   const location = targets[0];
-  if (!location) return fail('Das Player-Ziel kommt in der Aufgabendefinition nicht vor.');
-  const navigable = pages.map((p, i) => (always(p) ? -1 : i)).filter((i) => i >= 0);
-  const targetIsAlwaysVisible = always(pages[location.pi]);
-  // A regular item has exactly one valid page: the page containing its target.
-  // A manual page is meaningful only for targets in the always-visible stimulus.
-  const page = targetIsAlwaysVisible ? manual?.page : navigable.indexOf(location.pi);
-  if (page !== undefined && (!Number.isInteger(page) || page < 0 || page >= navigable.length)) {
+  const navigable = definition.pages
+    .map((page, i) => (isAlwaysVisible(page) ? -1 : i))
+    .filter((i) => i >= 0);
+  // Only permanently visible targets can choose their task-page context.
+  const page = isAlwaysVisible(definition.pages[location.pi])
+    ? manual?.page
+    : navigable.indexOf(location.pi);
+  if (page !== undefined && (!Number.isInteger(page) || page < 0 || page >= navigable.length))
     return fail('Die konfigurierte Vorschauseite existiert nicht.');
-  }
   const variables = definition.stateVariables || [];
-  const byId = new Map(variables.map((v) => [v.id!, v]));
-  if (byId.size !== variables.length || variables.some((v) => !v.id))
+  const byId = new Map(variables.map((variable) => [variable.id!, variable]));
+  if (byId.size !== variables.length || variables.some((variable) => !variable.id))
     return fail('Die Zustandsvariablen sind nicht eindeutig.');
-  for (const id of Object.keys(manual?.values || {})) {
-    if (!byId.has(id) || typeof manual?.values[id] !== 'string')
-      return fail('Eine konfigurierte Zustandsvariable ist ungültig.');
-  }
-  const sections = pages.flatMap((p, i) =>
-    always(p) || i === (page === undefined ? location.pi : navigable[page]) ? p.sections || [] : [],
+  if (
+    Object.entries(manual?.values || {}).some(
+      ([id, value]) => !byId.has(id) || typeof value !== 'string',
+    )
+  )
+    return fail('Eine konfigurierte Zustandsvariable ist ungültig.');
+  return { kind: 'ready', definition, locations, location, navigable, page, byId };
+}
+
+export function previewSections(setup: PreviewSetup, page = setup.page): PreviewNode[] {
+  return setup.definition.pages.flatMap((model, pi) =>
+    isAlwaysVisible(model) ||
+    pi === (page === undefined ? setup.location.pi : setup.navigable[page])
+      ? model.sections || []
+      : [],
   );
+}
+
+/** One rule evaluator for static contexts and the ordered trigger path. */
+export function isPreviewSectionVisible(
+  section: PreviewNode,
+  values: ReadonlyMap<string, string | number>,
+): boolean {
+  const matches = (rule: NonNullable<PreviewNode['visibilityRules']>[number]) => {
+    if (!values.has(rule.id)) return false;
+    const value = values.get(rule.id)!;
+    switch (rule.operator) {
+      case '=':
+        return String(value) === String(rule.value);
+      case '≠':
+        return String(value) !== String(rule.value);
+      case '>':
+        return Number(value) > Number(rule.value);
+      case '≥':
+        return Number(value) >= Number(rule.value);
+      case '<':
+        return Number(value) < Number(rule.value);
+      case '≤':
+        return Number(value) <= Number(rule.value);
+      default:
+        return false;
+    }
+  };
+  const rules = section.visibilityRules || [];
+  return (
+    !rules.length ||
+    (section.logicalConnectiveOfRules === 'disjunction'
+      ? rules.some(matches)
+      : rules.every(matches))
+  );
+}
+
+/** Choose a unique equality context. Historical visibility is handled by the original player. */
+export function resolveStaticPreviewState(
+  setup: PreviewSetup,
+  manual?: PreviewStart,
+): PreviewStateCode[] | null {
+  const {
+    definition: { pages },
+    location,
+    page,
+    byId,
+  } = setup;
+  const sections = previewSections(setup);
   const relevant = new Set<string>();
   for (const section of sections) {
-    if (section.visibilityDelay || section.activeAfterID)
-      return fail('Zeitabhängige Sichtbarkeit benötigt den regulären Aufgabenablauf.');
+    if (section.visibilityDelay || section.activeAfterID) return null;
     for (const rule of section.visibilityRules || []) {
-      if (!byId.has(rule.id) || rule.operator !== '=')
-        return fail(
-          'Diese Sichtbarkeit hängt von Antworten, Medien oder nicht unterstützten Bedingungen ab. Bitte den regulären Aufgabenablauf verwenden.',
-        );
+      if (!byId.has(rule.id) || rule.operator !== '=') return null;
       relevant.add(rule.id);
     }
-    for (const node of children(section)) {
+    for (const node of previewNodes(section)) {
       if (
         node !== section &&
         (node.visibilityRules?.length || node.visibilityDelay || node.activeAfterID)
       ) {
-        return fail(
-          'Verschachtelte Sichtbarkeitsbedingungen benötigen den regulären Aufgabenablauf.',
-        );
+        return null;
       }
       if (node.type === 'trigger' && node.action === 'stateVariableChange') {
-        if (!node.actionParam || !byId.has(node.actionParam.id))
-          return fail('Ein Zustandstrigger kann nicht zugeordnet werden.');
+        if (!node.actionParam || !byId.has(node.actionParam.id)) return null;
         relevant.add(node.actionParam.id);
       }
     }
   }
   if (page === undefined && relevant.size > 0) {
-    return fail(
-      'Für diesen dauerhaft sichtbaren Stimulus muss eine Vorschauseite festgelegt werden.',
-    );
+    return null;
   }
   const domains = new Map(
     [...relevant].map((id) => [id, new Set([String(byId.get(id)!.value ?? '')])]),
@@ -141,53 +207,36 @@ export function resolvePreviewVisibility(
     for (const s of p.sections || []) {
       for (const r of s.visibilityRules || [])
         if (r.operator === '=') domains.get(r.id)?.add(String(r.value));
-      for (const n of children(s))
+      for (const n of previewNodes(s))
         if (n.action === 'stateVariableChange' && n.actionParam)
           domains.get(n.actionParam.id)?.add(String(n.actionParam.value));
     }
   for (const [id, value] of Object.entries(manual?.values || {})) domains.set(id, new Set([value]));
   let assignments: Record<string, string>[] = [{}];
   for (const [id, values] of domains) {
-    if (assignments.length * values.size > 4096)
-      return fail('Zu viele mögliche Vorschauzustände. Bitte den Startzustand manuell eingrenzen.');
+    if (assignments.length * values.size > 4096) return null;
     assignments = assignments.flatMap((a) => [...values].map((value) => ({ ...a, [id]: value })));
   }
-  const visible = (s: Node, a: Record<string, string>) => {
-    const rules = s.visibilityRules || [];
-    return (
-      !rules.length ||
-      (s.logicalConnectiveOfRules === 'disjunction'
-        ? rules.some((r) => a[r.id] === String(r.value))
-        : rules.every((r) => a[r.id] === String(r.value)))
+  const candidates = assignments
+    .map((a) => new Map(Object.entries(a)))
+    .filter(
+      (a) =>
+        isPreviewSectionVisible(location.section, a) &&
+        sections.every(
+          (s) =>
+            !isPreviewSectionVisible(s, a) ||
+            previewNodes(s).every(
+              (n) =>
+                n.type !== 'trigger' ||
+                n.action !== 'stateVariableChange' ||
+                a.get(n.actionParam!.id) === String(n.actionParam!.value),
+            ),
+        ),
     );
-  };
-  const candidates = assignments.filter(
-    (a) =>
-      visible(location.section, a) &&
-      sections.every(
-        (s) =>
-          !visible(s, a) ||
-          children(s).every(
-            (n) =>
-              n.type !== 'trigger' ||
-              n.action !== 'stateVariableChange' ||
-              a[n.actionParam!.id] === String(n.actionParam!.value),
-          ),
-      ),
-  );
-  if (candidates.length !== 1)
-    return fail(
-      candidates.length
-        ? 'Mehrere Startzustände sind möglich. Bitte Vorschauseite und Zustandswerte festlegen oder die gesamte Aufgabe öffnen.'
-        : 'Kein stabiler Startzustand erfüllt die Sichtbarkeitsregeln. Bitte die gesamte Aufgabe öffnen.',
-    );
-  return {
-    kind: 'ready',
-    page,
-    codes: Object.entries(candidates[0]).map(([id, value]) => ({
-      id: byId.get(id)!.alias || id,
-      status: 'VALUE_CHANGED',
-      value,
-    })),
-  };
+  if (candidates.length !== 1) return null;
+  return [...candidates[0]].map(([id, value]) => ({
+    id: byId.get(id)!.alias || id,
+    status: 'VALUE_CHANGED',
+    value,
+  }));
 }

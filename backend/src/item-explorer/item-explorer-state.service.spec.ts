@@ -702,12 +702,27 @@ describe("ItemExplorerStateService", () => {
       { page: -1, values: {} },
       { values: { v: 3 } },
       { values: [] },
+      { values: {}, context: { definitionKey: "invalid" } },
     ]) {
       expect(
         (service as any).normalizeItemProperties({ item1: { previewStart } })
           .item1?.previewStart,
       ).toBeUndefined();
     }
+  });
+
+  it("retains captured presentation context in shared preview settings", () => {
+    const context = {
+      definitionKey: "123-abc-def",
+      target: "item",
+      page: 1,
+      dataParts: { elementCodes: "[]" },
+    };
+    expect(
+      (service as any).normalizeItemProperties({
+        item1: { previewStart: { values: {}, context } },
+      }).item1.previewStart,
+    ).toEqual({ values: {}, context });
   });
 
   it("publishes draft atomically into ACP domain data and feature config", async () => {

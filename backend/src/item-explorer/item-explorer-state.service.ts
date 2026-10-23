@@ -1,4 +1,5 @@
 import { ReviewerColumnPolicy } from "./reviewer-column-policy";
+import { normalizePreviewContext } from "./preview-context";
 import {
   ConflictException,
   Injectable,
@@ -1149,7 +1150,12 @@ export class ItemExplorerStateService {
       ) {
         const raw = previewStart as Record<string, unknown>;
         const values = raw.values;
+        const context =
+          raw.context === undefined
+            ? null
+            : normalizePreviewContext(raw.context);
         if (
+          (raw.context === undefined || context !== null) &&
           values &&
           typeof values === "object" &&
           !Array.isArray(values) &&
@@ -1169,6 +1175,7 @@ export class ItemExplorerStateService {
           nextItemValue.previewStart = {
             ...(raw.page === undefined ? {} : { page: raw.page }),
             values,
+            ...(context ? { context } : {}),
           };
         } else delete nextItemValue.previewStart;
       } else delete nextItemValue.previewStart;

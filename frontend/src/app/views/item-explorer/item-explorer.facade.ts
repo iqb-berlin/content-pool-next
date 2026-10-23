@@ -184,6 +184,60 @@ export class ItemExplorerFacade implements OnDestroy {
     return this.player.syntheticPreviewState;
   }
 
+  get previewMode() {
+    return this.player.previewMode;
+  }
+  get presentationMessage() {
+    return this.previewUserFacingMessage || this.player.presentationMessage;
+  }
+  get preparingPresentation() {
+    return this.player.preparingPresentation;
+  }
+  get hasPreviewContext() {
+    return !!this.selectedItem?.previewStart?.context;
+  }
+  get hasCurrentResponseState() {
+    return this.player.hasCurrentResponseState;
+  }
+
+  setPreviewMode(value: string): void {
+    if (!['reference', 'answers', 'flow'].includes(value)) return;
+    this.previewUserFacingMessage = '';
+    this.player.changePreviewMode(value as 'reference' | 'answers' | 'flow');
+    this.correctSolutionRequested = false;
+    if (
+      this.selectedItem &&
+      this.hasReusablePreviewUnit(this.selectedItem) &&
+      this.previewCoordinator.status.kind === 'unavailable'
+    )
+      this.previewCoordinator.markReady(this.selectedItem);
+    this.startPlayerIfReady();
+  }
+
+  capturePreviewContext(): void {
+    if (!this.canEditExplorer || !this.selectedItem || this.isCorrectSolutionActive) return;
+    const context = this.player.capturePreviewContext({
+      item: this.selectedItem,
+      target: this.selectedPreviewTarget,
+    });
+    if (!context) {
+      this.previewUserFacingMessage =
+        'Bitte das ausgewählte Item im Player sichtbar öffnen und die Aktualisierung der Ansicht abwarten. Erst dann kann diese Ansicht übernommen werden.';
+      return;
+    }
+    this.player.changePreviewMode('reference');
+    this.persistPreviewStart({ values: {}, context });
+  }
+
+  clearPreviewContext(): void {
+    if (!this.canEditExplorer || !this.selectedItem) return;
+    const start = this.selectedItem.previewStart;
+    this.persistPreviewStart({
+      values: start?.values || {},
+      ...(start?.page === undefined ? {} : { page: start.page }),
+    });
+  }
+
   get previewStateVariables() {
     return (this.player.previewDefinition?.stateVariables || []).map((v) => ({
       id: v.id!,
@@ -222,7 +276,7 @@ export class ItemExplorerFacade implements OnDestroy {
     const values = { ...this.selectedItem?.previewStart?.values };
     if (value === '') delete values[id];
     else values[id] = value;
-    this.persistPreviewStart({ ...this.selectedItem?.previewStart, values });
+    this.persistPreviewStart({ page: this.selectedItem?.previewStart?.page, values });
   }
 
   private persistPreviewStart(start: PreviewStart) {
@@ -1962,7 +2016,7 @@ export class ItemExplorerFacade implements OnDestroy {
     this.syncPreviewTargetResolution(item);
     this.refreshCorrectSolutionPrefill();
 
-    if (!this.canPreviewItem(item)) {
+    if (!this.canPreviewItem(item) && !this.itemExplorerConditionalVisibilityEnabled) {
       this.previewCoordinator.markUnavailable(this.getMissingPreviewTargetMessage());
       this.clearPreviewSlowTimer();
       return;
@@ -2345,7 +2399,14 @@ export class ItemExplorerFacade implements OnDestroy {
   }
 
   canPreviewItem(item?: ReadonlyExplorerItem | null): boolean {
-    return this.getEffectivePlayerTarget(item).length > 0;
+    return (
+      this.getEffectivePlayerTarget(item).length > 0 ||
+      !!(
+        item &&
+        this.itemExplorerConditionalVisibilityEnabled &&
+        this.player.previewMode === 'flow'
+      )
+    );
   }
 
   private syncPreviewTargetResolution(item?: ReadonlyExplorerItem | null) {
@@ -3099,6 +3160,16 @@ export class ItemExplorerFacade implements OnDestroy {
     return JSON.stringify([
       item?.previewStart?.page ?? null,
       Object.entries(item?.previewStart?.values || {}).sort(([a], [b]) => a.localeCompare(b)),
+      item?.previewStart?.context
+        ? [
+            item.previewStart.context.definitionKey,
+            item.previewStart.context.target,
+            item.previewStart.context.page,
+            Object.entries(item.previewStart.context.dataParts).sort(([a], [b]) =>
+              a.localeCompare(b),
+            ),
+          ]
+        : null,
     ]);
   }
 

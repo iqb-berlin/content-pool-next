@@ -1,6 +1,17 @@
 import { VoudService } from './voud.service';
 import { describe, it, expect } from 'vitest';
-import { resolvePreviewVisibility } from './preview-visibility';
+import {
+  preparePreviewDefinition,
+  resolveStaticPreviewState,
+  PreviewStart,
+} from './preview-visibility';
+
+const resolvePreviewVisibility = (content: string, target: string, manual?: PreviewStart) => {
+  const setup = preparePreviewDefinition(content, target, manual);
+  if (setup.kind === 'unavailable') return setup;
+  const codes = resolveStaticPreviewState(setup, manual);
+  return codes ? { kind: 'ready', page: setup.page, codes } : { kind: 'unavailable' };
+};
 
 const variable = { id: 'v', alias: 'State', value: '0' };
 const rule = (value: string) => ({ id: 'v', operator: '=', value });

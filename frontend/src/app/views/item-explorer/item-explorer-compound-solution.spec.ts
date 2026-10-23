@@ -285,6 +285,12 @@ describe('compound solutions with conditional preview sessions', () => {
       const reloaded = { ...ownAnswers, elementCodes: JSON.stringify([]) };
       player.applyResponseState(reloaded);
       player.start(request);
+      expect(postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual({
+        stateVariableCodes: restored.unitState.dataParts.stateVariableCodes,
+      });
+      expect(player.syntheticPreviewState).toBe(true);
+      player.changePreviewMode('answers');
+      player.start(request);
       expect(postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual(reloaded);
       expect(player.isAnswerSession).toBe(true);
     } finally {

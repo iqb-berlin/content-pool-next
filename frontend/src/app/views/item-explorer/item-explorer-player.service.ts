@@ -1,9 +1,13 @@
 import { Injectable, Inject, OnDestroy } from '@angular/core';
 import { Subject } from 'rxjs';
+import { readPreviewDefinition } from '../../core/services/preview-visibility';
+import { collectVoudNodes, findVoudIdentifierMatches } from '../../core/services/voud-nodes';
 import {
-  readPreviewDefinition,
-  resolvePreviewVisibility,
-} from '../../core/services/preview-visibility';
+  preparePreviewPresentation,
+  previewDefinitionKey,
+  readPreviewContext,
+  PreviewContext,
+} from '../../core/services/preview-presentation';
 import { VoudService } from '../../core/services/voud.service';
 import { GEOGEBRA_PLAYER_RESOURCE_BASE } from '../../core/utils/geogebra-player-html.util';
 import { ItemExplorerPlayerDomPort } from './item-explorer.dom-ports';
@@ -30,6 +34,18 @@ interface PreviewResponseSession {
   origin: 'answers' | 'visibility' | 'solution';
   initialDataParts: Record<string, any>;
   dataParts: Record<string, any> | null;
+  reportedAt: number;
+}
+
+interface PresentationSession {
+  request: ItemExplorerPlayerStartRequest;
+  queue: number[];
+  triggers: string[];
+  controller: AbortController;
+  timer: ReturnType<typeof setTimeout> | null;
+  attempts: number;
+  preparedPage: number;
+  presenting: boolean;
 }
 
 /** Owns the frame, protocol session and all delayed player work. */
@@ -64,6 +80,18 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
   playerFocusHighlightEnabled = false;
 
+  previewMode: 'reference' | 'answers' | 'flow' = 'reference';
+  presentationMessage = '';
+  private presentation: PresentationSession | null = null;
+
+  get preparingPresentation(): boolean {
+    return this.presentation !== null;
+  }
+
+  private workingAnswerData: Record<string, any> | null = null;
+  private flowStarted = false;
+  private pendingFlowPage: number | null = null;
+
   private focusRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   private playerFrameRefreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -83,6 +111,7 @@ export class ItemExplorerPlayerService implements OnDestroy {
     origin: 'answers',
     initialDataParts: {},
     dataParts: null,
+    reportedAt: 0,
   };
 
   get activePlayerSessionId(): string | null {
@@ -107,6 +136,13 @@ export class ItemExplorerPlayerService implements OnDestroy {
     return this.responseSession.dataParts;
   }
 
+  get hasCurrentResponseState(): boolean {
+    const changedAt = this.playerDom?.getLastInteractionTime?.() || 0;
+    return (
+      !!this.currentResponseData && (!changedAt || this.responseSession.reportedAt > changedAt)
+    );
+  }
+
   private savedResponseData: Record<string, any> | null = null;
 
   hasResponseState = false;
@@ -115,6 +151,7 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
   private responseBeforeSolution: {
     origin: 'answers' | 'visibility';
+    page: number;
     dataParts: Record<string, any> | null;
   } | null = null;
 
@@ -141,10 +178,11 @@ export class ItemExplorerPlayerService implements OnDestroy {
     // A restarted frame may not have reported yet; retain its initial snapshot.
     this.responseBeforeSolution = {
       origin: this.responseSession.origin,
+      page: this.currentPage - 1,
       dataParts:
         this.currentResponseData ||
         this.responseBeforeSolution?.dataParts ||
-        (Object.keys(this.responseSession.initialDataParts).length
+        (this.previewMode === 'flow' || Object.keys(this.responseSession.initialDataParts).length
           ? this.responseSession.initialDataParts
           : this.savedResponseData),
     };
@@ -160,6 +198,7 @@ export class ItemExplorerPlayerService implements OnDestroy {
   applyResponseState(data: Record<string, any> | null, isFallback = false): void {
     if (this.destroyed) return;
     this.savedResponseData = data && Object.keys(data).length ? data : null;
+    this.workingAnswerData = null;
     this.responseBeforeSolution = null;
     this.responseSession.dataParts = null;
     this.responseSession.initialDataParts = {};
@@ -174,6 +213,9 @@ export class ItemExplorerPlayerService implements OnDestroy {
   }
 
   clearResponseState(): void {
+    this.flowStarted = false;
+    this.pendingFlowPage = null;
+    this.workingAnswerData = null;
     this.savedResponseData = null;
     this.hasResponseState = false;
     this.isFallbackState = false;
@@ -186,6 +228,9 @@ export class ItemExplorerPlayerService implements OnDestroy {
     if (this.destroyed) return;
     this.invalidateSession();
     this.clearResponseState();
+    this.previewMode = 'reference';
+    this.presentationMessage = '';
+    this.workingAnswerData = null;
     if (resetPages) {
       this.currentPage = 1;
       this.totalPages = 1;
@@ -197,6 +242,7 @@ export class ItemExplorerPlayerService implements OnDestroy {
     this.beginResponseSession(null, session.origin, session.dataParts || session.initialDataParts);
     this.clearFocusRetryTimer();
     this.clearLegacyPageNavigationTimers();
+    this.clearPresentation();
     this.playerDom?.stopAutoResize();
   }
 
@@ -255,7 +301,15 @@ export class ItemExplorerPlayerService implements OnDestroy {
           }
         }
         if (playerMessage['playerState']?.currentPage !== undefined) {
-          this.currentPage = playerMessage['playerState'].currentPage + 1;
+          const page = Number(playerMessage['playerState'].currentPage);
+          if (
+            Number.isInteger(page) &&
+            page >= 0 &&
+            (this.pendingFlowPage === null || page === this.pendingFlowPage)
+          ) {
+            this.currentPage = page + 1;
+            this.pendingFlowPage = null;
+          }
         }
         if (playerMessage['playerState']?.validPages !== undefined) {
           this.totalPages = playerMessage['playerState'].validPages.length || this.totalPages;
@@ -266,9 +320,17 @@ export class ItemExplorerPlayerService implements OnDestroy {
           this.responseSession.origin !== 'solution' &&
           !context.solutionActive
         ) {
-          this.responseSession.dataParts = playerMessage['unitState'].dataParts;
+          this.responseSession.dataParts = {
+            ...this.responseSession.initialDataParts,
+            ...this.responseSession.dataParts,
+            ...playerMessage['unitState'].dataParts,
+          };
+          // Receipt time cannot prove freshness: an older snapshot may already be queued.
+          const reportedAt = Number(playerMessage['timeStamp']);
+          this.responseSession.reportedAt = Number.isFinite(reportedAt) ? reportedAt : 0;
           this.responseBeforeSolution = null;
         }
+        this.advancePresentation();
         break;
 
       case 'vopPageNavigationCommand':
@@ -293,8 +355,20 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
     const run = () => {
       attempts += 1;
-      const focused = this.tryFocusItemInPlayer(request.item, request.target);
+      const visible =
+        !this.itemExplorerConditionalVisibilityEnabled ||
+        !this.playerDom?.isTargetVisible ||
+        this.playerDom.isTargetVisible(this.getFocusSelectors(null, request.target));
+      const focused = visible && this.tryFocusItemInPlayer(request.item, request.target);
       if (focused || attempts >= maxAttempts) {
+        if (
+          !visible &&
+          this.itemExplorerConditionalVisibilityEnabled &&
+          this.previewMode === 'reference'
+        ) {
+          this.presentationMessage =
+            'Das Item ist im aktuellen Ablauf noch nicht sichtbar. Bitte den regulären Aufgabenablauf verwenden und einen Vorschaukontext übernehmen.';
+        }
         return;
       }
       this.focusRetryTimer = setTimeout(run, 250);
@@ -320,18 +394,28 @@ export class ItemExplorerPlayerService implements OnDestroy {
     }
 
     const previewTarget = request.target;
-    if (!previewTarget) {
+    const regularFlow =
+      this.itemExplorerConditionalVisibilityEnabled && this.previewMode === 'flow';
+    if (!previewTarget && !regularFlow) {
       return { kind: 'unavailable', reason: 'missing-target' };
     }
-    const targetLocation = this.resolveTargetLocation(previewTarget);
+    const targetLocation = regularFlow
+      ? { scrollPageIndex: 0 }
+      : this.resolveTargetLocation(previewTarget);
     if (!targetLocation) {
       return { kind: 'unavailable', reason: 'unresolved-target' };
     }
     let startPage = targetLocation.scrollPageIndex;
     let origin: PreviewResponseSession['origin'] = this.responseBeforeSolution?.origin || 'answers';
     let dataParts = this.getPlayerStartDataParts();
-    if (this.itemExplorerConditionalVisibilityEnabled && !this.hasResponseState) {
-      const resolved = resolvePreviewVisibility(
+    this.clearFocusRetryTimer();
+    this.clearLegacyPageNavigationTimers();
+    this.clearPresentation();
+    this.presentationMessage = '';
+    let navigation: number[] | undefined;
+    let triggerIds: string[] = [];
+    if (this.itemExplorerConditionalVisibilityEnabled && this.previewMode === 'reference') {
+      const resolved = preparePreviewPresentation(
         this.definitionContent,
         previewTarget,
         request.item.previewStart,
@@ -341,10 +425,25 @@ export class ItemExplorerPlayerService implements OnDestroy {
         return { kind: 'unavailable', reason: 'unresolved-visibility', message: resolved.reason };
       }
       startPage = resolved.page;
-      if (resolved.codes.length) origin = 'visibility';
-      if (resolved.codes.length) {
-        dataParts = { ...dataParts, stateVariableCodes: JSON.stringify(resolved.codes) };
+      origin = 'visibility';
+      const print = this.pagingMode === 'view-all' || this.pagingMode === 'print-ids';
+      dataParts = print ? resolved.printDataParts || resolved.dataParts : resolved.dataParts;
+      navigation = print ? undefined : resolved.navigate;
+      triggerIds = resolved.triggerIds || [];
+      this.presentationMessage = resolved.message;
+      if (this.responseBeforeSolution?.origin === 'visibility') {
+        // Restore the full prepared snapshot, including edits and persistent stimuli.
+        // Replaying triggers again could change that already reached context.
+        dataParts = this.responseBeforeSolution.dataParts || dataParts;
+        startPage = this.responseBeforeSolution.page;
+        navigation = undefined;
+        triggerIds = [];
       }
+    } else if (regularFlow) {
+      startPage = this.flowStarted ? this.currentPage - 1 : 0;
+      if (!this.flowStarted) dataParts = {};
+      this.presentationMessage =
+        'Regulärer Aufgabenablauf. Eine erreichte Itemansicht kann als Referenzkontext übernommen werden.';
     }
     if (request.solution) {
       dataParts = mergePlayerSolutionIntoDataParts(
@@ -360,6 +459,24 @@ export class ItemExplorerPlayerService implements OnDestroy {
 
     this.startSessionCounter += 1;
     this.beginResponseSession(sessionId, origin, dataParts);
+    if (regularFlow) this.flowStarted = true;
+    // Aspect may initially report page 0 before accepting the restored page.
+    // Keep that transient notification from resetting a quick solution toggle.
+    this.pendingFlowPage =
+      regularFlow && startPage !== undefined && startPage > 0 ? startPage : null;
+    this.currentPage = (startPage ?? 0) + 1;
+    if (navigation && (navigation.length || triggerIds.length)) {
+      this.presentation = {
+        request,
+        queue: navigation,
+        triggers: triggerIds,
+        controller: new AbortController(),
+        timer: null,
+        attempts: 0,
+        preparedPage: -1,
+        presenting: false,
+      };
+    }
     this.sendToPlayer({
       type: 'vopStartCommand',
       sessionId,
@@ -388,7 +505,8 @@ export class ItemExplorerPlayerService implements OnDestroy {
     this.playerDom?.setPrintLabelOverrides(
       this.pagingMode === 'print-ids' ? request.printLabels : {},
     );
-    this.scheduleLegacyPageNavigation(sessionId, startPage, usesPagedNavigation);
+    if (navigation === undefined)
+      this.scheduleLegacyPageNavigation(sessionId, startPage, usesPagedNavigation);
 
     if (usesPagedNavigation) {
       this.playerHeight = '100%';
@@ -401,8 +519,128 @@ export class ItemExplorerPlayerService implements OnDestroy {
         if (this.playerHeight !== nextHeight) this.playerHeight = nextHeight;
       });
     }
-    this.schedulePlayerFocus(request);
+    if (!this.preparingPresentation && !regularFlow) this.schedulePlayerFocus(request);
     return { kind: 'started' };
+  }
+
+  changePreviewMode(mode: 'reference' | 'answers' | 'flow'): void {
+    // A solution keeps the real answers separately; a restored answer session
+    // may only have its initial snapshot until the next player notification.
+    const answers = this.isAnswerSession
+      ? this.currentResponseData ||
+        (Object.keys(this.responseSession.initialDataParts).length
+          ? this.responseSession.initialDataParts
+          : null)
+      : null;
+    const answerSnapshot =
+      this.responseBeforeSolution?.origin === 'answers'
+        ? this.responseBeforeSolution.dataParts || answers
+        : answers;
+    if (answerSnapshot) this.workingAnswerData = answerSnapshot;
+    this.invalidateSession();
+    this.responseBeforeSolution = null;
+    if (mode !== this.previewMode) this.flowStarted = false;
+    this.pendingFlowPage = null;
+    this.previewMode = mode;
+  }
+
+  capturePreviewContext(request: {
+    item: ReadonlyExplorerItem;
+    target: string;
+  }): PreviewContext | null {
+    if (
+      !this.definitionContent ||
+      !this.activePlayerSessionId ||
+      this.preparingPresentation ||
+      !this.hasCurrentResponseState ||
+      !request.target ||
+      !this.playerDom?.isTargetVisible?.(this.getFocusSelectors(null, request.target))
+    )
+      return null;
+    const location = this.resolveTargetLocation(request.target);
+    if (
+      !location ||
+      (location.scrollPageIndex !== undefined && location.scrollPageIndex !== this.currentPage - 1)
+    )
+      return null;
+    const dataParts = Object.fromEntries(
+      ['stateVariableCodes', 'elementCodes', 'geometryVariableCodes']
+        .filter((key) => typeof this.currentResponseData?.[key] === 'string')
+        .map((key) => [key, this.currentResponseData![key]]),
+    );
+    return readPreviewContext({
+      definitionKey: previewDefinitionKey(this.definitionContent),
+      target: request.target,
+      page: this.currentPage - 1,
+      dataParts,
+    });
+  }
+
+  private clearPresentation(): void {
+    const preparation = this.presentation;
+    this.presentation = null;
+    if (!preparation) return;
+    preparation.controller.abort();
+    if (preparation.timer) clearTimeout(preparation.timer);
+  }
+
+  private advancePresentation(): void {
+    const preparation = this.presentation;
+    if (!preparation || !this.activePlayerSessionId || preparation.presenting) return;
+    if (
+      preparation.triggers.length &&
+      this.playerDom?.preparePage &&
+      preparation.preparedPage !== this.currentPage - 1
+    ) {
+      if (preparation.timer) clearTimeout(preparation.timer);
+      preparation.timer = null;
+      preparation.preparedPage = this.currentPage - 1;
+      preparation.presenting = true;
+      void this.playerDom
+        .preparePage(preparation.triggers, preparation.controller.signal)
+        .catch(() => {
+          if (this.presentation === preparation) {
+            this.clearPresentation();
+            this.presentationMessage = 'Der Vorschaukontext benötigt den regulären Aufgabenablauf.';
+          }
+        })
+        .finally(() => {
+          if (this.presentation !== preparation) return;
+          preparation.presenting = false;
+          this.advancePresentation();
+        });
+      return;
+    }
+    if (preparation.queue[0] === this.currentPage - 1) {
+      preparation.queue.shift();
+      preparation.attempts = 0;
+      if (preparation.timer) clearTimeout(preparation.timer);
+      preparation.timer = null;
+    }
+    if (preparation.timer) return;
+    preparation.timer = setTimeout(
+      () => {
+        if (this.presentation !== preparation) return;
+        preparation.timer = null;
+        const page = preparation.queue[0];
+        if (page === undefined || preparation.attempts >= 4) {
+          this.clearPresentation();
+          if (page !== undefined)
+            this.presentationMessage =
+              'Die Referenzansicht konnte nicht vollständig vorbereitet werden. Bitte den regulären Aufgabenablauf verwenden und einen Vorschaukontext übernehmen.';
+          else this.schedulePlayerFocus(preparation.request);
+          return;
+        }
+        preparation.attempts++;
+        this.sendToPlayer({
+          type: 'vopPageNavigationCommand',
+          sessionId: this.activePlayerSessionId,
+          target: String(page),
+        });
+        this.advancePresentation();
+      },
+      preparation.attempts ? 500 : 180,
+    );
   }
 
   private beginResponseSession(
@@ -410,7 +648,7 @@ export class ItemExplorerPlayerService implements OnDestroy {
     origin: PreviewResponseSession['origin'],
     initialDataParts: Record<string, any> = {},
   ): void {
-    this.responseSession = { id, origin, initialDataParts, dataParts: null };
+    this.responseSession = { id, origin, initialDataParts, dataParts: null, reportedAt: 0 };
     this.sessionChanges$.next();
   }
 
@@ -419,8 +657,12 @@ export class ItemExplorerPlayerService implements OnDestroy {
       ? this.currentResponseData || this.responseSession.initialDataParts
       : null;
     if (this.responseBeforeSolution?.dataParts) return this.responseBeforeSolution.dataParts;
+    // A live session (including its snapshot during frame recreation) is newer than
+    // the answer cache retained across view changes. Flow never falls back to saved answers.
+    if (answers && (this.previewMode === 'flow' || Object.keys(answers).length)) return answers;
+    if (this.previewMode === 'flow') return {};
+    if (this.previewMode === 'answers' && this.workingAnswerData) return this.workingAnswerData;
     if (!this.hasResponseState) return {};
-    if (answers && Object.keys(answers).length) return answers;
     return this.savedResponseData || {};
   }
 
@@ -454,8 +696,32 @@ export class ItemExplorerPlayerService implements OnDestroy {
   }
 
   getFocusSelectors(selectedItem: ReadonlyExplorerItem | null, target: string): string[] {
-    if (!selectedItem) return [];
-
+    if (!selectedItem || this.itemExplorerConditionalVisibilityEnabled) {
+      const matches = findVoudIdentifierMatches(
+        (this.previewDefinition?.pages || []).flatMap((page) =>
+          collectVoudNodes(page).map((node) => ({ node })),
+        ),
+        target,
+      );
+      if (matches.length !== 1) return [];
+      const { id, alias } = matches[0].node;
+      // Internal IDs and public aliases are different namespaces. Crossing them
+      // can match a different item (for example OIB DHB001's id 04 / alias 05).
+      return [
+        ...(typeof id === 'string' && id
+          ? [
+              `[data-element-id="${this.escapeSelectorValue(id)}"]`,
+              `[id="${this.escapeSelectorValue(id)}"]`,
+            ]
+          : []),
+        ...(typeof alias === 'string' && alias
+          ? [
+              `[data-element-alias="${this.escapeSelectorValue(alias)}"]`,
+              `[data-list-alias="${this.escapeSelectorValue(alias)}"]`,
+            ]
+          : []),
+      ];
+    }
     const selectors: string[] = [];
 
     for (const itemId of this.getCandidateItemIds(selectedItem)) {

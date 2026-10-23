@@ -114,8 +114,10 @@ shapes, credential import counters, and propagation of HTTP 400/403 responses.
 
 ### Full-stack browser tests
 
-The Playwright suite runs Chromium against the real Angular frontend, NestJS backend, and an
-isolated PostgreSQL database. From the repository root, run:
+The Playwright suite uses the real Angular frontend, NestJS backend, and an isolated PostgreSQL
+database. Chromium runs every spec; Firefox and WebKit run the shared `crossBrowserSpecs` list in
+`frontend/playwright.config.ts`. Keep that list shared so adding a journey preserves the existing
+browser coverage.
 
 ```bash
 (cd frontend && npm run e2e)
@@ -123,9 +125,27 @@ isolated PostgreSQL database. From the repository root, run:
 
 The wrapper starts a disposable PostgreSQL container, seeds it, and uses dedicated ports for both
 application servers. The seed and Playwright configuration refuse non-E2E database settings, and
-existing application servers are never reused. Trace, screenshot, and video diagnostics are kept
-only for failed tests. CI supplies its own isolated PostgreSQL service and performs browser
-installation automatically.
+existing application servers are never reused. Every run stores fixtures, uploads, and snapshots
+in its own temporary directory, which is removed on exit. Stateful critical journeys use separate
+ACPs; Explorer publishing additionally uses one ACP per browser. Trace, screenshot, and video
+diagnostics are kept only for failed tests.
+
+The required CI Browser E2E job runs the suite on pull requests and remains part of the release
+gate. `browser-e2e-weekly.yml` repeats the same suite against the default branch every Tuesday at
+04:17 UTC and supports manual dispatch. It installs all three browsers and supplies its own
+isolated PostgreSQL service. The weekly run detects drift after merge; it does not replace PR CI.
+
+The critical journeys complement the existing regressions:
+
+| Spec                                                     | Additional coverage                                                                                                                                                        | Browsers                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `critical-journeys-cross-browser.spec.ts`                | Invalid/valid credential login and reload; unit list → player and page mode; Explorer draft → publish → reader and reload                                                  | Chromium, Firefox, WebKit            |
+| `critical-journeys-chromium.spec.ts`                     | Credential access isolation; valid/unknown item deep links; upload → download; snapshot diff → cancel/restore; review readiness → group membership → activation and reload | Chromium                             |
+| `review-navigation-metadata.spec.ts`                     | Booklet navigation, readable coding/partial solutions, and persisted metadata visibility                                                                                   | Chromium, Firefox, WebKit            |
+| Existing Explorer, comment, access, and preference specs | Focused interaction, permissions, sticky columns, comment refresh, and persistence regressions                                                                             | As configured in `crossBrowserSpecs` |
+
+Login journeys use disposable ACP credentials and the local OIDC test session; a real Keycloak
+staging login remains a separate integration check.
 
 ## What to Test for Common Change Types
 

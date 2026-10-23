@@ -182,7 +182,9 @@ export class ItemExplorerPlayerService implements OnDestroy {
       dataParts:
         this.currentResponseData ||
         this.responseBeforeSolution?.dataParts ||
-        (this.previewMode === 'flow' || Object.keys(this.responseSession.initialDataParts).length
+        (this.syntheticPreviewState ||
+        this.previewMode === 'flow' ||
+        Object.keys(this.responseSession.initialDataParts).length
           ? this.responseSession.initialDataParts
           : this.savedResponseData),
     };

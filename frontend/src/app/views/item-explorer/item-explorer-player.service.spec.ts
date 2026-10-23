@@ -891,6 +891,32 @@ describe('ItemExplorerPlayerService', () => {
     expect(dom.postMessage).not.toHaveBeenCalled();
     player.ngOnDestroy();
   });
+  it('keeps an empty reference independent of saved answers when toggling before its first report', () => {
+    vi.useFakeTimers();
+    const { player, dom, request, voud } = createPlayer();
+    voud.resolvePlayerTargetLocation.mockReturnValue({ absolutePageIndex: 0, scrollPageIndex: 0 });
+    player.itemExplorerConditionalVisibilityEnabled = true;
+    player.definitionContent = JSON.stringify({
+      pages: [{ sections: [{ elements: [{ id: 'v', alias: 'v' }] }] }],
+    });
+    const saved = { elementCodes: '[{"id":"v","value":"saved answer"}]' };
+    try {
+      player.applyResponseState(saved);
+      player.start(request);
+      expect(dom.postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual({});
+      player.captureAnswersForSolution();
+      player.start({ ...request, solution: { status: 'available', message: '', responses: [] } });
+      player.start(request);
+      expect(dom.postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual({});
+      expect(player.syntheticPreviewState).toBe(true);
+      player.changePreviewMode('answers');
+      player.start(request);
+      expect(dom.postMessage.mock.calls.at(-1)![0].unitState.dataParts).toEqual(saved);
+    } finally {
+      player.ngOnDestroy();
+    }
+  });
+
   it('restores prepared edits and their page across solution toggles without treating them as answers', () => {
     vi.useFakeTimers();
     const { player, dom, request, voud } = createPlayer();
